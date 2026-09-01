@@ -1,0 +1,84 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+!*.env.example
+.envrc
+.direnv/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Node.js, pnpm, Next.js, and frontend tests
+node_modules/
+.pnpm-store/
+.next/
+out/
+.turbo/
+.vercel/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+*.tsbuildinfo
+next-env.d.ts
+pnpm-debug.log*
+
+# Python, uv, and backend tests
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.uv-cache/
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.pyre/
+.pytype/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.egg
+*.egg-info/
+.eggs/
+
+# Build artifacts
+dist/
+build/
+
+# Local application data and service volumes
+/data/private/
+/uploads/
+/storage/
+/minio-data/
+/postgres-data/
+/redis-data/
+
+# Logs, process files, and temporary work
+*.log
+*.pid
+*.pid.lock
+/logs/
+/tmp/
+/temp/
+/work/
+
+# macOS and Windows
+.DS_Store
+._*
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
