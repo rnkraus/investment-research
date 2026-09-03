@@ -1,0 +1,66 @@
+schema_version: 1
+
+fixture:
+  id: fixture:northstar-grid-analytics:fy2025:earnings-brief:v1
+  kind: synthetic
+  title: Northstar Grid Analytics Ltd. - FY2025 Earnings Brief
+  document_type: earnings_brief
+  language: en
+  publication_date: "2026-02-19"
+  file:
+    path: documents/northstar-grid-analytics-fy2025-earnings-brief.pdf
+    media_type: application/pdf
+    byte_size: 10840
+    sha256: ecb709d40762dc85febc1f6be3a7d067fc8383788ceab072ac049b3e5cfaede1
+    expected_page_count: 4
+    text_layer_required: true
+  provenance:
+    origin: Generated specifically for the Investment Research Archive M0.0 acceptance fixture.
+    third_party_source_material: false
+    real_issuer_or_security: false
+  rights:
+    license: CC0-1.0
+    redistribution: permitted
+    notice: All entities, figures, events, quotations, risks, and outlook statements are fictional.
+
+expected_passages:
+  - id: passage:fy2025-revenue-comparison
+    page_number: 2
+    section: Financial Performance / Full-year results
+    text: FY2025 revenue was $184.2 million, up 22.0% from $151.0 million in FY2024.
+    text_sha256: 7e06b28b3175327a5c3507e4e712943422364f623428d851f29d33eb29c1b00f
+    occurrence_count: 1
+    matching:
+      mode: exact_utf8
+      require_same_page: true
+
+acceptance_cases:
+  - id: question:fy2025-revenue
+    kind: answerable
+    question: What was Northstar Grid Analytics' FY2025 revenue, and how did it change from FY2024?
+    expected:
+      coverage: complete
+      answer_status: answered
+      statements:
+        - text: Northstar Grid Analytics reported FY2025 revenue of $184.2 million, up 22.0% from $151.0 million in FY2024.
+          supported_by:
+            - passage:fy2025-revenue-comparison
+      citations:
+        - passage_id: passage:fy2025-revenue-comparison
+          page_number: 2
+
+  - id: question:fy2025-dividend
+    kind: unanswerable
+    question: What dividend did Northstar Grid Analytics declare for FY2025?
+    expected:
+      coverage: insufficient
+      answer_status: insufficient_evidence
+      statements: []
+      citations: []
+      missing_information: The fixture provides no dividend amount or declaration.
+
+acceptance_rules:
+  - The PDF checksum and page count must match the declared file metadata.
+  - Every expected passage must be present on the declared page with the declared occurrence count.
+  - The answerable case must emit only validated statements and citations.
+  - The unanswerable case must emit no archive-derived statement and no general-knowledge completion.
