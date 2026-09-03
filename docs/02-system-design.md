@@ -1,14 +1,14 @@
 # Investment Research Archive — System Design
 
-**Status:** Draft v0.1  
+**Status:** Draft v0.2
 **Scope:** V1 production architecture with planned extension points  
-**Related:** [01-product-scope.md](./01-product-scope.md)
+**Related:** [01-product-scope.md](./01-product-scope.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
 
 ## 1. Design goals
 
 The system must:
 
-- produce evidence-grounded answers from German and English documents;
+- produce evidence-grounded answers from English documents while preserving explicit language metadata and extension points for additional languages;
 - preserve exact provenance from an answer to the original document location;
 - keep private and demo workspaces isolated;
 - tolerate retries, partial failures, reprocessing, and deletion;
@@ -49,7 +49,7 @@ The first public deployment is a separate milestone. The containers and provider
 
 | Area | Choice | Purpose |
 |---|---|---|
-| Web | Next.js, TypeScript, Tailwind CSS, shadcn/ui | German user interface, streaming chat, document and citation views |
+| Web | Next.js, TypeScript, Tailwind CSS, shadcn/ui | English user interface, streaming chat, document and citation views |
 | API | Python, FastAPI, Pydantic | Typed HTTP and streaming APIs, application orchestration |
 | Persistence | PostgreSQL, SQLAlchemy, Alembic | Canonical business, provenance, audit, and lexical-search state |
 | Original files | S3-compatible object storage; MinIO locally | Immutable PDFs and submitted-text originals |
@@ -61,6 +61,14 @@ The first public deployment is a separate milestone. The containers and provider
 | Public hosting — later | Container platform plus managed database and object storage | Selected after the local vertical slice; AWS remains one option |
 
 The RAG core is implemented in application code. LlamaIndex and LangChain are not required in the direct V1 path. LangGraph is introduced later only for bounded multi-step workflows.
+
+### Pre-foundation proof of value
+
+M0.0 precedes this production baseline with a local-only walking skeleton. It may use only Next.js, FastAPI, PostgreSQL, development-only local artifact storage, and a bounded development processing runner to validate one answerable and one unanswerable fixture case. PostgreSQL lexical retrieval is sufficient for this proof.
+
+M0.0 is an implementation experiment, not an alternative V1 architecture. It excludes Celery, Redis, MinIO, Pinecone, reranking, LangSmith, public deployment, and private data. The API records a canonical `ProcessingRun`; a separate, single-job development runner invokes the same processing application service that the Celery worker will invoke from M0 onward. The runner has no durability, retry, or availability guarantee. It never shares an API database session and never performs CPU-heavy parsing on the API event loop.
+
+Application-owned contracts, Alembic migrations, module boundaries, and the real evidence validator are established in M0.0. Development-only artifact storage and processing delivery are replaced during M0. Passing M0.0 does not satisfy the M0 or M1 exit gates. The paired diagrams are maintained in [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), and the exact implementation sequence is maintained in [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md).
 
 ## 4. Component boundaries
 
@@ -78,7 +86,7 @@ The backend remains one deployable application but is divided into explicit modu
 | Audit and usage | Reproducibility records, latency, tokens, cost, and product events |
 | Provider adapters | Model, embedding, reranker, vector store, and object-store interfaces |
 
-Modules communicate through application services and typed contracts, not direct access to one another's internal tables. A module may later be extracted only when scale, ownership, or reliability measurements require it.
+Modules communicate through application services and typed contracts, not direct access to one another's internal tables. Dependency direction is acyclic: the API layer calls module application services; `Documents` requests `Processing`; `Research` depends on `Search`, answer generation, and `Evidence`; those dependencies do not import or call back into `Research`. Response values and events travel back through return types or declared event contracts, not reverse module dependencies. A module may later be extracted only when scale, ownership, or reliability measurements require it.
 
 ## 5. Data ownership
 
@@ -99,14 +107,15 @@ Ingestion is split into a required searchable stage and optional enrichment.
 ```mermaid
 flowchart LR
     A[Upload PDF / Text] --> B[Store immutable original]
-    B --> C[Create document version and job]
-    C --> D[Parse structure and pages]
-    D --> E[Create versioned chunks]
-    E --> F[Write lexical content to PostgreSQL]
-    F --> G[Create embeddings]
-    G --> H[Index active chunks in Pinecone]
-    H --> I[Mark searchable]
-    I --> J[Optional AI enrichment]
+    B --> C[Create document version and processing run]
+    C --> D[Execute processing run]
+    D --> E[Parse structure and pages]
+    E --> F[Create versioned chunks]
+    F --> G[Write lexical content to PostgreSQL]
+    G --> H[Create embeddings]
+    H --> I[Index active chunks in Pinecone]
+    I --> J[Mark searchable]
+    J --> K[Optional AI enrichment]
 ```
 
 Required behavior:
@@ -147,13 +156,14 @@ flowchart LR
     RR --> EV
     EV --> GEN[Typed answer generation]
     GEN --> VAL[Server-side evidence validation]
-    VAL --> OUT[Stream answer and citations]
+    VAL --> OUT[Stream validated answer and citations]
 ```
 
 ### Initial retrieval strategy
 
 - Route structured aggregation and metadata lookup to PostgreSQL.
-- Use PostgreSQL `ts_rank_cd` with `pg_trgm` as the low-operations lexical baseline.
+- Store a versioned PostgreSQL `tsvector`, index it with GIN, and rank candidates with `ts_rank_cd` as the low-operations lexical baseline.
+- Use `pg_trgm` only for explicitly designed phrase, identifier, or fuzzy-match behavior; it does not replace full-text search.
 - Use Pinecone for dense multilingual candidates.
 - Fuse independent rankings with unweighted Reciprocal Rank Fusion (RRF).
 - Rerank a bounded candidate set with a multilingual cross-encoder.
@@ -171,7 +181,7 @@ The model returns a typed structure containing answer statements and evidence id
 - unsupported statements are rejected, removed, or regenerated;
 - conflicting evidence and insufficient coverage remain visible.
 
-The rendered prose is therefore downstream of evidence validation, not the source of citation truth.
+The rendered prose is therefore downstream of evidence validation, not the source of citation truth. Raw or merely schema-valid model text is never streamed as answer content. Before validation completes, the API may emit progress events only; statement and citation events are emitted only from the accepted validation result.
 
 ## 8. Temporal and conversation behavior
 

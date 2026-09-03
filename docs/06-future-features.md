@@ -103,7 +103,7 @@ Supported values may include bullish, bearish, neutral, mixed, and unknown. The 
 
 ### F-12 — Questions in additional languages
 
-Accept questions beyond the initial German and English focus while preserving correct retrieval across German and English archive content.
+Accept questions and archive documents beyond the initial English-only focus while preserving correct retrieval across English and every explicitly supported additional language.
 
 Language detection, query translation, multilingual embeddings, reranking, and citation rendering require evaluation per supported language.
 

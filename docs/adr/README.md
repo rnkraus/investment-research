@@ -21,8 +21,8 @@ Write the ADR immediately before the decision becomes an implementation constrai
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
-| ADR-0001 | Modular monolith with asynchronous workers | Repository and application boundaries are finalized | M0 |
-| ADR-0002 | Canonical versus derived data ownership | Persistent stores and recovery behavior are implemented | M0–M1 |
+| ADR-0001 | Modular monolith with asynchronous workers | M0.0 evidence is reviewed and repository and application boundaries are finalized | M0.0–M0 |
+| ADR-0002 | Canonical versus derived data ownership | M0.0 storage findings are reviewed and persistent-store recovery behavior becomes an implementation constraint | M0–M1 |
 | ADR-0003 | Workspace-isolation strategy | First schema and authorization repositories are implemented | M1 |
 | ADR-0004 | Application-owned RAG core and provider ports | First AI, vector, and object-store adapters are implemented | M1 |
 | ADR-0005 | Stable evidence anchors and versioned processing outputs | Parser, structure-block, chunk, and citation contracts are finalized | M1–M2 |
@@ -65,6 +65,7 @@ Target one to two pages. Link to deeper benchmarks, diagrams, or experiments rat
 
 Review the backlog:
 
+- after M0.0 identifies which proof contracts should be retained;
 - before M0 repository structure becomes difficult to change;
 - before the M1 evidence and storage contracts are finalized;
 - before M4 retrieval and answer behavior is treated as a baseline;

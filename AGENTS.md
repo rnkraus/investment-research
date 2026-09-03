@@ -4,7 +4,7 @@
 
 - Communicate with the user in German unless the user explicitly requests another language.
 - Write source code, identifiers, comments, commit messages, API schemas, and technical Markdown documentation in English.
-- Keep the initial user interface in German and support German and English archive documents in V1.
+- Keep all V1 user-interface text, product messages, demo content, and archive-document support in English. Preserve explicit language metadata and extensible interfaces so additional languages can be added later.
 
 ## Project Contract and Sources of Truth
 
@@ -20,6 +20,8 @@ Use these documents as the project specification:
 - `docs/04-security-and-operations.md` — security and operational requirements.
 - `docs/05-delivery-plan.md` — current milestones, order, and exit gates.
 - `docs/06-future-features.md` — unscheduled ideas, not approved implementation scope.
+- `docs/07-m0-0-architecture-flows.md` — paired target and M0.0 module, workflow, and lifecycle diagrams.
+- `docs/08-m0-0-implementation-plan.md` — implementation-ready M0.0 repository structure, contracts, sequence, and verification gates.
 - `docs/adr/` — accepted architectural decisions when they exist.
 
 Accepted ADRs govern the decisions they address. Keep affected compact documents synchronized with later decisions. Report conflicts instead of choosing silently.
@@ -46,6 +48,8 @@ Follow `docs/02-system-design.md`. The fixed baseline is:
 - Pinecone as a derived, rebuildable dense retrieval index;
 - OpenTelemetry/OpenInference and optional LangSmith for observability, never canonical state;
 - Docker Compose as the local multi-service runtime.
+
+M0.0 is the only approved exception to this full runtime baseline. It is a local-only proof using public or synthetic fixtures and the minimum Next.js, FastAPI, and PostgreSQL path described in `docs/05-delivery-plan.md` and `docs/08-m0-0-implementation-plan.md`. It must not use private data, become publicly reachable, or be treated as satisfying M0 or M1. Model it as a subset of the target system and reuse production module, entity, state, and workflow names wherever their meaning is the same. Preserve reusable application contracts, then replace all M0.0-only storage and execution shortcuts during M0 before continuing to M1.
 
 Use `pnpm` for frontend dependencies and scripts. Keep `pnpm-lock.yaml` under version control once the frontend is scaffolded; do not use npm, Yarn, Bun, or competing frontend lockfiles.
 
@@ -117,6 +121,15 @@ Keep changes focused. Do not perform unrelated cleanup, add private archive data
 Do not commit, push, rewrite history, deploy, publish, or use destructive Git commands without explicit user authorization.
 
 Update the relevant compact document when behavior, architecture, domain semantics, security requirements, or milestone scope changes. Create an ADR only for a significant, cross-cutting, expensive-to-reverse, security-sensitive, or externally binding decision.
+
+## Documentation Maintenance
+
+- Treat documentation as part of the implementation and maintain it continuously in the same change as the behavior, architecture, workflow, configuration, or operational process it describes.
+- Follow documentation best practices: write for the intended audience, keep one clear source of truth, prefer concise links over duplicated content, state scope and assumptions, and keep terminology consistent with the domain model.
+- Keep diagrams, examples, API schemas, repository structures, milestone gates, and ADR references synchronized with the implemented system. Remove obsolete guidance or mark it explicitly as historical or superseded.
+- Document only commands, configuration keys, and behavior that actually exist and have been verified. Use placeholders in examples, never real secrets or private data.
+- Record significant decisions and their trade-offs at the appropriate level: update compact specifications for current behavior and create an ADR only when the repository's ADR criteria are met.
+- Review affected documentation during verification and treat contradictions, stale instructions, and broken links as defects rather than optional cleanup.
 
 ## Verification
 

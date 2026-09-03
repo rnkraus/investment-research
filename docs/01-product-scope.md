@@ -2,8 +2,9 @@
 
 **Status:** Draft v0.1  
 **Product stage:** Production-capable portfolio release  
-**Initial UI language:** German  
-**Document languages:** German and English
+**Initial UI language:** English
+
+**Document languages:** English in V1; additional languages may be added in later reviewed increments
 
 ## 1. Product goal
 
@@ -28,6 +29,8 @@ V1 has:
 - one private owner workspace;
 - one isolated, sanitized, read-only demo workspace;
 - no public registration, teams, billing, or organization management.
+
+All V1 interface text, product messages, demo content, questions, and supported archive documents are English. Document language remains explicit metadata, and interfaces must not assume that English is the only possible future language.
 
 Workspace isolation is required from the first release. The demo must contain no private archive data.
 
@@ -160,7 +163,7 @@ Advanced retrieval methods are adopted only when evaluation shows a material imp
 
 V1 is releasable when:
 
-1. German and English PDFs and pasted text complete the full user journey.
+1. English PDFs and pasted text complete the full user journey.
 2. A representative 50-page text PDF meets the provisional processing objective.
 3. Exact, lexical, semantic, and hybrid search return useful results.
 4. Every archive-derived answer statement passes server-side evidence validation.

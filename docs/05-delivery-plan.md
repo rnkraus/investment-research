@@ -1,8 +1,9 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Draft v0.1  
-**Approach:** Local-first, vertical slices, evidence before agents  
-**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md)
+**Status:** Draft v0.2 — M0.0 ready for implementation
+**Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
+
+**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
 
 ## 1. Delivery strategy
 
@@ -16,8 +17,9 @@ Then improve reliability, retrieval quality, user experience, and operations aro
 
 Working rules:
 
+- prove the core product and evidence contract in M0.0 before building the production-shaped local stack;
 - deliver end-to-end behavior instead of completing one technical layer at a time;
-- keep the application local in Docker Compose until the core journey is reliable;
+- keep M0.0 local-only and, from M0 onward, keep the application in Docker Compose until the core journey is reliable;
 - use a small public fixture corpus before a real private archive exists;
 - separate deterministic correctness tests from later corpus-quality evaluation;
 - version prompts, models, parsers, chunks, embeddings, and retrieval configuration from the start;
@@ -26,7 +28,7 @@ Working rules:
 
 ## 2. Definition of done
 
-A milestone is complete only when:
+M0.0 is governed by its narrower proof-specific constraints and exit gate. For M0 through M9, a milestone is complete only when:
 
 - its user-visible path works end to end;
 - important failure and retry behavior is implemented;
@@ -41,6 +43,7 @@ A milestone is complete only when:
 
 | Milestone | Outcome | Main exit gate |
 |---|---|---|
+| M0.0 — Lean proof of value | The core archive promise is demonstrated with minimal local infrastructure | One known question produces a validated answer whose citation opens the exact fixture location |
 | M0 — Engineering foundation | Reproducible local development and basic delivery checks | One command starts the stack and automated checks pass |
 | M1 — Thin vertical slice | One document can produce one validated cited answer | Citation opens the exact original location |
 | M2 — Reliable ingestion | Imports, retries, versions, reprocessing, and deletion are consistent | Failure and stale-index scenarios preserve canonical state |
@@ -54,16 +57,60 @@ A milestone is complete only when:
 
 Milestones are sequential release gates, not fixed-duration sprints. Small refactors and documentation updates happen continuously.
 
-## 4. M0 — Engineering foundation
+## 4. M0.0 — Lean proof of value
+
+M0.0 is a deliberately constrained, local-only walking skeleton. It validates the product's highest-risk promise before the full production-shaped runtime is assembled. It is not a releasable V1 environment and does not replace any M0–M9 gate.
+
+The target-to-M0.0 module and workflow mappings are maintained in [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md). The exact repository structure, contracts, implementation order, and verification gates are maintained in [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md).
 
 ### Build
 
-- Establish the repository structure for web, API, workers, shared contracts, migrations, tests, and documentation.
+1. Freeze the redistributable English PDF fixture, its checksum, the answerable and unanswerable questions, and their exact expected page and passage citations.
+2. Scaffold the minimum pnpm/Next.js and uv/FastAPI applications, PostgreSQL development service, automated checks, and documented local commands.
+3. Establish Alembic immediately and migrate the minimum canonical evidence spine rather than creating tables from application startup code.
+4. Establish the Pydantic/OpenAPI HTTP and validated-stream contracts and derive the frontend TypeScript contract from them.
+5. Resolve a fixed local development identity and workspace on the server, and enforce the workspace in every repository, storage, retrieval, and citation operation.
+6. Capture the fixture through the production `ObjectStorage` port backed by immutable development-only local storage.
+7. Create a canonical `ProcessingRun` and execute it through a separate, bounded, single-job development runner without Celery or Redis.
+8. Parse structure and pages, create versioned chunks, and write a versioned PostgreSQL `tsvector` with a GIN index.
+9. Run deterministic PostgreSQL lexical retrieval for the known answerable and deliberately unanswerable questions.
+10. Generate a typed statement-and-evidence response through an `AnswerGenerator` port, using the deterministic adapter by default and an approved provider adapter only as an opt-in public-fixture smoke test.
+11. Apply the real server-side evidence validator before emitting statement or citation events, then open the immutable original at the cited page and passage.
+12. Automate the acceptance cases and record assumptions, measured effort, observed failure modes, and the exact adapter replacements required by M0.
+
+### Constraints
+
+- Use only synthetic, openly licensed, or otherwise redistributable fixtures.
+- Bind services to local development access only; no public deployment or private archive data is allowed.
+- Do not add Pinecone, Redis, Celery, MinIO, LangSmith, reranking, conversation memory, lifecycle workflows, or future-feature modules.
+- Treat M0.0 as a subset of the target system: reuse the production module, entity, state, and workflow names whenever their meaning is the same.
+- Keep final application-owned contracts, module directions, and migrations; mark only the local storage adapter, local processing runner, and deterministic fixture generator as M0.0 implementations.
+- Return accepted upload metadata and processing status from the API; never perform PDF parsing on the API event loop or share SQLAlchemy sessions across requests and runner executions.
+- Emit progress before validation if useful, but emit no answer statement or citation until the complete typed result passes server-side validation.
+- Use the smallest physical schema that preserves the selected domain semantics; do not create empty modules or tables solely because the conceptual V1 model contains them.
+- A shortcut cannot become production behavior merely because the proof succeeds.
+
+### Exit gate
+
+- The answerable fixture produces only validated archive-derived statements and opens the exact expected source location.
+- The unanswerable fixture returns explicit insufficient coverage without filling the gap from general model knowledge.
+- A tampered evidence identifier, span, inactive version, or cross-workspace lookup is rejected server-side.
+- A fresh PostgreSQL database can be migrated to the M0.0 head and the application does not create or alter schema at runtime.
+- Formatting, linting, type checking, backend unit and integration tests, frontend contract checks, and the API acceptance path pass through documented commands.
+- The proof identifies which contracts can be retained and which temporary implementations M0 must replace.
+- No M0.0-only storage or execution shortcut is treated as satisfying an M0 or M1 reliability gate.
+
+## 5. M0 — Engineering foundation
+
+### Build
+
+- Retain proven M0.0 contracts where they preserve the target architecture and replace all development-only storage and execution shortcuts.
+- Extend the M0.0 repository structure for the production worker process, operational adapters, and broader tests without moving the established application modules.
 - Add Dockerfiles and Docker Compose for Next.js, FastAPI, Celery, PostgreSQL, Redis, and MinIO.
 - Add configuration validation, ignored local secrets, health checks, and structured logging.
-- Establish database migrations and a repeatable local reset/seed workflow that cannot target broad filesystem paths.
-- Add formatting, linting, type checking, unit-test commands, pre-commit checks, and CI.
-- Define application-owned interfaces for object storage, vector retrieval, embeddings, reranking, generation, and tracing.
+- Continue the M0.0 Alembic history and add a repeatable local reset/seed workflow that cannot target broad filesystem paths.
+- Extend the M0.0 formatting, linting, type checking, and test commands with pre-commit checks and full container CI.
+- Retain the M0.0 object-storage and generation ports and add application-owned interfaces for vector retrieval, embeddings, reranking, and tracing.
 
 ### Exit gate
 
@@ -71,10 +118,11 @@ Milestones are sequential release gates, not fixed-duration sprints. Small refac
 - Web, API, worker, database, queue, and object storage health checks pass.
 - CI builds the containers and runs the initial automated checks.
 - Secrets and generated data are not committed.
+- The M0.0 acceptance cases still pass through the production-shaped local service boundaries.
 
-## 5. M1 — Thin vertical slice
+## 6. M1 — Thin vertical slice
 
-The first slice intentionally supports one simple document path before broad feature coverage.
+The first production-shaped slice hardens the M0.0 product proof and intentionally supports one simple document path before broad feature coverage.
 
 ### Build
 
@@ -93,15 +141,15 @@ The first slice intentionally supports one simple document path before broad fea
 
 Use a tiny redistributable fixture set containing at least:
 
-- one German document;
-- one English document;
+- one English PDF document;
+- one English pasted-text document;
 - one answerable question;
 - one deliberately unanswerable question;
 - one citation with a known page and passage.
 
 The answerable case must cite the correct original location. The unanswerable case must not be completed from general model knowledge.
 
-## 6. M2 — Reliable ingestion and lifecycle
+## 7. M2 — Reliable ingestion and lifecycle
 
 ### Build
 
@@ -119,7 +167,7 @@ The answerable case must cite the correct original location. The unanswerable ca
 
 Replaying any job or outbox event produces the same final state. Deleted or inactive content cannot become evidence even when stale vectors still exist.
 
-## 7. M3 — Archive and discovery
+## 8. M3 — Archive and discovery
 
 ### Build
 
@@ -135,7 +183,7 @@ Replaying any job or outbox event produces the same final state. Deleted or inac
 
 The fixture corpus can be found through exact ticker lookup, lexical wording, semantic paraphrase, metadata filtering, and document navigation without using chat.
 
-## 8. M4 — Production-shaped direct RAG
+## 9. M4 — Production-shaped direct RAG
 
 ### Build
 
@@ -162,7 +210,7 @@ Approved fixture cases demonstrate:
 - correct follow-up context without treating conversation history as evidence;
 - different results for public and personal archive time where expected.
 
-## 9. M5 — Local release hardening
+## 10. M5 — Local release hardening
 
 ### Build and exercise
 
@@ -180,7 +228,7 @@ Approved fixture cases demonstrate:
 
 Every local release gate in `04-security-and-operations.md` passes. The complete product journey can be demonstrated from a clean environment without manual database repair.
 
-## 10. M6 — Public portfolio demo
+## 11. M6 — Public portfolio demo
 
 Do not begin this milestone until the local product is stable.
 
@@ -203,7 +251,7 @@ Do not begin this milestone until the local product is stable.
 
 All public-demo release gates in `04-security-and-operations.md` pass, including restore and rollback exercises. No private archive content or credential is present in the demo environment.
 
-## 11. M7 — Evaluation with a representative corpus
+## 12. M7 — Evaluation with a representative corpus
 
 Full quality evaluation begins when representative documents and real research questions exist. Earlier milestones still use deterministic fixtures and regression tests.
 
@@ -228,7 +276,7 @@ Full quality evaluation begins when representative documents and real research q
 
 The chosen baseline has documented quality, latency, and cost. High-risk retrieval or generation changes cannot be released when they regress agreed critical metrics beyond the accepted tolerance.
 
-## 12. M8 — Structured research knowledge
+## 13. M8 — Structured research knowledge
 
 Add one evidence-backed capability at a time:
 
@@ -243,7 +291,7 @@ Add one evidence-backed capability at a time:
 
 Each increment requires typed extraction, provenance, confidence, review state, correction behavior, and evaluation examples. Model output remains a suggestion until explicitly accepted where acceptance is required.
 
-## 13. M9 — Bounded agentic research
+## 14. M9 — Bounded agentic research
 
 Introduce LangGraph only when:
 
@@ -256,11 +304,12 @@ Start with one graph that plans a bounded set of archive searches, checks eviden
 
 Require tool allowlists, workspace enforcement, step/time/token/cost budgets, checkpoints, termination tests, traces, and agent-specific evaluation. The graph uses the existing retrieval and evidence services; it does not create a parallel RAG implementation.
 
-## 14. Immediate next actions
+## 15. Immediate next actions
 
 1. Review and accept the five compact design documents.
-2. Create only the ADRs needed before implementation starts.
-3. Define the M1 acceptance fixtures and exact expected citations.
-4. Scaffold the repository and Docker Compose environment.
-5. Implement M1 as the first complete vertical slice.
-6. Update this plan after each milestone based on measured results and newly available data.
+2. Define the shared M0.0/M1 acceptance fixtures and exact expected citations.
+3. Implement and evaluate M0.0 within its explicit local-only constraints.
+4. Use the M0.0 findings to create only the ADRs needed before M0 implementation constraints are fixed.
+5. Complete M0 and replace every M0.0-only shortcut with the production-shaped local stack.
+6. Implement M1 through the M0 service boundaries, then continue sequentially through M9.
+7. Update this plan after each milestone based on measured results and newly available data.

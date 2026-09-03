@@ -1,8 +1,8 @@
 # Investment Research Archive — Security and Operations
 
-**Status:** Draft v0.1  
+**Status:** Draft v0.2
 **Scope:** V1 local runtime and requirements for a later public deployment  
-**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md)
+**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
 
 ## 1. Goals and priorities
 
@@ -37,6 +37,23 @@ Before private or sensitive content is enabled, each provider must be reviewed f
 - contractual and account settings.
 
 The demo workspace contains only synthetic, openly licensed, or otherwise redistributable material.
+
+### M0.0 proof constraints
+
+The pre-foundation M0.0 proof is not a release environment. It must:
+
+- use only synthetic, openly licensed, or otherwise redistributable fixtures;
+- remain reachable only from the local development environment;
+- contain no private, sensitive, or personal archive data;
+- use an external AI provider only when the fixture is public and that provider use is explicitly approved;
+- derive the fixed local identity and workspace context on the server rather than accepting client-supplied authorization scope;
+- allowlist the supported PDF type, verify its content signature, enforce byte, page, memory, and processing-time limits, and use server-generated storage keys outside the web application root;
+- keep original artifacts immutable, checksum-recorded, non-executable, and accessible only through an authorized API route;
+- run parsing in the separate bounded development runner with a new database session and without application secrets or unnecessary network access;
+- validate typed generation output and every statement-to-evidence relationship before emitting answer content;
+- exclude public hosting and make no availability, durability, retry, backup, or deletion guarantee.
+
+All M0.0-only data may be discarded before M0. No fixture or result is migrated into a private or demo workspace unless it independently satisfies the later provenance, licensing, and isolation requirements.
 
 ## 3. Trust boundaries and main threats
 
