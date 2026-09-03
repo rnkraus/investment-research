@@ -45,59 +45,58 @@ Create files only when their implementation step begins; do not scaffold empty p
 ├── package.json                         # root pnpm scripts after they exist
 ├── pnpm-workspace.yaml
 ├── pnpm-lock.yaml
-├── apps/
-│   ├── web/
-│   │   ├── package.json
-│   │   ├── next.config.ts
-│   │   ├── tsconfig.json
-│   │   └── src/
-│   │       ├── app/
-│   │       │   ├── layout.tsx
-│   │       │   ├── page.tsx
-│   │       │   ├── documents/[documentId]/page.tsx
-│   │       │   └── research/page.tsx
-│   │       ├── features/
-│   │       │   ├── documents/
-│   │       │   └── research/
-│   │       ├── components/ui/           # selected shadcn/ui source components
-│   │       └── lib/api/
-│   │           ├── client.ts
-│   │           └── generated/            # generated OpenAPI types; no hand edits
-│   └── api/
-│       ├── pyproject.toml
-│       ├── uv.lock
-│       ├── alembic.ini
-│       ├── migrations/
-│       │   ├── env.py
-│       │   └── versions/
-│       ├── src/investment_research/
-│       │   ├── main.py                   # FastAPI composition root entry point
-│       │   ├── bootstrap.py              # dependency wiring only
-│       │   ├── settings.py               # validated non-secret settings
-│       │   ├── api/
-│       │   │   ├── dependencies.py
-│       │   │   ├── errors.py
-│       │   │   └── routes/
-│       │   │       ├── health.py
-│       │   │       ├── documents.py
-│       │   │       ├── processing.py
-│       │   │       └── research.py
-│       │   ├── modules/
-│       │   │   ├── identity/
-│       │   │   ├── documents/
-│       │   │   ├── processing/
-│       │   │   ├── search/
-│       │   │   ├── research/
-│       │   │   └── evidence/
-│       │   └── infrastructure/
-│       │       ├── database/
-│       │       ├── object_storage/
-│       │       ├── parsing/
-│       │       └── generation/
-│       └── tests/
-│           ├── unit/
-│           ├── integration/
-│           └── acceptance/
+├── frontend/
+│   ├── package.json
+│   ├── next.config.ts
+│   ├── tsconfig.json
+│   └── src/
+│       ├── app/
+│       │   ├── layout.tsx
+│       │   ├── page.tsx
+│       │   ├── documents/[documentId]/page.tsx
+│       │   └── research/page.tsx
+│       ├── features/
+│       │   ├── documents/
+│       │   └── research/
+│       ├── components/ui/               # selected shadcn/ui source components
+│       └── lib/api/
+│           ├── client.ts
+│           └── generated/                # generated OpenAPI types; no hand edits
+├── backend/
+│   ├── pyproject.toml
+│   ├── uv.lock
+│   ├── alembic.ini
+│   ├── migrations/
+│   │   ├── env.py
+│   │   └── versions/
+│   ├── src/investment_research/
+│   │   ├── main.py                       # FastAPI composition root entry point
+│   │   ├── bootstrap.py                  # dependency wiring only
+│   │   ├── settings.py                   # validated non-secret settings
+│   │   ├── api/
+│   │   │   ├── dependencies.py
+│   │   │   ├── errors.py
+│   │   │   └── routes/
+│   │   │       ├── health.py
+│   │   │       ├── documents.py
+│   │   │       ├── processing.py
+│   │   │       └── research.py
+│   │   ├── modules/
+│   │   │   ├── identity/
+│   │   │   ├── documents/
+│   │   │   ├── processing/
+│   │   │   ├── search/
+│   │   │   ├── research/
+│   │   │   └── evidence/
+│   │   └── infrastructure/
+│   │       ├── database/
+│   │       ├── object_storage/
+│   │       ├── parsing/
+│   │       └── generation/
+│   └── tests/
+│       ├── unit/
+│       ├── integration/
+│       └── acceptance/
 ├── fixtures/
 │   └── m0_0/
 │       ├── manifest.yaml                 # license, checksum, questions, expected spans
@@ -113,7 +112,7 @@ Each backend module starts with only the files it needs from this set:
 - `ports.py` for application-owned external interfaces;
 - `persistence.py` for that module's SQLAlchemy mappings and repository implementations.
 
-The composition root may import infrastructure implementations. Domain and application code must not import FastAPI routes or concrete provider/storage adapters. One module must not import another module's `persistence.py`.
+`backend/` contains the shared Python application package used by the FastAPI process, the M0.0 development runner, and the later Celery worker; it is not limited to HTTP API code. The composition root may import infrastructure implementations. Domain and application code must not import FastAPI routes or concrete provider/storage adapters. One module must not import another module's `persistence.py`.
 
 ## 4. M0.0 contracts
 
