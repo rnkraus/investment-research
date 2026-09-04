@@ -1,0 +1,123 @@
+# Investment Research Archive
+
+Investment Research Archive is an evidence-grounded research application. It will import research documents, preserve their originals, make them searchable, and answer questions with exact, verifiable citations.
+
+The current M0.0 milestone is a local-only proof of the smallest end-to-end path. Use only public or synthetic fixtures. It is not a production deployment, trading system, or investment-advice application.
+
+## Prerequisites
+
+- Node.js 24
+- pnpm 11.24
+- Python 3.14
+- uv 0.12.7 or newer within the 0.12 release line
+- Docker with Docker Compose
+
+The pinned package-manager and runtime versions are also recorded in `package.json`, `.nvmrc`, `.python-version`, and `backend/pyproject.toml`.
+
+## Install
+
+Install the frontend dependencies from the repository root:
+
+```shell
+pnpm install --frozen-lockfile
+```
+
+Install the backend dependencies:
+
+```shell
+cd backend
+uv sync --locked
+cd ..
+```
+
+Create the local Docker Compose configuration:
+
+```shell
+cp .env.example .env
+```
+
+Replace the password placeholder in `.env` with a local-only password. The file is ignored by Git and must never be committed. Docker Compose reads this file; the backend does not currently load it.
+
+## Run locally
+
+Start PostgreSQL from the repository root:
+
+```shell
+docker compose up -d postgres
+docker compose ps
+```
+
+Start the API in a second terminal:
+
+```shell
+cd backend
+uv run uvicorn investment_research.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Start the web application in a third terminal from the repository root:
+
+```shell
+pnpm dev
+```
+
+Open the web application at <http://127.0.0.1:3000>. The API health endpoint is available at <http://127.0.0.1:8000/health>.
+
+Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
+
+```shell
+docker compose down
+```
+
+## Verify changes
+
+Run the frontend checks from the repository root:
+
+```shell
+pnpm format
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Run the backend checks from `backend/`:
+
+```shell
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy
+uv run pytest
+```
+
+The same deterministic checks run in CI. Database migration verification will be added when the M0.0 schema and Alembic migrations are introduced.
+
+The following security checks depend on external registries and are currently run manually:
+
+```shell
+pnpm audit
+pnpm audit signatures
+cd backend
+uv audit
+```
+
+## Current architecture
+
+- `frontend/` contains the Next.js, TypeScript, and Tailwind CSS web application.
+- `backend/` contains the FastAPI application and its tests.
+- `compose.yaml` provides a loopback-only PostgreSQL service for local development.
+- The frontend and API currently provide foundation smoke paths. PostgreSQL is intentionally not connected to application persistence until the subsequent M0.0 schema and repository steps.
+
+## Project documentation
+
+The compact project specifications are the sources of truth:
+
+- [Product scope](docs/01-product-scope.md)
+- [System design](docs/02-system-design.md)
+- [Domain model](docs/03-domain-model.md)
+- [Security and operations](docs/04-security-and-operations.md)
+- [Delivery plan](docs/05-delivery-plan.md)
+- [Future features](docs/06-future-features.md)
+- [M0.0 architecture flows](docs/07-m0-0-architecture-flows.md)
+- [M0.0 implementation plan](docs/08-m0-0-implementation-plan.md)
+
+Accepted architectural decisions are recorded in [`docs/adr/`](docs/adr/).

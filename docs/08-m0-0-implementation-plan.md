@@ -211,7 +211,7 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
 - Add PostgreSQL as the only M0.0 service in `compose.yaml`; bind it to local development access.
 - Define validated non-secret settings and placeholder-only example configuration if configuration requires it.
 - Add the smallest real formatting, linting, type-checking, and test scripts; document their actual commands only after they exist.
-- Add a minimal CI job for those checks and migration verification. Full container CI remains M0.
+- Add minimal CI jobs for the checks that exist at this step. Extend them with migration verification when Step 3 introduces Alembic and the first migration. Full container CI remains M0.
 
 **Gate:** web and API start, PostgreSQL is reachable, health succeeds, and the initial checks pass from a clean checkout.
 
