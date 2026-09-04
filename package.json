@@ -1,0 +1,18 @@
+{
+  "name": "investment-research",
+  "private": true,
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "build": "pnpm --filter @investment-research/frontend build",
+    "dev": "pnpm --filter @investment-research/frontend dev",
+    "format": "pnpm --filter @investment-research/frontend format",
+    "format:write": "pnpm --filter @investment-research/frontend format:write",
+    "lint": "pnpm --filter @investment-research/frontend lint",
+    "test": "pnpm --filter @investment-research/frontend test",
+    "typecheck": "pnpm --filter @investment-research/frontend typecheck"
+  }
+}
