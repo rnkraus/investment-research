@@ -30,6 +30,8 @@ uv sync --locked
 cd ..
 ```
 
+Backend dependency synchronization performs the configured fail-closed malware check against OSV and therefore requires the OSV service to be reachable.
+
 Create the local Docker Compose configuration:
 
 ```shell
@@ -91,13 +93,35 @@ uv run pytest
 
 The same deterministic checks run in CI. Database migration verification will be added when the M0.0 schema and Alembic migrations are introduced.
 
+## Update API contracts
+
+Pydantic models in `backend/src/investment_research/api/contracts.py` are the source of truth. Generated files under `frontend/src/lib/api/generated/` must not be edited manually.
+
+After changing an API contract, regenerate both artifacts:
+
+```shell
+cd backend
+uv run python scripts/export_openapi.py
+cd ..
+pnpm --filter @investment-research/frontend contracts:generate
+```
+
+Verify each side independently:
+
+```shell
+cd backend
+uv run python scripts/export_openapi.py --check
+cd ..
+pnpm --filter @investment-research/frontend contracts:check
+```
+
 The following security checks depend on external registries and are currently run manually:
 
 ```shell
 pnpm audit
 pnpm audit signatures
 cd backend
-uv audit
+uv audit --locked
 ```
 
 ## Current architecture

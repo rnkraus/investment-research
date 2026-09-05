@@ -65,6 +65,8 @@ Create files only when their implementation step begins; do not scaffold empty p
 ├── backend/
 │   ├── pyproject.toml
 │   ├── uv.lock
+│   ├── scripts/
+│   │   └── export_openapi.py            # generate or verify the committed API contract
 │   ├── alembic.ini
 │   ├── migrations/
 │   │   ├── env.py
