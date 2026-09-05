@@ -1,11 +1,12 @@
 """Process health endpoint."""
 
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
-from investment_research.settings import Settings, get_settings
+from investment_research import __version__
+from investment_research.api.dependencies import ContainerDependency
 
 router = APIRouter(tags=["health"])
 
@@ -21,7 +22,7 @@ class HealthResponse(BaseModel):
 
 
 @router.get("/health", response_model=HealthResponse)
-def read_health(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
+def read_health(container: ContainerDependency) -> HealthResponse:
     """Report API process liveness."""
 
-    return HealthResponse(service=settings.app_name, version="0.0.0")
+    return HealthResponse(service=container.settings.app_name, version=__version__)
