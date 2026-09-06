@@ -164,6 +164,7 @@ class StructureBlockRow(Base):
     __tablename__ = "structure_blocks"
     __table_args__ = (
         UniqueConstraint("workspace_id", "id"),
+        UniqueConstraint("workspace_id", "document_version_id", "id"),
         UniqueConstraint("workspace_id", "processing_run_id", "document_version_id", "id"),
         UniqueConstraint("workspace_id", "processing_run_id", "ordinal"),
         ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
