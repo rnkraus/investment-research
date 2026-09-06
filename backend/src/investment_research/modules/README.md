@@ -8,6 +8,7 @@ This directory contains business capabilities with explicit ownership boundaries
 | ------------ | ------------------------------------------------------------------------------- |
 | `identity/`  | Resolves the trusted user and workspace boundary for each operation.            |
 | `documents/` | Owns logical documents, immutable versions, originals, and eligible retrieval. |
+| `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.       |
 
 ## Target dependency direction
 
