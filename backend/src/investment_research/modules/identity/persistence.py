@@ -22,7 +22,13 @@ class WorkspaceRow(Base):
     """Persisted workspace authorization boundary."""
 
     __tablename__ = "workspaces"
-    __table_args__ = (CheckConstraint("char_length(btrim(name)) > 0", name="non_empty_name"),)
+    __table_args__ = (
+        CheckConstraint("char_length(btrim(name)) > 0", name="non_empty_name"),
+        CheckConstraint(
+            "workspace_type IN ('private', 'sanitized_demo')",
+            name="workspace_type",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -35,7 +41,7 @@ class WorkspaceRow(Base):
             WorkspaceType,
             name="workspace_type",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,

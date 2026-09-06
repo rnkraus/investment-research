@@ -142,6 +142,10 @@ class RetrievalCandidateRow(Base):
             "AND reranker_score < 'Infinity'::double precision)",
             name="finite_reranker_score",
         ),
+        CheckConstraint(
+            "origin IN ('LEXICAL', 'DENSE', 'STRUCTURED')",
+            name="retrieval_origin",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -153,7 +157,7 @@ class RetrievalCandidateRow(Base):
             RetrievalOrigin,
             name="retrieval_origin",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,

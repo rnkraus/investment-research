@@ -51,6 +51,10 @@ class ResearchRequestRow(Base):
             "AND cutoff_at IS NOT NULL)",
             name="consistent_temporal_cutoff",
         ),
+        CheckConstraint(
+            "temporal_mode IN ('CURRENT', 'PUBLIC_KNOWLEDGE', 'PERSONAL_ARCHIVE')",
+            name="temporal_mode",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -65,7 +69,7 @@ class ResearchRequestRow(Base):
             TemporalMode,
             name="temporal_mode",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,
@@ -156,6 +160,16 @@ class AnswerRow(Base):
             "AND coverage_status IS NULL AND rendered_text IS NULL)",
             name="consistent_output_state",
         ),
+        CheckConstraint(
+            "state IN ('REQUESTED', 'RETRIEVING', 'GENERATING', 'VALIDATING', "
+            "'STREAMED', 'INSUFFICIENT', 'REJECTED', 'REGENERATED')",
+            name="answer_state",
+        ),
+        CheckConstraint(
+            "coverage_status IS NULL OR coverage_status IN "
+            "('COMPLETE', 'PARTIAL', 'INSUFFICIENT', 'CONFLICTING')",
+            name="coverage_status",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -168,7 +182,7 @@ class AnswerRow(Base):
             AnswerState,
             name="answer_state",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,
@@ -180,7 +194,7 @@ class AnswerRow(Base):
             CoverageStatus,
             name="coverage_status",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,
@@ -244,6 +258,11 @@ class AnswerStatementRow(Base):
         ),
         CheckConstraint("ordinal >= 0", name="non_negative_ordinal"),
         CheckConstraint("text ~ '[^[:space:]]'", name="non_empty_text"),
+        CheckConstraint("statement_type IN ('ARCHIVE_DERIVED')", name="statement_type"),
+        CheckConstraint(
+            "support_status IN ('VALIDATED')",
+            name="statement_support_status",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -256,7 +275,7 @@ class AnswerStatementRow(Base):
             StatementType,
             name="statement_type",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,
@@ -268,7 +287,7 @@ class AnswerStatementRow(Base):
             StatementSupportStatus,
             name="statement_support_status",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,

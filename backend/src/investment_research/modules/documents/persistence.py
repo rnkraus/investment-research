@@ -57,6 +57,7 @@ class DocumentRow(Base):
             "document_type ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'",
             name="valid_document_type",
         ),
+        CheckConstraint("lifecycle_state IN ('ACTIVE')", name="document_lifecycle_state"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -67,7 +68,7 @@ class DocumentRow(Base):
             DocumentLifecycleState,
             name="document_lifecycle_state",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,
@@ -193,6 +194,7 @@ class OriginalArtifactRow(Base):
         CheckConstraint("byte_size > 0", name="positive_byte_size"),
         CheckConstraint("page_count > 0", name="positive_page_count"),
         CheckConstraint("checksum_sha256 ~ '^[a-f0-9]{64}$'", name="valid_checksum_sha256"),
+        CheckConstraint("media_type IN ('application/pdf')", name="original_media_type"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -204,7 +206,7 @@ class OriginalArtifactRow(Base):
             OriginalMediaType,
             name="original_media_type",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=64,

@@ -135,6 +135,10 @@ class StatementEvidenceRow(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint("display_order >= 0", name="non_negative_display_order"),
+        CheckConstraint(
+            "relationship IN ('SUPPORTS', 'CONFLICTS')",
+            name="evidence_relationship",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -146,7 +150,7 @@ class StatementEvidenceRow(Base):
             EvidenceRelationship,
             name="evidence_relationship",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,
@@ -206,6 +210,12 @@ class AnswerValidationRow(Base):
             "char_length(btrim(validation_config_version)) > 0",
             name="non_empty_validation_config_version",
         ),
+        CheckConstraint(
+            "rule IN ('WORKSPACE_SCOPE', 'ACTIVE_DOCUMENT_VERSION', "
+            "'TEMPORAL_ELIGIBILITY', 'RETRIEVAL_CANDIDATE', 'EXACT_SOURCE_SPAN', "
+            "'STATEMENT_SUPPORT', 'COVERAGE')",
+            name="validation_rule",
+        ),
         Index(
             "ux_answer_validations_answer_rule",
             "workspace_id",
@@ -234,7 +244,7 @@ class AnswerValidationRow(Base):
             ValidationRule,
             name="validation_rule",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=64,
