@@ -59,6 +59,8 @@ The frontend accesses data through FastAPI, never directly through PostgreSQL, P
 
 Do not introduce AWS-specific infrastructure, Kubernetes, microservices, or additional distributed services before a measured requirement and accepted architectural decision justify them.
 
+Before proposing or modifying any dependency or version constraint, research the currently recommended stable versions using authoritative, up-to-date sources such as maintainer documentation, changelogs, the official package registry, and relevant security advisories. Evaluate compatibility with the project's pinned runtimes, frameworks, platforms, peer dependencies, and lockfile; confirm that the candidate is maintained, not yanked or an unapproved prerelease, has no applicable known vulnerability, and satisfies the repository's release-age policy. Prefer the safest well-supported version for this project rather than assuming the newest release is automatically best. Explain the recommendation and security or compatibility trade-offs before changing the dependency declaration, then lock and verify the exact resolved version with the repository's package manager and applicable audit checks.
+
 Before adding, replacing, or broadly upgrading a production dependency, explain the need and trade-offs and receive explicit user confirmation. Add an ADR when the choice is architecturally significant.
 
 ## RAG and Data Invariants
@@ -116,7 +118,32 @@ Before modifying the repository:
 
 Prefer complete vertical slices over broad unfinished infrastructure. Long-running parsing, enrichment, embedding, and indexing belong in workers. Optional AI enrichment must not block a parsed document from becoming searchable. Use Alembic for schema changes and public, synthetic, openly licensed, or redistributable test fixtures.
 
+### Implementation step order
+
+An implementation step is one explicitly numbered, bounded step in the active implementation plan, including its stated scope and completion gate. For example, `Step 3 — Migration and scoped persistence` is one implementation step. It is not an individual file, commit, or the entire milestone.
+
+Complete each implementation step in this order:
+
+1. Implement and verify all backend behavior required by the step.
+2. Add or update the CI checks required to verify that behavior automatically.
+3. Implement and verify the frontend behavior required by the same step.
+4. Run the step's complete verification gate before starting the next implementation step.
+
+If a step requires no frontend changes, do not create artificial frontend work. Run the existing frontend checks to confirm compatibility, complete the step's gate, and then continue.
+
+### Implementation work blocks
+
+Before starting implementation, define the current coherent work block and its verification gate. A work block is the smallest meaningful aspect, module, or plan subsection that requires several related files to produce a reviewable result; it is narrower than an implementation step.
+
+Within an approved work block, create or modify its related files in a sensible dependency order without pausing for approval after every file. After each file, promptly give the user a concise update that names the file, explains what changed and why, and describes its relationship to the surrounding code. Continue automatically to the next file in the same block unless the user asks to pause.
+
+Resolve formatting, linting, typing, and test failures that belong to the current work block before declaring it complete. After the block's verification gate passes, summarize its files, behavior, data flow, and checks, then pause for the user's explicit approval before starting the next work block.
+
+Pause earlier if progress requires an unexpected dependency, architectural or security decision, destructive action, external write, or material expansion beyond the approved work block.
+
 Keep changes focused. Do not perform unrelated cleanup, add private archive data, or weaken architecture, validation, isolation, sandbox, or security controls to make a task pass.
+
+When requesting approval to run a shell command, include the exact command in the user-facing approval question. Redact secret or sensitive values when necessary and explicitly state that the displayed command was redacted.
 
 Do not commit, push, rewrite history, deploy, publish, or use destructive Git commands without explicit user authorization.
 
