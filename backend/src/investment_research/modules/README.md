@@ -10,6 +10,7 @@ This directory contains business capabilities with explicit ownership boundaries
 | `documents/`  | Owns logical documents, immutable versions, originals, and eligible retrieval. |
 | `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.       |
 | `search/`     | Owns reproducible retrieval runs and their ordered candidate records.          |
+| `research/`   | Owns research requests, versioned answers, and validated statements.           |
 
 ## Target dependency direction
 
