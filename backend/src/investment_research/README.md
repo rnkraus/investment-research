@@ -17,13 +17,21 @@
 ```mermaid
 flowchart TD
     SETTINGS[Validated settings] --> MAIN[create_app]
-    MAIN --> BOOT[build_container]
+    MAIN --> LIFE[FastAPI lifespan]
+    LIFE -->|startup| BOOT[build_container]
+    BOOT --> ENGINE[SQLAlchemy engine]
+    ENGINE --> SESSIONS[Session factory]
     BOOT --> STATE[Application container]
     MAIN --> ROUTES[HTTP routes]
     MAIN --> OPENAPI[OpenAPI contract]
     STATE --> ROUTES
+    LIFE -->|shutdown| CLOSE[Dispose engine pool]
 ```
 
 `main.py` and `bootstrap.py` are the outer composition layer. Module domain and application files must remain independent of this layer. Application startup must never create or mutate database schemas.
+
+Importing `create_app` or exporting OpenAPI does not allocate database resources. The FastAPI
+lifespan creates them only when the server starts and releases them during shutdown. Sessions are
+still created per unit of work; they are never shared across requests or runner executions.
 
 The package follows the boundaries in [`docs/02-system-design.md`](../../../docs/02-system-design.md#4-component-boundaries).

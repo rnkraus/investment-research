@@ -53,8 +53,13 @@ Start the API in a second terminal:
 
 ```shell
 cd backend
-uv run uvicorn investment_research.main:app --reload --host 127.0.0.1 --port 8000
+export INVESTMENT_RESEARCH_DATABASE_URL='postgresql+psycopg://investment_research:replace-with-local-password@127.0.0.1:5432/investment_research'
+uv run uvicorn investment_research.main:create_app --factory --reload --host 127.0.0.1 --port 8000
 ```
+
+Use the same local password that you configured for the Compose PostgreSQL service. The API
+factory validates this URL, creates the process-wide database resources during startup, and
+releases them during shutdown. It does not create or migrate tables automatically.
 
 Start the web application in a third terminal from the repository root:
 
@@ -129,7 +134,7 @@ uv audit --locked
 - `frontend/` contains the Next.js, TypeScript, and Tailwind CSS web application.
 - `backend/` contains the FastAPI application and its tests.
 - `compose.yaml` provides a loopback-only PostgreSQL service for local development.
-- The frontend and API currently provide foundation smoke paths. PostgreSQL is intentionally not connected to application persistence until the subsequent M0.0 schema and repository steps.
+- The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories and mappings exist, while Alembic still needs to create the physical PostgreSQL schema.
 
 ## Project documentation
 

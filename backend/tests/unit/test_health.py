@@ -6,18 +6,22 @@ from investment_research import __version__
 from investment_research.main import create_app
 from investment_research.settings import Settings
 
+LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+
 
 def test_health_reports_process_liveness_without_private_details() -> None:
-    client = TestClient(
-        create_app(
-            Settings(
-                app_name="Injected Test Research Archive",
-                environment="test",
-            )
+    application = create_app(
+        Settings.model_validate(
+            {
+                "app_name": "Injected Test Research Archive",
+                "environment": "test",
+                "database_url": LOCAL_DATABASE_URL,
+            }
         )
     )
 
-    response = client.get("/health")
+    with TestClient(application) as client:
+        response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {
