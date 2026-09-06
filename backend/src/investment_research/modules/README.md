@@ -4,11 +4,12 @@ This directory contains business capabilities with explicit ownership boundaries
 
 ## Current modules
 
-| Module       | Responsibility                                                                  |
-| ------------ | ------------------------------------------------------------------------------- |
-| `identity/`  | Resolves the trusted user and workspace boundary for each operation.            |
-| `documents/` | Owns logical documents, immutable versions, originals, and eligible retrieval. |
+| Module        | Responsibility                                                                  |
+| ------------- | ------------------------------------------------------------------------------- |
+| `identity/`   | Resolves the trusted user and workspace boundary for each operation.            |
+| `documents/`  | Owns logical documents, immutable versions, originals, and eligible retrieval. |
 | `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.       |
+| `search/`     | Owns reproducible retrieval runs and their ordered candidate records.          |
 
 ## Target dependency direction
 
