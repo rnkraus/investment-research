@@ -11,6 +11,7 @@ This directory contains business capabilities with explicit ownership boundaries
 | `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.       |
 | `search/`     | Owns reproducible retrieval runs and their ordered candidate records.          |
 | `research/`   | Owns research requests, versioned answers, and validated statements.           |
+| `evidence/`   | Owns exact source spans, evidence links, and validation records.                |
 
 ## Target dependency direction
 
