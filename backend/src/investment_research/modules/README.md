@@ -2,11 +2,12 @@
 
 This directory contains business capabilities with explicit ownership boundaries. Only modules required by the active implementation step are created; planned modules are not added as empty placeholders.
 
-## Current module
+## Current modules
 
-| Module      | Responsibility                                                       |
-| ----------- | -------------------------------------------------------------------- |
-| `identity/` | Resolves the trusted user and workspace boundary for each operation. |
+| Module       | Responsibility                                                                  |
+| ------------ | ------------------------------------------------------------------------------- |
+| `identity/`  | Resolves the trusted user and workspace boundary for each operation.            |
+| `documents/` | Owns logical documents, immutable versions, originals, and eligible retrieval. |
 
 ## Target dependency direction
 
