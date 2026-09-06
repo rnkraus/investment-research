@@ -6,6 +6,8 @@ This directory contains the shared Python application package used by the FastAP
 
 | Path                       | Responsibility                                                                   |
 | -------------------------- | -------------------------------------------------------------------------------- |
+| `alembic.ini`              | Secret-free Alembic paths and logging configuration.                             |
+| `migrations/`              | Reviewed, ordered PostgreSQL schema history and migration environment.           |
 | `pyproject.toml`           | Python package metadata, dependencies, and Ruff, Mypy, and Pytest configuration. |
 | `uv.lock`                  | Reproducible Python dependency resolution.                                       |
 | `scripts/`                 | Checked development utilities, currently OpenAPI export and verification.        |

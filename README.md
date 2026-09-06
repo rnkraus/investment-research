@@ -96,7 +96,17 @@ uv run mypy
 uv run pytest
 ```
 
-The same deterministic checks run in CI. Database migration verification will be added when the M0.0 schema and Alembic migrations are introduced.
+With PostgreSQL running and `INVESTMENT_RESEARCH_DATABASE_URL` configured, verify the schema:
+
+```shell
+cd backend
+uv run alembic -c alembic.ini upgrade head
+uv run alembic -c alembic.ini check
+uv run alembic -c alembic.ini current
+```
+
+The deterministic formatting, linting, type-checking, and unit tests run in CI. PostgreSQL migration
+and integration checks are added to CI after the backend seed and isolation-test block is complete.
 
 ## Update API contracts
 

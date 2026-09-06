@@ -79,6 +79,10 @@ class ProcessingRunRow(Base):
             "AND char_length(btrim(error_summary)) > 0)",
             name="consistent_state",
         ),
+        CheckConstraint(
+            "state IN ('CAPTURED', 'PARSING', 'LEXICAL_READY', 'FAILED')",
+            name="processing_state",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -89,7 +93,7 @@ class ProcessingRunRow(Base):
             ProcessingState,
             name="processing_state",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,
@@ -189,6 +193,10 @@ class StructureBlockRow(Base):
             "start_character >= 0 AND end_character > start_character",
             name="ordered_source_offsets",
         ),
+        CheckConstraint(
+            "block_type IN ('HEADING', 'PARAGRAPH', 'LIST_ITEM', 'TABLE')",
+            name="structure_block_type",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -201,7 +209,7 @@ class StructureBlockRow(Base):
             StructureBlockType,
             name="structure_block_type",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
             values_callable=lambda enum_type: [member.value for member in enum_type],
             length=32,

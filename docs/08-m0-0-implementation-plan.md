@@ -173,6 +173,7 @@ Schema rules:
 - every listed product table carries `workspace_id`, even when it could be reached through another relation;
 - UUID identifiers are server-generated and are not authorization proof;
 - document versions and original-artifact identity fields are immutable;
+- PostgreSQL triggers reject updates and deletes of `document_versions` and `original_artifacts`;
 - evidence spans record document version, structure block, page, offsets, exact text, and text hash;
 - chunks reference their source structure blocks and a versioned chunk set;
 - `chunks.search_vector` is a `tsvector` with a GIN index;
