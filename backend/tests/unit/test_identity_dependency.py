@@ -13,6 +13,8 @@ from investment_research.modules.identity.application import (
 )
 from investment_research.settings import Settings
 
+LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+
 
 class ContextResponse(TypedDict):
     user_id: UUID
@@ -20,7 +22,9 @@ class ContextResponse(TypedDict):
 
 
 def test_client_workspace_id_cannot_override_server_context() -> None:
-    application = create_app(Settings(environment="test"))
+    application = create_app(
+        Settings.model_validate({"environment": "test", "database_url": LOCAL_DATABASE_URL})
+    )
 
     @application.get("/_test/context")
     def read_context(context: WorkspaceContextDependency) -> ContextResponse:
@@ -30,12 +34,12 @@ def test_client_workspace_id_cannot_override_server_context() -> None:
         }
 
     attacker_workspace_id = UUID("00000000-0000-4000-8000-000000000099")
-    client = TestClient(application)
 
-    response = client.get(
-        "/_test/context",
-        params={"workspace_id": str(attacker_workspace_id)},
-    )
+    with TestClient(application) as client:
+        response = client.get(
+            "/_test/context",
+            params={"workspace_id": str(attacker_workspace_id)},
+        )
 
     assert response.status_code == 200
     assert response.json() == {
