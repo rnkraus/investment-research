@@ -228,6 +228,7 @@ class SqlAlchemyRetrievalRepository:
                 raise SearchRelationshipError("candidate ranks must be contiguous per origin")
 
         self._session.add(RetrievalRunRow.from_domain(run))
+        self._session.flush()
         self._session.add_all(
             RetrievalCandidateRow.from_domain(candidate) for candidate in candidates
         )

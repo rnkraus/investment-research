@@ -166,6 +166,7 @@ def test_repository_stages_completed_run_and_candidates() -> None:
     run_row = session.add.call_args.args[0]
     assert isinstance(run_row, RetrievalRunRow)
     assert run_row.to_domain() == run
+    session.flush.assert_called_once_with()
 
     session.add_all.assert_called_once()
     candidate_rows = list(session.add_all.call_args.args[0])
