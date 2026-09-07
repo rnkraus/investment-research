@@ -25,6 +25,7 @@ flowchart TD
     POSTGRES --> DOCS[Document workspace isolation]
     POSTGRES --> CONSTRAINTS[Workspace and value constraints]
     POSTGRES --> IMMUTABLE[Immutable versions and originals]
+    POSTGRES --> PROCESSING[Processing lifecycle and lexical output]
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
@@ -35,11 +36,14 @@ migrated by Alembic, and never create tables implicitly. The current suite verif
 complete rollback after failure, and non-disclosure of documents, current versions, and original
 artifact metadata across workspace boundaries. It also verifies database rejection of cross-workspace
 document relationships and invalid constrained values, plus trigger-enforced immutability for document
-versions and original artifacts.
+versions and original artifacts. Processing coverage verifies the captured-to-lexical-ready lifecycle,
+rejects cross-workspace source versions, enforces one active chunk set per profile, and confirms that
+PostgreSQL builds searchable English `tsvector` values from chunk text.
 
-For a complete local check, `python -m scripts.verify_postgres` creates a uniquely named disposable
-Docker environment, migrates and seeds it, runs this integration suite, verifies migration drift and
-the downgrade/upgrade cycle, and removes its container and volume even after a failed check.
+For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
+named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies
+migration drift and the downgrade/upgrade cycle, and removes its container and volume even after a
+failed check.
 
 Run commands are documented in the repository [`README.md`](../../README.md#verify-changes). Database
 tests must prove both same-workspace access and cross-workspace non-disclosure.
