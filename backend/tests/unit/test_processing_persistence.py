@@ -244,11 +244,13 @@ def test_repository_stages_consistent_lexical_output() -> None:
 
     repository.add_lexical_output(make_context(), [block], chunk_set, [chunk])
 
-    session.add_all.assert_called_once()
-    block_row, chunk_set_row, chunk_row = session.add_all.call_args.args[0]
+    assert session.add_all.call_count == 2
+    block_row, chunk_set_row = session.add_all.call_args_list[0].args[0]
+    (chunk_row,) = session.add_all.call_args_list[1].args[0]
     assert isinstance(block_row, StructureBlockRow)
     assert isinstance(chunk_set_row, ChunkSetRow)
     assert isinstance(chunk_row, ChunkRow)
+    session.flush.assert_called_once_with()
 
 
 def test_repository_rejects_inconsistent_lexical_output() -> None:

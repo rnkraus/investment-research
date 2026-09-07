@@ -440,9 +440,10 @@ class SqlAlchemyProcessingRepository:
             [
                 *(StructureBlockRow.from_domain(block) for block in blocks),
                 ChunkSetRow.from_domain(chunk_set),
-                *(ChunkRow.from_domain(chunk) for chunk in chunks),
             ]
         )
+        self._session.flush()
+        self._session.add_all([ChunkRow.from_domain(chunk) for chunk in chunks])
 
     @staticmethod
     def _require_scope(context: WorkspaceContext, workspace_id: UUID) -> None:
