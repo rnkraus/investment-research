@@ -37,10 +37,11 @@ packages = ["src/investment_research"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["src", "tests"]
+files = ["src", "scripts", "tests"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
+pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.ruff]

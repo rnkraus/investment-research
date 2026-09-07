@@ -10,9 +10,9 @@ This directory contains the shared Python application package used by the FastAP
 | `migrations/`              | Reviewed, ordered PostgreSQL schema history and migration environment.           |
 | `pyproject.toml`           | Python package metadata, dependencies, and Ruff, Mypy, and Pytest configuration. |
 | `uv.lock`                  | Reproducible Python dependency resolution.                                       |
-| `scripts/`                 | Checked development utilities, currently OpenAPI export and verification.        |
+| `scripts/`                 | Checked OpenAPI and deterministic M0.0 seed utilities.                           |
 | `src/investment_research/` | Application package, composition root, API boundary, and modules.                |
-| `tests/`                   | Deterministic unit tests and later integration and acceptance tests.             |
+| `tests/`                   | Deterministic unit tests and opt-in PostgreSQL integration tests.                |
 
 ## Runtime relationship
 
