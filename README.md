@@ -38,7 +38,10 @@ Create the local Docker Compose configuration:
 cp .env.example .env
 ```
 
-Replace the password placeholder in `.env` with a local-only password. The file is ignored by Git and must never be committed. Docker Compose reads this file; the backend does not currently load it.
+Keep all four PostgreSQL entries and replace the password placeholder in `.env` with a local-only
+password. The file is ignored by Git and must never be committed. Docker Compose and the local
+backend require the complete PostgreSQL configuration and read the same values; an explicitly
+configured process environment variable takes precedence over the file.
 
 ## Run locally
 
@@ -53,13 +56,13 @@ Start the API in a second terminal:
 
 ```shell
 cd backend
-export INVESTMENT_RESEARCH_DATABASE_URL='postgresql+psycopg://investment_research:replace-with-local-password@127.0.0.1:5432/investment_research'
 uv run uvicorn investment_research.main:create_app --factory --reload --host 127.0.0.1 --port 8000
 ```
 
-Use the same local password that you configured for the Compose PostgreSQL service. The API
-factory validates this URL, creates the process-wide database resources during startup, and
-releases them during shutdown. It does not create or migrate tables automatically.
+The API derives a validated loopback database URL from the root `.env`, creates the process-wide
+database resources during startup, and releases them during shutdown. An explicit
+`INVESTMENT_RESEARCH_DATABASE_URL` remains available for CI and isolated tooling and overrides the
+local file. Application startup does not create or migrate tables automatically.
 
 Start the web application in a third terminal from the repository root:
 
@@ -112,8 +115,8 @@ uv run --locked python -m scripts.verify_postgres
 
 ## Run database migrations and seed data
 
-With PostgreSQL running and `INVESTMENT_RESEARCH_DATABASE_URL` configured, migrate the schema and
-create the two deterministic synthetic M0.0 workspaces:
+With PostgreSQL running and the root `.env` configured, migrate the schema and create the two
+deterministic synthetic M0.0 workspaces:
 
 ```shell
 cd backend
