@@ -27,6 +27,7 @@ flowchart TD
     POSTGRES --> IMMUTABLE[Immutable versions and originals]
     POSTGRES --> PROCESSING[Processing lifecycle and lexical output]
     POSTGRES --> SEARCH[Retrieval persistence and isolation]
+    POSTGRES --> RESEARCH[Answer lifecycle and statement ordering]
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
@@ -41,7 +42,10 @@ versions and original artifacts. Processing coverage verifies the captured-to-le
 rejects cross-workspace source versions, enforces one active chunk set per profile, and confirms that
 PostgreSQL builds searchable English `tsvector` values from chunk text. Search coverage verifies
 stable candidate ordering and non-disclosure, plus database rejection of foreign request and chunk
-relationships and duplicate ranks within one retrieval origin. Query execution remains Step 6 scope.
+relationships and duplicate ranks within one retrieval origin. Research coverage follows every
+permitted transition from `REQUESTED` to `STREAMED`, verifies ordered statements and non-disclosure,
+and rejects foreign or mismatched request-to-retrieval relationships and duplicate versions. Query
+execution remains Step 6 scope; generation and evidence validation remain Step 7 scope.
 
 For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
 named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies
