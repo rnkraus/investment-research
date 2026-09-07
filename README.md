@@ -101,7 +101,7 @@ removed disposable environment:
 
 ```shell
 cd backend
-uv run --frozen python -m scripts.verify_postgres
+uv run --locked python -m scripts.verify_postgres
 ```
 
 ## Run database migrations and seed data
