@@ -21,13 +21,17 @@ flowchart TD
     TESTS --> ARCH[Module import rules]
     TESTS --> POSTGRES[Opt-in PostgreSQL integration]
     POSTGRES --> SEED[Deterministic workspace seed]
+    POSTGRES --> TX[Commit and rollback]
+    POSTGRES --> DOCS[Document workspace isolation]
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
 
 PostgreSQL integration tests are skipped unless `INVESTMENT_RESEARCH_DATABASE_URL` is explicitly
 configured. They additionally require `INVESTMENT_RESEARCH_ENVIRONMENT=test`, use a schema already
-migrated by Alembic, and never create tables implicitly.
+migrated by Alembic, and never create tables implicitly. The current suite verifies durable commits,
+complete rollback after failure, and non-disclosure of documents, current versions, and original
+artifact metadata across workspace boundaries.
 
 Run commands are documented in the repository [`README.md`](../../README.md#verify-changes). Database
 tests must prove both same-workspace access and cross-workspace non-disclosure.
