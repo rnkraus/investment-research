@@ -90,10 +90,16 @@ pnpm build
 Run the backend checks from `backend/`:
 
 ```shell
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy
-uv run pytest
+uv run --locked python -m scripts.verify_backend
+```
+
+For focused feedback while editing, pass one or more backend Python files. Pytest runs only for
+selected `test_*.py` files:
+
+```shell
+uv run --locked python -m scripts.verify_paths \
+  src/investment_research/modules/evidence/persistence.py \
+  tests/unit/test_evidence_persistence.py
 ```
 
 With Docker running, execute the complete PostgreSQL verification in an automatically created and

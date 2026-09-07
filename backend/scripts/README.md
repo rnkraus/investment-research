@@ -4,12 +4,14 @@ This directory contains small, reviewable development utilities. Scripts support
 
 ## Contents
 
-| File                | Responsibility                                                                           |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `__init__.py`       | Makes development commands importable for tests and `python -m` execution.                |
-| `export_openapi.py` | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
-| `seed_m0_0.py`      | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
-| `verify_postgres.py` | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.     |
+| File                 | Responsibility                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `__init__.py`        | Makes development commands importable for tests and `python -m` execution.               |
+| `export_openapi.py`  | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
+| `seed_m0_0.py`       | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
+| `verify_backend.py`  | Runs all deterministic backend static checks and unit tests.                             |
+| `verify_paths.py`    | Runs deterministic checks for explicitly selected backend Python files.                  |
+| `verify_postgres.py` | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 
 ## Contract flow
 
@@ -44,6 +46,39 @@ seed transaction instead of overwriting data.
 The command requires an explicit validated local PostgreSQL URL and assumes Alembic has already
 migrated the database to `head`. The verified command is documented in the repository
 [`README.md`](../../README.md#run-database-migrations-and-seed-data).
+
+## Python verification
+
+```mermaid
+flowchart LR
+    ALL[verify_backend.py] --> FORMAT[Ruff format check]
+    PATHS[verify_paths.py<br/>selected files] --> FORMAT
+    FORMAT --> LINT[Ruff lint]
+    LINT --> TYPES[Mypy]
+    TYPES --> UNIT[Applicable unit tests]
+```
+
+Both commands are read-only checks: they report formatting differences but never rewrite source
+files. `verify_backend.py` checks the complete backend and all unit tests. `verify_paths.py` accepts
+one or more existing `.py` files inside the backend, removes duplicate paths, and passes only selected
+`tests/**/test_*.py` modules to Pytest. It rejects missing, non-Python, and out-of-backend paths.
+
+Run the complete deterministic backend check from `backend/`:
+
+```shell
+uv run --locked python -m scripts.verify_backend
+```
+
+For focused feedback while editing, provide both implementation and test files when applicable:
+
+```shell
+uv run --locked python -m scripts.verify_paths \
+  src/investment_research/modules/evidence/persistence.py \
+  tests/unit/test_evidence_persistence.py
+```
+
+Focused verification is not the final completion gate. Run the complete backend command after the
+work block and the PostgreSQL command after persistence or migration changes.
 
 ## Isolated PostgreSQL verification
 
