@@ -4,7 +4,8 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, delete, text, update
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from investment_research.infrastructure.database.session import (
     create_session_factory,
@@ -17,7 +18,11 @@ from investment_research.modules.documents.domain import (
     OriginalArtifact,
     OriginalMediaType,
 )
-from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
+from investment_research.modules.documents.persistence import (
+    DocumentVersionRow,
+    OriginalArtifactRow,
+    SqlAlchemyDocumentRepository,
+)
 from investment_research.modules.identity.domain import (
     Workspace,
     WorkspaceContext,
@@ -189,3 +194,112 @@ def test_document_repository_does_not_disclose_another_workspace(
             )
             == second_original
         )
+
+
+def test_database_rejects_document_version_linked_across_workspaces(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    document_context, document_workspace = make_workspace()
+    foreign_context, foreign_workspace = make_workspace()
+    document, version, original = make_capture(document_context)
+
+    with transactional_session(session_factory) as session:
+        workspace_repository = SqlAlchemyWorkspaceRepository(session)
+        workspace_repository.add(document_context, document_workspace)
+        workspace_repository.add(foreign_context, foreign_workspace)
+
+    with transactional_session(session_factory) as session:
+        SqlAlchemyDocumentRepository(session).add_capture(
+            document_context,
+            document,
+            version,
+            original,
+        )
+
+    cross_workspace_version = version.model_copy(
+        update={
+            "id": uuid4(),
+            "workspace_id": foreign_context.workspace_id,
+            "version_number": 2,
+        }
+    )
+
+    with (
+        pytest.raises(IntegrityError),
+        transactional_session(session_factory) as session,
+    ):
+        session.add(DocumentVersionRow.from_domain(cross_workspace_version))
+
+
+def test_database_check_constraint_rejects_invalid_workspace_type(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    invalid_workspace_id = uuid4()
+
+    with (
+        pytest.raises(IntegrityError),
+        transactional_session(session_factory) as session,
+    ):
+        session.execute(
+            text(
+                "INSERT INTO workspaces (id, name, workspace_type) "
+                "VALUES (:id, :name, :workspace_type)"
+            ),
+            {
+                "id": invalid_workspace_id,
+                "name": "Invalid Workspace Type",
+                "workspace_type": "not_a_workspace_type",
+            },
+        )
+
+    context = WorkspaceContext(user_id=uuid4(), workspace_id=invalid_workspace_id)
+    with transactional_session(session_factory) as session:
+        assert (
+            SqlAlchemyWorkspaceRepository(session).get_by_id(
+                context,
+                invalid_workspace_id,
+            )
+            is None
+        )
+
+
+def test_database_triggers_keep_versions_and_originals_immutable(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    context, workspace = make_workspace()
+    document, version, original = make_capture(context)
+
+    with transactional_session(session_factory) as session:
+        SqlAlchemyWorkspaceRepository(session).add(context, workspace)
+
+    with transactional_session(session_factory) as session:
+        SqlAlchemyDocumentRepository(session).add_capture(
+            context,
+            document,
+            version,
+            original,
+        )
+
+    with (
+        pytest.raises(DBAPIError),
+        transactional_session(session_factory) as session,
+    ):
+        session.execute(
+            update(DocumentVersionRow)
+            .where(DocumentVersionRow.id == version.id)
+            .values(title="Changed title")
+        )
+
+    with (
+        pytest.raises(DBAPIError),
+        transactional_session(session_factory) as session,
+    ):
+        session.execute(delete(OriginalArtifactRow).where(OriginalArtifactRow.id == original.id))
+
+    with transactional_session(session_factory) as session:
+        repository = SqlAlchemyDocumentRepository(session)
+        assert repository.get_current_version_by_id(context, document.id, version.id) == version
+        assert repository.get_original_artifact(context, document.id, version.id) == original
