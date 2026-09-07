@@ -35,6 +35,13 @@ from investment_research.modules.processing.domain import (
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
 from investment_research.modules.research.domain import ResearchRequest, TemporalMode
 from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
+from investment_research.modules.search.domain import (
+    RetrievalCandidate,
+    RetrievalFilters,
+    RetrievalOrigin,
+    RetrievalRun,
+)
+from investment_research.modules.search.persistence import SqlAlchemyRetrievalRepository
 
 FIXTURE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 FIXTURE_SHA256 = "c" * 64
@@ -58,6 +65,14 @@ class ResearchSource:
     chunk_set: ChunkSet
     chunks: tuple[Chunk, ...]
     request: ResearchRequest
+
+
+@dataclass(frozen=True)
+class RetrievalResultFixture:
+    """One completed retrieval run and its reproducible ranked candidates."""
+
+    run: RetrievalRun
+    candidates: tuple[RetrievalCandidate, ...]
 
 
 def make_research_source(*, label: str = "Research Source") -> ResearchSource:
@@ -220,3 +235,53 @@ def persist_research_source(engine: Engine, source: ResearchSource) -> None:
         )
     with transactional_session(session_factory) as session:
         SqlAlchemyResearchRepository(session).add_request(source.context, source.request)
+
+
+def make_retrieval_result(source: ResearchSource) -> RetrievalResultFixture:
+    """Build a completed lexical retrieval result for a persisted source."""
+
+    started_at = FIXTURE_TIME + timedelta(seconds=4)
+    completed_at = FIXTURE_TIME + timedelta(seconds=5)
+    run = RetrievalRun(
+        id=uuid4(),
+        workspace_id=source.context.workspace_id,
+        research_request_id=source.request.id,
+        query_text=source.request.question,
+        normalized_query="fy2025 revenue",
+        filters=RetrievalFilters(document_ids=(source.document.id,)),
+        lexical_config_version=source.processing_run.lexical_config_version,
+        candidate_limit=10,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
+    candidates = tuple(
+        RetrievalCandidate(
+            id=uuid4(),
+            workspace_id=source.context.workspace_id,
+            retrieval_run_id=run.id,
+            chunk_id=chunk.id,
+            origin=RetrievalOrigin.LEXICAL,
+            rank=rank,
+            raw_score=0.75 / rank,
+            fused_rank=rank,
+            created_at=completed_at,
+        )
+        for rank, chunk in enumerate(source.chunks, start=1)
+    )
+    return RetrievalResultFixture(run=run, candidates=candidates)
+
+
+def persist_retrieval_result(
+    engine: Engine,
+    source: ResearchSource,
+    result: RetrievalResultFixture,
+) -> None:
+    """Persist a retrieval result through its workspace-scoped repository."""
+
+    session_factory = create_session_factory(engine)
+    with transactional_session(session_factory) as session:
+        SqlAlchemyRetrievalRepository(session).add_result(
+            source.context,
+            result.run,
+            result.candidates,
+        )
