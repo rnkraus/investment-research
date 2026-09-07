@@ -232,7 +232,9 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
 - Create the reviewed Alembic migration for the minimum physical schema.
 - Implement transaction and SQLAlchemy session factories.
 - Implement module-owned repositories that require explicit workspace context.
-- Seed two synthetic workspaces so negative isolation behavior can be tested even though the UI uses one.
+- Seed two deterministic sanitized workspaces through an idempotent command so negative isolation
+  behavior can be tested even though the UI uses one. Repeated runs preserve identical rows, and a
+  conflicting deterministic identifier aborts without overwriting existing data.
 
 **Gate:** an empty database migrates to head; repository tests prove same-workspace access and cross-workspace non-disclosure.
 

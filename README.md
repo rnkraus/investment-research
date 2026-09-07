@@ -96,11 +96,22 @@ uv run mypy
 uv run pytest
 ```
 
-With PostgreSQL running and `INVESTMENT_RESEARCH_DATABASE_URL` configured, verify the schema:
+## Run database migrations and seed data
+
+With PostgreSQL running and `INVESTMENT_RESEARCH_DATABASE_URL` configured, migrate the schema and
+create the two deterministic synthetic M0.0 workspaces:
 
 ```shell
 cd backend
 uv run alembic -c alembic.ini upgrade head
+uv run python -m scripts.seed_m0_0
+```
+
+Repeated seed runs are safe: identical workspaces remain unchanged, while conflicting data under a
+deterministic seed identifier aborts without being overwritten. Verify that the migrated schema still
+matches the SQLAlchemy metadata:
+
+```shell
 uv run alembic -c alembic.ini check
 uv run alembic -c alembic.ini current
 ```
