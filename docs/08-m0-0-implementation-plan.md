@@ -1,6 +1,6 @@
 # Investment Research Archive — M0.0 Implementation Plan
 
-**Status:** Ready for implementation v0.1
+**Status:** Active implementation plan v0.2 — implemented through Step 3
 **Scope:** Exact repository shape, contracts, build sequence, and verification for M0.0
 **Related:** [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [05-delivery-plan.md](./05-delivery-plan.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md)
 
@@ -41,6 +41,7 @@ Create files only when their implementation step begins; do not scaffold empty p
 .
 ├── AGENTS.md
 ├── README.md
+├── .github/workflows/ci.yml             # deterministic and PostgreSQL verification
 ├── compose.yaml                         # M0.0: PostgreSQL only; expanded in M0
 ├── package.json                         # root pnpm scripts after they exist
 ├── pnpm-workspace.yaml
@@ -66,11 +67,17 @@ Create files only when their implementation step begins; do not scaffold empty p
 │   ├── pyproject.toml
 │   ├── uv.lock
 │   ├── scripts/
-│   │   └── export_openapi.py            # generate or verify the committed API contract
+│   │   ├── export_openapi.py            # generate or verify the committed API contract
+│   │   ├── seed_m0_0.py                 # idempotent synthetic workspace seed
+│   │   ├── verify_backend.py            # deterministic backend gate
+│   │   ├── verify_paths.py              # focused Python-file verification
+│   │   └── verify_postgres.py           # disposable PostgreSQL gate
 │   ├── alembic.ini
 │   ├── migrations/
 │   │   ├── env.py
+│   │   ├── script.py.mako
 │   │   └── versions/
+│   │       └── 0001_m0_0_schema.py     # reviewed minimum physical schema
 │   ├── src/investment_research/
 │   │   ├── main.py                       # FastAPI composition root entry point
 │   │   ├── bootstrap.py                  # dependency wiring only
@@ -91,7 +98,7 @@ Create files only when their implementation step begins; do not scaffold empty p
 │   │   │   ├── research/
 │   │   │   └── evidence/
 │   │   └── infrastructure/
-│   │       ├── database/
+│   │       ├── database/                # metadata, engine, sessions, transactions
 │   │       ├── object_storage/
 │   │       ├── parsing/
 │   │       └── generation/
@@ -214,7 +221,7 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
 - Add PostgreSQL as the only M0.0 service in `compose.yaml`; bind it to local development access.
 - Define validated non-secret settings and placeholder-only example configuration if configuration requires it.
 - Add the smallest real formatting, linting, type-checking, and test scripts; document their actual commands only after they exist.
-- Add minimal CI jobs for the checks that exist at this step. Extend them with migration verification when Step 3 introduces Alembic and the first migration. Full container CI remains M0.
+- Add minimal CI jobs for the checks that exist at this step. In Step 3, extend them with migration, seed, PostgreSQL integration, drift, and migration-cycle verification. Full container CI remains M0.
 
 **Gate:** web and API start, PostgreSQL is reachable, health succeeds, and the initial checks pass from a clean checkout.
 
@@ -236,7 +243,7 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
   behavior can be tested even though the UI uses one. Repeated runs preserve identical rows, and a
   conflicting deterministic identifier aborts without overwriting existing data.
 
-**Gate:** an empty database migrates to head; repository tests prove same-workspace access and cross-workspace non-disclosure.
+**Gate:** an empty database migrates to head; the deterministic seed is idempotent; repository tests prove transactions, same-workspace access, cross-workspace non-disclosure, and database constraints; metadata has no migration drift; and the reviewed revision downgrades to base and upgrades back to head.
 
 ### Step 4 — Secure capture and original viewing
 
