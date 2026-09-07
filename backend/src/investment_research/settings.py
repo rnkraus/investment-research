@@ -1,12 +1,22 @@
-"""Validated, non-secret runtime settings for the M0.0 API."""
+"""Validated, secret-safe runtime settings for the M0.0 API."""
 
 from functools import lru_cache
 from ipaddress import ip_address
 from os import environ
+from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
+from dotenv import dotenv_values
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+
+ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+POSTGRES_SETTING_NAMES = (
+    "POSTGRES_DB",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_PORT",
+)
 
 
 def _is_loopback_host(value: str) -> bool:
@@ -22,7 +32,7 @@ def _is_loopback_host(value: str) -> bool:
 
 
 class Settings(BaseModel):
-    """Application settings loaded from process environment variables."""
+    """Application settings loaded from process variables and local development values."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -74,19 +84,89 @@ class Settings(BaseModel):
         """Return the database URL only for components that require PostgreSQL."""
 
         if self.database_url is None:
-            raise RuntimeError("INVESTMENT_RESEARCH_DATABASE_URL is required for database access")
+            raise RuntimeError("PostgreSQL configuration is required for database access")
         return self.database_url.get_secret_value()
 
 
-def load_settings() -> Settings:
-    """Validate supported environment variables without reading an environment file."""
+def _configuration_value(
+    name: str,
+    file_values: dict[str, str | None],
+    default: str | None = None,
+) -> str | None:
+    """Read a process value first, then its local-file fallback."""
+
+    return environ.get(name, file_values.get(name, default))
+
+
+def _local_database_url(file_values: dict[str, str | None]) -> str | None:
+    """Build the local backend URL from the same PostgreSQL values used by Compose."""
+
+    explicit_url = _configuration_value("INVESTMENT_RESEARCH_DATABASE_URL", file_values)
+    if explicit_url is not None:
+        return explicit_url
+
+    postgres_values = {
+        name: _configuration_value(name, file_values) for name in POSTGRES_SETTING_NAMES
+    }
+    if all(value is None for value in postgres_values.values()):
+        return None
+
+    missing_names = [name for name, value in postgres_values.items() if not value]
+    if missing_names:
+        raise ValueError(
+            "local PostgreSQL configuration is incomplete; missing: " + ", ".join(missing_names)
+        )
+
+    user = postgres_values["POSTGRES_USER"]
+    password = postgres_values["POSTGRES_PASSWORD"]
+    database = postgres_values["POSTGRES_DB"]
+    raw_port = postgres_values["POSTGRES_PORT"]
+    assert user is not None
+    assert password is not None
+    assert database is not None
+    assert raw_port is not None
+
+    try:
+        port = int(raw_port)
+    except ValueError as error:
+        raise ValueError("POSTGRES_PORT must be an integer") from error
+    if not 1 <= port <= 65535:
+        raise ValueError("POSTGRES_PORT must be between 1 and 65535")
+
+    encoded_user = quote(user, safe="")
+    encoded_password = quote(password, safe="")
+    encoded_database = quote(database, safe="")
+    return (
+        f"postgresql+psycopg://{encoded_user}:{encoded_password}"
+        f"@127.0.0.1:{port}/{encoded_database}"
+    )
+
+
+def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
+    """Validate process variables with an optional local development file fallback."""
+
+    file_values = (
+        dict(dotenv_values(env_file)) if env_file is not None and env_file.is_file() else {}
+    )
 
     values = {
-        "app_name": environ.get("INVESTMENT_RESEARCH_APP_NAME", "Investment Research Archive"),
-        "environment": environ.get("INVESTMENT_RESEARCH_ENVIRONMENT", "development"),
-        "api_host": environ.get("INVESTMENT_RESEARCH_API_HOST", "127.0.0.1"),
-        "api_port": environ.get("INVESTMENT_RESEARCH_API_PORT", "8000"),
-        "database_url": environ.get("INVESTMENT_RESEARCH_DATABASE_URL"),
+        "app_name": _configuration_value(
+            "INVESTMENT_RESEARCH_APP_NAME",
+            file_values,
+            "Investment Research Archive",
+        ),
+        "environment": _configuration_value(
+            "INVESTMENT_RESEARCH_ENVIRONMENT",
+            file_values,
+            "development",
+        ),
+        "api_host": _configuration_value(
+            "INVESTMENT_RESEARCH_API_HOST",
+            file_values,
+            "127.0.0.1",
+        ),
+        "api_port": _configuration_value("INVESTMENT_RESEARCH_API_PORT", file_values, "8000"),
+        "database_url": _local_database_url(file_values),
     }
     return Settings.model_validate(values)
 

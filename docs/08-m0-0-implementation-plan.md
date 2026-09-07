@@ -81,7 +81,7 @@ Create files only when their implementation step begins; do not scaffold empty p
 │   ├── src/investment_research/
 │   │   ├── main.py                       # FastAPI composition root entry point
 │   │   ├── bootstrap.py                  # dependency wiring only
-│   │   ├── settings.py                   # validated non-secret settings
+│   │   ├── settings.py                   # validated, secret-safe local settings
 │   │   ├── api/
 │   │   │   ├── dependencies.py
 │   │   │   ├── errors.py
@@ -219,7 +219,8 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
 
 - Scaffold the pnpm Next.js TypeScript app and uv Python package without adding unapproved production dependencies.
 - Add PostgreSQL as the only M0.0 service in `compose.yaml`; bind it to local development access.
-- Define validated non-secret settings and placeholder-only example configuration if configuration requires it.
+- Define validated, secret-safe settings, require complete PostgreSQL configuration when database
+  access is configured, and keep committed examples placeholder-only.
 - Add the smallest real formatting, linting, type-checking, and test scripts; document their actual commands only after they exist.
 - Add minimal CI jobs for the checks that exist at this step. In Step 3, extend them with migration, seed, PostgreSQL integration, drift, and migration-cycle verification. Full container CI remains M0.
 

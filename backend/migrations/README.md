@@ -33,8 +33,9 @@ flowchart LR
     REVISION --> DB[(PostgreSQL schema)]
 ```
 
-The database URL is supplied through `INVESTMENT_RESEARCH_DATABASE_URL`. It must not be written
-to `alembic.ini`, revision files, logs, examples, or committed environment files.
+For local development, the database URL is derived from the root `.env` PostgreSQL values. An
+explicit `INVESTMENT_RESEARCH_DATABASE_URL` overrides that file for CI and isolated tooling. The URL
+must not be written to `alembic.ini`, revision files, logs, examples, or committed environment files.
 
 ## Apply and verify
 

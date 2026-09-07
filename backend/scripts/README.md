@@ -43,8 +43,9 @@ adds a second sanitized workspace for negative isolation tests. Repeated runs le
 unchanged. An existing deterministic identifier with different data aborts and rolls back the whole
 seed transaction instead of overwriting data.
 
-The command requires an explicit validated local PostgreSQL URL and assumes Alembic has already
-migrated the database to `head`. The verified command is documented in the repository
+The command uses the validated local PostgreSQL configuration from the root `.env`, while an
+explicit process URL can override it for isolated tooling. It assumes Alembic has already migrated
+the database to `head`. The verified command is documented in the repository
 [`README.md`](../../README.md#run-database-migrations-and-seed-data).
 
 ## Python verification
