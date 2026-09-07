@@ -4,9 +4,9 @@ This directory owns repository automation that runs after changes reach GitHub. 
 
 ## Contents
 
-| Path               | Responsibility                                                               |
-| ------------------ | ---------------------------------------------------------------------------- |
-| `workflows/ci.yml` | Runs deterministic frontend and backend checks for pushes and pull requests. |
+| Path               | Responsibility                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `workflows/ci.yml` | Runs deterministic frontend, backend, migration, and PostgreSQL integration checks. |
 
 ## Workflow
 
@@ -15,12 +15,22 @@ flowchart LR
     CHANGE[Local change] --> PUSH[Push or pull request]
     PUSH --> CI[GitHub Actions CI]
     CI --> FRONTEND[Frontend checks and build]
-    CI --> BACKEND[Backend checks and tests]
+    CI --> BACKEND[Backend static checks and unit tests]
+    BACKEND --> POSTGRES[PostgreSQL 17 service]
+    POSTGRES --> MIGRATE[Alembic upgrade]
+    MIGRATE --> SEED[Deterministic workspace seed]
+    SEED --> INTEGRATION[PostgreSQL integration tests]
+    INTEGRATION --> DRIFT[Metadata drift and migration cycle]
     FRONTEND --> GATE[Merge decision]
-    BACKEND --> GATE
+    DRIFT --> GATE
 ```
 
-The frontend job installs the locked pnpm dependency graph, then runs formatting, linting, type checking, tests, and the production build. The backend job installs the locked uv environment, then runs Ruff formatting and linting, Mypy, and Pytest. Contract-drift checks are included through the normal frontend and backend test commands.
+The frontend job installs the locked pnpm dependency graph, then runs formatting, linting, type
+checking, tests, and the production build. The backend job installs the locked uv environment and
+runs the same deterministic verification command documented for local development. It then migrates
+an empty PostgreSQL 17 service, seeds the synthetic workspaces, runs all integration tests, checks
+metadata drift, and proves the reviewed migration can downgrade to base and upgrade back to head.
+Contract-drift checks are included through the normal frontend and backend test commands.
 
 ## Maintenance rules
 
@@ -28,7 +38,7 @@ The frontend job installs the locked pnpm dependency graph, then runs formatting
 - Pin third-party actions to reviewed commit hashes and retain a version comment.
 - Use the repository's locked pnpm and uv environments.
 - Keep full registry-dependent vulnerability and signature audits separate while they are not deterministic CI gates. The configured uv on-sync malware check remains an intentional fail-closed dependency-installation gate and requires OSV availability.
-- Add migration verification in M0.0 Step 3 and full container CI in M0, as specified in [`docs/08-m0-0-implementation-plan.md`](../docs/08-m0-0-implementation-plan.md).
-- Never place credentials or private data in workflow files or logs.
+- Keep the M0.0 PostgreSQL service limited to persistence verification; full application-container CI remains M0 scope as specified in [`docs/08-m0-0-implementation-plan.md`](../docs/08-m0-0-implementation-plan.md).
+- Never place production credentials or private data in workflow files or logs. Fixed CI-only service values must remain isolated and disposable.
 
 Developer commands and local setup remain documented in the root [`README.md`](../README.md). Repository-wide security and verification rules remain in [`AGENTS.md`](../AGENTS.md).
