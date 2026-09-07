@@ -96,6 +96,14 @@ uv run mypy
 uv run pytest
 ```
 
+With Docker running, execute the complete PostgreSQL verification in an automatically created and
+removed disposable environment:
+
+```shell
+cd backend
+uv run --frozen python -m scripts.verify_postgres
+```
+
 ## Run database migrations and seed data
 
 With PostgreSQL running and `INVESTMENT_RESEARCH_DATABASE_URL` configured, migrate the schema and
