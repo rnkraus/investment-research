@@ -9,6 +9,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `__init__.py`       | Makes development commands importable for tests and `python -m` execution.                |
 | `export_openapi.py` | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
 | `seed_m0_0.py`      | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
+| `verify_postgres.py` | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.     |
 
 ## Contract flow
 
@@ -43,3 +44,21 @@ seed transaction instead of overwriting data.
 The command requires an explicit validated local PostgreSQL URL and assumes Alembic has already
 migrated the database to `head`. The verified command is documented in the repository
 [`README.md`](../../README.md#run-database-migrations-and-seed-data).
+
+## Isolated PostgreSQL verification
+
+```mermaid
+flowchart LR
+    COMMAND[verify_postgres.py] --> DOCKER[Unique Docker Compose project]
+    DOCKER --> MIGRATE[Alembic upgrade]
+    MIGRATE --> SEED[M0.0 seed]
+    SEED --> TESTS[PostgreSQL integration tests]
+    TESTS --> DRIFT[Alembic check]
+    DRIFT --> CYCLE[Downgrade and upgrade]
+    CYCLE --> CLEANUP[Remove container and volume]
+```
+
+The verification command selects an available loopback port, generates a random disposable
+password, and uses a unique Compose project name. Cleanup runs after success, command failure, or
+test failure. It removes only resources owned by that invocation and never targets the normal M0.0
+development database or its volume.

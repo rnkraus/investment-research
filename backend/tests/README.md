@@ -37,5 +37,9 @@ artifact metadata across workspace boundaries. It also verifies database rejecti
 document relationships and invalid constrained values, plus trigger-enforced immutability for document
 versions and original artifacts.
 
+For a complete local check, `python -m scripts.verify_postgres` creates a uniquely named disposable
+Docker environment, migrates and seeds it, runs this integration suite, verifies migration drift and
+the downgrade/upgrade cycle, and removes its container and volume even after a failed check.
+
 Run commands are documented in the repository [`README.md`](../../README.md#verify-changes). Database
 tests must prove both same-workspace access and cross-workspace non-disclosure.
