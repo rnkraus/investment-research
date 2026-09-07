@@ -130,8 +130,9 @@ uv run alembic -c alembic.ini check
 uv run alembic -c alembic.ini current
 ```
 
-The deterministic formatting, linting, type-checking, and unit tests run in CI. PostgreSQL migration
-and integration checks are added to CI after the backend seed and isolation-test block is complete.
+CI runs the deterministic frontend and backend checks, migrates an empty PostgreSQL 17 service,
+applies the synthetic seed, runs all PostgreSQL integration tests, checks metadata drift, and proves
+the reviewed migration can downgrade to base and upgrade back to head.
 
 ## Update API contracts
 
@@ -169,7 +170,8 @@ uv audit --locked
 - `frontend/` contains the Next.js, TypeScript, and Tailwind CSS web application.
 - `backend/` contains the FastAPI application and its tests.
 - `compose.yaml` provides a loopback-only PostgreSQL service for local development.
-- The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories and mappings exist, while Alembic still needs to create the physical PostgreSQL schema.
+- The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
+  reviewed Alembic-managed PostgreSQL schema and caller-owned transaction boundaries.
 
 ## Project documentation
 
