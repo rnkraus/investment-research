@@ -1,0 +1,222 @@
+"""Reusable synthetic object graphs for PostgreSQL integration tests."""
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+from sqlalchemy import Engine
+
+from investment_research.infrastructure.database.session import (
+    create_session_factory,
+    transactional_session,
+)
+from investment_research.modules.documents.domain import (
+    Document,
+    DocumentLifecycleState,
+    DocumentVersion,
+    OriginalArtifact,
+    OriginalMediaType,
+)
+from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
+from investment_research.modules.identity.domain import (
+    Workspace,
+    WorkspaceContext,
+    WorkspaceType,
+)
+from investment_research.modules.identity.persistence import SqlAlchemyWorkspaceRepository
+from investment_research.modules.processing.domain import (
+    Chunk,
+    ChunkSet,
+    ProcessingRun,
+    ProcessingState,
+    StructureBlock,
+    StructureBlockType,
+)
+from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
+from investment_research.modules.research.domain import ResearchRequest, TemporalMode
+from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
+
+FIXTURE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+FIXTURE_SHA256 = "c" * 64
+FIXTURE_TEXTS = (
+    "FY2025 revenue was $184.2 million.",
+    "Operating margin increased to 18.4 percent.",
+)
+
+
+@dataclass(frozen=True)
+class ResearchSource:
+    """One complete canonical source graph available for retrieval tests."""
+
+    context: WorkspaceContext
+    workspace: Workspace
+    document: Document
+    version: DocumentVersion
+    original: OriginalArtifact
+    processing_run: ProcessingRun
+    blocks: tuple[StructureBlock, ...]
+    chunk_set: ChunkSet
+    chunks: tuple[Chunk, ...]
+    request: ResearchRequest
+
+
+def make_research_source(*, label: str = "Research Source") -> ResearchSource:
+    """Build a unique, internally consistent source graph without persisting it."""
+
+    workspace_id = uuid4()
+    user_id = uuid4()
+    document_id = uuid4()
+    version_id = uuid4()
+    original_id = uuid4()
+    processing_run_id = uuid4()
+    chunk_set_id = uuid4()
+    context = WorkspaceContext(user_id=user_id, workspace_id=workspace_id)
+    workspace = Workspace(
+        id=workspace_id,
+        name=f"{label} {workspace_id}",
+        workspace_type=WorkspaceType.SANITIZED_DEMO,
+        created_at=FIXTURE_TIME,
+    )
+    document = Document(
+        id=document_id,
+        workspace_id=workspace_id,
+        document_type="earnings_brief",
+        lifecycle_state=DocumentLifecycleState.ACTIVE,
+        current_version_id=version_id,
+        created_at=FIXTURE_TIME,
+    )
+    version = DocumentVersion(
+        id=version_id,
+        workspace_id=workspace_id,
+        document_id=document_id,
+        version_number=1,
+        title=f"Synthetic earnings brief {document_id}",
+        language="en",
+        content_sha256=FIXTURE_SHA256,
+        published_at=FIXTURE_TIME,
+        available_at=FIXTURE_TIME,
+        captured_at=FIXTURE_TIME,
+    )
+    original = OriginalArtifact(
+        id=original_id,
+        workspace_id=workspace_id,
+        document_version_id=version_id,
+        storage_key=f"workspaces/{workspace_id}/originals/{original_id}.pdf",
+        media_type=OriginalMediaType.PDF,
+        byte_size=2_048,
+        page_count=2,
+        checksum_sha256=FIXTURE_SHA256,
+        captured_at=FIXTURE_TIME,
+    )
+    processing_run = ProcessingRun(
+        id=processing_run_id,
+        workspace_id=workspace_id,
+        document_version_id=version_id,
+        state=ProcessingState.LEXICAL_READY,
+        parser_version="synthetic-parser-1",
+        parser_config_version="parser-m0.0-v1",
+        chunker_version="structure-block-1",
+        chunking_config_version="chunking-m0.0-v1",
+        lexical_config_version="english-lexical-v1",
+        created_at=FIXTURE_TIME,
+        started_at=FIXTURE_TIME + timedelta(seconds=1),
+        completed_at=FIXTURE_TIME + timedelta(seconds=2),
+    )
+    blocks = tuple(
+        StructureBlock(
+            id=uuid4(),
+            workspace_id=workspace_id,
+            processing_run_id=processing_run_id,
+            document_version_id=version_id,
+            page_number=ordinal + 1,
+            block_type=StructureBlockType.PARAGRAPH,
+            ordinal=ordinal,
+            text=text,
+            start_character=0,
+            end_character=len(text),
+            created_at=FIXTURE_TIME + timedelta(seconds=2),
+        )
+        for ordinal, text in enumerate(FIXTURE_TEXTS)
+    )
+    chunk_set = ChunkSet(
+        id=chunk_set_id,
+        workspace_id=workspace_id,
+        processing_run_id=processing_run_id,
+        document_version_id=version_id,
+        chunker_version=processing_run.chunker_version,
+        chunking_config_version=processing_run.chunking_config_version,
+        lexical_config_version=processing_run.lexical_config_version,
+        is_active=True,
+        created_at=FIXTURE_TIME + timedelta(seconds=2),
+    )
+    chunks = tuple(
+        Chunk(
+            id=uuid4(),
+            workspace_id=workspace_id,
+            processing_run_id=processing_run_id,
+            document_version_id=version_id,
+            chunk_set_id=chunk_set_id,
+            structure_block_id=block.id,
+            ordinal=ordinal,
+            text=block.text,
+            token_count=len(block.text.split()),
+            created_at=FIXTURE_TIME + timedelta(seconds=2),
+        )
+        for ordinal, block in enumerate(blocks)
+    )
+    request = ResearchRequest(
+        id=uuid4(),
+        workspace_id=workspace_id,
+        question="What was FY2025 revenue?",
+        document_ids=(document_id,),
+        temporal_mode=TemporalMode.CURRENT,
+        created_at=FIXTURE_TIME + timedelta(seconds=3),
+    )
+    return ResearchSource(
+        context=context,
+        workspace=workspace,
+        document=document,
+        version=version,
+        original=original,
+        processing_run=processing_run,
+        blocks=blocks,
+        chunk_set=chunk_set,
+        chunks=chunks,
+        request=request,
+    )
+
+
+def persist_workspace(engine: Engine, source: ResearchSource) -> None:
+    """Persist only a source's workspace for negative relationship tests."""
+
+    session_factory = create_session_factory(engine)
+    with transactional_session(session_factory) as session:
+        SqlAlchemyWorkspaceRepository(session).add(source.context, source.workspace)
+
+
+def persist_research_source(engine: Engine, source: ResearchSource) -> None:
+    """Persist a source graph through module repositories in dependency order."""
+
+    session_factory = create_session_factory(engine)
+    persist_workspace(engine, source)
+    with transactional_session(session_factory) as session:
+        SqlAlchemyDocumentRepository(session).add_capture(
+            source.context,
+            source.document,
+            source.version,
+            source.original,
+        )
+    with transactional_session(session_factory) as session:
+        SqlAlchemyProcessingRepository(session).add_run(
+            source.context,
+            source.processing_run,
+        )
+    with transactional_session(session_factory) as session:
+        SqlAlchemyProcessingRepository(session).add_lexical_output(
+            source.context,
+            source.blocks,
+            source.chunk_set,
+            source.chunks,
+        )
+    with transactional_session(session_factory) as session:
+        SqlAlchemyResearchRepository(session).add_request(source.context, source.request)

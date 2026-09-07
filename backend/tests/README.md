@@ -26,6 +26,7 @@ flowchart TD
     POSTGRES --> CONSTRAINTS[Workspace and value constraints]
     POSTGRES --> IMMUTABLE[Immutable versions and originals]
     POSTGRES --> PROCESSING[Processing lifecycle and lexical output]
+    POSTGRES --> SEARCH[Retrieval persistence and isolation]
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
@@ -38,7 +39,9 @@ artifact metadata across workspace boundaries. It also verifies database rejecti
 document relationships and invalid constrained values, plus trigger-enforced immutability for document
 versions and original artifacts. Processing coverage verifies the captured-to-lexical-ready lifecycle,
 rejects cross-workspace source versions, enforces one active chunk set per profile, and confirms that
-PostgreSQL builds searchable English `tsvector` values from chunk text.
+PostgreSQL builds searchable English `tsvector` values from chunk text. Search coverage verifies
+stable candidate ordering and non-disclosure, plus database rejection of foreign request and chunk
+relationships and duplicate ranks within one retrieval origin. Query execution remains Step 6 scope.
 
 For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
 named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies
