@@ -33,7 +33,16 @@ from investment_research.modules.processing.domain import (
     StructureBlockType,
 )
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
-from investment_research.modules.research.domain import ResearchRequest, TemporalMode
+from investment_research.modules.research.domain import (
+    Answer,
+    AnswerState,
+    AnswerStatement,
+    CoverageStatus,
+    ResearchRequest,
+    StatementSupportStatus,
+    StatementType,
+    TemporalMode,
+)
 from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
 from investment_research.modules.search.domain import (
     RetrievalCandidate,
@@ -73,6 +82,20 @@ class RetrievalResultFixture:
 
     run: RetrievalRun
     candidates: tuple[RetrievalCandidate, ...]
+
+
+@dataclass(frozen=True)
+class AnswerResultFixture:
+    """One answer's permitted lifecycle snapshots and final statements."""
+
+    snapshots: tuple[Answer, ...]
+    statements: tuple[AnswerStatement, ...]
+
+    @property
+    def answer(self) -> Answer:
+        """Return the terminal streamed answer snapshot."""
+
+        return self.snapshots[-1]
 
 
 def make_research_source(*, label: str = "Research Source") -> ResearchSource:
@@ -285,3 +308,87 @@ def persist_retrieval_result(
             result.run,
             result.candidates,
         )
+
+
+def make_answer_result(
+    source: ResearchSource,
+    retrieval: RetrievalResultFixture,
+) -> AnswerResultFixture:
+    """Build every snapshot of one answer through its streamed terminal state."""
+
+    answer_id = uuid4()
+    created_at = FIXTURE_TIME + timedelta(seconds=6)
+    snapshots = tuple(
+        Answer(
+            id=answer_id,
+            workspace_id=source.context.workspace_id,
+            research_request_id=source.request.id,
+            retrieval_run_id=(
+                retrieval.run.id
+                if state
+                in {
+                    AnswerState.GENERATING,
+                    AnswerState.VALIDATING,
+                    AnswerState.STREAMED,
+                }
+                else None
+            ),
+            version_number=1,
+            state=state,
+            coverage_status=(CoverageStatus.COMPLETE if state is AnswerState.STREAMED else None),
+            generator_version="fixture-generator-1",
+            generation_config_version="generation-m0.0-v1",
+            prompt_version="answer-prompt-v1",
+            rendered_text=source.blocks[0].text if state is AnswerState.STREAMED else None,
+            created_at=created_at,
+            completed_at=(
+                FIXTURE_TIME + timedelta(seconds=7) if state is AnswerState.STREAMED else None
+            ),
+        )
+        for state in (
+            AnswerState.REQUESTED,
+            AnswerState.RETRIEVING,
+            AnswerState.GENERATING,
+            AnswerState.VALIDATING,
+            AnswerState.STREAMED,
+        )
+    )
+    statements = tuple(
+        AnswerStatement(
+            id=uuid4(),
+            workspace_id=source.context.workspace_id,
+            answer_id=answer_id,
+            ordinal=ordinal,
+            text=block.text,
+            statement_type=StatementType.ARCHIVE_DERIVED,
+            support_status=StatementSupportStatus.VALIDATED,
+            created_at=FIXTURE_TIME + timedelta(seconds=7),
+        )
+        for ordinal, block in enumerate(source.blocks)
+    )
+    return AnswerResultFixture(snapshots=snapshots, statements=statements)
+
+
+def persist_answer_result(
+    engine: Engine,
+    source: ResearchSource,
+    result: AnswerResultFixture,
+) -> None:
+    """Persist an answer lifecycle and its final statements through Research."""
+
+    session_factory = create_session_factory(engine)
+    with transactional_session(session_factory) as session:
+        SqlAlchemyResearchRepository(session).add_answer(source.context, result.snapshots[0])
+    for snapshot in result.snapshots[1:-1]:
+        with transactional_session(session_factory) as session:
+            updated = SqlAlchemyResearchRepository(session).update_answer(
+                source.context,
+                snapshot,
+            )
+            if not updated:
+                raise RuntimeError("synthetic answer disappeared during its lifecycle")
+    with transactional_session(session_factory) as session:
+        repository = SqlAlchemyResearchRepository(session)
+        if not repository.update_answer(source.context, result.answer):
+            raise RuntimeError("synthetic answer disappeared before its terminal state")
+        repository.add_statements(source.context, result.answer, result.statements)
