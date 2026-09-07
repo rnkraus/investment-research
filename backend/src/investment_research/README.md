@@ -4,13 +4,14 @@
 
 ## Contents
 
-| Path           | Responsibility                                                                                                         |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `main.py`      | Creates the FastAPI application, attaches the dependency container, registers routes, and installs OpenAPI generation. |
-| `bootstrap.py` | Composition root that selects concrete implementations for application-owned contracts.                                |
-| `settings.py`  | Validates non-secret local runtime configuration.                                                                      |
-| `api/`         | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
-| `modules/`     | Business capabilities with explicit ownership and dependency boundaries.                                               |
+| Path              | Responsibility                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `main.py`         | Creates the FastAPI application, attaches the dependency container, registers routes, and installs OpenAPI generation. |
+| `bootstrap.py`    | Composition root that selects concrete implementations for application-owned contracts.                                |
+| `settings.py`     | Validates non-secret local runtime configuration.                                                                      |
+| `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
+| `infrastructure/` | Shared technical adapters; Step 3 provides SQLAlchemy metadata, engines, sessions, and transaction handling.            |
+| `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                               |
 
 ## Startup flow
 
