@@ -1,7 +1,7 @@
 """Versioned HTTP and stream contracts for the M0.0 API surface."""
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -12,6 +12,8 @@ from pydantic import (
     StringConstraints,
     model_validator,
 )
+
+from investment_research.modules.research.domain import TemporalMode
 
 TrimmedTitle = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)
@@ -92,19 +94,22 @@ class ProcessingRunResult(StrictContract):
     error_summary: SafeMessage | None = None
 
 
-class TemporalMode(StrEnum):
-    """Supported meanings of a research time cutoff."""
-
-    PUBLIC_KNOWLEDGE = "PUBLIC_KNOWLEDGE"
-    PERSONAL_ARCHIVE = "PERSONAL_ARCHIVE"
-
-
 class ResearchRequestContext(StrictContract):
     """Explicit archive filters supplied with a research question."""
 
     document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
-    temporal_mode: TemporalMode = TemporalMode.PERSONAL_ARCHIVE
+    temporal_mode: TemporalMode = TemporalMode.CURRENT
     cutoff_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def require_temporal_cutoff(self) -> Self:
+        """Reject ambiguous combinations before they reach application services."""
+
+        if self.temporal_mode is TemporalMode.CURRENT and self.cutoff_at is not None:
+            raise ValueError("CURRENT temporal mode must not define cutoff_at")
+        if self.temporal_mode is not TemporalMode.CURRENT and self.cutoff_at is None:
+            raise ValueError("historical temporal mode requires cutoff_at")
+        return self
 
 
 class ResearchRequestInput(StrictContract):

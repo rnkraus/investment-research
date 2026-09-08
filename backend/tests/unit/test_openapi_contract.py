@@ -30,6 +30,19 @@ def test_research_input_schema_has_no_client_workspace_scope() -> None:
     assert "workspace_id" not in json.dumps(research_input)
 
 
+def test_research_context_schema_defaults_to_current_temporal_mode() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    research_context = schema["components"]["schemas"]["ResearchRequestContext"]
+    temporal_mode = schema["components"]["schemas"]["TemporalMode"]
+
+    assert research_context["properties"]["temporal_mode"]["default"] == "CURRENT"
+    assert set(temporal_mode["enum"]) == {
+        "CURRENT",
+        "PUBLIC_KNOWLEDGE",
+        "PERSONAL_ARCHIVE",
+    }
+
+
 def test_openapi_exposes_discriminated_research_stream_union() -> None:
     schema = create_app(Settings(environment="test")).openapi()
     stream_event = schema["components"]["schemas"]["ResearchStreamEvent"]
