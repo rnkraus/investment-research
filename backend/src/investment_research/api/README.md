@@ -26,4 +26,6 @@ flowchart LR
 
 Client-supplied identifiers are untrusted. In particular, `workspace_id` is not accepted as authorization proof; routes obtain workspace scope through `WorkspaceContextDependency`. Error responses expose stable codes and safe summaries rather than internal details.
 
+Research requests default to the current eligible archive state. Historical `PUBLIC_KNOWLEDGE` and `PERSONAL_ARCHIVE` requests require an explicit cutoff, while `CURRENT` requests must not provide one. The API boundary rejects inconsistent combinations before invoking an application service.
+
 Before evidence validation completes, research streaming may emit progress only. Statement and citation events represent already accepted output. The authoritative HTTP surface is defined in [`docs/08-m0-0-implementation-plan.md`](../../../../docs/08-m0-0-implementation-plan.md#41-http-surface).

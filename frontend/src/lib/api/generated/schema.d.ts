@@ -382,7 +382,7 @@ export interface components {
              * @default []
              */
             readonly document_ids: readonly string[];
-            /** @default PERSONAL_ARCHIVE */
+            /** @default CURRENT */
             readonly temporal_mode: components["schemas"]["TemporalMode"];
         };
         /**
@@ -397,10 +397,10 @@ export interface components {
         readonly ResearchStreamEvent: components["schemas"]["ResearchProgressEvent"] | components["schemas"]["AnswerStatementEvent"] | components["schemas"]["AnswerCitationEvent"] | components["schemas"]["AnswerCompletedEvent"] | components["schemas"]["AnswerInsufficientEvent"] | components["schemas"]["ResearchFailedEvent"];
         /**
          * TemporalMode
-         * @description Supported meanings of a research time cutoff.
+         * @description Eligibility clocks available to a research request.
          * @enum {string}
          */
-        readonly TemporalMode: "PUBLIC_KNOWLEDGE" | "PERSONAL_ARCHIVE";
+        readonly TemporalMode: "CURRENT" | "PUBLIC_KNOWLEDGE" | "PERSONAL_ARCHIVE";
     };
     responses: never;
     parameters: never;

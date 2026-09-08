@@ -582,7 +582,7 @@
           },
           "temporal_mode": {
             "$ref": "#/components/schemas/TemporalMode",
-            "default": "PERSONAL_ARCHIVE"
+            "default": "CURRENT"
           }
         },
         "title": "ResearchRequestContext",
@@ -642,8 +642,9 @@
         ]
       },
       "TemporalMode": {
-        "description": "Supported meanings of a research time cutoff.",
+        "description": "Eligibility clocks available to a research request.",
         "enum": [
+          "CURRENT",
           "PUBLIC_KNOWLEDGE",
           "PERSONAL_ARCHIVE"
         ],
