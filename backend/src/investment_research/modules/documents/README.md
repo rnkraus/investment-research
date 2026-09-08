@@ -20,7 +20,7 @@ flowchart LR
 
 - `Document` owns `document_type`, lifecycle state, and the current-version pointer.
 - `DocumentVersion` owns version number, title, language, content checksum, and source times.
-- `OriginalArtifact` owns the server-generated storage key, media type, byte and page counts, and original checksum.
+- `OriginalArtifact` owns the server-generated storage key, media type, byte count, and original checksum. Page-aware information is created later as versioned processing output rather than invented during capture.
 
 ## Capture transaction
 
