@@ -76,6 +76,8 @@ class Settings(BaseModel):
             raise ValueError("database_url port must be between 1 and 65535")
         if parsed_url.path in {"", "/"}:
             raise ValueError("database_url must include a database name")
+        if parsed_url.query:
+            raise ValueError("database_url must not include query parameters during M0.0")
         if parsed_url.fragment:
             raise ValueError("database_url must not include a fragment")
         return value

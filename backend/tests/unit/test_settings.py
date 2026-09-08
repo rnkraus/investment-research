@@ -164,6 +164,30 @@ def test_settings_reject_non_loopback_api_host() -> None:
             "fragment",
             id="fragment",
         ),
+        pytest.param(
+            "postgresql+psycopg://test-user:test-password@127.0.0.1/test-database"
+            "?host=db.example.invalid",
+            "query parameters",
+            id="query-host-override",
+        ),
+        pytest.param(
+            "postgresql+psycopg://test-user:test-password@127.0.0.1/test-database"
+            "?hostaddr=203.0.113.10",
+            "query parameters",
+            id="query-hostaddr-override",
+        ),
+        pytest.param(
+            "postgresql+psycopg://test-user:test-password@127.0.0.1/test-database"
+            "?service=external-service",
+            "query parameters",
+            id="query-service-override",
+        ),
+        pytest.param(
+            "postgresql+psycopg://test-user:test-password@127.0.0.1/test-database"
+            "?application_name=research-api",
+            "query parameters",
+            id="all-query-options-rejected",
+        ),
     ],
 )
 def test_settings_reject_unsafe_database_url(

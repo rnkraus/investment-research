@@ -62,7 +62,9 @@ uv run uvicorn investment_research.main:create_app --factory --reload --host 127
 The API derives a validated loopback database URL from the root `.env`, creates the process-wide
 database resources during startup, and releases them during shutdown. An explicit
 `INVESTMENT_RESEARCH_DATABASE_URL` remains available for CI and isolated tooling and overrides the
-local file. Application startup does not create or migrate tables automatically.
+local file. During M0.0, database URL query parameters are rejected so driver options cannot
+redirect a loopback URL to another target. Application startup does not create or migrate tables
+automatically.
 
 Start the web application in a third terminal from the repository root:
 
