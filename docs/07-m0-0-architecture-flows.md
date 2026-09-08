@@ -125,7 +125,7 @@ Source: [docs/02-system-design.md — §6 Document ingestion](./02-system-design
 
 ```mermaid
 flowchart LR
-    A[Upload PDF / Text] --> B[Store immutable original]
+    A[Upload PDF] --> B[Store immutable original]
     B --> C[Create document version and processing run]
     C --> D[Execute processing run]
     D --> E[Parse structure and pages]
@@ -135,7 +135,7 @@ flowchart LR
 
 M0.0 source: [docs/05-delivery-plan.md — §4 M0.0](./05-delivery-plan.md#4-m00--lean-proof-of-value)
 
-This is the exact prefix of the production ingestion flow. In M0.0, `Execute processing run` is performed by the separate bounded development runner. In M0, Redis and Celery deliver the same `ProcessingRun` identifier to a Celery worker, which invokes the same processing application service. M1 appends embeddings, Pinecone indexing, and `Mark searchable`; optional enrichment remains later in the same flow.
+This follows the production ingestion prefix while narrowing the accepted M0.0 input to PDF. In M0.0, `Execute processing run` is performed by the separate bounded development runner. In M0, Redis and Celery deliver the same `ProcessingRun` identifier to a Celery worker, which invokes the same processing application service. M1 appends embeddings, Pinecone indexing, and `Mark searchable`; optional enrichment remains later in the same flow.
 
 ## 5. Direct RAG
 
