@@ -77,7 +77,6 @@ def make_capture(
         storage_key=f"workspaces/{workspace_id}/originals/{ORIGINAL_ID}.pdf",
         media_type=OriginalMediaType.PDF,
         byte_size=10_840,
-        page_count=4,
         checksum_sha256=CONTENT_SHA256,
         captured_at=CAPTURED_AT,
     )

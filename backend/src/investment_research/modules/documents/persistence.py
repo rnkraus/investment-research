@@ -192,7 +192,6 @@ class OriginalArtifactRow(Base):
         ),
         CheckConstraint("char_length(btrim(storage_key)) > 0", name="non_empty_storage_key"),
         CheckConstraint("byte_size > 0", name="positive_byte_size"),
-        CheckConstraint("page_count > 0", name="positive_page_count"),
         CheckConstraint("checksum_sha256 ~ '^[a-f0-9]{64}$'", name="valid_checksum_sha256"),
         CheckConstraint("media_type IN ('application/pdf')", name="original_media_type"),
     )
@@ -214,7 +213,6 @@ class OriginalArtifactRow(Base):
         nullable=False,
     )
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    page_count: Mapped[int] = mapped_column(Integer, nullable=False)
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -229,7 +227,6 @@ class OriginalArtifactRow(Base):
             storage_key=original.storage_key,
             media_type=original.media_type,
             byte_size=original.byte_size,
-            page_count=original.page_count,
             checksum_sha256=original.checksum_sha256,
             captured_at=original.captured_at,
         )
@@ -244,7 +241,6 @@ class OriginalArtifactRow(Base):
             storage_key=self.storage_key,
             media_type=self.media_type,
             byte_size=self.byte_size,
-            page_count=self.page_count,
             checksum_sha256=self.checksum_sha256,
             captured_at=self.captured_at,
         )

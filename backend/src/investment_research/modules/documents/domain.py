@@ -107,7 +107,6 @@ class OriginalArtifact(ImmutableDocumentModel):
     storage_key: StorageKey
     media_type: OriginalMediaType
     byte_size: int = Field(gt=0)
-    page_count: int = Field(gt=0)
     checksum_sha256: Sha256Hex
     captured_at: AwareDatetime
 
