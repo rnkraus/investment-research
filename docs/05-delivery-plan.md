@@ -21,7 +21,7 @@ Working rules:
 - deliver end-to-end behavior instead of completing one technical layer at a time;
 - keep M0.0 local-only and, from M0 onward, keep the application in Docker Compose until the core journey is reliable;
 - use a small public fixture corpus before a real private archive exists;
-- separate deterministic correctness tests from later corpus-quality evaluation;
+- separate deterministic correctness tests from corpus-quality evaluation, and establish a small representative baseline before retrieval choices become release candidates;
 - version prompts, models, parsers, chunks, embeddings, and retrieval configuration from the start;
 - add an ADR only when a significant decision is made, not for routine implementation choices;
 - do not add LangGraph until direct RAG has stable traces and a measured limitation.
@@ -48,10 +48,10 @@ M0.0 is governed by its narrower proof-specific constraints and exit gate. For M
 | M1 — Thin vertical slice | One document can produce one validated cited answer | Citation opens the exact original location |
 | M2 — Reliable ingestion | Imports, retries, versions, reprocessing, and deletion are consistent | Failure and stale-index scenarios preserve canonical state |
 | M3 — Archive and discovery | Documents and companies can be browsed, filtered, and searched | Exact, lexical, and semantic discovery work together |
-| M4 — Production-shaped direct RAG | Routed hybrid retrieval, reranking, conversation, and evidence rules work | Missing, conflicting, and temporal cases pass |
+| M4 — Production-shaped direct RAG | Routed hybrid retrieval, reranking, conversation, and evidence rules work | Critical correctness cases and the initial representative quality baseline pass |
 | M5 — Local release hardening | Security, recovery, observability, and cost controls are exercised | All local release gates pass |
-| M6 — Public portfolio demo | Sanitized read-only demo is safely hosted | Public-release security and operations gates pass |
-| M7 — Corpus evaluation | Retrieval and answer changes are compared on real use cases | Baselines and regression gates are evidence-based |
+| M6 — Public portfolio demo | Sanitized read-only demo is safely hosted | Public-release security, operations, and pre-demo quality gates pass |
+| M7 — Expanded corpus evaluation | Retrieval and answer changes are compared on broader real use cases | Baselines and regression gates are evidence-based |
 | M8 — Structured research knowledge | Claims, topics, profiles, and impact suggestions become reviewable | Suggestions remain evidence-linked and human-controlled |
 | M9 — Bounded agentic research | LangGraph handles justified multi-step cases | It measurably improves named cases within budgets |
 
@@ -178,10 +178,11 @@ Replaying any job or outbox event produces the same final state. Deleted or inac
 - Exact identifier and phrase lookup using PostgreSQL.
 - Lexical passage search and Pinecone dense search.
 - Search-result explanations showing route, filters, document, page, and passage.
+- Initial versioned evaluation core using public or sanitized representative document forms and reviewed questions with expected evidence and failure categories.
 
 ### Exit gate
 
-The fixture corpus can be found through exact ticker lookup, lexical wording, semantic paraphrase, metadata filtering, and document navigation without using chat.
+The fixture corpus can be found through exact ticker lookup, lexical wording, semantic paraphrase, metadata filtering, and document navigation without using chat. Before M4 begins, the initial evaluation core and its critical metrics and thresholds are frozen so later retrieval and answer comparisons use the same versioned cases.
 
 ## 9. M4 — Production-shaped direct RAG
 
@@ -198,6 +199,7 @@ The fixture corpus can be found through exact ticker lookup, lexical wording, se
 - Public-knowledge-time and personal-archive-time modes.
 - OpenTelemetry/OpenInference traces and LangSmith inspection.
 - Per-operation latency, token, and estimated-cost recording.
+- Initial representative measurements that separate retrieval recall, reranking, answer support, citation correctness, refusal of unanswerable questions, temporal behavior, latency, and cost.
 
 ### Exit gate
 
@@ -209,6 +211,8 @@ Approved fixture cases demonstrate:
 - visible conflicting evidence;
 - correct follow-up context without treating conversation history as evidence;
 - different results for public and personal archive time where expected.
+
+The initial representative evaluation baseline is recorded against one versioned dataset and configuration manifest, and every agreed critical threshold passes. This early baseline is a release gate and a regression signal, not a claim of statistical completeness.
 
 ## 10. M5 — Local release hardening
 
@@ -249,22 +253,22 @@ Do not begin this milestone until the local product is stable.
 
 ### Exit gate
 
-All public-demo release gates in `04-security-and-operations.md` pass, including restore and rollback exercises. No private archive content or credential is present in the demo environment.
+All public-demo release gates in `04-security-and-operations.md` pass, including restore, rollback, and the versioned pre-demo quality evaluation. No private archive content or credential is present in the demo environment.
 
-## 12. M7 — Evaluation with a representative corpus
+## 12. M7 — Expanded evaluation with a representative corpus
 
-Full quality evaluation begins when representative documents and real research questions exist. Earlier milestones still use deterministic fixtures and regression tests.
+M7 expands the pre-demo M3–M4 evaluation core with broader representative documents, questions, failure modes, and repeated comparisons. Deterministic fixtures remain separate correctness tests; the initial representative baseline already gates M4 and M6.
 
 ### Build
 
-- Create versioned evaluation datasets containing question, scope, expected evidence, acceptable answer properties, and failure category.
+- Expand the versioned evaluation datasets with additional questions, scopes, expected evidence, acceptable answer properties, and failure categories.
 - Separate retrieval, reranking, answer, citation, routing, temporal, latency, and cost measurements.
-- Establish the direct-RAG baseline before changing retrieval methods.
+- Revalidate the direct-RAG baseline before adopting a major retrieval-method change.
 - Use LangSmith experiments and application-owned result records; use RAGAS metrics selectively where they match the evaluation question.
 - Compare changes on the same dataset and configuration manifest.
 - Promote reliable failure cases from production traces into the regression set after privacy review.
 
-### Initial comparisons
+### Expanded comparisons
 
 - lexical-only versus dense-only versus hybrid retrieval;
 - RRF with and without multilingual reranking;
