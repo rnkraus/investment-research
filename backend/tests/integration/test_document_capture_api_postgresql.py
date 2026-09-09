@@ -1,11 +1,12 @@
-"""End-to-end API capture test against PostgreSQL and local object storage."""
+"""End-to-end document API tests against PostgreSQL and local object storage."""
 
 from pathlib import Path
-from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
+from investment_research.api.contracts import DocumentAccepted
+from investment_research.api.dependencies import get_workspace_context
 from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
@@ -21,6 +22,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
 from investment_research.settings import Settings
+from scripts.seed_m0_0 import ISOLATION_TEST_WORKSPACE_ID
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_PDF = (
@@ -28,7 +30,26 @@ FIXTURE_PDF = (
 )
 
 
-def test_upload_fixture_captures_original_and_processing_intent(
+def capture_fixture(client: TestClient, *, title: str) -> DocumentAccepted:
+    """Upload the synthetic PDF through the real multipart boundary."""
+
+    with FIXTURE_PDF.open("rb") as fixture_file:
+        response = client.post(
+            "/api/v1/documents",
+            data={
+                "title": title,
+                "language": "en",
+                "published_at": "2026-02-19T00:00:00Z",
+                "available_at": "2026-02-19T00:00:00Z",
+            },
+            files={"file": (FIXTURE_PDF.name, fixture_file, "application/pdf")},
+        )
+
+    assert response.status_code == 202
+    return DocumentAccepted.model_validate(response.json())
+
+
+def test_upload_and_open_original_enforce_canonical_workspace(
     integration_database_settings: Settings,
     integration_database_engine: Engine,
     tmp_path: Path,
@@ -42,25 +63,43 @@ def test_upload_fixture_captures_original_and_processing_intent(
     )
     application = create_app(settings)
 
-    with TestClient(application) as client, FIXTURE_PDF.open("rb") as fixture_file:
-        response = client.post(
-            "/api/v1/documents",
-            data={
-                "title": "Northstar Grid Analytics Ltd. - FY2025 Earnings Brief",
-                "language": "en",
-                "published_at": "2026-02-19T00:00:00Z",
-                "available_at": "2026-02-19T00:00:00Z",
-            },
-            files={"file": (FIXTURE_PDF.name, fixture_file, "application/pdf")},
+    with TestClient(application) as client:
+        payload = capture_fixture(
+            client,
+            title="Northstar Grid Analytics Ltd. - FY2025 Earnings Brief",
+        )
+        second_payload = capture_fixture(client, title="Second synthetic version owner")
+        document_id = payload.document_id
+        version_id = payload.document_version_id
+        processing_run_id = payload.processing_run_id
+
+        original_response = client.get(
+            f"/api/v1/documents/{document_id}/versions/{version_id}/original"
+        )
+        mismatched_response = client.get(
+            f"/api/v1/documents/{document_id}/versions/"
+            f"{second_payload.document_version_id}/original"
         )
 
-    assert response.status_code == 202
-    payload = response.json()
-    document_id = UUID(payload["document_id"])
-    version_id = UUID(payload["document_version_id"])
-    processing_run_id = UUID(payload["processing_run_id"])
-    assert payload["state"] == "CAPTURED"
-    assert payload["processing_status_url"] == (f"/api/v1/processing-runs/{processing_run_id}")
+        foreign_context = WorkspaceContext(
+            user_id=LOCAL_DEVELOPMENT_USER_ID,
+            workspace_id=ISOLATION_TEST_WORKSPACE_ID,
+        )
+        application.dependency_overrides[get_workspace_context] = lambda: foreign_context
+        foreign_response = client.get(
+            f"/api/v1/documents/{document_id}/versions/{version_id}/original"
+        )
+
+    assert payload.state == "CAPTURED"
+    assert payload.processing_status_url == (f"/api/v1/processing-runs/{processing_run_id}")
+    assert original_response.status_code == 200
+    assert original_response.content == FIXTURE_PDF.read_bytes()
+    assert original_response.headers["content-type"] == "application/pdf"
+    assert original_response.headers["x-content-type-options"] == "nosniff"
+    assert mismatched_response.status_code == 404
+    assert mismatched_response.json()["error"]["code"] == "NOT_FOUND"
+    assert foreign_response.status_code == 404
+    assert foreign_response.json() == mismatched_response.json()
 
     context = WorkspaceContext(
         user_id=LOCAL_DEVELOPMENT_USER_ID,

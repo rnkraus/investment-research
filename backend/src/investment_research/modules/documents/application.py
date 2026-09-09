@@ -1,7 +1,8 @@
-"""Application service for secure immutable document capture."""
+"""Application services for secure immutable document originals."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from tempfile import SpooledTemporaryFile
@@ -22,6 +23,8 @@ from investment_research.modules.documents.domain import (
 from investment_research.modules.documents.ports import (
     BinaryReadable,
     CaptureUnitOfWorkFactory,
+    DocumentReadUnitOfWorkFactory,
+    ObjectNotFoundError,
     ObjectStorage,
     ObjectStorageError,
 )
@@ -55,6 +58,103 @@ class InvalidPdfSignatureError(DocumentCaptureError):
 
 class UploadTooLargeError(DocumentCaptureError):
     """Raised as soon as an upload exceeds its configured byte limit."""
+
+
+class OriginalUnavailableError(Exception):
+    """Hide whether document identifiers are unknown, foreign, or ineligible."""
+
+
+class OriginalIntegrityError(Exception):
+    """Raised when stored bytes no longer match canonical original metadata."""
+
+
+@dataclass(slots=True)
+class OriginalDownload:
+    """Verified original plus safe response metadata and owned stream lifecycle."""
+
+    media_type: OriginalMediaType
+    byte_size: int
+    filename: str
+    _content: SpooledTemporaryFile[bytes]
+
+    def iter_bytes(self) -> Generator[bytes]:
+        """Yield bounded chunks and always close the prepared content afterward."""
+
+        try:
+            while chunk := self._content.read(READ_CHUNK_SIZE):
+                yield chunk
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        """Release memory or the private temporary file idempotently."""
+
+        self._content.close()
+
+
+class OpenOriginalService:
+    """Resolve and verify one eligible immutable original before download."""
+
+    def __init__(
+        self,
+        *,
+        object_storage: ObjectStorage,
+        unit_of_work_factory: DocumentReadUnitOfWorkFactory,
+    ) -> None:
+        self._object_storage = object_storage
+        self._unit_of_work_factory = unit_of_work_factory
+
+    def open_original(
+        self,
+        context: WorkspaceContext,
+        document_id: UUID,
+        version_id: UUID,
+    ) -> OriginalDownload:
+        """Return verified content only for the active in-scope document version."""
+
+        with self._unit_of_work_factory() as unit_of_work:
+            original = unit_of_work.documents.get_original_artifact(
+                context,
+                document_id,
+                version_id,
+            )
+        if original is None:
+            raise OriginalUnavailableError("original is unavailable")
+
+        prepared = SpooledTemporaryFile[bytes](
+            max_size=min(original.byte_size, READ_CHUNK_SIZE),
+            mode="w+b",
+        )
+        try:
+            digest = sha256()
+            byte_size = 0
+            with self._object_storage.open(context, original.storage_key) as stored_file:
+                while chunk := stored_file.read(READ_CHUNK_SIZE):
+                    if not isinstance(chunk, bytes):
+                        raise OriginalIntegrityError("stored original is not a binary stream")
+                    byte_size += len(chunk)
+                    if byte_size > original.byte_size:
+                        raise OriginalIntegrityError("stored original exceeds its recorded size")
+                    digest.update(chunk)
+                    prepared.write(chunk)
+        except ObjectNotFoundError as error:
+            prepared.close()
+            raise OriginalIntegrityError("stored original is unavailable") from error
+        except BaseException:
+            prepared.close()
+            raise
+
+        if byte_size != original.byte_size or digest.hexdigest() != original.checksum_sha256:
+            prepared.close()
+            raise OriginalIntegrityError("stored original does not match canonical metadata")
+
+        prepared.seek(0)
+        return OriginalDownload(
+            media_type=original.media_type,
+            byte_size=original.byte_size,
+            filename=f"document-{document_id}-version-{version_id}.pdf",
+            _content=prepared,
+        )
 
 
 class CaptureDocumentService:

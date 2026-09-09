@@ -4,13 +4,13 @@ This module owns logical archive documents, immutable content versions, and immu
 
 ## Contents
 
-| File             | Responsibility                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------- |
-| `contracts.py`   | Defines validated capture metadata and the stable application result.                                  |
-| `application.py` | Validates and preserves a bounded PDF, then records its canonical metadata and processing intent.      |
-| `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values.   |
-| `ports.py`       | Defines object storage, repository, binary-stream, and capture-unit-of-work contracts.                 |
-| `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.              |
+| File             | Responsibility                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| `contracts.py`   | Defines validated capture metadata and the stable application result.                                 |
+| `application.py` | Captures bounded PDFs and resolves verified current originals for authorized streaming.               |
+| `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values.  |
+| `ports.py`       | Defines object storage, repository, binary-stream, and write/read unit-of-work contracts.             |
+| `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.             |
 
 ## Entity ownership
 
@@ -44,6 +44,31 @@ flowchart TD
 The service accepts only a declared `application/pdf` with a `.pdf` filename and a supported `%PDF-…` signature. It enforces the configured byte limit before publishing an object, keeps at most 1 MiB of the validation spool in memory, calculates SHA-256 while copying, and verifies the storage adapter's returned key, size, and checksum.
 
 `add_capture` rejects mismatched workspace or entity relationships before staging rows. It never commits. The capture unit of work binds both module repositories to one caller-owned SQLAlchemy session, so document metadata and the processing intent commit or roll back together. Because object storage cannot participate in the PostgreSQL transaction, a failed canonical transaction invokes the narrowly scoped `discard_uncommitted` compensation. It is not a general deletion path for committed originals.
+
+## Original access
+
+```mermaid
+flowchart TD
+    INPUT[Trusted workspace plus document and version IDs] --> READ[DocumentReadUnitOfWork]
+    READ --> REPOSITORY[DocumentRepository.get_original_artifact]
+    REPOSITORY -->|unknown, foreign, inactive, or mismatched| NOTFOUND[One unavailable result]
+    REPOSITORY -->|eligible current version| METADATA[Canonical artifact metadata]
+    METADATA --> STORAGE[ObjectStorage.open]
+    STORAGE --> SPOOL[Bounded temporary spool]
+    SPOOL --> VERIFY[Verify byte count and SHA-256]
+    VERIFY -->|match| DOWNLOAD[OriginalDownload stream]
+    VERIFY -->|mismatch| INTEGRITY[Integrity failure; emit no PDF bytes]
+```
+
+`OpenOriginalService` performs the scoped database lookup before opening storage. It copies the
+bounded original into a private spool and verifies its recorded size and SHA-256 before returning a
+stream. At most 1 MiB remains in memory for larger originals; the standard-library spool moves the
+remainder to a temporary file. The stream owns that temporary resource and closes it after normal,
+failed, or cancelled consumption.
+
+The read unit of work opens one short-lived SQLAlchemy session and exposes only the document
+repository. It does not reuse the capture transaction, include the processing repository, or commit
+on a read-only request.
 
 ## Database isolation and eligibility
 

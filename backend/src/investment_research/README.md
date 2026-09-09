@@ -22,12 +22,16 @@ flowchart TD
     LIFE -->|startup| BOOT[build_container]
     BOOT --> ENGINE[SQLAlchemy engine]
     ENGINE --> SESSIONS[Session factory]
-    SESSIONS --> UOW[Capture unit-of-work factory]
+    SESSIONS --> CAPTUREUOW[Capture unit-of-work factory]
+    SESSIONS --> READUOW[Document read unit-of-work factory]
     BOOT --> STORAGE[ObjectStorage adapter]
-    UOW --> CAPTURE[CaptureDocumentService]
+    CAPTUREUOW --> CAPTURE[CaptureDocumentService]
+    READUOW --> ORIGINAL[OpenOriginalService]
     STORAGE --> CAPTURE
+    STORAGE --> ORIGINAL
     BOOT --> STATE[Application container]
     CAPTURE --> STATE
+    ORIGINAL --> STATE
     MAIN --> LIMIT[Request-body limit]
     LIMIT --> ROUTES[HTTP routes]
     MAIN --> ERRORS[Safe error handlers]
@@ -47,5 +51,10 @@ For document capture, the request-body middleware rejects excessive transport pa
 multipart parsing. The route then resolves the server-owned workspace and capture service from the
 application container. The service validates the PDF and coordinates immutable storage with one
 database unit of work; the route only translates the typed result or a known safe error.
+
+For original access, the route supplies only server-resolved workspace scope and path identifiers.
+The read service resolves an eligible current original through a short-lived non-committing session,
+then verifies the stored bytes against canonical size and checksum before allowing the response to
+stream them.
 
 The package follows the boundaries in [`docs/02-system-design.md`](../../../docs/02-system-design.md#4-component-boundaries).

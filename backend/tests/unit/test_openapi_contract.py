@@ -24,7 +24,11 @@ def test_committed_openapi_snapshot_matches_application() -> None:
 def test_openapi_advertises_only_implemented_product_routes() -> None:
     schema = create_app(Settings(environment="test")).openapi()
 
-    assert set(schema["paths"]) == {"/health", "/api/v1/documents"}
+    assert set(schema["paths"]) == {
+        "/health",
+        "/api/v1/documents",
+        "/api/v1/documents/{document_id}/versions/{version_id}/original",
+    }
 
 
 def test_document_capture_uses_scoped_multipart_contract() -> None:
@@ -47,6 +51,36 @@ def test_document_capture_uses_scoped_multipart_contract() -> None:
         "$ref": "#/components/schemas/DocumentAccepted"
     }
     for status_code in ("409", "413", "415", "422", "500"):
+        assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+
+
+def test_original_route_exposes_binary_pdf_without_workspace_input() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/documents/{document_id}/versions/{version_id}/original"][
+        "get"
+    ]
+
+    assert operation["parameters"] == [
+        {
+            "name": "document_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string", "format": "uuid", "title": "Document Id"},
+        },
+        {
+            "name": "version_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string", "format": "uuid", "title": "Version Id"},
+        },
+    ]
+    assert "workspace_id" not in json.dumps(operation)
+    assert operation["responses"]["200"]["content"] == {
+        "application/pdf": {"schema": {"type": "string", "format": "binary"}}
+    }
+    for status_code in ("404", "422", "500"):
         assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
             "$ref": "#/components/schemas/ErrorResponse"
         }

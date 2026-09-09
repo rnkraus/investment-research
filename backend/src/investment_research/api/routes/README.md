@@ -4,13 +4,14 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 
 ## Current routes
 
-| File           | Endpoint                 | Purpose                                                                    |
-| -------------- | ------------------------ | -------------------------------------------------------------------------- |
-| `health.py`    | `GET /health`            | Reports process liveness without dependency details or credentials.        |
-| `documents.py` | `POST /api/v1/documents` | Captures one validated PDF and returns canonical identifiers with HTTP 202. |
+| File           | Endpoint                                                                    | Purpose                                                                    |
+| -------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `health.py`    | `GET /health`                                                               | Reports process liveness without dependency details or credentials.        |
+| `documents.py` | `POST /api/v1/documents`                                                    | Captures one validated PDF and returns canonical identifiers with HTTP 202. |
+| `documents.py` | `GET /api/v1/documents/{document_id}/versions/{version_id}/original`        | Streams one authorized and integrity-checked current PDF original.          |
 
-Processing status, research, evidence resolution, and original viewing remain planned product routes.
-They must not be advertised as working endpoints before their implementation block is complete.
+Processing status, research, and evidence resolution remain planned product routes. They must not
+be advertised as working endpoints before their implementation block is complete.
 
 ```mermaid
 flowchart LR
@@ -27,3 +28,17 @@ Routes must not open another module's tables directly, choose infrastructure ada
 The capture route accepts `file`, `title`, `language`, `published_at`, and `available_at` as multipart
 fields. `workspace_id` is intentionally absent. It returns document, document-version, and
 processing-run identifiers plus the future processing-status URL; it does not parse the PDF.
+
+```mermaid
+flowchart LR
+    REQUEST[Original GET request] --> CONTEXT[Resolve trusted context]
+    CONTEXT --> SERVICE[OpenOriginalService]
+    SERVICE --> REPOSITORY[Eligible original lookup]
+    REPOSITORY --> VERIFY[Read and verify stored bytes]
+    VERIFY --> STREAM[Inline application/pdf response]
+```
+
+The original route accepts only document and version UUIDs. Unknown, foreign, inactive, and
+mismatched records share the same `404 NOT_FOUND` response. It uses a server-generated download
+filename, disables content sniffing and private caching, and never exposes the storage key or local
+filesystem path.

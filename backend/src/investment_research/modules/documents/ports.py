@@ -123,4 +123,16 @@ class CaptureUnitOfWork(Protocol):
         """Return the repository that stages the associated processing intent."""
 
 
+class DocumentReadUnitOfWork(Protocol):
+    """Document repository scoped to one non-writing application operation."""
+
+    @property
+    def documents(self) -> DocumentRepository:
+        """Return the repository used to resolve eligible document records."""
+
+
 type CaptureUnitOfWorkFactory = Callable[[], AbstractContextManager[CaptureUnitOfWork]]
+type DocumentReadUnitOfWorkFactory = Callable[
+    [],
+    AbstractContextManager[DocumentReadUnitOfWork],
+]
