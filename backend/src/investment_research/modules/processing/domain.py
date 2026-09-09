@@ -57,6 +57,10 @@ class ProcessingRelationshipError(ValueError):
     """Raised when processing records do not describe one source version and run."""
 
 
+class InvalidProcessingTransitionError(ValueError):
+    """Raised when a processing run attempts a forbidden lifecycle transition."""
+
+
 class ImmutableProcessingModel(BaseModel):
     """Shared validation policy for immutable processing snapshots."""
 
@@ -113,6 +117,55 @@ class ProcessingRun(ImmutableProcessingModel):
         elif self.error_summary is not None:
             raise ValueError("only FAILED run may contain error_summary")
         return self
+
+    def start_parsing(self, *, started_at: datetime) -> Self:
+        """Advance one captured run to its active parsing state."""
+
+        self._require_state(ProcessingState.CAPTURED, ProcessingState.PARSING)
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "state": ProcessingState.PARSING,
+                "started_at": started_at,
+            }
+        )
+
+    def mark_lexical_ready(self, *, completed_at: datetime) -> Self:
+        """Complete parsing after canonical blocks and chunks are ready to commit."""
+
+        self._require_state(ProcessingState.PARSING, ProcessingState.LEXICAL_READY)
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "state": ProcessingState.LEXICAL_READY,
+                "completed_at": completed_at,
+            }
+        )
+
+    def mark_failed(self, *, completed_at: datetime, error_summary: str) -> Self:
+        """Terminate active parsing with one bounded, caller-sanitized summary."""
+
+        self._require_state(ProcessingState.PARSING, ProcessingState.FAILED)
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "state": ProcessingState.FAILED,
+                "completed_at": completed_at,
+                "error_summary": error_summary,
+            }
+        )
+
+    def _require_state(
+        self,
+        expected: ProcessingState,
+        target: ProcessingState,
+    ) -> None:
+        """Require one explicit forward transition from the current snapshot."""
+
+        if self.state is not expected:
+            raise InvalidProcessingTransitionError(
+                f"cannot transition processing run from {self.state.value} to {target.value}"
+            )
 
 
 class StructureBlock(ImmutableProcessingModel):

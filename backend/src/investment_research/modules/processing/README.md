@@ -33,7 +33,16 @@ CAPTURED → PARSING → LEXICAL_READY
                ↘ FAILED
 ```
 
-State, timestamps, and safe error summaries must agree. Parser, parser configuration, chunker, chunking configuration, and lexical configuration versions are immutable properties of a run. `update_run` changes only lifecycle fields.
+State, timestamps, and safe error summaries must agree. `start_parsing`, `mark_lexical_ready`, and
+`mark_failed` are the only domain operations that advance an existing run. Each operation returns a
+new fully validated immutable snapshot; it does not mutate the earlier state. Direct jumps such as
+`CAPTURED → LEXICAL_READY`, failure before parsing starts, and restarting a terminal run raise
+`InvalidProcessingTransitionError`.
+
+Parser, parser configuration, chunker, chunking configuration, and lexical configuration versions
+are immutable properties of a run. `update_run` changes only lifecycle fields. The later processing
+service supplies a bounded, sanitized failure summary rather than storing an exception message or
+document content directly.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the initial durable intent. The factory applies the versioned M0.0 profile and the trusted workspace context, so the documents module does not duplicate processing configuration knowledge. Later runner behavior must use the same recorded profile rather than silently substituting different parser, chunking, or lexical semantics.
 
