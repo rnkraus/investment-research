@@ -29,7 +29,7 @@ M0.0 establishes reusable application contracts and the evidence path. It does n
 9. **Replaceable generation:** `AnswerGenerator` is an application-owned port. The deterministic fixture adapter is the default. A real provider adapter is optional, separately approved, and restricted to the public fixture.
 10. **Validation before answer output:** generation completes into a typed result, then server-side validation runs. Only accepted statements and citations are emitted; pre-validation streaming is limited to progress events.
 11. **Server-owned workspace context:** the server resolves a fixed local development identity and workspace. The client cannot select or prove authorization with `workspace_id`.
-12. **Immutable local originals:** the M0.0 storage adapter writes under a configured, Git-ignored storage root outside the web root, uses server-generated keys and atomic writes, verifies checksums, and never overwrites an existing object.
+12. **Immutable local originals:** the M0.0 storage adapter writes under a configured, Git-ignored storage root outside the web root, uses server-generated keys and atomic writes, verifies checksums, never overwrites an existing object, and refuses symbolic links at every object-key path component.
 
 These decisions are implementation rules for M0.0. Only decisions that remain cross-cutting and expensive to reverse are promoted to ADRs after the proof provides evidence.
 
