@@ -4,12 +4,13 @@ This module owns canonical processing intent, page-aware parsed structure, versi
 
 ## Contents
 
-| File             | Responsibility                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------- |
-| `application.py` | Defines the versioned M0.0 processing profile and creates a valid initial `CAPTURED` run.              |
-| `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants.       |
-| `ports.py`       | Defines the application-owned `ProcessingRepository` contract.                                         |
-| `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior.        |
+| File             | Responsibility                                                                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `application.py` | Defines the versioned M0.0 processing profile and creates a valid initial `CAPTURED` run.               |
+| `contracts.py`   | Defines bounded, immutable parser input and page-aware output types.                                    |
+| `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants.        |
+| `ports.py`       | Defines the application-owned parser and `ProcessingRepository` contracts.                              |
+| `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior.         |
 
 ## Ownership and provenance
 
@@ -45,6 +46,29 @@ service supplies a bounded, sanitized failure summary rather than storing an exc
 document content directly.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the initial durable intent. The factory applies the versioned M0.0 profile and the trusted workspace context, so the documents module does not duplicate processing configuration knowledge. Later runner behavior must use the same recorded profile rather than silently substituting different parser, chunking, or lexical semantics.
+
+## Parser boundary
+
+```mermaid
+flowchart LR
+    STREAM[Caller-owned PDF binary stream] --> PORT[DocumentParser port]
+    LIMITS[ParserLimits<br/>pages and extracted characters] --> PORT
+    PORT --> RESULT[ParsedDocument]
+    RESULT --> PAGES[Ordered ParsedPages<br/>physical page number and exact text]
+    PAGES --> MAPPING[Later application mapping]
+    MAPPING --> BLOCKS[StructureBlocks and Chunks]
+```
+
+The application owns both sides of this boundary: `ParserLimits` describes fail-closed extraction
+limits, and `ParsedDocument` contains only ordered page text. A concrete PDF library remains behind
+the `DocumentParser` port and cannot leak library-specific page objects into domain or persistence
+code. The parser does not create blocks, chunks, or evidence spans; those require application-level
+versioning and provenance rules.
+
+Individual blank pages remain in the result so later citations retain physical PDF page numbering.
+A later application service rejects a document with no usable text before it creates lexical output.
+Process-level time and memory bounds belong to the separate runner rather than this in-process data
+contract.
 
 ## Lexical output transaction
 
