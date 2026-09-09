@@ -52,6 +52,16 @@ docker compose up -d postgres
 docker compose ps
 ```
 
+Before starting the API for the first time, migrate the database and create the deterministic local
+workspace:
+
+```shell
+cd backend
+uv run alembic -c alembic.ini upgrade head
+uv run python -m scripts.seed_m0_0
+cd ..
+```
+
 Start the API in a second terminal:
 
 ```shell
@@ -73,6 +83,22 @@ pnpm dev
 ```
 
 Open the web application at <http://127.0.0.1:3000>. The API health endpoint is available at <http://127.0.0.1:8000/health>.
+
+Step 4 currently exposes document capture through the API; the web upload interface remains Step 8.
+With the API running, capture the synthetic fixture from another repository-root terminal:
+
+```shell
+curl --fail-with-body \
+  --form 'title=Northstar Grid Analytics FY2025 Earnings Brief' \
+  --form 'language=en' \
+  --form 'file=@fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf;type=application/pdf' \
+  http://127.0.0.1:8000/api/v1/documents
+```
+
+The successful response has HTTP status 202 and contains the new document, document-version, and
+processing-run identifiers. Capture stores the verified immutable original and pending processing
+intent; it does not parse the PDF. Processing-status and original-viewing routes are not implemented
+yet.
 
 Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
 

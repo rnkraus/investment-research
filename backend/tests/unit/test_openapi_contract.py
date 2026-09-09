@@ -2,7 +2,11 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
+import pytest
+
+from investment_research.api.openapi import _merge_schema
 from investment_research.main import create_app
 from investment_research.settings import Settings
 
@@ -17,10 +21,62 @@ def test_committed_openapi_snapshot_matches_application() -> None:
     assert committed_schema == application_schema
 
 
-def test_openapi_does_not_advertise_unimplemented_product_routes() -> None:
+def test_openapi_advertises_only_implemented_product_routes() -> None:
     schema = create_app(Settings(environment="test")).openapi()
 
-    assert set(schema["paths"]) == {"/health"}
+    assert set(schema["paths"]) == {"/health", "/api/v1/documents"}
+
+
+def test_document_capture_uses_scoped_multipart_contract() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/documents"]["post"]
+    body_reference = operation["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
+    body_name = body_reference.rsplit("/", maxsplit=1)[-1]
+    body_schema = schema["components"]["schemas"][body_name]
+
+    assert set(body_schema["properties"]) == {
+        "file",
+        "title",
+        "language",
+        "published_at",
+        "available_at",
+    }
+    assert set(body_schema["required"]) == {"file", "title"}
+    assert "workspace_id" not in json.dumps(operation)
+    assert operation["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/DocumentAccepted"
+    }
+    for status_code in ("409", "413", "415", "422", "500"):
+        assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+
+
+def test_schema_merge_accepts_only_null_default_representation_difference() -> None:
+    target: dict[str, Any] = {
+        "Example": {
+            "type": "object",
+            "properties": {"optional": {"type": ["string", "null"]}},
+        }
+    }
+
+    _merge_schema(
+        target,
+        "Example",
+        {
+            "type": "object",
+            "properties": {"optional": {"type": ["string", "null"], "default": None}},
+        },
+    )
+
+    assert "default" not in target["Example"]["properties"]["optional"]
+
+
+def test_schema_merge_still_rejects_real_definition_conflict() -> None:
+    target = {"Example": {"type": "string"}}
+
+    with pytest.raises(RuntimeError, match="conflicting OpenAPI schema"):
+        _merge_schema(target, "Example", {"type": "integer"})
 
 
 def test_research_input_schema_has_no_client_workspace_scope() -> None:

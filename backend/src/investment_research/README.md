@@ -6,7 +6,7 @@
 
 | Path              | Responsibility                                                                                                         |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `main.py`         | Creates the FastAPI application, attaches the dependency container, registers routes, and installs OpenAPI generation. |
+| `main.py`         | Creates FastAPI, installs transport safeguards and error handlers, attaches the container, and registers routes.       |
 | `bootstrap.py`    | Composition root that selects concrete implementations for application-owned contracts.                                |
 | `settings.py`     | Loads process-first local configuration and validates secret-safe runtime settings.                                     |
 | `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
@@ -28,9 +28,12 @@ flowchart TD
     STORAGE --> CAPTURE
     BOOT --> STATE[Application container]
     CAPTURE --> STATE
-    MAIN --> ROUTES[HTTP routes]
+    MAIN --> LIMIT[Request-body limit]
+    LIMIT --> ROUTES[HTTP routes]
+    MAIN --> ERRORS[Safe error handlers]
     MAIN --> OPENAPI[OpenAPI contract]
     STATE --> ROUTES
+    ROUTES --> ERRORS
     LIFE -->|shutdown| CLOSE[Dispose engine pool]
 ```
 
@@ -39,5 +42,10 @@ flowchart TD
 Importing `create_app` or exporting OpenAPI does not allocate database resources. The FastAPI
 lifespan creates them only when the server starts and releases them during shutdown. Sessions are
 still created per unit of work; they are never shared across requests or runner executions.
+
+For document capture, the request-body middleware rejects excessive transport payloads before
+multipart parsing. The route then resolves the server-owned workspace and capture service from the
+application container. The service validates the PDF and coordinates immutable storage with one
+database unit of work; the route only translates the typed result or a known safe error.
 
 The package follows the boundaries in [`docs/02-system-design.md`](../../../docs/02-system-design.md#4-component-boundaries).

@@ -12,13 +12,29 @@ from investment_research.api.contracts import PUBLIC_CONTRACT_MODELS, ResearchSt
 JsonObject = dict[str, Any]
 
 
+def _without_null_defaults(value: Any) -> Any:
+    """Normalize FastAPI's omission of semantically optional null defaults."""
+
+    if isinstance(value, Mapping):
+        return {
+            key: _without_null_defaults(item)
+            for key, item in value.items()
+            if key != "default" or item is not None
+        }
+    if isinstance(value, list):
+        return [_without_null_defaults(item) for item in value]
+    return value
+
+
 def _merge_schema(target: JsonObject, name: str, schema: Mapping[str, Any]) -> None:
     """Add one schema while rejecting incompatible duplicate definitions."""
 
     existing = target.get(name)
     candidate = dict(schema)
-    if existing is not None and existing != candidate:
-        raise RuntimeError(f"conflicting OpenAPI schema definition: {name}")
+    if existing is not None:
+        if _without_null_defaults(existing) != _without_null_defaults(candidate):
+            raise RuntimeError(f"conflicting OpenAPI schema definition: {name}")
+        return
     target[name] = candidate
 
 

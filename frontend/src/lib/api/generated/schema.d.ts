@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    readonly "/api/v1/documents": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Capture Document
+         * @description Accept one bounded PDF and return its canonical capture identifiers.
+         */
+        readonly post: operations["capture_document_api_v1_documents_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/health": {
         readonly parameters: {
             readonly query?: never;
@@ -147,6 +167,25 @@ export interface components {
             /** Text */
             readonly text: string;
         };
+        /** Body_capture_document_api_v1_documents_post */
+        readonly Body_capture_document_api_v1_documents_post: {
+            /** Available At */
+            readonly available_at?: string | null;
+            /**
+             * File
+             * @description English PDF original to preserve and process
+             */
+            readonly file: string;
+            /**
+             * Language
+             * @default en
+             */
+            readonly language: string;
+            /** Published At */
+            readonly published_at?: string | null;
+            /** Title */
+            readonly title: string;
+        };
         /**
          * CoverageStatus
          * @description Evidence coverage reported after validation.
@@ -210,7 +249,7 @@ export interface components {
          * @description Stable public error categories without internal details.
          * @enum {string}
          */
-        readonly ErrorCode: "INVALID_REQUEST" | "NOT_FOUND" | "CONFLICT" | "UNSUPPORTED_MEDIA_TYPE" | "PROCESSING_FAILED" | "INTERNAL_ERROR";
+        readonly ErrorCode: "INVALID_REQUEST" | "NOT_FOUND" | "CONFLICT" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "PROCESSING_FAILED" | "INTERNAL_ERROR";
         /**
          * ErrorDetail
          * @description Safe machine-readable error detail.
@@ -219,11 +258,8 @@ export interface components {
             readonly code: components["schemas"]["ErrorCode"];
             /** Message */
             readonly message: string;
-            /**
-             * Request Id
-             * @default null
-             */
-            readonly request_id: string | null;
+            /** Request Id */
+            readonly request_id?: string | null;
         };
         /**
          * ErrorResponse
@@ -410,6 +446,75 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    readonly capture_document_api_v1_documents_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "multipart/form-data": components["schemas"]["Body_capture_document_api_v1_documents_post"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentAccepted"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly read_health_health_get: {
         readonly parameters: {
             readonly query?: never;

@@ -4,9 +4,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from investment_research import __version__
+from investment_research.api.errors import (
+    ApiError,
+    api_error_handler,
+    request_validation_error_handler,
+)
+from investment_research.api.middleware import RequestBodyLimitMiddleware
 from investment_research.api.openapi import install_openapi
+from investment_research.api.routes.documents import router as documents_router
 from investment_research.api.routes.health import router as health_router
 from investment_research.bootstrap import build_container
 from investment_research.settings import Settings, get_settings
@@ -33,6 +41,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="Local-only M0.0 API for evidence-grounded investment research.",
         lifespan=lifespan,
     )
+    application.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_upload_bytes=resolved_settings.max_upload_bytes,
+    )
+    application.add_exception_handler(ApiError, api_error_handler)
+    application.add_exception_handler(
+        RequestValidationError,
+        request_validation_error_handler,
+    )
+    application.include_router(documents_router)
     application.include_router(health_router)
     install_openapi(application)
     return application
