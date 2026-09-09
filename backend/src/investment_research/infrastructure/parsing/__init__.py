@@ -1,0 +1,1 @@
+"""Document parsing infrastructure adapters."""

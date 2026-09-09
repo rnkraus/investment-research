@@ -65,6 +65,13 @@ the `DocumentParser` port and cannot leak library-specific page objects into dom
 code. The parser does not create blocks, chunks, or evidence spans; those require application-level
 versioning and provenance rules.
 
+M0.0 uses the BSD-3-Clause-licensed `pypdf` adapter in `infrastructure/parsing`. It opens PDFs in
+strict mode, rejects encrypted documents, checks the page limit before extraction, and checks the
+cumulative extracted-character limit after every page. The processing profile records the exact
+locked parser version. `INVESTMENT_RESEARCH_MAX_PDF_PAGES` and
+`INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS` configure the active bounds, while the contracts
+retain absolute safety ceilings.
+
 Individual blank pages remain in the result so later citations retain physical PDF page numbering.
 A later application service rejects a document with no usable text before it creates lexical output.
 Process-level time and memory bounds belong to the separate runner rather than this in-process data

@@ -10,12 +10,19 @@ from urllib.parse import quote, urlsplit
 from dotenv import dotenv_values
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
+from investment_research.modules.processing.contracts import (
+    MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
+    MAX_CONFIGURABLE_PDF_PAGES,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
 DEFAULT_OBJECT_STORAGE_ROOT = PROJECT_ROOT / "output" / "object-storage"
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
 DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_CONFIGURABLE_UPLOAD_BYTES = 100 * 1024 * 1024
+DEFAULT_MAX_PDF_PAGES = 250
+DEFAULT_MAX_EXTRACTED_CHARACTERS = 2_000_000
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
     "POSTGRES_USER",
@@ -51,6 +58,16 @@ class Settings(BaseModel):
         default=DEFAULT_MAX_UPLOAD_BYTES,
         ge=1024,
         le=MAX_CONFIGURABLE_UPLOAD_BYTES,
+    )
+    max_pdf_pages: int = Field(
+        default=DEFAULT_MAX_PDF_PAGES,
+        ge=1,
+        le=MAX_CONFIGURABLE_PDF_PAGES,
+    )
+    max_extracted_characters: int = Field(
+        default=DEFAULT_MAX_EXTRACTED_CHARACTERS,
+        ge=1,
+        le=MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
     )
 
     @field_validator("api_host")
@@ -201,6 +218,16 @@ def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
             "INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES",
             file_values,
             str(DEFAULT_MAX_UPLOAD_BYTES),
+        ),
+        "max_pdf_pages": _configuration_value(
+            "INVESTMENT_RESEARCH_MAX_PDF_PAGES",
+            file_values,
+            str(DEFAULT_MAX_PDF_PAGES),
+        ),
+        "max_extracted_characters": _configuration_value(
+            "INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS",
+            file_values,
+            str(DEFAULT_MAX_EXTRACTED_CHARACTERS),
         ),
     }
     return Settings.model_validate(values)

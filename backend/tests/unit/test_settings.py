@@ -5,6 +5,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from investment_research.modules.processing.contracts import (
+    MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
+    MAX_CONFIGURABLE_PDF_PAGES,
+)
 from investment_research.settings import PROJECT_ROOT, Settings, load_settings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
@@ -30,6 +34,8 @@ def test_settings_load_supported_environment_values(
         str(object_storage_root),
     )
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "1500000")
 
     settings = load_settings(env_file=None)
 
@@ -39,6 +45,8 @@ def test_settings_load_supported_environment_values(
     assert settings.require_database_url() == LOCAL_DATABASE_URL
     assert settings.object_storage_root == object_storage_root
     assert settings.max_upload_bytes == 1_048_576
+    assert settings.max_pdf_pages == 100
+    assert settings.max_extracted_characters == 1_500_000
     assert "test-password" not in repr(settings)
 
 
@@ -64,6 +72,30 @@ def test_settings_reject_object_storage_inside_frontend() -> None:
 def test_settings_reject_unsafe_upload_limit(max_upload_bytes: int) -> None:
     with pytest.raises(ValidationError, match="max_upload_bytes"):
         Settings(max_upload_bytes=max_upload_bytes)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("max_pdf_pages", 0, id="zero-pages"),
+        pytest.param(
+            "max_pdf_pages",
+            MAX_CONFIGURABLE_PDF_PAGES + 1,
+            id="too-many-pages",
+        ),
+        pytest.param("max_extracted_characters", 0, id="zero-characters"),
+        pytest.param(
+            "max_extracted_characters",
+            MAX_CONFIGURABLE_EXTRACTED_CHARACTERS + 1,
+            id="too-many-characters",
+        ),
+    ],
+)
+def test_settings_reject_unsafe_parser_limit(field: str, value: int) -> None:
+    with pytest.raises(ValidationError) as error:
+        Settings.model_validate({field: value})
+
+    assert error.value.errors()[0]["loc"] == (field,)
 
 
 def test_settings_build_database_url_from_local_env_file(
