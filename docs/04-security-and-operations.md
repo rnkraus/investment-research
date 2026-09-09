@@ -90,6 +90,8 @@ Primary threat scenarios:
 - Errors do not reveal whether an inaccessible object exists in another workspace.
 - Cross-workspace tests cover APIs, repositories, object storage, queues, search, citations, traces, and caches.
 
+[ADR-0003](./adr/0003-workspace-isolation-strategy.md) governs the current defense-in-depth boundary and records the production trigger for reconsidering PostgreSQL Row-Level Security.
+
 For a public deployment, use secure cookies or short-lived tokens, strict redirect and CORS rules, CSRF protection where applicable, security headers, and rate limits.
 
 ## 5. Safe document ingestion

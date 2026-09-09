@@ -268,7 +268,7 @@ Separate ADRs should record the reasons for:
 
 - modular monolith plus workers;
 - PostgreSQL/object storage as canonical state and Pinecone as derived state;
-- workspace isolation strategy;
+- [workspace isolation through trusted context, scoped access, and relational constraints](./adr/0003-workspace-isolation-strategy.md);
 - transactional outbox and reconciliation;
 - hybrid retrieval with RRF and multilingual reranking;
 - typed answers with server-side evidence validation;
