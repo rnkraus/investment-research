@@ -84,8 +84,9 @@ pnpm dev
 
 Open the web application at <http://127.0.0.1:3000>. The API health endpoint is available at <http://127.0.0.1:8000/health>.
 
-Step 4 currently exposes document capture through the API; the web upload interface remains Step 8.
-With the API running, capture the synthetic fixture from another repository-root terminal:
+Step 4 exposes document capture and verified original access through the API; the web upload
+interface remains Step 8. With the API running, capture the synthetic fixture from another
+repository-root terminal:
 
 ```shell
 curl --fail-with-body \
@@ -97,8 +98,15 @@ curl --fail-with-body \
 
 The successful response has HTTP status 202 and contains the new document, document-version, and
 processing-run identifiers. Capture stores the verified immutable original and pending processing
-intent; it does not parse the PDF. Processing-status and original-viewing routes are not implemented
-yet.
+intent; it does not parse the PDF. Insert the returned identifiers into this URL to open the verified
+original inline in a browser:
+
+```text
+http://127.0.0.1:8000/api/v1/documents/{document_id}/versions/{document_version_id}/original
+```
+
+The original route rechecks the server-owned workspace, current document version, byte count, and
+checksum before sending PDF content. Processing-status remains a later implementation step.
 
 Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
 

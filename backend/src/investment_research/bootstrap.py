@@ -11,9 +11,13 @@ from investment_research.infrastructure.database.session import (
 )
 from investment_research.infrastructure.database.unit_of_work import (
     create_capture_unit_of_work_factory,
+    create_document_read_unit_of_work_factory,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
-from investment_research.modules.documents.application import CaptureDocumentService
+from investment_research.modules.documents.application import (
+    CaptureDocumentService,
+    OpenOriginalService,
+)
 from investment_research.modules.documents.ports import ObjectStorage
 from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
@@ -32,6 +36,7 @@ class ApplicationContainer:
     session_factory: SessionFactory
     object_storage: ObjectStorage
     capture_document_service: CaptureDocumentService
+    open_original_service: OpenOriginalService
 
     def close(self) -> None:
         """Release process-wide resources owned by the container."""
@@ -55,5 +60,9 @@ def build_container(settings: Settings) -> ApplicationContainer:
             object_storage=object_storage,
             unit_of_work_factory=create_capture_unit_of_work_factory(session_factory),
             max_upload_bytes=settings.max_upload_bytes,
+        ),
+        open_original_service=OpenOriginalService(
+            object_storage=object_storage,
+            unit_of_work_factory=create_document_read_unit_of_work_factory(session_factory),
         ),
     )

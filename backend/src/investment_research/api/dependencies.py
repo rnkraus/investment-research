@@ -5,7 +5,10 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from investment_research.bootstrap import ApplicationContainer
-from investment_research.modules.documents.application import CaptureDocumentService
+from investment_research.modules.documents.application import (
+    CaptureDocumentService,
+    OpenOriginalService,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 
 
@@ -32,6 +35,20 @@ def get_capture_document_service(
 CaptureDocumentServiceDependency = Annotated[
     CaptureDocumentService,
     Depends(get_capture_document_service),
+]
+
+
+def get_open_original_service(
+    container: ContainerDependency,
+) -> OpenOriginalService:
+    """Return the application-owned service for verified original access."""
+
+    return container.open_original_service
+
+
+OpenOriginalServiceDependency = Annotated[
+    OpenOriginalService,
+    Depends(get_open_original_service),
 ]
 
 

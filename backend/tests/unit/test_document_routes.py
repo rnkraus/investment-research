@@ -1,7 +1,8 @@
-"""Unit tests for the document-capture HTTP boundary."""
+"""Unit tests for document-capture and original-access HTTP boundaries."""
 
 from collections.abc import Iterator
 from pathlib import Path
+from tempfile import SpooledTemporaryFile
 from typing import cast
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from investment_research.api.dependencies import (
     get_capture_document_service,
+    get_open_original_service,
     get_workspace_context,
 )
 from investment_research.api.middleware import MULTIPART_OVERHEAD_ALLOWANCE_BYTES
@@ -18,6 +20,10 @@ from investment_research.main import create_app
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     InvalidPdfSignatureError,
+    OpenOriginalService,
+    OriginalDownload,
+    OriginalIntegrityError,
+    OriginalUnavailableError,
     UnsupportedDocumentTypeError,
     UploadTooLargeError,
 )
@@ -25,6 +31,7 @@ from investment_research.modules.documents.contracts import (
     CaptureDocumentInput,
     CaptureDocumentResult,
 )
+from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.ports import (
     BinaryReadable,
     ObjectAlreadyExistsError,
@@ -72,6 +79,43 @@ class FakeCaptureDocumentService:
         )
 
 
+class FakeOpenOriginalService:
+    """Return one controlled PDF stream or raise one configured failure."""
+
+    def __init__(self) -> None:
+        self.error: Exception | None = None
+        self.calls: list[tuple[WorkspaceContext, UUID, UUID]] = []
+        self.download: OriginalDownload | None = None
+
+    def open_original(
+        self,
+        context: WorkspaceContext,
+        document_id: UUID,
+        version_id: UUID,
+    ) -> OriginalDownload:
+        """Record identifiers and return a deterministic prepared download."""
+
+        if self.error is not None:
+            raise self.error
+        content = SpooledTemporaryFile[bytes](mode="w+b")
+        content.write(PDF_CONTENT)
+        content.seek(0)
+        self.calls.append((context, document_id, version_id))
+        self.download = OriginalDownload(
+            media_type=OriginalMediaType.PDF,
+            byte_size=len(PDF_CONTENT),
+            filename=f"document-{document_id}-version-{version_id}.pdf",
+            _content=content,
+        )
+        return self.download
+
+
+def make_context() -> WorkspaceContext:
+    """Return the trusted local workspace used by document-route tests."""
+
+    return WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID)
+
+
 @pytest.fixture
 def capture_client(
     tmp_path: Path,
@@ -89,9 +133,37 @@ def capture_client(
         )
     )
     fake_service = FakeCaptureDocumentService()
-    context = WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID)
+    context = make_context()
     application.dependency_overrides[get_capture_document_service] = lambda: cast(
         CaptureDocumentService,
+        fake_service,
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: context
+
+    with TestClient(application) as client:
+        yield client, fake_service
+
+
+@pytest.fixture
+def original_client(
+    tmp_path: Path,
+) -> Iterator[tuple[TestClient, FakeOpenOriginalService]]:
+    """Run the original route with a controlled application service."""
+
+    application = create_app(
+        Settings.model_validate(
+            {
+                "environment": "test",
+                "database_url": LOCAL_DATABASE_URL,
+                "object_storage_root": tmp_path / "objects",
+                "max_upload_bytes": 1024,
+            }
+        )
+    )
+    fake_service = FakeOpenOriginalService()
+    context = make_context()
+    application.dependency_overrides[get_open_original_service] = lambda: cast(
+        OpenOriginalService,
         fake_service,
     )
     application.dependency_overrides[get_workspace_context] = lambda: context
@@ -233,4 +305,63 @@ def test_request_limit_rejects_body_before_capture_service(
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert service.calls == []
+
+
+def test_open_original_route_streams_verified_pdf_with_safe_headers(
+    original_client: tuple[TestClient, FakeOpenOriginalService],
+) -> None:
+    client, service = original_client
+
+    response = client.get(f"/api/v1/documents/{DOCUMENT_ID}/versions/{VERSION_ID}/original")
+
+    assert response.status_code == 200
+    assert response.content == PDF_CONTENT
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-length"] == str(len(PDF_CONTENT))
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"] == (
+        f'inline; filename="document-{DOCUMENT_ID}-version-{VERSION_ID}.pdf"'
+    )
+    assert service.calls == [(make_context(), DOCUMENT_ID, VERSION_ID)]
+    assert service.download is not None
+    assert service.download._content.closed
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status", "expected_code"),
+    [
+        pytest.param(OriginalUnavailableError(), 404, "NOT_FOUND", id="unavailable"),
+        pytest.param(OriginalIntegrityError(), 500, "INTERNAL_ERROR", id="integrity"),
+        pytest.param(ObjectStorageError(), 500, "INTERNAL_ERROR", id="storage"),
+        pytest.param(SQLAlchemyError("private database detail"), 500, "INTERNAL_ERROR", id="db"),
+    ],
+)
+def test_open_original_route_translates_known_failures(
+    original_client: tuple[TestClient, FakeOpenOriginalService],
+    error: Exception,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    client, service = original_client
+    service.error = error
+
+    response = client.get(f"/api/v1/documents/{DOCUMENT_ID}/versions/{VERSION_ID}/original")
+
+    assert response.status_code == expected_status
+    assert response.json()["error"]["code"] == expected_code
+    assert "private database detail" not in response.text
+
+
+def test_open_original_route_hides_invalid_identifier_value(
+    original_client: tuple[TestClient, FakeOpenOriginalService],
+) -> None:
+    client, service = original_client
+
+    response = client.get(f"/api/v1/documents/not-a-uuid/versions/{VERSION_ID}/original")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert "not-a-uuid" not in response.text
     assert service.calls == []

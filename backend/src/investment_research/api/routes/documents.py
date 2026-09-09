@@ -1,10 +1,13 @@
-"""HTTP endpoint for secure document capture."""
+"""HTTP endpoints for secure document capture and original access."""
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from pydantic import AwareDatetime, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from investment_research.api.contracts import (
     DocumentAccepted,
@@ -16,11 +19,14 @@ from investment_research.api.contracts import (
 )
 from investment_research.api.dependencies import (
     CaptureDocumentServiceDependency,
+    OpenOriginalServiceDependency,
     WorkspaceContextDependency,
 )
 from investment_research.api.errors import ApiError
 from investment_research.modules.documents.application import (
     InvalidPdfSignatureError,
+    OriginalIntegrityError,
+    OriginalUnavailableError,
     UnsupportedDocumentTypeError,
     UploadTooLargeError,
 )
@@ -124,4 +130,57 @@ def capture_document(
         document_version_id=result.document_version_id,
         processing_run_id=result.processing_run_id,
         processing_status_url=f"/api/v1/processing-runs/{result.processing_run_id}",
+    )
+
+
+@router.get(
+    "/{document_id}/versions/{version_id}/original",
+    response_class=StreamingResponse,
+    responses={
+        status.HTTP_200_OK: {
+            "content": {
+                "application/pdf": {
+                    "schema": {"type": "string", "format": "binary"},
+                }
+            },
+            "description": "Verified immutable PDF original",
+        },
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorResponse},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse},
+    },
+)
+def open_original(
+    document_id: UUID,
+    version_id: UUID,
+    service: OpenOriginalServiceDependency,
+    context: WorkspaceContextDependency,
+) -> StreamingResponse:
+    """Stream one verified current original without disclosing foreign records."""
+
+    try:
+        download = service.open_original(context, document_id, version_id)
+    except OriginalUnavailableError as error:
+        raise ApiError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code=ErrorCode.NOT_FOUND,
+            message="document original was not found",
+        ) from error
+    except (OriginalIntegrityError, ObjectStorageError, SQLAlchemyError) as error:
+        raise ApiError(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="document original could not be opened",
+        ) from error
+
+    return StreamingResponse(
+        download.iter_bytes(),
+        media_type=download.media_type.value,
+        headers={
+            "cache-control": "private, no-store",
+            "content-disposition": f'inline; filename="{download.filename}"',
+            "content-length": str(download.byte_size),
+            "x-content-type-options": "nosniff",
+        },
+        background=BackgroundTask(download.close),
     )
