@@ -10,7 +10,10 @@ from urllib.parse import quote, urlsplit
 from dotenv import dotenv_values
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ROOT_ENV_FILE = PROJECT_ROOT / ".env"
+DEFAULT_OBJECT_STORAGE_ROOT = PROJECT_ROOT / "output" / "object-storage"
+FRONTEND_ROOT = PROJECT_ROOT / "frontend"
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
     "POSTGRES_USER",
@@ -41,6 +44,7 @@ class Settings(BaseModel):
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1024, le=65535)
     database_url: SecretStr | None = None
+    object_storage_root: Path = DEFAULT_OBJECT_STORAGE_ROOT
 
     @field_validator("api_host")
     @classmethod
@@ -88,6 +92,18 @@ class Settings(BaseModel):
         if self.database_url is None:
             raise RuntimeError("PostgreSQL configuration is required for database access")
         return self.database_url.get_secret_value()
+
+    @field_validator("object_storage_root")
+    @classmethod
+    def require_private_object_storage_root(cls, value: Path) -> Path:
+        """Resolve local storage predictably and keep it outside the web root."""
+
+        resolved_root = (
+            value.expanduser() if value.is_absolute() else PROJECT_ROOT / value.expanduser()
+        ).resolve(strict=False)
+        if resolved_root.is_relative_to(FRONTEND_ROOT):
+            raise ValueError("object_storage_root must be outside the frontend web root")
+        return resolved_root
 
 
 def _configuration_value(
@@ -169,6 +185,11 @@ def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
         ),
         "api_port": _configuration_value("INVESTMENT_RESEARCH_API_PORT", file_values, "8000"),
         "database_url": _local_database_url(file_values),
+        "object_storage_root": _configuration_value(
+            "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
+            file_values,
+            str(DEFAULT_OBJECT_STORAGE_ROOT),
+        ),
     }
     return Settings.model_validate(values)
 
