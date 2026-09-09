@@ -67,6 +67,7 @@ build/
 *.pid.lock
 /logs/
 /local-docs/
+/output/
 /tmp/
 /temp/
 /work/
