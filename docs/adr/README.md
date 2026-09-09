@@ -1,6 +1,7 @@
 # Architecture Decision Record Plan
 
-**Status:** Planning only — no individual ADRs created yet  
+**Status:** Active — accepted decisions and a provisional backlog
+
 **Purpose:** Record important architectural decisions when they become implementation constraints
 
 ## 1. Working rule
@@ -17,13 +18,18 @@ Do not create ADRs for routine coding choices, temporary experiments, or details
 
 Write the ADR immediately before the decision becomes an implementation constraint, or when an experiment provides enough evidence to decide. Do not write every planned ADR in advance.
 
-## 2. Planned ADR backlog
+## 2. Accepted ADRs
+
+| ADR | Decision | Status |
+|---|---|---|
+| [ADR-0003](./0003-workspace-isolation-strategy.md) | Trusted application context, scoped repositories and storage, and workspace-aware relational constraints | Accepted |
+
+## 3. Planned ADR backlog
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
 | ADR-0001 | Modular monolith with asynchronous workers | M0.0 evidence is reviewed and repository and application boundaries are finalized | M0.0–M0 |
 | ADR-0002 | Canonical versus derived data ownership | M0.0 storage findings are reviewed and persistent-store recovery behavior becomes an implementation constraint | M0–M1 |
-| ADR-0003 | Workspace-isolation strategy | First schema and authorization repositories are implemented | M1 |
 | ADR-0004 | Application-owned RAG core and provider ports | First AI, vector, and object-store adapters are implemented | M1 |
 | ADR-0005 | Stable evidence anchors and versioned processing outputs | Parser, structure-block, chunk, and citation contracts are finalized | M1–M2 |
 | ADR-0006 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
@@ -36,7 +42,7 @@ Write the ADR immediately before the decision becomes an implementation constrai
 
 IDs are provisional until the corresponding ADR file is created. A backlog entry may be removed, combined, split, or reordered if implementation evidence changes the decision boundary.
 
-## 3. ADR lifecycle
+## 4. ADR lifecycle
 
 Use these statuses:
 
@@ -47,7 +53,7 @@ Use these statuses:
 
 Accepted ADRs are not rewritten to make history appear cleaner. Minor corrections may be appended, but a changed decision receives a new ADR that supersedes the old one.
 
-## 4. Minimal ADR structure
+## 5. Minimal ADR structure
 
 Each future ADR should contain only:
 
@@ -61,7 +67,7 @@ Each future ADR should contain only:
 
 Target one to two pages. Link to deeper benchmarks, diagrams, or experiments rather than copying them into the ADR.
 
-## 5. Review points
+## 6. Review points
 
 Review the backlog:
 
