@@ -34,6 +34,8 @@ All V1 interface text, product messages, demo content, questions, and supported 
 
 Workspace isolation is required from the first release. The demo must contain no private archive data.
 
+`Private workspace` describes who may access the workspace; it does not authorize external processing of confidential or sensitive content. External-provider eligibility follows the data boundaries in [Section 9](#9-data-and-retention-boundaries) and [04-security-and-operations.md](./04-security-and-operations.md#2-data-classification-and-external-provider-policy).
+
 ## 3. First complete user journey
 
 1. Upload one or more PDFs or submit pasted text.
