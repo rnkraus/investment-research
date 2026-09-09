@@ -294,4 +294,5 @@ Citation and workspace-isolation objectives are hard correctness gates. Latency 
 - Environment separation and least-privilege provider credentials are verified.
 - Dependency and container scans have no unresolved critical findings.
 - Deployment and rollback smoke tests pass.
+- The versioned pre-demo evaluation passes its agreed critical thresholds for retrieval, answer support, citation correctness, unanswerable questions, temporal behavior, latency, and cost.
 - Privacy notice, retention behavior, and external-provider data flow match actual behavior.
