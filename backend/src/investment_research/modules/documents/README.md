@@ -4,11 +4,13 @@ This module owns logical archive documents, immutable content versions, and immu
 
 ## Contents
 
-| File             | Responsibility                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values.  |
-| `ports.py`       | Defines the application-owned `DocumentRepository` contract.                                          |
-| `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.             |
+| File             | Responsibility                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `contracts.py`   | Defines validated capture metadata and the stable application result.                                  |
+| `application.py` | Validates and preserves a bounded PDF, then records its canonical metadata and processing intent.      |
+| `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values.   |
+| `ports.py`       | Defines object storage, repository, binary-stream, and capture-unit-of-work contracts.                 |
+| `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.              |
 
 ## Entity ownership
 
@@ -25,16 +27,23 @@ flowchart LR
 ## Capture transaction
 
 ```mermaid
-flowchart LR
-    CTX[Trusted WorkspaceContext] --> REPO[DocumentRepository]
-    D[Document] --> REPO
-    DV[DocumentVersion] --> REPO
-    OA[OriginalArtifact] --> REPO
-    REPO -->|stage all three| SESSION[Caller-owned SQLAlchemy Session]
-    SESSION -->|commit all or rollback all| PG[(PostgreSQL)]
+flowchart TD
+    INPUT[Untrusted PDF stream and metadata] --> TYPE[Validate filename, media type, and PDF header]
+    TYPE --> LIMIT[Copy into bounded private spool and calculate SHA-256]
+    LIMIT --> STORE[Atomically store under a server-generated workspace key]
+    STORE --> BUILD[Build Document, DocumentVersion, OriginalArtifact, and CAPTURED ProcessingRun]
+    BUILD --> UOW[CaptureUnitOfWork]
+    UOW --> DOCS[DocumentRepository]
+    UOW --> PROCESSING[ProcessingRepository]
+    DOCS --> PG[(PostgreSQL transaction)]
+    PROCESSING --> PG
+    PG -->|commit succeeds| RESULT[Return stable capture identifiers]
+    PG -->|commit fails| DISCARD[Discard only the uncommitted stored object]
 ```
 
-`add_capture` rejects mismatched workspace or entity relationships before staging rows. It never commits. The caller-owned transaction ensures that a logical document cannot be committed without its first version and original metadata.
+The service accepts only a declared `application/pdf` with a `.pdf` filename and a supported `%PDF-…` signature. It enforces the configured byte limit before publishing an object, keeps at most 1 MiB of the validation spool in memory, calculates SHA-256 while copying, and verifies the storage adapter's returned key, size, and checksum.
+
+`add_capture` rejects mismatched workspace or entity relationships before staging rows. It never commits. The capture unit of work binds both module repositories to one caller-owned SQLAlchemy session, so document metadata and the processing intent commit or roll back together. Because object storage cannot participate in the PostgreSQL transaction, a failed canonical transaction invokes the narrowly scoped `discard_uncommitted` compensation. It is not a general deletion path for committed originals.
 
 ## Database isolation and eligibility
 

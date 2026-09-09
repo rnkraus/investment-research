@@ -6,6 +6,7 @@ This module owns canonical processing intent, page-aware parsed structure, versi
 
 | File             | Responsibility                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `application.py` | Defines the versioned M0.0 processing profile and creates a valid initial `CAPTURED` run.              |
 | `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants.       |
 | `ports.py`       | Defines the application-owned `ProcessingRepository` contract.                                         |
 | `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior.        |
@@ -33,6 +34,8 @@ CAPTURED → PARSING → LEXICAL_READY
 ```
 
 State, timestamps, and safe error summaries must agree. Parser, parser configuration, chunker, chunking configuration, and lexical configuration versions are immutable properties of a run. `update_run` changes only lifecycle fields.
+
+The capture use case asks this module's `create_captured_processing_run` factory to create the initial durable intent. The factory applies the versioned M0.0 profile and the trusted workspace context, so the documents module does not duplicate processing configuration knowledge. Later runner behavior must use the same recorded profile rather than silently substituting different parser, chunking, or lexical semantics.
 
 ## Lexical output transaction
 

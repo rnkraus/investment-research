@@ -14,6 +14,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
 DEFAULT_OBJECT_STORAGE_ROOT = PROJECT_ROOT / "output" / "object-storage"
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
+DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_CONFIGURABLE_UPLOAD_BYTES = 100 * 1024 * 1024
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
     "POSTGRES_USER",
@@ -45,6 +47,11 @@ class Settings(BaseModel):
     api_port: int = Field(default=8000, ge=1024, le=65535)
     database_url: SecretStr | None = None
     object_storage_root: Path = DEFAULT_OBJECT_STORAGE_ROOT
+    max_upload_bytes: int = Field(
+        default=DEFAULT_MAX_UPLOAD_BYTES,
+        ge=1024,
+        le=MAX_CONFIGURABLE_UPLOAD_BYTES,
+    )
 
     @field_validator("api_host")
     @classmethod
@@ -189,6 +196,11 @@ def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
             "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
             file_values,
             str(DEFAULT_OBJECT_STORAGE_ROOT),
+        ),
+        "max_upload_bytes": _configuration_value(
+            "INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES",
+            file_values,
+            str(DEFAULT_MAX_UPLOAD_BYTES),
         ),
     }
     return Settings.model_validate(values)

@@ -83,6 +83,19 @@ def test_store_never_overwrites_an_existing_object(tmp_path: Path) -> None:
         assert stored_file.read() == PDF_CONTENT
 
 
+def test_discard_uncommitted_removes_object_idempotently(tmp_path: Path) -> None:
+    storage = LocalObjectStorage(tmp_path)
+    context = make_context()
+    key = original_key()
+    storage.store_immutable(context, key, BytesIO(PDF_CONTENT))
+
+    storage.discard_uncommitted(context, key)
+    storage.discard_uncommitted(context, key)
+
+    with pytest.raises(ObjectNotFoundError), storage.open(context, key):
+        pytest.fail("a discarded uncommitted object must not remain available")
+
+
 @pytest.mark.parametrize(
     "unsafe_key",
     [

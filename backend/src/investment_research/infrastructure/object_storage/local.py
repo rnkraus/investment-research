@@ -12,6 +12,7 @@ from typing import BinaryIO, NoReturn
 
 from investment_research.modules.documents.domain import StorageKey
 from investment_research.modules.documents.ports import (
+    BinaryReadable,
     ObjectAlreadyExistsError,
     ObjectNotFoundError,
     ObjectStorageError,
@@ -35,7 +36,7 @@ class LocalObjectStorage:
         self,
         context: WorkspaceContext,
         storage_key: StorageKey,
-        content: BinaryIO,
+        content: BinaryReadable,
     ) -> StoredObject:
         """Write content completely before atomically publishing a new object."""
 
@@ -112,6 +113,38 @@ class LocalObjectStorage:
 
         with os.fdopen(descriptor, "rb") as stored_file:
             yield stored_file
+
+    def discard_uncommitted(
+        self,
+        context: WorkspaceContext,
+        storage_key: StorageKey,
+    ) -> None:
+        """Remove only an in-scope object whose canonical transaction did not commit."""
+
+        parts = self._validate_key(context, storage_key, hide_scope=False)
+        try:
+            with self._open_parent_directory(
+                parts,
+                create=False,
+                hide_scope=False,
+            ) as (parent_descriptor, object_name):
+                descriptor = os.open(
+                    object_name,
+                    os.O_RDONLY | os.O_NOFOLLOW,
+                    dir_fd=parent_descriptor,
+                )
+                try:
+                    if not S_ISREG(os.fstat(descriptor).st_mode):
+                        raise OSError("stored object is not a regular file")
+                finally:
+                    os.close(descriptor)
+                os.unlink(object_name, dir_fd=parent_descriptor)
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            if error.errno in {ELOOP, ENOTDIR}:
+                self._raise_scope_error(hide_scope=False)
+            raise
 
     def _validate_key(
         self,

@@ -1,5 +1,6 @@
 """Application-owned persistence and storage contracts for archive documents."""
 
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol
@@ -13,6 +14,7 @@ from investment_research.modules.documents.domain import (
     StorageKey,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.ports import ProcessingRepository
 
 
 class ObjectStorageError(Exception):
@@ -40,6 +42,13 @@ class StoredObject:
     checksum_sha256: Sha256Hex
 
 
+class BinaryReadable(Protocol):
+    """Minimum binary stream behavior required by immutable storage."""
+
+    def read(self, size: int = -1, /) -> bytes:
+        """Read at most size bytes, or all remaining bytes when size is negative."""
+
+
 class ObjectStorage(Protocol):
     """Store and open immutable objects inside one trusted workspace."""
 
@@ -47,7 +56,7 @@ class ObjectStorage(Protocol):
         self,
         context: WorkspaceContext,
         storage_key: StorageKey,
-        content: BinaryIO,
+        content: BinaryReadable,
     ) -> StoredObject:
         """Atomically store new content and reject an existing or out-of-scope key."""
 
@@ -57,6 +66,13 @@ class ObjectStorage(Protocol):
         storage_key: StorageKey,
     ) -> AbstractContextManager[BinaryIO]:
         """Open an in-scope object or return the same error for all unavailable keys."""
+
+    def discard_uncommitted(
+        self,
+        context: WorkspaceContext,
+        storage_key: StorageKey,
+    ) -> None:
+        """Remove a newly stored object after its canonical transaction fails."""
 
 
 class DocumentRepository(Protocol):
@@ -93,3 +109,18 @@ class DocumentRepository(Protocol):
         version_id: UUID,
     ) -> OriginalArtifact | None:
         """Return original metadata only for an eligible current document version."""
+
+
+class CaptureUnitOfWork(Protocol):
+    """Repositories participating in one atomic document-capture transaction."""
+
+    @property
+    def documents(self) -> DocumentRepository:
+        """Return the repository that stages document capture metadata."""
+
+    @property
+    def processing(self) -> ProcessingRepository:
+        """Return the repository that stages the associated processing intent."""
+
+
+type CaptureUnitOfWorkFactory = Callable[[], AbstractContextManager[CaptureUnitOfWork]]
