@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from investment_research.settings import Settings, load_settings
+from investment_research.settings import PROJECT_ROOT, Settings, load_settings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 POSTGRES_SETTING_NAMES = (
@@ -16,11 +16,19 @@ POSTGRES_SETTING_NAMES = (
 )
 
 
-def test_settings_load_supported_environment_values(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_load_supported_environment_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    object_storage_root = tmp_path / "objects"
     monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_HOST", "localhost")
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_PORT", "8123")
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
+        str(object_storage_root),
+    )
 
     settings = load_settings(env_file=None)
 
@@ -28,7 +36,26 @@ def test_settings_load_supported_environment_values(monkeypatch: pytest.MonkeyPa
     assert settings.api_host == "localhost"
     assert settings.api_port == 8123
     assert settings.require_database_url() == LOCAL_DATABASE_URL
+    assert settings.object_storage_root == object_storage_root
     assert "test-password" not in repr(settings)
+
+
+def test_settings_resolve_relative_object_storage_root_from_project_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
+        "output/test-object-storage",
+    )
+
+    settings = load_settings(env_file=None)
+
+    assert settings.object_storage_root == PROJECT_ROOT / "output" / "test-object-storage"
+
+
+def test_settings_reject_object_storage_inside_frontend() -> None:
+    with pytest.raises(ValidationError, match="outside the frontend web root"):
+        Settings(object_storage_root=PROJECT_ROOT / "frontend" / "uploads")
 
 
 def test_settings_build_database_url_from_local_env_file(
