@@ -170,6 +170,58 @@
         "title": "AnswerStatementEvent",
         "type": "object"
       },
+      "Body_capture_document_api_v1_documents_post": {
+        "properties": {
+          "available_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available At"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "English PDF original to preserve and process",
+            "title": "File",
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$",
+            "title": "Language",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "title"
+        ],
+        "title": "Body_capture_document_api_v1_documents_post",
+        "type": "object"
+      },
       "CoverageStatus": {
         "description": "Evidence coverage reported after validation.",
         "enum": [
@@ -275,6 +327,7 @@
           "INVALID_REQUEST",
           "NOT_FOUND",
           "CONFLICT",
+          "PAYLOAD_TOO_LARGE",
           "UNSUPPORTED_MEDIA_TYPE",
           "PROCESSING_FAILED",
           "INTERNAL_ERROR"
@@ -305,7 +358,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Request Id"
           }
         },
@@ -660,6 +712,88 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/documents": {
+      "post": {
+        "description": "Accept one bounded PDF and return its canonical capture identifiers.",
+        "operationId": "capture_document_api_v1_documents_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_capture_document_api_v1_documents_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Capture Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "description": "Report API process liveness.",

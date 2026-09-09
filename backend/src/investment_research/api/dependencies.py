@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from investment_research.bootstrap import ApplicationContainer
+from investment_research.modules.documents.application import CaptureDocumentService
 from investment_research.modules.identity.domain import WorkspaceContext
 
 
@@ -18,6 +19,20 @@ def get_container(request: Request) -> ApplicationContainer:
 
 
 ContainerDependency = Annotated[ApplicationContainer, Depends(get_container)]
+
+
+def get_capture_document_service(
+    container: ContainerDependency,
+) -> CaptureDocumentService:
+    """Return the application-owned service for immutable document capture."""
+
+    return container.capture_document_service
+
+
+CaptureDocumentServiceDependency = Annotated[
+    CaptureDocumentService,
+    Depends(get_capture_document_service),
+]
 
 
 def get_workspace_context(container: ContainerDependency) -> WorkspaceContext:
