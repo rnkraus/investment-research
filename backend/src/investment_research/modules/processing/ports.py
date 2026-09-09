@@ -1,16 +1,37 @@
-"""Application-owned persistence contracts for document processing."""
+"""Application-owned parsing and persistence contracts for document processing."""
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import BinaryIO, Protocol
 from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.contracts import ParsedDocument, ParserLimits
 from investment_research.modules.processing.domain import (
     Chunk,
     ChunkSet,
+    ConfigurationVersion,
     ProcessingRun,
     StructureBlock,
 )
+
+
+class DocumentParserError(Exception):
+    """Base error for expected, safely reportable parser failures."""
+
+
+class ParserLimitExceededError(DocumentParserError):
+    """Raised when parsing would exceed an application-owned safety limit."""
+
+
+class DocumentParser(Protocol):
+    """Extract ordered page text from one PDF through an interchangeable adapter."""
+
+    @property
+    def parser_version(self) -> ConfigurationVersion:
+        """Return the stable implementation version recorded on processing runs."""
+
+    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+        """Parse one binary stream without closing its caller-owned resource."""
 
 
 class ProcessingRepository(Protocol):
