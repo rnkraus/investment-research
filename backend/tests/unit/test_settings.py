@@ -29,6 +29,7 @@ def test_settings_load_supported_environment_values(
         "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
         str(object_storage_root),
     )
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
 
     settings = load_settings(env_file=None)
 
@@ -37,6 +38,7 @@ def test_settings_load_supported_environment_values(
     assert settings.api_port == 8123
     assert settings.require_database_url() == LOCAL_DATABASE_URL
     assert settings.object_storage_root == object_storage_root
+    assert settings.max_upload_bytes == 1_048_576
     assert "test-password" not in repr(settings)
 
 
@@ -56,6 +58,12 @@ def test_settings_resolve_relative_object_storage_root_from_project_root(
 def test_settings_reject_object_storage_inside_frontend() -> None:
     with pytest.raises(ValidationError, match="outside the frontend web root"):
         Settings(object_storage_root=PROJECT_ROOT / "frontend" / "uploads")
+
+
+@pytest.mark.parametrize("max_upload_bytes", [0, 101 * 1024 * 1024])
+def test_settings_reject_unsafe_upload_limit(max_upload_bytes: int) -> None:
+    with pytest.raises(ValidationError, match="max_upload_bytes"):
+        Settings(max_upload_bytes=max_upload_bytes)
 
 
 def test_settings_build_database_url_from_local_env_file(

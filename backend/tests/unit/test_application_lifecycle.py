@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from investment_research.bootstrap import ApplicationContainer, build_container
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.main import create_app
+from investment_research.modules.documents.application import CaptureDocumentService
 from investment_research.settings import Settings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
@@ -37,6 +38,7 @@ def test_build_container_wires_application_resources(tmp_path: Path) -> None:
             assert container.database_engine.dialect.name == "postgresql"
             assert session.bind is container.database_engine
             assert isinstance(container.object_storage, LocalObjectStorage)
+            assert isinstance(container.capture_document_service, CaptureDocumentService)
             assert not storage_root.exists()
         finally:
             session.close()

@@ -10,7 +10,7 @@
 | `bootstrap.py`    | Composition root that selects concrete implementations for application-owned contracts.                                |
 | `settings.py`     | Loads process-first local configuration and validates secret-safe runtime settings.                                     |
 | `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
-| `infrastructure/` | Shared technical adapters; Step 3 provides SQLAlchemy metadata, engines, sessions, and transaction handling.            |
+| `infrastructure/` | Shared technical adapters for SQLAlchemy transactions and secure local object storage.                                  |
 | `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                               |
 
 ## Startup flow
@@ -22,7 +22,12 @@ flowchart TD
     LIFE -->|startup| BOOT[build_container]
     BOOT --> ENGINE[SQLAlchemy engine]
     ENGINE --> SESSIONS[Session factory]
+    SESSIONS --> UOW[Capture unit-of-work factory]
+    BOOT --> STORAGE[ObjectStorage adapter]
+    UOW --> CAPTURE[CaptureDocumentService]
+    STORAGE --> CAPTURE
     BOOT --> STATE[Application container]
+    CAPTURE --> STATE
     MAIN --> ROUTES[HTTP routes]
     MAIN --> OPENAPI[OpenAPI contract]
     STATE --> ROUTES
