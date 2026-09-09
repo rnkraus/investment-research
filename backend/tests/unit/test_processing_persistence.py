@@ -14,6 +14,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import (
     Chunk,
     ChunkSet,
+    InvalidProcessingTransitionError,
     ProcessingRelationshipError,
     ProcessingRun,
     ProcessingScopeError,
@@ -175,6 +176,59 @@ def test_processing_run_rejects_inconsistent_lifecycle(
 
     with pytest.raises(ValidationError, match=expected_error):
         ProcessingRun.model_validate(payload)
+
+
+def test_processing_run_exposes_valid_immutable_forward_transitions() -> None:
+    captured = make_run()
+    started_at = CREATED_AT + timedelta(seconds=1)
+    completed_at = CREATED_AT + timedelta(seconds=2)
+
+    parsing = captured.start_parsing(started_at=started_at)
+    ready = parsing.mark_lexical_ready(completed_at=completed_at)
+    failed = parsing.mark_failed(
+        completed_at=completed_at,
+        error_summary="PDF parsing failed safely",
+    )
+
+    assert captured.state is ProcessingState.CAPTURED
+    assert captured.started_at is None
+    assert parsing.state is ProcessingState.PARSING
+    assert parsing.started_at == started_at
+    assert ready.state is ProcessingState.LEXICAL_READY
+    assert ready.completed_at == completed_at
+    assert failed.state is ProcessingState.FAILED
+    assert failed.error_summary == "PDF parsing failed safely"
+
+
+def test_processing_run_rejects_skipped_and_terminal_transitions() -> None:
+    captured = make_run()
+    parsing = captured.start_parsing(started_at=CREATED_AT + timedelta(seconds=1))
+    ready = parsing.mark_lexical_ready(completed_at=CREATED_AT + timedelta(seconds=2))
+
+    with pytest.raises(InvalidProcessingTransitionError, match="CAPTURED to LEXICAL_READY"):
+        captured.mark_lexical_ready(completed_at=CREATED_AT + timedelta(seconds=2))
+    with pytest.raises(InvalidProcessingTransitionError, match="CAPTURED to FAILED"):
+        captured.mark_failed(
+            completed_at=CREATED_AT + timedelta(seconds=2),
+            error_summary="must start first",
+        )
+    with pytest.raises(InvalidProcessingTransitionError, match="LEXICAL_READY to PARSING"):
+        ready.start_parsing(started_at=CREATED_AT + timedelta(seconds=3))
+
+
+def test_processing_transitions_revalidate_times_and_safe_failure_summary() -> None:
+    captured = make_run()
+
+    with pytest.raises(ValidationError) as error:
+        captured.start_parsing(started_at=datetime(2026, 2, 20, 12))
+    assert error.value.errors()[0]["type"] == "timezone_aware"
+
+    parsing = captured.start_parsing(started_at=CREATED_AT + timedelta(seconds=1))
+    with pytest.raises(ValidationError, match="error_summary"):
+        parsing.mark_failed(
+            completed_at=CREATED_AT + timedelta(seconds=2),
+            error_summary="   ",
+        )
 
 
 def test_structure_block_preserves_exact_text_and_rejects_whitespace_only() -> None:
