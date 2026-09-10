@@ -41,7 +41,7 @@ class ProcessingState(StrEnum):
 
 
 class StructureBlockType(StrEnum):
-    """Page-aware source structures emitted by the bounded PDF parser."""
+    """Page-aware source structures created from parsed document content."""
 
     HEADING = "HEADING"
     PARAGRAPH = "PARAGRAPH"
