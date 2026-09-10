@@ -91,9 +91,21 @@ class ProcessingUnitOfWork(Protocol):
         """Return the repository used for one processing state change."""
 
 
+class ProcessingReadUnitOfWork(Protocol):
+    """Processing repository scoped to one non-writing status lookup."""
+
+    @property
+    def processing(self) -> ProcessingRepository:
+        """Return the repository used to resolve a visible processing run."""
+
+
 type ProcessingUnitOfWorkFactory = Callable[
     [],
     AbstractContextManager[ProcessingUnitOfWork],
+]
+type ProcessingReadUnitOfWorkFactory = Callable[
+    [],
+    AbstractContextManager[ProcessingReadUnitOfWork],
 ]
 
 

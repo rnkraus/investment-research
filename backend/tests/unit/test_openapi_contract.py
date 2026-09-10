@@ -28,6 +28,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/health",
         "/api/v1/documents",
         "/api/v1/documents/{document_id}/versions/{version_id}/original",
+        "/api/v1/processing-runs/{processing_run_id}",
     }
 
 
@@ -79,6 +80,32 @@ def test_original_route_exposes_binary_pdf_without_workspace_input() -> None:
     assert "workspace_id" not in json.dumps(operation)
     assert operation["responses"]["200"]["content"] == {
         "application/pdf": {"schema": {"type": "string", "format": "binary"}}
+    }
+    for status_code in ("404", "422", "500"):
+        assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+
+
+def test_processing_status_exposes_safe_scoped_result_without_workspace_input() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/processing-runs/{processing_run_id}"]["get"]
+
+    assert operation["parameters"] == [
+        {
+            "name": "processing_run_id",
+            "in": "path",
+            "required": True,
+            "schema": {
+                "type": "string",
+                "format": "uuid",
+                "title": "Processing Run Id",
+            },
+        }
+    ]
+    assert "workspace_id" not in json.dumps(operation)
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ProcessingRunResult"
     }
     for status_code in ("404", "422", "500"):
         assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {

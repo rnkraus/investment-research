@@ -6,7 +6,7 @@ This module owns canonical processing intent, page-aware parsed structure, versi
 
 | File             | Responsibility                                                                                           |
 | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| `application.py` | Creates `CAPTURED` runs, builds lexical output, and orchestrates one bounded processing attempt.       |
+| `application.py` | Creates and reads runs, builds lexical output, and orchestrates one bounded processing attempt.        |
 | `contracts.py`   | Defines bounded, immutable parser input and page-aware output types.                                    |
 | `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants.        |
 | `ports.py`       | Defines parser, verified-original-provider, repository, and processing unit-of-work contracts.          |
@@ -108,6 +108,26 @@ Only short database operations occur inside the write transactions. Parser error
 to the command-line runner after the canonical `FAILED` state is committed. Exception text is
 untrusted and is therefore mapped to bounded application-owned summaries instead of being stored
 verbatim. Missing and foreign run identifiers both produce `ProcessingRunUnavailableError`.
+
+## Processing status
+
+`GetProcessingRunService` is the read-only application boundary used by FastAPI. It accepts the
+trusted workspace context and one processing-run UUID, opens a short-lived read unit of work, and
+returns the immutable domain snapshot. It does not claim a run, update state, or invoke the parser.
+
+```mermaid
+flowchart LR
+    API[Status route<br/>run ID only] --> CONTEXT[Server-owned WorkspaceContext]
+    CONTEXT --> SERVICE[GetProcessingRunService]
+    SERVICE --> READ[ProcessingReadUnitOfWork]
+    READ --> REPOSITORY[ProcessingRepository.get_run_by_id]
+    REPOSITORY -->|visible| RUN[ProcessingRun snapshot]
+    REPOSITORY -->|unknown or foreign| MISSING[Same unavailable result]
+```
+
+The API maps a visible snapshot to `ProcessingRunResult`, which contains no workspace identifier or
+processing configuration. `error_summary` is present only for `FAILED` and was sanitized by the
+processing service before persistence.
 
 ## Single-job runner
 

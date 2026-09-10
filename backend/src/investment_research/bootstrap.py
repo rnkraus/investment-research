@@ -13,6 +13,7 @@ from investment_research.infrastructure.database.session import (
 from investment_research.infrastructure.database.unit_of_work import (
     create_capture_unit_of_work_factory,
     create_document_read_unit_of_work_factory,
+    create_processing_read_unit_of_work_factory,
     create_processing_unit_of_work_factory,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
@@ -26,7 +27,10 @@ from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
     IdentityContextProvider,
 )
-from investment_research.modules.processing.application import ProcessDocumentService
+from investment_research.modules.processing.application import (
+    GetProcessingRunService,
+    ProcessDocumentService,
+)
 from investment_research.modules.processing.contracts import ParserLimits
 from investment_research.settings import Settings
 
@@ -42,6 +46,7 @@ class ApplicationContainer:
     object_storage: ObjectStorage
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
+    get_processing_run_service: GetProcessingRunService
     process_document_service: ProcessDocumentService
 
     def close(self) -> None:
@@ -73,6 +78,9 @@ def build_container(settings: Settings) -> ApplicationContainer:
             max_upload_bytes=settings.max_upload_bytes,
         ),
         open_original_service=open_original_service,
+        get_processing_run_service=GetProcessingRunService(
+            unit_of_work_factory=create_processing_read_unit_of_work_factory(session_factory),
+        ),
         process_document_service=ProcessDocumentService(
             parser=PypdfDocumentParser(),
             original_provider=open_original_service,

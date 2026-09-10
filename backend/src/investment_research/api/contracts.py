@@ -13,6 +13,7 @@ from pydantic import (
     model_validator,
 )
 
+from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.domain import TemporalMode
 
 TrimmedTitle = Annotated[
@@ -75,15 +76,6 @@ class DocumentAccepted(StrictContract):
     processing_run_id: UUID
     state: Literal["CAPTURED"] = "CAPTURED"
     processing_status_url: str
-
-
-class ProcessingState(StrEnum):
-    """M0.0 processing states shared by status responses."""
-
-    CAPTURED = "CAPTURED"
-    PARSING = "PARSING"
-    LEXICAL_READY = "LEXICAL_READY"
-    FAILED = "FAILED"
 
 
 class ProcessingRunResult(StrictContract):

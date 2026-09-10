@@ -123,7 +123,15 @@ http://127.0.0.1:8000/api/v1/documents/{document_id}/versions/{document_version_
 ```
 
 The original route rechecks the server-owned workspace, current document version, byte count, and
-checksum before sending PDF content. The processing-status API remains the next Step 5 work block.
+checksum before sending PDF content. Insert the returned processing-run identifier into this URL to
+read its current canonical state before or after running the separate processor:
+
+```text
+http://127.0.0.1:8000/api/v1/processing-runs/{processing_run_id}
+```
+
+The status response contains the run and document-version identifiers, state, and an optional safe
+failure summary. It never exposes workspace scope or internal parser and database errors.
 
 Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
 

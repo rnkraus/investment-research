@@ -44,6 +44,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/processing-runs/{processing_run_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Processing Run
+         * @description Return safe status for one run without disclosing inaccessible identifiers.
+         */
+        readonly get: operations["get_processing_run_api_v1_processing_runs__processing_run_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/health": {
         readonly parameters: {
             readonly query?: never;
@@ -353,11 +373,8 @@ export interface components {
              * Format: uuid
              */
             readonly document_version_id: string;
-            /**
-             * Error Summary
-             * @default null
-             */
-            readonly error_summary: string | null;
+            /** Error Summary */
+            readonly error_summary?: string | null;
             /**
              * Processing Run Id
              * Format: uuid
@@ -367,7 +384,7 @@ export interface components {
         };
         /**
          * ProcessingState
-         * @description M0.0 processing states shared by status responses.
+         * @description States implemented by the M0.0 lexical processing lifecycle.
          * @enum {string}
          */
         readonly ProcessingState: "CAPTURED" | "PARSING" | "LEXICAL_READY" | "FAILED";
@@ -554,6 +571,55 @@ export interface operations {
                 };
                 content: {
                     readonly "application/pdf": string;
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_processing_run_api_v1_processing_runs__processing_run_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly processing_run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProcessingRunResult"];
                 };
             };
             /** @description Not Found */

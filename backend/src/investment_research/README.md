@@ -25,10 +25,12 @@ flowchart TD
     ENGINE --> SESSIONS[Session factory]
     SESSIONS --> CAPTUREUOW[Capture unit-of-work factory]
     SESSIONS --> READUOW[Document read unit-of-work factory]
+    SESSIONS --> STATUSUOW[Processing read unit-of-work factory]
     SESSIONS --> PROCESSUOW[Processing unit-of-work factory]
     BOOT --> STORAGE[ObjectStorage adapter]
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
     READUOW --> ORIGINAL[OpenOriginalService]
+    STATUSUOW --> STATUS[GetProcessingRunService]
     PROCESSUOW --> PROCESS[ProcessDocumentService]
     STORAGE --> CAPTURE
     STORAGE --> ORIGINAL
@@ -36,6 +38,7 @@ flowchart TD
     BOOT --> STATE[Application container]
     CAPTURE --> STATE
     ORIGINAL --> STATE
+    STATUS --> STATE
     PROCESS --> STATE
     MAIN --> LIMIT[Request-body limit]
     LIMIT --> ROUTES[HTTP routes]
@@ -79,5 +82,9 @@ For original access, the route supplies only server-resolved workspace scope and
 The read service resolves an eligible current original through a short-lived non-committing session,
 then verifies the stored bytes against canonical size and checksum before allowing the response to
 stream them.
+
+For processing status, the route supplies the server-resolved workspace and one run identifier to
+`GetProcessingRunService`. A separate short-lived read session resolves the canonical snapshot; the
+API returns only its public state and sanitized failure summary and cannot invoke parsing.
 
 The package follows the boundaries in [`docs/02-system-design.md`](../../../docs/02-system-design.md#4-component-boundaries).
