@@ -6,10 +6,10 @@ This module owns canonical processing intent, page-aware parsed structure, versi
 
 | File             | Responsibility                                                                                           |
 | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| `application.py` | Defines the versioned M0.0 processing profile and creates a valid initial `CAPTURED` run.               |
+| `application.py` | Creates `CAPTURED` runs, builds lexical output, and orchestrates one bounded processing attempt.       |
 | `contracts.py`   | Defines bounded, immutable parser input and page-aware output types.                                    |
 | `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants.        |
-| `ports.py`       | Defines parser, verified-original-provider, and `ProcessingRepository` contracts.                        |
+| `ports.py`       | Defines parser, verified-original-provider, repository, and processing unit-of-work contracts.          |
 | `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior.         |
 
 ## Ownership and provenance
@@ -41,11 +41,15 @@ new fully validated immutable snapshot; it does not mutate the earlier state. Di
 `InvalidProcessingTransitionError`.
 
 Parser, parser configuration, chunker, chunking configuration, and lexical configuration versions
-are immutable properties of a run. `update_run` changes only lifecycle fields. The later processing
+are immutable properties of a run. `update_run` changes only lifecycle fields. The processing
 service supplies a bounded, sanitized failure summary rather than storing an exception message or
 document content directly.
 
-The capture use case asks this module's `create_captured_processing_run` factory to create the initial durable intent. The factory applies the versioned M0.0 profile and the trusted workspace context, so the documents module does not duplicate processing configuration knowledge. Later runner behavior must use the same recorded profile rather than silently substituting different parser, chunking, or lexical semantics.
+The capture use case asks this module's `create_captured_processing_run` factory to create the
+initial durable intent. The factory applies the versioned M0.0 profile and the trusted workspace
+context, so the documents module does not duplicate processing configuration knowledge. The runner
+requires its parser version to match that recorded profile rather than silently substituting
+different parsing semantics.
 
 ## Parser boundary
 
@@ -73,9 +77,37 @@ locked parser version. `INVESTMENT_RESEARCH_MAX_PDF_PAGES` and
 retain absolute safety ceilings.
 
 Individual blank pages remain in the result so later citations retain physical PDF page numbering.
-A later application service rejects a document with no usable text before it creates lexical output.
+The application service rejects a document with no usable text before it creates lexical output.
 Process-level time and memory bounds belong to the separate runner rather than this in-process data
 contract.
+
+## Processing application flow
+
+`ProcessDocumentService` accepts only a trusted `WorkspaceContext` and a processing-run identifier.
+It does not receive ORM objects from the API or hold a database transaction open while pypdf works.
+The repository locks a run with `SELECT ... FOR UPDATE` before each lifecycle write, preventing two
+workers from claiming or completing the same snapshot concurrently.
+
+```mermaid
+flowchart LR
+    INPUT[WorkspaceContext and run ID] --> START[Transaction 1<br/>lock CAPTURED run]
+    START --> PARSING[Commit PARSING]
+    PARSING --> ORIGINAL[Open and verify original<br/>separate read session]
+    ORIGINAL --> PARSER[Bounded DocumentParser]
+    PARSER --> BUILD[Build blocks and chunks]
+    BUILD --> SUCCESS[Transaction 2<br/>lock run]
+    SUCCESS --> READY[Commit output and LEXICAL_READY together]
+    ORIGINAL -. failure .-> FAILURE[Fresh transaction<br/>lock run]
+    PARSER -. failure .-> FAILURE
+    BUILD -. failure .-> FAILURE
+    SUCCESS -. rollback .-> FAILURE
+    FAILURE --> FAILED[Commit sanitized FAILED state]
+```
+
+Only short database operations occur inside the write transactions. Parser errors are raised back
+to the future command-line runner after the canonical `FAILED` state is committed. Exception text
+is untrusted and is therefore mapped to bounded application-owned summaries instead of being stored
+verbatim. Missing and foreign run identifiers both produce `ProcessingRunUnavailableError`.
 
 ## M0.0 lexical mapping
 

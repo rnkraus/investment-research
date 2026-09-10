@@ -1,6 +1,6 @@
 """Application-owned parsing and persistence contracts for document processing."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol
 from uuid import UUID
@@ -59,6 +59,13 @@ class ProcessingRepository(Protocol):
     ) -> ProcessingRun | None:
         """Return a scoped run without disclosing inaccessible identifiers."""
 
+    def get_run_by_id_for_update(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> ProcessingRun | None:
+        """Lock and return a scoped run for one atomic lifecycle transition."""
+
     def update_run(self, context: WorkspaceContext, run: ProcessingRun) -> bool:
         """Update a scoped run snapshot and report whether it existed."""
 
@@ -70,3 +77,17 @@ class ProcessingRepository(Protocol):
         chunks: Sequence[Chunk],
     ) -> None:
         """Stage one internally consistent set of parsed blocks and lexical chunks."""
+
+
+class ProcessingUnitOfWork(Protocol):
+    """Processing repository participating in one short database transaction."""
+
+    @property
+    def processing(self) -> ProcessingRepository:
+        """Return the repository used for one processing state change."""
+
+
+type ProcessingUnitOfWorkFactory = Callable[
+    [],
+    AbstractContextManager[ProcessingUnitOfWork],
+]

@@ -373,6 +373,23 @@ class SqlAlchemyProcessingRepository:
         )
         return None if row is None else row.to_domain()
 
+    def get_run_by_id_for_update(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> ProcessingRun | None:
+        """Lock one scoped run until the caller's transaction completes."""
+
+        row = self._session.scalar(
+            select(ProcessingRunRow)
+            .where(
+                ProcessingRunRow.workspace_id == context.workspace_id,
+                ProcessingRunRow.id == processing_run_id,
+            )
+            .with_for_update()
+        )
+        return None if row is None else row.to_domain()
+
     def update_run(self, context: WorkspaceContext, run: ProcessingRun) -> bool:
         """Update lifecycle fields without changing immutable run identity or configuration."""
 
