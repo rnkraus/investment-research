@@ -77,6 +77,32 @@ A later application service rejects a document with no usable text before it cre
 Process-level time and memory bounds belong to the separate runner rather than this in-process data
 contract.
 
+## M0.0 lexical mapping
+
+`build_lexical_output` accepts only a run in `PARSING`. It maps every non-blank parsed page to one
+`PARAGRAPH` structure block and one matching chunk. The complete extracted page text is preserved
+without trimming; block source offsets are therefore `0` through `len(text)`. Blank pages create no
+database records, but later page numbers do not shift.
+
+```mermaid
+flowchart LR
+    PD[ParsedDocument<br/>pages 1, blank 2, and 3] --> BUILDER[build_lexical_output]
+    RUN[PARSING ProcessingRun<br/>workspace and versions] --> BUILDER
+    BUILDER --> CS[One active ChunkSet]
+    BUILDER --> B1[Block 0<br/>physical page 1]
+    BUILDER --> B2[Block 1<br/>physical page 3]
+    B1 --> C1[Chunk 0]
+    B2 --> C2[Chunk 1]
+    CS --> C1
+    CS --> C2
+```
+
+M0.0 records whitespace-separated word units in `token_count`; the versioned
+`m0.0-structure-block-config-v1` identifier makes this deliberately simple counting rule explicit.
+A later tokenizer or structure-aware strategy creates a new chunking configuration and chunk set
+rather than altering historical output. A document whose pages are all blank fails before any
+lexical records are created.
+
 ## Lexical output transaction
 
 ```mermaid
