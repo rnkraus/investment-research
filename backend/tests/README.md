@@ -41,15 +41,17 @@ artifact metadata across workspace boundaries. It also verifies database rejecti
 document relationships and invalid constrained values, plus trigger-enforced immutability for document
 versions and original artifacts. Processing coverage verifies the captured-to-lexical-ready lifecycle,
 rejects cross-workspace source versions, enforces one active chunk set per profile, and confirms that
-PostgreSQL builds searchable English `tsvector` values from chunk text. Search coverage verifies
-stable candidate ordering and non-disclosure, plus database rejection of foreign request and chunk
-relationships and duplicate ranks within one retrieval origin. Research coverage follows every
-permitted transition from `REQUESTED` to `STREAMED`, verifies ordered statements and non-disclosure,
-and rejects foreign or mismatched request-to-retrieval relationships and duplicate versions. Query
-execution remains Step 6 scope. Evidence coverage verifies atomically persisted exact spans,
-statement relationships, and answer validations; stable scoped reads; cross-workspace source and
-subject rejection; and unique answer- and statement-level rule results. Generation and canonical
-evidence validation behavior remain Step 7 scope.
+PostgreSQL builds searchable English `tsvector` values from chunk text. Processing-status API
+coverage additionally proves that an owning workspace can read a run while foreign and unknown run
+identifiers produce the same response. Search coverage verifies stable candidate ordering and
+non-disclosure, plus database rejection of foreign request and chunk relationships and duplicate
+ranks within one retrieval origin. Research coverage follows every permitted transition from
+`REQUESTED` to `STREAMED`, verifies ordered statements and non-disclosure, and rejects foreign or
+mismatched request-to-retrieval relationships and duplicate versions. Query execution remains Step 6
+scope. Evidence coverage verifies atomically persisted exact spans, statement relationships, and
+answer validations; stable scoped reads; cross-workspace source and subject rejection; and unique
+answer- and statement-level rule results. Generation and canonical evidence validation behavior
+remain Step 7 scope.
 
 For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
 named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies
