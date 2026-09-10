@@ -98,15 +98,32 @@ curl --fail-with-body \
 
 The successful response has HTTP status 202 and contains the new document, document-version, and
 processing-run identifiers. Capture stores the verified immutable original and pending processing
-intent; it does not parse the PDF. Insert the returned identifiers into this URL to open the verified
-original inline in a browser:
+intent; it does not parse the PDF. In a separate terminal, pass the returned `processing_run_id` to
+the bounded single-job runner:
+
+```shell
+cd backend
+uv run --locked python -m investment_research.runner {processing_run_id}
+```
+
+The runner processes exactly one captured run and then exits. It resolves the local workspace on the
+server, uses its own database sessions, limits wall-clock processing time and virtual memory, and
+never executes PDF parsing in FastAPI. A successful command reports `LEXICAL_READY`; a failed command
+returns a non-zero exit code without printing parser or database internals. The default bounds are
+30 seconds and 512 MiB of additional virtual memory above the loaded runner runtime. Override them
+only within the validated safety ceilings with
+`INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS` and
+`INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES`.
+
+Insert the returned document identifiers into this URL to open the verified original inline in a
+browser:
 
 ```text
 http://127.0.0.1:8000/api/v1/documents/{document_id}/versions/{document_version_id}/original
 ```
 
 The original route rechecks the server-owned workspace, current document version, byte count, and
-checksum before sending PDF content. Processing-status remains a later implementation step.
+checksum before sending PDF content. The processing-status API remains the next Step 5 work block.
 
 Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
 
@@ -207,7 +224,7 @@ uv audit --locked
 ## Current architecture
 
 - `frontend/` contains the Next.js, TypeScript, and Tailwind CSS web application.
-- `backend/` contains the FastAPI application and its tests.
+- `backend/` contains the shared FastAPI and single-job processing application package and its tests.
 - `compose.yaml` provides a loopback-only PostgreSQL service for local development.
 - The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
   reviewed Alembic-managed PostgreSQL schema and caller-owned transaction boundaries.

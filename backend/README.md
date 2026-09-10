@@ -1,6 +1,8 @@
 # Backend
 
-This directory contains the shared Python application package used by the FastAPI process and, later, the M0.0 processing runner and Celery worker. It is not an API-only codebase.
+This directory contains the shared Python application package used by the FastAPI process and the
+M0.0 processing runner. The later Celery worker will invoke the same application service, so this is
+not an API-only codebase.
 
 ## Structure
 
@@ -10,8 +12,8 @@ This directory contains the shared Python application package used by the FastAP
 | `migrations/`              | Reviewed, ordered PostgreSQL schema history and migration environment.           |
 | `pyproject.toml`           | Python package metadata, dependencies, and Ruff, Mypy, and Pytest configuration. |
 | `uv.lock`                  | Reproducible Python dependency resolution.                                       |
-| `scripts/`                 | Checked OpenAPI, seed, and isolated PostgreSQL verification utilities.          |
-| `src/investment_research/` | Application package, composition root, API boundary, and modules.                |
+| `scripts/`                 | Checked OpenAPI, seed, and isolated PostgreSQL verification utilities.           |
+| `src/investment_research/` | Shared application package, API and runner entry points, composition, and modules. |
 | `tests/`                   | Deterministic unit tests and opt-in PostgreSQL integration tests.                |
 
 ## Runtime relationship

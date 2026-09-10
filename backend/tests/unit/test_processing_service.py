@@ -30,6 +30,7 @@ from investment_research.modules.processing.domain import (
 )
 from investment_research.modules.processing.ports import (
     DocumentParserError,
+    ProcessingExecutionLimitError,
     ProcessingRepository,
     ProcessingUnitOfWork,
 )
@@ -172,7 +173,7 @@ class RecordingParser:
         self,
         *,
         parsed_document: ParsedDocument | None = None,
-        error: DocumentParserError | None = None,
+        error: Exception | None = None,
         parser_version: str = "synthetic-parser-1",
     ) -> None:
         self._parsed_document = parsed_document
@@ -280,6 +281,43 @@ def test_parser_failure_is_recorded_safely_in_a_new_transaction() -> None:
         ProcessingState.FAILED,
     ]
     assert repository.lexical_outputs == []
+    assert unit_of_work_factory.transaction_count == 2
+
+
+@pytest.mark.parametrize(
+    ("processing_error", "safe_summary"),
+    [
+        pytest.param(
+            ProcessingExecutionLimitError("sensitive timeout detail"),
+            "Processing execution time limit exceeded",
+            id="time-limit",
+        ),
+        pytest.param(
+            MemoryError("sensitive allocation detail"),
+            "Processing memory limit exceeded",
+            id="memory-limit",
+        ),
+    ],
+)
+def test_resource_failure_is_recorded_without_exception_details(
+    processing_error: Exception,
+    safe_summary: str,
+) -> None:
+    repository = InMemoryProcessingRepository(make_run())
+    parser = RecordingParser(error=processing_error)
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        RecordingOriginalProvider(),
+    )
+
+    with pytest.raises(type(processing_error)):
+        service.process(make_context(), PROCESSING_RUN_ID)
+
+    assert repository.run is not None
+    assert repository.run.state is ProcessingState.FAILED
+    assert repository.run.error_summary == safe_summary
+    assert "sensitive" not in repository.run.error_summary
     assert unit_of_work_factory.transaction_count == 2
 
 

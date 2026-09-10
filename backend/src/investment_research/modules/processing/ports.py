@@ -24,6 +24,10 @@ class ParserLimitExceededError(DocumentParserError):
     """Raised when parsing would exceed an application-owned safety limit."""
 
 
+class ProcessingExecutionLimitError(Exception):
+    """Raised when the outer runner reaches a process-level execution limit."""
+
+
 class DocumentParser(Protocol):
     """Extract ordered page text from one PDF through an interchangeable adapter."""
 
@@ -91,3 +95,10 @@ type ProcessingUnitOfWorkFactory = Callable[
     [],
     AbstractContextManager[ProcessingUnitOfWork],
 ]
+
+
+class ProcessingExecutor(Protocol):
+    """Execute one canonical processing run outside the API process."""
+
+    def execute(self, processing_run_id: UUID) -> ProcessingRun:
+        """Resolve trusted scope and process exactly one run identifier."""

@@ -20,6 +20,7 @@ from investment_research.modules.processing.ports import (
     DocumentParser,
     DocumentParserError,
     ParserLimitExceededError,
+    ProcessingExecutionLimitError,
     ProcessingOriginalProvider,
     ProcessingUnitOfWorkFactory,
 )
@@ -314,6 +315,10 @@ class ProcessDocumentService:
 
         if isinstance(error, ParserLimitExceededError):
             return "Parser safety limit exceeded"
+        if isinstance(error, ProcessingExecutionLimitError):
+            return "Processing execution time limit exceeded"
+        if isinstance(error, MemoryError):
+            return "Processing memory limit exceeded"
         if isinstance(error, DocumentParserError):
             return "Document parsing failed safely"
         if isinstance(error, NoExtractableTextError):

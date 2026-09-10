@@ -9,7 +9,14 @@ from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
     MAX_CONFIGURABLE_PDF_PAGES,
 )
-from investment_research.settings import PROJECT_ROOT, Settings, load_settings
+from investment_research.settings import (
+    MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES,
+    MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
+    MIN_PROCESSING_MEMORY_LIMIT_BYTES,
+    PROJECT_ROOT,
+    Settings,
+    load_settings,
+)
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 POSTGRES_SETTING_NAMES = (
@@ -36,6 +43,8 @@ def test_settings_load_supported_environment_values(
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "1500000")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES", "268435456")
 
     settings = load_settings(env_file=None)
 
@@ -47,6 +56,8 @@ def test_settings_load_supported_environment_values(
     assert settings.max_upload_bytes == 1_048_576
     assert settings.max_pdf_pages == 100
     assert settings.max_extracted_characters == 1_500_000
+    assert settings.processing_timeout_seconds == 45
+    assert settings.processing_memory_limit_bytes == 256 * 1024 * 1024
     assert "test-password" not in repr(settings)
 
 
@@ -92,6 +103,34 @@ def test_settings_reject_unsafe_upload_limit(max_upload_bytes: int) -> None:
     ],
 )
 def test_settings_reject_unsafe_parser_limit(field: str, value: int) -> None:
+    with pytest.raises(ValidationError) as error:
+        Settings.model_validate({field: value})
+
+    assert error.value.errors()[0]["loc"] == (field,)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("processing_timeout_seconds", 0, id="zero-seconds"),
+        pytest.param(
+            "processing_timeout_seconds",
+            MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS + 1,
+            id="excessive-seconds",
+        ),
+        pytest.param(
+            "processing_memory_limit_bytes",
+            MIN_PROCESSING_MEMORY_LIMIT_BYTES - 1,
+            id="insufficient-memory",
+        ),
+        pytest.param(
+            "processing_memory_limit_bytes",
+            MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES + 1,
+            id="excessive-memory",
+        ),
+    ],
+)
+def test_settings_reject_unsafe_processing_limit(field: str, value: int) -> None:
     with pytest.raises(ValidationError) as error:
         Settings.model_validate({field: value})
 
