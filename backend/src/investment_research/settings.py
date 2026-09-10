@@ -23,6 +23,11 @@ DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_CONFIGURABLE_UPLOAD_BYTES = 100 * 1024 * 1024
 DEFAULT_MAX_PDF_PAGES = 250
 DEFAULT_MAX_EXTRACTED_CHARACTERS = 2_000_000
+DEFAULT_PROCESSING_TIMEOUT_SECONDS = 30
+MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS = 300
+DEFAULT_PROCESSING_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
+MIN_PROCESSING_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
+MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES = 4 * 1024 * 1024 * 1024
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
     "POSTGRES_USER",
@@ -68,6 +73,16 @@ class Settings(BaseModel):
         default=DEFAULT_MAX_EXTRACTED_CHARACTERS,
         ge=1,
         le=MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
+    )
+    processing_timeout_seconds: int = Field(
+        default=DEFAULT_PROCESSING_TIMEOUT_SECONDS,
+        ge=1,
+        le=MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
+    )
+    processing_memory_limit_bytes: int = Field(
+        default=DEFAULT_PROCESSING_MEMORY_LIMIT_BYTES,
+        ge=MIN_PROCESSING_MEMORY_LIMIT_BYTES,
+        le=MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES,
     )
 
     @field_validator("api_host")
@@ -228,6 +243,16 @@ def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
             "INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS",
             file_values,
             str(DEFAULT_MAX_EXTRACTED_CHARACTERS),
+        ),
+        "processing_timeout_seconds": _configuration_value(
+            "INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS",
+            file_values,
+            str(DEFAULT_PROCESSING_TIMEOUT_SECONDS),
+        ),
+        "processing_memory_limit_bytes": _configuration_value(
+            "INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES",
+            file_values,
+            str(DEFAULT_PROCESSING_MEMORY_LIMIT_BYTES),
         ),
     }
     return Settings.model_validate(values)

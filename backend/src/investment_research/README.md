@@ -7,6 +7,7 @@
 | Path              | Responsibility                                                                                                         |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `main.py`         | Creates FastAPI, installs transport safeguards and error handlers, attaches the container, and registers routes.       |
+| `runner.py`       | Executes exactly one processing run with process-level time and memory bounds outside FastAPI.                         |
 | `bootstrap.py`    | Composition root that selects concrete implementations for application-owned contracts.                                |
 | `settings.py`     | Loads process-first local configuration and validates secret-safe runtime settings.                                     |
 | `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
@@ -24,14 +25,18 @@ flowchart TD
     ENGINE --> SESSIONS[Session factory]
     SESSIONS --> CAPTUREUOW[Capture unit-of-work factory]
     SESSIONS --> READUOW[Document read unit-of-work factory]
+    SESSIONS --> PROCESSUOW[Processing unit-of-work factory]
     BOOT --> STORAGE[ObjectStorage adapter]
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
     READUOW --> ORIGINAL[OpenOriginalService]
+    PROCESSUOW --> PROCESS[ProcessDocumentService]
     STORAGE --> CAPTURE
     STORAGE --> ORIGINAL
+    ORIGINAL --> PROCESS
     BOOT --> STATE[Application container]
     CAPTURE --> STATE
     ORIGINAL --> STATE
+    PROCESS --> STATE
     MAIN --> LIMIT[Request-body limit]
     LIMIT --> ROUTES[HTTP routes]
     MAIN --> ERRORS[Safe error handlers]
@@ -42,6 +47,24 @@ flowchart TD
 ```
 
 `main.py` and `bootstrap.py` are the outer composition layer. Module domain and application files must remain independent of this layer. Application startup must never create or mutate database schemas.
+
+The runner is a second entry point into the same composition root:
+
+```mermaid
+flowchart LR
+    CLI[runner.py<br/>run ID only] --> BOOT[build_container]
+    BOOT --> ID[Server-owned identity context]
+    BOOT --> SERVICE[ProcessDocumentService]
+    ID --> EXECUTE[SingleJobProcessingExecutor]
+    SERVICE --> EXECUTE
+    EXECUTE --> LIMITS[Apply process time and memory limits]
+    LIMITS --> TERMINAL[LEXICAL_READY or FAILED]
+    TERMINAL --> CLOSE[Dispose engine pool and exit]
+```
+
+The command-line caller never supplies workspace scope or a database session. `runner.py` resolves
+the fixed local identity, invokes one run, prints only a safe outcome, closes process-owned resources,
+and exits. It is a development delivery adapter rather than a durable queue or retry system.
 
 Importing `create_app` or exporting OpenAPI does not allocate database resources. The FastAPI
 lifespan creates them only when the server starts and releases them during shutdown. Sessions are

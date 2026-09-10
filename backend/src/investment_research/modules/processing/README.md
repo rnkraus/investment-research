@@ -105,9 +105,34 @@ flowchart LR
 ```
 
 Only short database operations occur inside the write transactions. Parser errors are raised back
-to the future command-line runner after the canonical `FAILED` state is committed. Exception text
-is untrusted and is therefore mapped to bounded application-owned summaries instead of being stored
+to the command-line runner after the canonical `FAILED` state is committed. Exception text is
+untrusted and is therefore mapped to bounded application-owned summaries instead of being stored
 verbatim. Missing and foreign run identifiers both produce `ProcessingRunUnavailableError`.
+
+## Single-job runner
+
+`investment_research.runner` is the development-only `ProcessingExecutor` adapter. It accepts one
+processing-run UUID, resolves the fixed local `WorkspaceContext`, applies the configured process
+bounds, calls `ProcessDocumentService`, and exits. It cannot accept an API session or client-chosen
+workspace identifier.
+
+```mermaid
+flowchart LR
+    CLI[Run ID] --> EXECUTOR[SingleJobProcessingExecutor]
+    SETTINGS[Validated time and memory bounds] --> EXECUTOR
+    IDENTITY[Fixed local identity provider] --> EXECUTOR
+    EXECUTOR --> SERVICE[ProcessDocumentService]
+    SERVICE --> RESULT[Committed terminal run]
+    RESULT --> EXIT[Safe message and process exit]
+```
+
+The wall-clock bound uses a process signal that raises `ProcessingExecutionLimitError` inside the
+active service call. The service can therefore commit a safe `FAILED` state before the command exits.
+The runner measures its already-loaded virtual address space and adds the configured processing
+budget before setting the kernel's virtual-memory soft limit. This avoids undercutting the Python
+runtime while still bounding new allocations, and it never relaxes a stricter operating-system
+limit. A `MemoryError` is translated to a fixed safe summary. This is defense in depth around the
+parser's page and extracted-character limits; it is not a durability or retry mechanism.
 
 ## M0.0 lexical mapping
 

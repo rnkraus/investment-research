@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import Engine
 
+from investment_research.infrastructure.database.metadata import get_model_metadata
 from investment_research.infrastructure.database.session import (
     SessionFactory,
     create_database_engine,
@@ -12,8 +13,10 @@ from investment_research.infrastructure.database.session import (
 from investment_research.infrastructure.database.unit_of_work import (
     create_capture_unit_of_work_factory,
     create_document_read_unit_of_work_factory,
+    create_processing_unit_of_work_factory,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
+from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
@@ -23,6 +26,8 @@ from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
     IdentityContextProvider,
 )
+from investment_research.modules.processing.application import ProcessDocumentService
+from investment_research.modules.processing.contracts import ParserLimits
 from investment_research.settings import Settings
 
 
@@ -37,6 +42,7 @@ class ApplicationContainer:
     object_storage: ObjectStorage
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
+    process_document_service: ProcessDocumentService
 
     def close(self) -> None:
         """Release process-wide resources owned by the container."""
@@ -47,9 +53,14 @@ class ApplicationContainer:
 def build_container(settings: Settings) -> ApplicationContainer:
     """Wire the local M0.0 adapters behind application-owned contracts."""
 
+    get_model_metadata()
     database_engine = create_database_engine(settings)
     session_factory = create_session_factory(database_engine)
     object_storage = LocalObjectStorage(settings.object_storage_root)
+    open_original_service = OpenOriginalService(
+        object_storage=object_storage,
+        unit_of_work_factory=create_document_read_unit_of_work_factory(session_factory),
+    )
     return ApplicationContainer(
         settings=settings,
         identity_context_provider=FixedLocalIdentityContextProvider(),
@@ -61,8 +72,14 @@ def build_container(settings: Settings) -> ApplicationContainer:
             unit_of_work_factory=create_capture_unit_of_work_factory(session_factory),
             max_upload_bytes=settings.max_upload_bytes,
         ),
-        open_original_service=OpenOriginalService(
-            object_storage=object_storage,
-            unit_of_work_factory=create_document_read_unit_of_work_factory(session_factory),
+        open_original_service=open_original_service,
+        process_document_service=ProcessDocumentService(
+            parser=PypdfDocumentParser(),
+            original_provider=open_original_service,
+            unit_of_work_factory=create_processing_unit_of_work_factory(session_factory),
+            parser_limits=ParserLimits(
+                max_pages=settings.max_pdf_pages,
+                max_extracted_characters=settings.max_extracted_characters,
+            ),
         ),
     )

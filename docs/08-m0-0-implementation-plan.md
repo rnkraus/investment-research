@@ -80,6 +80,7 @@ Create files only when their implementation step begins; do not scaffold empty p
 │   │       └── 0001_m0_0_schema.py     # reviewed minimum physical schema
 │   ├── src/investment_research/
 │   │   ├── main.py                       # FastAPI composition root entry point
+│   │   ├── runner.py                     # bounded single-job processing entry point
 │   │   ├── bootstrap.py                  # dependency wiring only
 │   │   ├── settings.py                   # validated, secret-safe local settings
 │   │   ├── api/
