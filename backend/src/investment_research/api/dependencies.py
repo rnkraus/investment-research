@@ -10,6 +10,7 @@ from investment_research.modules.documents.application import (
     OpenOriginalService,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.application import GetProcessingRunService
 
 
 def get_container(request: Request) -> ApplicationContainer:
@@ -49,6 +50,20 @@ def get_open_original_service(
 OpenOriginalServiceDependency = Annotated[
     OpenOriginalService,
     Depends(get_open_original_service),
+]
+
+
+def get_processing_run_service(
+    container: ContainerDependency,
+) -> GetProcessingRunService:
+    """Return the application-owned service for scoped processing-status reads."""
+
+    return container.get_processing_run_service
+
+
+GetProcessingRunServiceDependency = Annotated[
+    GetProcessingRunService,
+    Depends(get_processing_run_service),
 ]
 
 

@@ -31,6 +31,12 @@ flowchart LR
 
 Client-supplied identifiers are untrusted. In particular, `workspace_id` is not accepted as authorization proof; routes obtain workspace scope through `WorkspaceContextDependency`. Error responses expose stable codes and safe summaries rather than internal details.
 
+The processing-status route accepts only a processing-run UUID and delegates to
+`GetProcessingRunService`. That service opens a fresh read session and applies the same trusted
+workspace boundary as the runner's repository operations. The API never starts parsing, shares a
+runner session, or exposes processing configuration and exception details. Unknown and foreign run
+identifiers are intentionally indistinguishable.
+
 The transport-wide body limit includes a small allowance for multipart framing and rejects excessive
 declared or streamed bytes before endpoint execution. The document capture service independently
 enforces the configured PDF-byte limit and validates filename, media type, signature, and metadata;

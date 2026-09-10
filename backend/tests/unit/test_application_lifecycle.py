@@ -12,7 +12,10 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
-from investment_research.modules.processing.application import ProcessDocumentService
+from investment_research.modules.processing.application import (
+    GetProcessingRunService,
+    ProcessDocumentService,
+)
 from investment_research.settings import Settings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
@@ -44,6 +47,7 @@ def test_build_container_wires_application_resources(tmp_path: Path) -> None:
             assert isinstance(container.object_storage, LocalObjectStorage)
             assert isinstance(container.capture_document_service, CaptureDocumentService)
             assert isinstance(container.open_original_service, OpenOriginalService)
+            assert isinstance(container.get_processing_run_service, GetProcessingRunService)
             assert isinstance(container.process_document_service, ProcessDocumentService)
             assert not storage_root.exists()
         finally:

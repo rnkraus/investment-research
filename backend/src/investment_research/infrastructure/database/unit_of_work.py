@@ -18,6 +18,8 @@ from investment_research.modules.documents.ports import (
 )
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
 from investment_research.modules.processing.ports import (
+    ProcessingReadUnitOfWork,
+    ProcessingReadUnitOfWorkFactory,
     ProcessingRepository,
     ProcessingUnitOfWork,
     ProcessingUnitOfWorkFactory,
@@ -42,6 +44,13 @@ class SqlAlchemyDocumentReadRepositories:
 @dataclass(frozen=True, slots=True)
 class SqlAlchemyProcessingRepositories:
     """Processing repository bound to one short-lived transaction."""
+
+    processing: ProcessingRepository
+
+
+@dataclass(frozen=True, slots=True)
+class SqlAlchemyProcessingReadRepositories:
+    """Processing repository bound to one short-lived read session."""
 
     processing: ProcessingRepository
 
@@ -83,6 +92,18 @@ def sqlalchemy_processing_unit_of_work(
         )
 
 
+@contextmanager
+def sqlalchemy_processing_read_unit_of_work(
+    session_factory: SessionFactory,
+) -> Iterator[ProcessingReadUnitOfWork]:
+    """Expose one scoped status read without opening a write transaction."""
+
+    with session_factory() as session:
+        yield SqlAlchemyProcessingReadRepositories(
+            processing=SqlAlchemyProcessingRepository(session),
+        )
+
+
 def create_capture_unit_of_work_factory(
     session_factory: SessionFactory,
 ) -> CaptureUnitOfWorkFactory:
@@ -112,5 +133,16 @@ def create_processing_unit_of_work_factory(
 
     def create_unit_of_work() -> AbstractContextManager[ProcessingUnitOfWork]:
         return sqlalchemy_processing_unit_of_work(session_factory)
+
+    return create_unit_of_work
+
+
+def create_processing_read_unit_of_work_factory(
+    session_factory: SessionFactory,
+) -> ProcessingReadUnitOfWorkFactory:
+    """Bind processing-status reads to one process-wide session factory."""
+
+    def create_unit_of_work() -> AbstractContextManager[ProcessingReadUnitOfWork]:
+        return sqlalchemy_processing_read_unit_of_work(session_factory)
 
     return create_unit_of_work

@@ -22,6 +22,7 @@ from investment_research.modules.processing.ports import (
     ParserLimitExceededError,
     ProcessingExecutionLimitError,
     ProcessingOriginalProvider,
+    ProcessingReadUnitOfWorkFactory,
     ProcessingUnitOfWorkFactory,
 )
 
@@ -67,6 +68,22 @@ class ProcessingRunConflictError(Exception):
 
 class ProcessingParserVersionError(Exception):
     """Raised when a runner cannot reproduce the run's recorded parser version."""
+
+
+@dataclass(frozen=True, slots=True)
+class GetProcessingRunService:
+    """Return one workspace-visible processing run without disclosing foreign records."""
+
+    unit_of_work_factory: ProcessingReadUnitOfWorkFactory
+
+    def get(self, context: WorkspaceContext, processing_run_id: UUID) -> ProcessingRun:
+        """Resolve one run or raise the shared non-disclosing unavailable error."""
+
+        with self.unit_of_work_factory() as unit_of_work:
+            run = unit_of_work.processing.get_run_by_id(context, processing_run_id)
+        if run is None:
+            raise ProcessingRunUnavailableError("processing run is unavailable")
+        return run
 
 
 @dataclass(frozen=True, slots=True)
