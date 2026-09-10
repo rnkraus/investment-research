@@ -17,7 +17,11 @@ from investment_research.modules.documents.ports import (
     DocumentRepository,
 )
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
-from investment_research.modules.processing.ports import ProcessingRepository
+from investment_research.modules.processing.ports import (
+    ProcessingRepository,
+    ProcessingUnitOfWork,
+    ProcessingUnitOfWorkFactory,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +37,13 @@ class SqlAlchemyDocumentReadRepositories:
     """Document repository bound to one short-lived read session."""
 
     documents: DocumentRepository
+
+
+@dataclass(frozen=True, slots=True)
+class SqlAlchemyProcessingRepositories:
+    """Processing repository bound to one short-lived transaction."""
+
+    processing: ProcessingRepository
 
 
 @contextmanager
@@ -60,6 +71,18 @@ def sqlalchemy_document_read_unit_of_work(
         )
 
 
+@contextmanager
+def sqlalchemy_processing_unit_of_work(
+    session_factory: SessionFactory,
+) -> Iterator[ProcessingUnitOfWork]:
+    """Commit one runner state change and its related output atomically."""
+
+    with transactional_session(session_factory) as session:
+        yield SqlAlchemyProcessingRepositories(
+            processing=SqlAlchemyProcessingRepository(session),
+        )
+
+
 def create_capture_unit_of_work_factory(
     session_factory: SessionFactory,
 ) -> CaptureUnitOfWorkFactory:
@@ -78,5 +101,16 @@ def create_document_read_unit_of_work_factory(
 
     def create_unit_of_work() -> AbstractContextManager[DocumentReadUnitOfWork]:
         return sqlalchemy_document_read_unit_of_work(session_factory)
+
+    return create_unit_of_work
+
+
+def create_processing_unit_of_work_factory(
+    session_factory: SessionFactory,
+) -> ProcessingUnitOfWorkFactory:
+    """Bind runner transaction creation to one process-wide session factory."""
+
+    def create_unit_of_work() -> AbstractContextManager[ProcessingUnitOfWork]:
+        return sqlalchemy_processing_unit_of_work(session_factory)
 
     return create_unit_of_work

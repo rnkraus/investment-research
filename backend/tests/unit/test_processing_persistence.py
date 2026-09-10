@@ -291,6 +291,22 @@ def test_repository_reports_unknown_run_without_disclosure() -> None:
     assert repository.update_run(make_context(), make_run()) is False
 
 
+def test_repository_locks_scoped_run_for_lifecycle_update() -> None:
+    session = create_autospec(Session, instance=True)
+    stored_run = make_run()
+    session.scalar.return_value = ProcessingRunRow.from_domain(stored_run)
+    repository = SqlAlchemyProcessingRepository(session)
+
+    result = repository.get_run_by_id_for_update(make_context(), PROCESSING_RUN_ID)
+
+    assert result == stored_run
+    statement = session.scalar.call_args.args[0]
+    compiled = str(statement)
+    assert compiled.endswith("FOR UPDATE")
+    assert "processing_runs.workspace_id" in compiled
+    assert "processing_runs.id" in compiled
+
+
 def test_repository_stages_consistent_lexical_output() -> None:
     session = create_autospec(Session, instance=True)
     repository = SqlAlchemyProcessingRepository(session)
