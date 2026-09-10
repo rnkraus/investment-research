@@ -94,6 +94,7 @@ def test_capture_commits_document_original_and_processing_intent(
     tmp_path: Path,
 ) -> None:
     context = create_workspace(integration_database_engine)
+    other_context = create_workspace(integration_database_engine)
     service = make_capture_service(integration_database_engine, tmp_path / "objects")
 
     result = service.capture(context, make_capture_input(), BytesIO(PDF_CONTENT))
@@ -113,11 +114,26 @@ def test_capture_commits_document_original_and_processing_intent(
             result.document_id,
             result.document_version_id,
         )
+        processing_original = documents.get_original_artifact_by_version_id(
+            context,
+            result.document_version_id,
+        )
+        foreign_processing_original = documents.get_original_artifact_by_version_id(
+            other_context,
+            result.document_version_id,
+        )
+        unknown_processing_original = documents.get_original_artifact_by_version_id(
+            context,
+            uuid4(),
+        )
         processing_run = processing.get_run_by_id(context, result.processing_run_id)
 
     assert document is not None
     assert version is not None
     assert original is not None
+    assert processing_original == original
+    assert foreign_processing_original is None
+    assert unknown_processing_original is None
     assert processing_run is not None
     assert document.current_version_id == version.id
     assert original.document_version_id == version.id

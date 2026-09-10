@@ -7,7 +7,7 @@ This module owns logical archive documents, immutable content versions, and immu
 | File             | Responsibility                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------ |
 | `contracts.py`   | Defines validated capture metadata and the stable application result.                                 |
-| `application.py` | Captures bounded PDFs and resolves verified current originals for authorized streaming.               |
+| `application.py` | Captures bounded PDFs and resolves verified current originals for downloads or processing.             |
 | `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values.  |
 | `ports.py`       | Defines object storage, repository, binary-stream, and write/read unit-of-work contracts.             |
 | `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.             |
@@ -49,8 +49,9 @@ The service accepts only a declared `application/pdf` with a `.pdf` filename and
 
 ```mermaid
 flowchart TD
-    INPUT[Trusted workspace plus document and version IDs] --> READ[DocumentReadUnitOfWork]
-    READ --> REPOSITORY[DocumentRepository.get_original_artifact]
+    DOWNLOAD_INPUT[Download<br/>workspace, document, and version IDs] --> READ[DocumentReadUnitOfWork]
+    PROCESSING_INPUT[Processing<br/>workspace and canonical version ID] --> READ
+    READ --> REPOSITORY[Shared eligible-original query]
     REPOSITORY -->|unknown, foreign, inactive, or mismatched| NOTFOUND[One unavailable result]
     REPOSITORY -->|eligible current version| METADATA[Canonical artifact metadata]
     METADATA --> STORAGE[ObjectStorage.open]
@@ -65,6 +66,11 @@ bounded original into a private spool and verifies its recorded size and SHA-256
 stream. At most 1 MiB remains in memory for larger originals; the standard-library spool moves the
 remainder to a temporary file. The stream owns that temporary resource and closes it after normal,
 failed, or cancelled consumption.
+
+The download path requires both document and version identifiers. The internal processing path
+starts from the canonical version identifier already recorded on its `ProcessingRun`. Both paths use
+the same active-current-workspace eligibility query and byte-integrity preparation. Processing sees
+only the `ProcessingOriginalProvider` stream contract, not document tables or storage paths.
 
 The read unit of work opens one short-lived SQLAlchemy session and exposes only the document
 repository. It does not reuse the capture transaction, include the processing repository, or commit

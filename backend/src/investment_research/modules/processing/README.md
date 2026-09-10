@@ -9,7 +9,7 @@ This module owns canonical processing intent, page-aware parsed structure, versi
 | `application.py` | Defines the versioned M0.0 processing profile and creates a valid initial `CAPTURED` run.               |
 | `contracts.py`   | Defines bounded, immutable parser input and page-aware output types.                                    |
 | `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants.        |
-| `ports.py`       | Defines the application-owned parser and `ProcessingRepository` contracts.                              |
+| `ports.py`       | Defines parser, verified-original-provider, and `ProcessingRepository` contracts.                        |
 | `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior.         |
 
 ## Ownership and provenance

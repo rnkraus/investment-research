@@ -2,11 +2,12 @@
 
 import re
 from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from tempfile import SpooledTemporaryFile
-from typing import Final
+from typing import BinaryIO, Final, cast
 from uuid import UUID, uuid4
 
 from investment_research.modules.documents.contracts import (
@@ -121,6 +122,47 @@ class OpenOriginalService:
         if original is None:
             raise OriginalUnavailableError("original is unavailable")
 
+        return self._prepare_download(
+            context,
+            original,
+            filename=f"document-{document_id}-version-{version_id}.pdf",
+        )
+
+    @contextmanager
+    def open_for_processing(
+        self,
+        context: WorkspaceContext,
+        document_version_id: UUID,
+    ) -> Generator[BinaryIO]:
+        """Yield one verified current original for an internal processing run."""
+
+        with self._unit_of_work_factory() as unit_of_work:
+            original = unit_of_work.documents.get_original_artifact_by_version_id(
+                context,
+                document_version_id,
+            )
+        if original is None:
+            raise OriginalUnavailableError("original is unavailable")
+
+        download = self._prepare_download(
+            context,
+            original,
+            filename=f"document-version-{document_version_id}.pdf",
+        )
+        try:
+            yield cast(BinaryIO, download._content)
+        finally:
+            download.close()
+
+    def _prepare_download(
+        self,
+        context: WorkspaceContext,
+        original: OriginalArtifact,
+        *,
+        filename: str,
+    ) -> OriginalDownload:
+        """Copy and verify one canonical original into a private bounded spool."""
+
         prepared = SpooledTemporaryFile[bytes](
             max_size=min(original.byte_size, READ_CHUNK_SIZE),
             mode="w+b",
@@ -152,7 +194,7 @@ class OpenOriginalService:
         return OriginalDownload(
             media_type=original.media_type,
             byte_size=original.byte_size,
-            filename=f"document-{document_id}-version-{version_id}.pdf",
+            filename=filename,
             _content=prepared,
         )
 

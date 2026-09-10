@@ -1,6 +1,7 @@
 """Application-owned parsing and persistence contracts for document processing."""
 
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
@@ -32,6 +33,17 @@ class DocumentParser(Protocol):
 
     def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
         """Parse one binary stream without closing its caller-owned resource."""
+
+
+class ProcessingOriginalProvider(Protocol):
+    """Open one canonical original without exposing document persistence details."""
+
+    def open_for_processing(
+        self,
+        context: WorkspaceContext,
+        document_version_id: UUID,
+    ) -> AbstractContextManager[BinaryIO]:
+        """Yield verified bytes for one eligible version and close them afterward."""
 
 
 class ProcessingRepository(Protocol):

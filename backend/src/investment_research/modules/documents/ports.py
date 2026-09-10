@@ -110,6 +110,13 @@ class DocumentRepository(Protocol):
     ) -> OriginalArtifact | None:
         """Return original metadata only for an eligible current document version."""
 
+    def get_original_artifact_by_version_id(
+        self,
+        context: WorkspaceContext,
+        version_id: UUID,
+    ) -> OriginalArtifact | None:
+        """Resolve an eligible current original for internal processing."""
+
 
 class CaptureUnitOfWork(Protocol):
     """Repositories participating in one atomic document-capture transaction."""
