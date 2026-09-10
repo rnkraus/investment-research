@@ -25,6 +25,7 @@ from investment_research.modules.documents.ports import (
     DocumentRepository,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.ports import ProcessingOriginalProvider
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -87,6 +88,7 @@ def make_service(
 
     storage = LocalObjectStorage(tmp_path / "objects")
     unit_of_work.document_mock.get_original_artifact.return_value = original
+    unit_of_work.document_mock.get_original_artifact_by_version_id.return_value = original
     if original is not None and stored_content is not None:
         storage.store_immutable(
             make_context(),
@@ -119,12 +121,45 @@ def test_open_original_returns_verified_pdf_and_safe_metadata(tmp_path: Path) ->
     )
 
 
+def test_open_for_processing_yields_verified_version_stream_and_closes_it(
+    tmp_path: Path,
+) -> None:
+    unit_of_work = RecordingReadUnitOfWork()
+    original = make_original()
+    service: ProcessingOriginalProvider = make_service(tmp_path, unit_of_work, original)
+
+    with service.open_for_processing(make_context(), VERSION_ID) as content:
+        assert content.read() == PDF_CONTENT
+        assert content.closed is False
+
+    assert content.closed is True
+    assert unit_of_work.enter_count == unit_of_work.exit_count == 1
+    unit_of_work.document_mock.get_original_artifact_by_version_id.assert_called_once_with(
+        make_context(),
+        VERSION_ID,
+    )
+
+
 def test_open_original_hides_unavailable_document_before_storage(tmp_path: Path) -> None:
     unit_of_work = RecordingReadUnitOfWork()
     service = make_service(tmp_path, unit_of_work, None, stored_content=None)
 
     with pytest.raises(OriginalUnavailableError, match="unavailable"):
         service.open_original(make_context(), DOCUMENT_ID, VERSION_ID)
+
+    assert unit_of_work.enter_count == unit_of_work.exit_count == 1
+    assert not (tmp_path / "objects").exists()
+
+
+def test_open_for_processing_hides_unavailable_version_before_storage(tmp_path: Path) -> None:
+    unit_of_work = RecordingReadUnitOfWork()
+    service = make_service(tmp_path, unit_of_work, None, stored_content=None)
+
+    with (
+        pytest.raises(OriginalUnavailableError, match="original is unavailable"),
+        service.open_for_processing(make_context(), VERSION_ID),
+    ):
+        pytest.fail("an unavailable processing original must never yield content")
 
     assert unit_of_work.enter_count == unit_of_work.exit_count == 1
     assert not (tmp_path / "objects").exists()

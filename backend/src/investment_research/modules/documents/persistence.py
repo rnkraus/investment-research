@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Integer,
+    Select,
     String,
     UniqueConstraint,
     and_,
@@ -333,6 +334,34 @@ class SqlAlchemyDocumentRepository:
         """Return original metadata only through an eligible current version."""
 
         row = self._session.scalar(
+            self._eligible_original_statement(
+                context,
+                version_id,
+                document_id=document_id,
+            )
+        )
+        return None if row is None else row.to_domain()
+
+    def get_original_artifact_by_version_id(
+        self,
+        context: WorkspaceContext,
+        version_id: UUID,
+    ) -> OriginalArtifact | None:
+        """Resolve an original only through an eligible current version in scope."""
+
+        row = self._session.scalar(self._eligible_original_statement(context, version_id))
+        return None if row is None else row.to_domain()
+
+    @staticmethod
+    def _eligible_original_statement(
+        context: WorkspaceContext,
+        version_id: UUID,
+        *,
+        document_id: UUID | None = None,
+    ) -> Select[tuple[OriginalArtifactRow]]:
+        """Build the shared active, current, and workspace-scoped original query."""
+
+        statement = (
             select(OriginalArtifactRow)
             .join(
                 DocumentVersionRow,
@@ -351,9 +380,10 @@ class SqlAlchemyDocumentRepository:
             )
             .where(
                 OriginalArtifactRow.workspace_id == context.workspace_id,
-                DocumentVersionRow.document_id == document_id,
                 DocumentVersionRow.id == version_id,
                 DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
             )
         )
-        return None if row is None else row.to_domain()
+        if document_id is not None:
+            statement = statement.where(DocumentVersionRow.document_id == document_id)
+        return statement

@@ -150,17 +150,23 @@ def test_repository_returns_only_eligible_domain_objects() -> None:
         DocumentRow.from_domain(document),
         DocumentVersionRow.from_domain(version),
         OriginalArtifactRow.from_domain(original),
+        OriginalArtifactRow.from_domain(original),
     ]
     repository = SqlAlchemyDocumentRepository(session)
 
     loaded_document = repository.get_document_by_id(make_context(), DOCUMENT_ID)
     loaded_version = repository.get_current_version_by_id(make_context(), DOCUMENT_ID, VERSION_ID)
     loaded_original = repository.get_original_artifact(make_context(), DOCUMENT_ID, VERSION_ID)
+    loaded_processing_original = repository.get_original_artifact_by_version_id(
+        make_context(),
+        VERSION_ID,
+    )
 
     assert loaded_document == document
     assert loaded_version == version
     assert loaded_original == original
-    assert session.scalar.call_count == 3
+    assert loaded_processing_original == original
+    assert session.scalar.call_count == 4
 
 
 def test_repository_hides_unknown_or_ineligible_records() -> None:
@@ -171,6 +177,7 @@ def test_repository_hides_unknown_or_ineligible_records() -> None:
     assert repository.get_document_by_id(make_context(), OTHER_ID) is None
     assert repository.get_current_version_by_id(make_context(), DOCUMENT_ID, OTHER_ID) is None
     assert repository.get_original_artifact(make_context(), DOCUMENT_ID, OTHER_ID) is None
+    assert repository.get_original_artifact_by_version_id(make_context(), OTHER_ID) is None
 
 
 def test_document_tables_enforce_workspace_scoped_foreign_keys() -> None:
