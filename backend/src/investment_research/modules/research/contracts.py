@@ -6,7 +6,14 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from investment_research.modules.research.domain import ResearchRequest, TemporalMode
+from investment_research.modules.research.domain import (
+    ConfigurationVersion,
+    CoverageStatus,
+    QuestionText,
+    ResearchRequest,
+    StatementText,
+    TemporalMode,
+)
 from investment_research.modules.search.contracts import LexicalSearchHit
 from investment_research.modules.search.domain import (
     QueryText,
@@ -100,4 +107,141 @@ class ResearchRetrievalResult(ImmutableResearchContract):
                 or candidate.raw_score != hit.raw_score
             ):
                 raise ValueError("retrieval candidate does not match its ordered lexical hit")
+        return self
+
+
+class AnswerGenerationProfile(ImmutableResearchContract):
+    """Versioned generator, configuration, and prompt selected by the application."""
+
+    generator_version: ConfigurationVersion
+    generation_config_version: ConfigurationVersion
+    prompt_version: ConfigurationVersion
+
+
+class AnswerGenerationSource(ImmutableResearchContract):
+    """One ordered retrieval candidate exposed to an untrusted answer generator."""
+
+    retrieval_candidate_id: UUID
+    chunk_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    structure_block_id: UUID
+    page_number: int = Field(ge=1)
+    text: str = Field(min_length=1, max_length=100_000)
+
+    @field_validator("text")
+    @classmethod
+    def require_visible_source_text(cls, value: str) -> str:
+        """Reject whitespace-only source text without changing canonical content."""
+
+        if not value.strip():
+            raise ValueError("source text must contain a non-whitespace character")
+        return value
+
+
+class AnswerGenerationInput(ImmutableResearchContract):
+    """Bounded question and ordered candidate sources supplied to a generator."""
+
+    research_request_id: UUID
+    question: QuestionText
+    sources: tuple[AnswerGenerationSource, ...] = Field(max_length=100)
+
+    @field_validator("question")
+    @classmethod
+    def require_visible_generation_question(cls, value: str) -> str:
+        """Reject whitespace-only questions while preserving the user's exact text."""
+
+        if not value.strip():
+            raise ValueError("question must contain a non-whitespace character")
+        return value
+
+    @field_validator("sources")
+    @classmethod
+    def require_unique_candidate_sources(
+        cls,
+        value: tuple[AnswerGenerationSource, ...],
+    ) -> tuple[AnswerGenerationSource, ...]:
+        """Prevent one retrieval candidate from appearing more than once."""
+
+        candidate_ids = tuple(source.retrieval_candidate_id for source in value)
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("generation sources must have unique retrieval_candidate_id values")
+        return value
+
+
+class UnvalidatedEvidenceReference(ImmutableResearchContract):
+    """Generator-proposed exact text range inside one retrieved candidate."""
+
+    retrieval_candidate_id: UUID
+    start_character: int = Field(ge=0)
+    end_character: int = Field(gt=0)
+    exact_text: str = Field(min_length=1, max_length=50_000)
+
+    @field_validator("exact_text")
+    @classmethod
+    def require_visible_evidence_text(cls, value: str) -> str:
+        """Reject whitespace-only proposed evidence without altering its text."""
+
+        if not value.strip():
+            raise ValueError("exact_text must contain a non-whitespace character")
+        return value
+
+    @model_validator(mode="after")
+    def require_matching_reference_length(self) -> Self:
+        """Require offsets that could identify exactly the proposed text."""
+
+        if self.end_character <= self.start_character:
+            raise ValueError("end_character must be greater than start_character")
+        if self.end_character - self.start_character != len(self.exact_text):
+            raise ValueError("reference offsets must match exact_text length")
+        return self
+
+
+class UnvalidatedGeneratedStatement(ImmutableResearchContract):
+    """One generator-proposed statement and its still-untrusted evidence references."""
+
+    text: StatementText
+    evidence: tuple[UnvalidatedEvidenceReference, ...] = Field(min_length=1, max_length=10)
+
+    @field_validator("text")
+    @classmethod
+    def require_visible_statement_text(cls, value: str) -> str:
+        """Reject whitespace-only generated statements without rewriting their text."""
+
+        if not value.strip():
+            raise ValueError("statement text must contain a non-whitespace character")
+        return value
+
+
+class UnvalidatedGeneratedAnswer(ImmutableResearchContract):
+    """Schema-valid generator output that must not escape before evidence validation."""
+
+    coverage_status: CoverageStatus
+    rendered_text: str = Field(min_length=1, max_length=100_000)
+    statements: tuple[UnvalidatedGeneratedStatement, ...] = Field(max_length=50)
+    missing_information: str | None = Field(default=None, min_length=1, max_length=1_000)
+
+    @field_validator("rendered_text", "missing_information")
+    @classmethod
+    def require_visible_generated_text(cls, value: str | None) -> str | None:
+        """Reject whitespace-only user-visible generator text."""
+
+        if value is not None and not value.strip():
+            raise ValueError("generated text must contain a non-whitespace character")
+        return value
+
+    @model_validator(mode="after")
+    def require_consistent_coverage_shape(self) -> Self:
+        """Keep an insufficient result statement-free and answered results non-empty."""
+
+        if self.coverage_status is CoverageStatus.INSUFFICIENT:
+            if self.statements:
+                raise ValueError("insufficient generation must not contain statements")
+            if self.missing_information is None:
+                raise ValueError("insufficient generation requires missing_information")
+        else:
+            if not self.statements:
+                raise ValueError("non-insufficient generation requires at least one statement")
+            if self.missing_information is not None:
+                raise ValueError("non-insufficient generation must not define missing_information")
         return self
