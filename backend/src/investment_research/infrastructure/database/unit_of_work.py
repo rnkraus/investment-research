@@ -8,6 +8,7 @@ from investment_research.infrastructure.database.session import (
     SessionFactory,
     transactional_session,
 )
+from investment_research.infrastructure.search.postgresql import PostgresLexicalSearch
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.documents.ports import (
     CaptureUnitOfWork,
@@ -24,6 +25,14 @@ from investment_research.modules.processing.ports import (
     ProcessingUnitOfWork,
     ProcessingUnitOfWorkFactory,
 )
+from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
+from investment_research.modules.research.ports import (
+    ResearchRepository,
+    ResearchRetrievalUnitOfWork,
+    ResearchRetrievalUnitOfWorkFactory,
+)
+from investment_research.modules.search.persistence import SqlAlchemyRetrievalRepository
+from investment_research.modules.search.ports import LexicalSearch, RetrievalRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +62,15 @@ class SqlAlchemyProcessingReadRepositories:
     """Processing repository bound to one short-lived read session."""
 
     processing: ProcessingRepository
+
+
+@dataclass(frozen=True, slots=True)
+class SqlAlchemyResearchRetrievalRepositories:
+    """Research and retrieval collaborators bound to one SQLAlchemy session."""
+
+    research: ResearchRepository
+    lexical_search: LexicalSearch
+    retrieval: RetrievalRepository
 
 
 @contextmanager
@@ -104,6 +122,20 @@ def sqlalchemy_processing_read_unit_of_work(
         )
 
 
+@contextmanager
+def sqlalchemy_research_retrieval_unit_of_work(
+    session_factory: SessionFactory,
+) -> Iterator[ResearchRetrievalUnitOfWork]:
+    """Commit one research request and its lexical retrieval result atomically."""
+
+    with transactional_session(session_factory) as session:
+        yield SqlAlchemyResearchRetrievalRepositories(
+            research=SqlAlchemyResearchRepository(session),
+            lexical_search=PostgresLexicalSearch(session),
+            retrieval=SqlAlchemyRetrievalRepository(session),
+        )
+
+
 def create_capture_unit_of_work_factory(
     session_factory: SessionFactory,
 ) -> CaptureUnitOfWorkFactory:
@@ -144,5 +176,16 @@ def create_processing_read_unit_of_work_factory(
 
     def create_unit_of_work() -> AbstractContextManager[ProcessingReadUnitOfWork]:
         return sqlalchemy_processing_read_unit_of_work(session_factory)
+
+    return create_unit_of_work
+
+
+def create_research_retrieval_unit_of_work_factory(
+    session_factory: SessionFactory,
+) -> ResearchRetrievalUnitOfWorkFactory:
+    """Bind research-retrieval transaction creation to one process-wide session factory."""
+
+    def create_unit_of_work() -> AbstractContextManager[ResearchRetrievalUnitOfWork]:
+        return sqlalchemy_research_retrieval_unit_of_work(session_factory)
 
     return create_unit_of_work

@@ -1,11 +1,13 @@
 """Application-owned persistence contracts for research and answers."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from typing import Protocol
 from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.domain import Answer, AnswerStatement, ResearchRequest
+from investment_research.modules.search.ports import LexicalSearch, RetrievalRepository
 
 
 class ResearchRepository(Protocol):
@@ -48,3 +50,25 @@ class ResearchRepository(Protocol):
         answer_id: UUID,
     ) -> Sequence[AnswerStatement]:
         """Return validated statements in deterministic display order."""
+
+
+class ResearchRetrievalUnitOfWork(Protocol):
+    """Research and Search capabilities sharing one atomic database transaction."""
+
+    @property
+    def research(self) -> ResearchRepository:
+        """Return the repository that stages the immutable research request."""
+
+    @property
+    def lexical_search(self) -> LexicalSearch:
+        """Return the adapter that selects eligible canonical chunks."""
+
+    @property
+    def retrieval(self) -> RetrievalRepository:
+        """Return the repository that stages the run and selected candidates."""
+
+
+type ResearchRetrievalUnitOfWorkFactory = Callable[
+    [],
+    AbstractContextManager[ResearchRetrievalUnitOfWork],
+]

@@ -15,6 +15,7 @@ from investment_research.infrastructure.database.unit_of_work import (
     create_document_read_unit_of_work_factory,
     create_processing_read_unit_of_work_factory,
     create_processing_unit_of_work_factory,
+    create_research_retrieval_unit_of_work_factory,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
@@ -28,10 +29,13 @@ from investment_research.modules.identity.application import (
     IdentityContextProvider,
 )
 from investment_research.modules.processing.application import (
+    M0_0_PROCESSING_PROFILE,
     GetProcessingRunService,
     ProcessDocumentService,
 )
 from investment_research.modules.processing.contracts import ParserLimits
+from investment_research.modules.research.application import RetrieveResearchService
+from investment_research.modules.search.contracts import LexicalSearchProfile
 from investment_research.settings import Settings
 
 
@@ -48,6 +52,7 @@ class ApplicationContainer:
     open_original_service: OpenOriginalService
     get_processing_run_service: GetProcessingRunService
     process_document_service: ProcessDocumentService
+    retrieve_research_service: RetrieveResearchService
 
     def close(self) -> None:
         """Release process-wide resources owned by the container."""
@@ -88,6 +93,13 @@ def build_container(settings: Settings) -> ApplicationContainer:
             parser_limits=ParserLimits(
                 max_pages=settings.max_pdf_pages,
                 max_extracted_characters=settings.max_extracted_characters,
+            ),
+        ),
+        retrieve_research_service=RetrieveResearchService(
+            unit_of_work_factory=create_research_retrieval_unit_of_work_factory(session_factory),
+            search_profile=LexicalSearchProfile(
+                lexical_config_version=M0_0_PROCESSING_PROFILE.lexical_config_version,
+                candidate_limit=10,
             ),
         ),
     )
