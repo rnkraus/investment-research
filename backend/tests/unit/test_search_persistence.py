@@ -63,7 +63,7 @@ def make_run(
         normalized_query="fy2025 revenue",
         filters=RetrievalFilters(
             document_ids=(DOCUMENT_ID,),
-            cutoff_at=STARTED_AT - timedelta(days=1),
+            available_at_cutoff=STARTED_AT - timedelta(days=1),
         ),
         lexical_config_version="english-lexical-v1",
         candidate_limit=candidate_limit,
@@ -104,7 +104,8 @@ def test_retrieval_run_preserves_query_and_round_trips_filter_snapshot() -> None
     assert row.to_domain() == run
     assert row.filter_snapshot == {
         "document_ids": [str(DOCUMENT_ID)],
-        "cutoff_at": "2026-02-19T12:00:00Z",
+        "available_at_cutoff": "2026-02-19T12:00:00Z",
+        "captured_at_cutoff": None,
     }
 
 

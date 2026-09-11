@@ -6,8 +6,10 @@ This module owns reproducible retrieval records and the ordered candidates selec
 
 | File             | Responsibility                                                                 |
 | ---------------- | ------------------------------------------------------------------------------ |
+| `application.py` | Normalizes raw questions and builds bounded lexical-search queries.            |
+| `contracts.py`   | Defines immutable lexical query and eligible-hit boundary values.              |
 | `domain.py`      | Defines retrieval runs, filter snapshots, candidates, origins, and invariants. |
-| `ports.py`       | Defines the application-owned `RetrievalRepository` contract.                  |
+| `ports.py`       | Defines application-owned lexical-search and retrieval-repository contracts.   |
 | `persistence.py` | Maps retrieval records and implements workspace-scoped repository behavior.    |
 
 ## Ownership and relationships
@@ -21,6 +23,33 @@ flowchart LR
 ```
 
 The arrows between modules are identifier-based contracts and database relationships. Search does not import another module's persistence implementation. `research_request_id` connects a run to the initiating request, while `chunk_id` connects a candidate to canonical retrieval content.
+
+## Lexical query contract
+
+The application retains the user's raw question on `ResearchRequest` and `RetrievalRun`, while
+`normalize_lexical_query` derives a deterministic search-only form. It applies Unicode NFKC
+normalization, collapses whitespace, and case-folds text. The normalized value, effective filters,
+lexical configuration version, and bounded candidate limit form `LexicalSearchQuery`.
+
+```mermaid
+flowchart LR
+    RAW[Raw question<br/>preserved unchanged] --> NORMALIZE[NFKC, whitespace collapse,<br/>and case folding]
+    NORMALIZE --> QUERY[LexicalSearchQuery]
+    FILTERS[Effective document and time filters] --> QUERY
+    VERSION[Lexical configuration version] --> QUERY
+    LIMIT[Candidate limit 1..100] --> QUERY
+    QUERY --> PORT[LexicalSearch port]
+    PORT --> HITS[Ordered LexicalSearchHit values]
+```
+
+Temporal filters record the actual eligibility predicates rather than repeating a research mode:
+`available_at_cutoff` limits public availability, while `captured_at_cutoff` additionally limits when
+the document entered the workspace archive. An archive cutoff therefore requires an availability
+cutoff. This keeps Search independent of Research while preserving the exact executed filter state.
+
+Each hit identifies its canonical chunk, document, version, source block, and physical page, retains
+the exact chunk text, and carries a positive finite lexical score. A hit is only a retrieval
+candidate; it cannot become citation evidence until the later evidence-validation step succeeds.
 
 ## Persisted retrieval result
 
@@ -44,4 +73,6 @@ A run preserves the exact query, its normalized form, typed filters, the lexical
 
 Every table and relationship carries `workspace_id`. Repository writes reject a mismatched trusted context before staging rows, and repository reads use the workspace in every query. Composite foreign keys let PostgreSQL reject cross-workspace links independently of application checks.
 
-The PostgreSQL lexical-search query itself is implemented in Step 6. This Step 3 module provides only the persistence boundary and records required by that later application service.
+The PostgreSQL lexical-search adapter remains the next Step 6 work block. It will implement the
+`LexicalSearch` port using the existing English `tsvector` and GIN index while enforcing canonical
+workspace, active-version, configuration, document, and temporal eligibility before ranking.

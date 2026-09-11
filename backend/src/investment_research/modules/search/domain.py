@@ -57,7 +57,8 @@ class RetrievalFilters(ImmutableSearchModel):
     """Typed snapshot of the explicit filters applied to a retrieval run."""
 
     document_ids: tuple[UUID, ...] = ()
-    cutoff_at: AwareDatetime | None = None
+    available_at_cutoff: AwareDatetime | None = None
+    captured_at_cutoff: AwareDatetime | None = None
 
     @field_validator("document_ids")
     @classmethod
@@ -68,12 +69,20 @@ class RetrievalFilters(ImmutableSearchModel):
             raise ValueError("document_ids must be unique")
         return value
 
-    @field_validator("cutoff_at")
+    @field_validator("available_at_cutoff", "captured_at_cutoff")
     @classmethod
-    def normalize_cutoff_at(cls, value: datetime | None) -> datetime | None:
-        """Normalize an optional temporal-eligibility cutoff to UTC."""
+    def normalize_temporal_cutoffs(cls, value: datetime | None) -> datetime | None:
+        """Normalize optional temporal-eligibility cutoffs to UTC."""
 
         return None if value is None else value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def require_public_cutoff_for_archive_cutoff(self) -> Self:
+        """Require archive-time filtering to retain public-availability eligibility."""
+
+        if self.captured_at_cutoff is not None and self.available_at_cutoff is None:
+            raise ValueError("captured_at_cutoff requires available_at_cutoff")
+        return self
 
 
 class RetrievalRun(ImmutableSearchModel):
