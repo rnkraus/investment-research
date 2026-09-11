@@ -77,5 +77,6 @@ The outer `infrastructure/search/postgresql.py` adapter implements `LexicalSearc
 eligibility-first query over the existing English `tsvector` and GIN index. It joins canonical
 document and processing state, applies workspace, current-version, active-set, configuration,
 document, and temporal filters before `ts_rank_cd` ranking, then uses `chunk_id` as the final stable
-tie-breaker before applying the candidate limit. The adapter only returns hits; the next Step 6 work
-block orchestrates and persists the research request, retrieval run, and selected candidates.
+tie-breaker before applying the candidate limit. The adapter only returns hits. Research's
+`RetrieveResearchService` invokes it through the port and maps those ordered hits to an atomically
+persisted retrieval run and `LEXICAL` candidates without importing Search persistence.

@@ -6,8 +6,10 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 
 | File             | Responsibility                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------ |
+| `application.py` | Orchestrates one atomic request and bounded lexical retrieval.                       |
+| `contracts.py`   | Defines strict retrieval input and the aligned request, run, candidate, and hit result. |
 | `domain.py`      | Defines requests, temporal modes, answer states, coverage, statements, and invariants. |
-| `ports.py`       | Defines the application-owned `ResearchRepository` contract.                         |
+| `ports.py`       | Defines repository and cross-module research-retrieval unit-of-work contracts.       |
 | `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.     |
 
 ## Ownership and traceability
@@ -28,12 +30,37 @@ Research imports only typed domain contracts from dependencies when application 
 ## Temporal request context
 
 ```text
-CURRENT               → no cutoff
-PUBLIC_KNOWLEDGE      → cutoff required; later checks use public availability
-PERSONAL_ARCHIVE      → cutoff required; later checks also require workspace eligibility
+CURRENT               → no time cutoff
+PUBLIC_KNOWLEDGE      → available_at <= cutoff
+PERSONAL_ARCHIVE      → available_at <= cutoff and captured_at <= cutoff
 ```
 
-The request preserves the user's exact question and explicit document filters. The Search module separately records the normalized query and effective retrieval-filter snapshot because those are execution details needed to reproduce a specific run.
+The request preserves the user's exact question and explicit document filters. The Search module
+separately records the normalized query and effective retrieval-filter snapshot because those are
+execution details needed to reproduce a specific run. `RetrieveResearchService` performs the mode
+translation once, so Search receives concrete predicates and does not depend on Research enums.
+
+## Lexical retrieval orchestration
+
+```mermaid
+flowchart LR
+    INPUT[ResearchRetrievalInput] --> REQUEST[ResearchRequest]
+    INPUT --> FILTERS[Effective RetrievalFilters]
+    FILTERS --> QUERY[LexicalSearchQuery]
+    REQUEST --> UOW[ResearchRetrievalUnitOfWork]
+    QUERY --> UOW
+    UOW --> SEARCH[LexicalSearch]
+    SEARCH --> HITS[Ordered eligible hits]
+    HITS --> CANDIDATES[Ranked RetrievalCandidates]
+    CANDIDATES --> RUN[RetrievalRun plus candidates]
+    UOW -->|one commit or rollback| PG[(PostgreSQL)]
+```
+
+The service creates all identifiers server-side, retains the exact question, normalizes only its
+search form, and maps each ordered hit to one persisted `LEXICAL` candidate. An empty hit sequence is
+a valid reproducible retrieval result and does not create invented candidates. The returned
+`ResearchRetrievalResult` keeps each persisted candidate aligned with the canonical hit data needed
+by the later generation and evidence path.
 
 ## Answer lifecycle
 
@@ -68,4 +95,5 @@ flowchart LR
 
 Every table and relationship carries `workspace_id`. Unknown and inaccessible identifiers produce the same repository result. The repository stages changes but never commits; the application service owns the unit of work across Research, Search, and Evidence.
 
-This Step 3 module provides persistence only. Retrieval execution starts in Step 6, while answer generation, evidence validation, and safe output begin in Step 7.
+Step 6 now creates and atomically persists the request, lexical retrieval run, and selected
+candidates. Answer generation, evidence validation, and safe output begin in Step 7.

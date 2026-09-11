@@ -20,6 +20,13 @@ class ImmutableSearchContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class LexicalSearchProfile(ImmutableSearchContract):
+    """Versioned and bounded configuration selected for lexical retrieval."""
+
+    lexical_config_version: ConfigurationVersion
+    candidate_limit: int = Field(ge=1, le=100)
+
+
 class LexicalSearchQuery(ImmutableSearchContract):
     """One normalized, reproducible, and bounded PostgreSQL search request."""
 

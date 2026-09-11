@@ -49,11 +49,12 @@ filters, deterministic score ordering and limiting, stable candidate persistence
 rejection of foreign request and chunk relationships and duplicate ranks within one retrieval
 origin. Research coverage follows every permitted transition from `REQUESTED` to `STREAMED`, verifies
 ordered statements and non-disclosure, and rejects foreign or mismatched request-to-retrieval
-relationships and duplicate versions. Orchestration from a research request through persisted
-retrieval candidates remains the next Step 6 work block. Evidence coverage verifies atomically
-persisted exact spans, statement relationships, and answer validations; stable scoped reads;
-cross-workspace source and subject rejection; and unique answer- and statement-level rule results.
-Generation and canonical evidence validation behavior remain Step 7 scope.
+relationships and duplicate versions. Retrieval orchestration coverage verifies exact-question
+preservation, effective temporal filters, hit-to-candidate alignment, one atomic commit for request,
+run, and candidates, and complete rollback after a post-search persistence failure. Evidence coverage
+verifies atomically persisted exact spans, statement relationships, and answer validations; stable
+scoped reads; cross-workspace source and subject rejection; and unique answer- and statement-level
+rule results. Generation and canonical evidence validation behavior remain Step 7 scope.
 
 For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
 named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies

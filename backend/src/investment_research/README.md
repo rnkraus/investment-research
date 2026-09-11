@@ -27,11 +27,14 @@ flowchart TD
     SESSIONS --> READUOW[Document read unit-of-work factory]
     SESSIONS --> STATUSUOW[Processing read unit-of-work factory]
     SESSIONS --> PROCESSUOW[Processing unit-of-work factory]
+    SESSIONS --> RETRIEVALUOW[Research retrieval unit-of-work factory]
     BOOT --> STORAGE[ObjectStorage adapter]
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
     READUOW --> ORIGINAL[OpenOriginalService]
     STATUSUOW --> STATUS[GetProcessingRunService]
     PROCESSUOW --> PROCESS[ProcessDocumentService]
+    RETRIEVALUOW --> RETRIEVE[RetrieveResearchService]
+    RETRIEVALUOW --> LEXICAL[PostgreSQL LexicalSearch adapter]
     STORAGE --> CAPTURE
     STORAGE --> ORIGINAL
     ORIGINAL --> PROCESS
@@ -40,6 +43,7 @@ flowchart TD
     ORIGINAL --> STATE
     STATUS --> STATE
     PROCESS --> STATE
+    RETRIEVE --> STATE
     MAIN --> LIMIT[Request-body limit]
     LIMIT --> ROUTES[HTTP routes]
     MAIN --> ERRORS[Safe error handlers]
@@ -86,5 +90,10 @@ stream them.
 For processing status, the route supplies the server-resolved workspace and one run identifier to
 `GetProcessingRunService`. A separate short-lived read session resolves the canonical snapshot; the
 API returns only its public state and sanitized failure summary and cannot invoke parsing.
+
+For research retrieval, `RetrieveResearchService` creates the immutable request, executes the
+eligible PostgreSQL lexical query, and stages the completed run and ordered candidates through one
+shared short-lived transaction. The service is available in the container, but no public research
+route is registered until the answer and evidence path can produce a safe terminal response.
 
 The package follows the boundaries in [`docs/02-system-design.md`](../../../docs/02-system-design.md#4-component-boundaries).

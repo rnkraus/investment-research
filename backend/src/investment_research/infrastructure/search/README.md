@@ -23,8 +23,9 @@ flowchart LR
 
 Business modules do not import another module's `persistence.py`. The outer infrastructure adapter
 may join their physical read models because lexical retrieval needs canonical document and
-processing eligibility in one SQL statement. The composition root will inject this adapter through
-the `LexicalSearch` port; application code does not depend on the concrete class.
+processing eligibility in one SQL statement. The research-retrieval unit of work creates this
+adapter with the same short-lived session as the Research and Retrieval repositories and exposes it
+through the `LexicalSearch` port; application code does not depend on the concrete class.
 
 ## Eligibility-first query
 
