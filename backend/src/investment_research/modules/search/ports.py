@@ -5,7 +5,19 @@ from typing import Protocol
 from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.search.contracts import LexicalSearchHit, LexicalSearchQuery
 from investment_research.modules.search.domain import RetrievalCandidate, RetrievalRun
+
+
+class LexicalSearch(Protocol):
+    """Select bounded, eligible PostgreSQL full-text candidates."""
+
+    def search(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+    ) -> Sequence[LexicalSearchHit]:
+        """Return eligible hits in deterministic descending relevance order."""
 
 
 class RetrievalRepository(Protocol):
