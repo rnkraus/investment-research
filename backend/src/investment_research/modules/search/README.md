@@ -73,6 +73,9 @@ A run preserves the exact query, its normalized form, typed filters, the lexical
 
 Every table and relationship carries `workspace_id`. Repository writes reject a mismatched trusted context before staging rows, and repository reads use the workspace in every query. Composite foreign keys let PostgreSQL reject cross-workspace links independently of application checks.
 
-The PostgreSQL lexical-search adapter remains the next Step 6 work block. It will implement the
-`LexicalSearch` port using the existing English `tsvector` and GIN index while enforcing canonical
-workspace, active-version, configuration, document, and temporal eligibility before ranking.
+The outer `infrastructure/search/postgresql.py` adapter implements `LexicalSearch` with one
+eligibility-first query over the existing English `tsvector` and GIN index. It joins canonical
+document and processing state, applies workspace, current-version, active-set, configuration,
+document, and temporal filters before `ts_rank_cd` ranking, then uses `chunk_id` as the final stable
+tie-breaker before applying the candidate limit. The adapter only returns hits; the next Step 6 work
+block orchestrates and persists the research request, retrieval run, and selected candidates.
