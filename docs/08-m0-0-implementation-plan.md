@@ -102,6 +102,7 @@ Create files only when their implementation step begins; do not scaffold empty p
 │   │       ├── database/                # metadata, engine, sessions, transactions
 │   │       ├── object_storage/
 │   │       ├── parsing/
+│   │       ├── search/                  # PostgreSQL lexical-search adapter
 │   │       └── generation/
 │   └── tests/
 │       ├── unit/

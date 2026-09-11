@@ -11,7 +11,7 @@
 | `bootstrap.py`    | Composition root that selects concrete implementations for application-owned contracts.                                |
 | `settings.py`     | Loads process-first local configuration and validates secret-safe runtime settings.                                     |
 | `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
-| `infrastructure/` | Shared technical adapters for SQLAlchemy transactions and secure local object storage.                                  |
+| `infrastructure/` | Technical database, lexical-search, parsing, and secure local object-storage adapters.                                   |
 | `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                               |
 
 ## Startup flow
