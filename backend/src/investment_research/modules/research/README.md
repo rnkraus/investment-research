@@ -1,16 +1,16 @@
 # Research
 
-This module owns immutable research requests, versioned answer lifecycles, and validated answer statements. It orchestrates Search and Evidence through typed contracts in later implementation steps; it does not own retrieval candidates, source spans, or validation records.
+This module owns immutable research requests, versioned answer lifecycles, and validated answer statements. It orchestrates Search and exposes the application-owned generation boundary; it does not own retrieval candidates, source spans, or validation records.
 
 ## Contents
 
-| File             | Responsibility                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| `application.py` | Orchestrates one atomic request and bounded lexical retrieval.                       |
-| `contracts.py`   | Defines strict retrieval input and the aligned request, run, candidate, and hit result. |
+| File             | Responsibility                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| `application.py` | Orchestrates one atomic request and bounded lexical retrieval.                         |
+| `contracts.py`   | Defines strict retrieval and unvalidated answer-generation boundary values.            |
 | `domain.py`      | Defines requests, temporal modes, answer states, coverage, statements, and invariants. |
-| `ports.py`       | Defines repository and cross-module research-retrieval unit-of-work contracts.       |
-| `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.     |
+| `ports.py`       | Defines repository, retrieval unit-of-work, and answer-generator contracts.            |
+| `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.      |
 
 ## Ownership and traceability
 
@@ -62,6 +62,27 @@ a valid reproducible retrieval result and does not create invented candidates. T
 `ResearchRetrievalResult` keeps each persisted candidate aligned with the canonical hit data needed
 by the later generation and evidence path.
 
+## Answer-generation boundary
+
+```mermaid
+flowchart LR
+    RESULT[ResearchRetrievalResult] --> INPUT[AnswerGenerationInput]
+    INPUT --> PORT[AnswerGenerator]
+    PORT --> RAW[UnvalidatedGeneratedAnswer]
+    RAW --> VALIDATION[Evidence validation]
+    VALIDATION -->|accepted only| DOMAIN[Answer plus validated statements]
+```
+
+`AnswerGenerationInput` contains the exact question and a bounded, ordered snapshot of the selected
+retrieval sources. Each source keeps its retrieval-candidate, chunk, document-version, structure,
+page, and text identity. A generated evidence reference points to a candidate and an exact text
+range; it is only a proposal until the server reloads and validates canonical data.
+
+The generator result is immutable and schema-valid but intentionally named `Unvalidated`. It may
+never be persisted as an accepted statement or emitted to a client merely because its Pydantic
+schema parsed successfully. The `AnswerGenerator` port lets M0.0 use a deterministic fixture adapter
+and later use an approved model adapter without changing this trust boundary.
+
 ## Answer lifecycle
 
 ```mermaid
@@ -95,5 +116,6 @@ flowchart LR
 
 Every table and relationship carries `workspace_id`. Unknown and inaccessible identifiers produce the same repository result. The repository stages changes but never commits; the application service owns the unit of work across Research, Search, and Evidence.
 
-Step 6 now creates and atomically persists the request, lexical retrieval run, and selected
-candidates. Answer generation, evidence validation, and safe output begin in Step 7.
+Step 6 creates and atomically persists the request, lexical retrieval run, and selected candidates.
+Step 7 begins with the typed generation boundary; persistence, evidence validation, and safe output
+remain downstream of every generator implementation.

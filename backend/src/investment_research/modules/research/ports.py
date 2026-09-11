@@ -6,8 +6,19 @@ from typing import Protocol
 from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.research.contracts import (
+    AnswerGenerationInput,
+    UnvalidatedGeneratedAnswer,
+)
 from investment_research.modules.research.domain import Answer, AnswerStatement, ResearchRequest
 from investment_research.modules.search.ports import LexicalSearch, RetrievalRepository
+
+
+class AnswerGenerator(Protocol):
+    """Produce schema-valid but untrusted answer proposals from bounded sources."""
+
+    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
+        """Return a typed proposal that still requires server-side evidence validation."""
 
 
 class ResearchRepository(Protocol):
