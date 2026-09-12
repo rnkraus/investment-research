@@ -4,9 +4,14 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
+
 from investment_research.infrastructure.database.session import (
     SessionFactory,
     transactional_session,
+)
+from investment_research.infrastructure.evidence.postgresql import (
+    PostgresCanonicalEvidenceSourceReader,
 )
 from investment_research.infrastructure.search.postgresql import PostgresLexicalSearch
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
@@ -16,6 +21,11 @@ from investment_research.modules.documents.ports import (
     DocumentReadUnitOfWork,
     DocumentReadUnitOfWorkFactory,
     DocumentRepository,
+)
+from investment_research.modules.evidence.persistence import SqlAlchemyEvidenceRepository
+from investment_research.modules.evidence.ports import (
+    CanonicalEvidenceSourceReader,
+    EvidenceRepository,
 )
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
 from investment_research.modules.processing.ports import (
@@ -27,6 +37,8 @@ from investment_research.modules.processing.ports import (
 )
 from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
 from investment_research.modules.research.ports import (
+    AnswerValidationUnitOfWork,
+    AnswerValidationUnitOfWorkFactory,
     ResearchRepository,
     ResearchRetrievalUnitOfWork,
     ResearchRetrievalUnitOfWorkFactory,
@@ -71,6 +83,21 @@ class SqlAlchemyResearchRetrievalRepositories:
     research: ResearchRepository
     lexical_search: LexicalSearch
     retrieval: RetrievalRepository
+
+
+@dataclass(frozen=True, slots=True)
+class SqlAlchemyAnswerValidationRepositories:
+    """Answer and Evidence collaborators bound to one SQLAlchemy session."""
+
+    research: ResearchRepository
+    evidence: EvidenceRepository
+    evidence_sources: CanonicalEvidenceSourceReader
+    _session: Session
+
+    def flush(self) -> None:
+        """Flush staged dependency roots while preserving the open transaction."""
+
+        self._session.flush()
 
 
 @contextmanager
@@ -136,6 +163,21 @@ def sqlalchemy_research_retrieval_unit_of_work(
         )
 
 
+@contextmanager
+def sqlalchemy_answer_validation_unit_of_work(
+    session_factory: SessionFactory,
+) -> Iterator[AnswerValidationUnitOfWork]:
+    """Validate canonical evidence and commit its complete answer aggregate atomically."""
+
+    with transactional_session(session_factory) as session:
+        yield SqlAlchemyAnswerValidationRepositories(
+            research=SqlAlchemyResearchRepository(session),
+            evidence=SqlAlchemyEvidenceRepository(session),
+            evidence_sources=PostgresCanonicalEvidenceSourceReader(session),
+            _session=session,
+        )
+
+
 def create_capture_unit_of_work_factory(
     session_factory: SessionFactory,
 ) -> CaptureUnitOfWorkFactory:
@@ -187,5 +229,16 @@ def create_research_retrieval_unit_of_work_factory(
 
     def create_unit_of_work() -> AbstractContextManager[ResearchRetrievalUnitOfWork]:
         return sqlalchemy_research_retrieval_unit_of_work(session_factory)
+
+    return create_unit_of_work
+
+
+def create_answer_validation_unit_of_work_factory(
+    session_factory: SessionFactory,
+) -> AnswerValidationUnitOfWorkFactory:
+    """Bind answer-validation transaction creation to one process-wide session factory."""
+
+    def create_unit_of_work() -> AbstractContextManager[AnswerValidationUnitOfWork]:
+        return sqlalchemy_answer_validation_unit_of_work(session_factory)
 
     return create_unit_of_work

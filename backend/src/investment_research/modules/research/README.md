@@ -6,10 +6,10 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 
 | File             | Responsibility                                                                         |
 | ---------------- | -------------------------------------------------------------------------------------- |
-| `application.py` | Orchestrates one atomic request and bounded lexical retrieval.                         |
-| `contracts.py`   | Defines strict retrieval and unvalidated answer-generation boundary values.            |
+| `application.py` | Orchestrates atomic retrieval and validated terminal-answer persistence.               |
+| `contracts.py`   | Defines strict retrieval, generation, and validated-answer boundary values.            |
 | `domain.py`      | Defines requests, temporal modes, answer states, coverage, statements, and invariants. |
-| `ports.py`       | Defines repository, retrieval unit-of-work, and answer-generator contracts.            |
+| `ports.py`       | Defines repositories, units of work, and the answer-generator contract.                |
 | `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.      |
 
 ## Ownership and traceability
@@ -69,8 +69,14 @@ flowchart LR
     RESULT[ResearchRetrievalResult] --> INPUT[AnswerGenerationInput]
     INPUT --> PORT[AnswerGenerator]
     PORT --> RAW[UnvalidatedGeneratedAnswer]
-    RAW --> VALIDATION[Evidence validation]
-    VALIDATION -->|accepted only| DOMAIN[Answer plus validated statements]
+    RAW --> UOW[AnswerValidationUnitOfWork]
+    UOW --> VALIDATION[Canonical evidence validation]
+    VALIDATION -->|accepted answer| STREAMED[STREAMED plus statements and evidence]
+    VALIDATION -->|insufficient archive| INSUFFICIENT[INSUFFICIENT without statements]
+    VALIDATION -->|failed rule| REJECTED[REJECTED without generated content]
+    STREAMED --> PG[(One PostgreSQL transaction)]
+    INSUFFICIENT --> PG
+    REJECTED --> PG
 ```
 
 `AnswerGenerationInput` contains the exact question and a bounded, ordered snapshot of the selected
@@ -82,6 +88,12 @@ The generator result is immutable and schema-valid but intentionally named `Unva
 never be persisted as an accepted statement or emitted to a client merely because its Pydantic
 schema parsed successfully. The `AnswerGenerator` port lets M0.0 use a deterministic fixture adapter
 and later use an approved model adapter without changing this trust boundary.
+
+`GenerateValidatedAnswerService` calls the generator before opening a database transaction. It then
+reloads every proposed source through the canonical Evidence reader and maps only the validator's
+safe decision to domain records. Visible streamed text is rebuilt from accepted statements rather
+than copied from the generator's untrusted `rendered_text`. Insufficient output uses an
+application-owned message, and rejected output retains safe rule findings but no generated content.
 
 ## Answer lifecycle
 
@@ -114,8 +126,14 @@ flowchart LR
     SESSION -->|commit all or rollback all| PG[(PostgreSQL)]
 ```
 
-Every table and relationship carries `workspace_id`. Unknown and inaccessible identifiers produce the same repository result. The repository stages changes but never commits; the application service owns the unit of work across Research, Search, and Evidence.
+Every table and relationship carries `workspace_id`. Unknown and inaccessible identifiers produce
+the same repository result. Repositories stage changes but never commit; the application service
+owns the unit of work across Research and Evidence. For a streamed answer it flushes the staged
+answer, statements, and spans before adding their foreign-key dependents. This is an ordering
+boundary inside the same transaction, not an early commit, so any later failure still rolls back the
+complete aggregate.
 
 Step 6 creates and atomically persists the request, lexical retrieval run, and selected candidates.
-Step 7 begins with the typed generation boundary; persistence, evidence validation, and safe output
-remain downstream of every generator implementation.
+Step 7 now provides the typed generator boundary, canonical evidence validation, and atomic terminal
+answer persistence. HTTP output remains separate: the API must consume only `ValidatedAnswerResult`
+and must never receive an `UnvalidatedGeneratedAnswer`.

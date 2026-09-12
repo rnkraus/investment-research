@@ -6,7 +6,15 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from investment_research.modules.evidence.domain import (
+    AnswerValidation,
+    EvidenceSpan,
+    StatementEvidence,
+)
 from investment_research.modules.research.domain import (
+    Answer,
+    AnswerState,
+    AnswerStatement,
     ConfigurationVersion,
     CoverageStatus,
     QuestionText,
@@ -264,4 +272,60 @@ class UnvalidatedGeneratedAnswer(ImmutableResearchContract):
                 raise ValueError("non-insufficient generation requires at least one statement")
             if self.missing_information is not None:
                 raise ValueError("non-insufficient generation must not define missing_information")
+        return self
+
+
+class ValidatedAnswerResult(ImmutableResearchContract):
+    """Terminal canonical answer aggregate safe for downstream output mapping."""
+
+    answer: Answer
+    statements: tuple[AnswerStatement, ...]
+    evidence_spans: tuple[EvidenceSpan, ...]
+    statement_evidence: tuple[StatementEvidence, ...]
+    validations: tuple[AnswerValidation, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_terminal_aggregate_shape(self) -> Self:
+        """Keep persisted answer content aligned with its terminal lifecycle state."""
+
+        if self.answer.state is AnswerState.STREAMED:
+            if not self.statements or not self.evidence_spans or not self.statement_evidence:
+                raise ValueError("STREAMED answer result requires statements and evidence")
+        elif self.answer.state in {AnswerState.INSUFFICIENT, AnswerState.REJECTED}:
+            if self.statements or self.evidence_spans or self.statement_evidence:
+                raise ValueError(
+                    "non-streamed answer result must not expose statements or evidence"
+                )
+        else:
+            raise ValueError("validated answer result requires a terminal output state")
+        if any(validation.answer_id != self.answer.id for validation in self.validations):
+            raise ValueError("validation result does not belong to the answer")
+
+        aggregate_workspace_ids = (
+            *(statement.workspace_id for statement in self.statements),
+            *(span.workspace_id for span in self.evidence_spans),
+            *(relationship.workspace_id for relationship in self.statement_evidence),
+            *(validation.workspace_id for validation in self.validations),
+        )
+        if any(
+            workspace_id != self.answer.workspace_id for workspace_id in aggregate_workspace_ids
+        ):
+            raise ValueError("validated answer result crosses a workspace boundary")
+
+        statement_ids = {statement.id for statement in self.statements}
+        span_ids = {span.id for span in self.evidence_spans}
+        if any(statement.answer_id != self.answer.id for statement in self.statements):
+            raise ValueError("statement does not belong to the answer")
+        if any(
+            relationship.answer_statement_id not in statement_ids
+            or relationship.evidence_span_id not in span_ids
+            for relationship in self.statement_evidence
+        ):
+            raise ValueError("statement evidence does not belong to the answer result")
+        if any(
+            validation.answer_statement_id is not None
+            and validation.answer_statement_id not in statement_ids
+            for validation in self.validations
+        ):
+            raise ValueError("statement validation does not belong to the answer result")
         return self
