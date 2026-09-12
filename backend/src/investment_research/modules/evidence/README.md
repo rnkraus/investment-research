@@ -68,14 +68,19 @@ Each `AnswerValidation` stores the rule, target answer and optional statement, p
 flowchart LR
     RESEARCH[Research application service] --> CONTRACT[Evidence application contract]
     CONTRACT --> VALIDATOR[Evidence validator]
-    VALIDATOR --> REPO[EvidenceRepository]
+    VALIDATOR --> DECISION[EvidenceValidationDecision]
+    DECISION -->|accepted statements only| REPO[EvidenceRepository]
+    DECISION -->|rejected findings only| REPO
     REPO --> SESSION[Caller-owned SQLAlchemy Session]
-    SESSION -->|commit accepted aggregate<br/>or rollback all| PG[(PostgreSQL)]
+    SESSION -->|flush dependency roots| SESSION
+    SESSION -->|commit complete aggregate<br/>or rollback all| PG[(PostgreSQL)]
 ```
 
 Evidence exposes contracts that Research may call; Evidence never imports Research persistence or application code. Its SQLAlchemy mappings use identifier-based foreign keys to module-owned tables. Every repository query and write includes the trusted workspace boundary, and repositories never commit independently.
 
 Step 7 now reloads the complete candidate source through a workspace-scoped port and applies
 workspace, retrieval-candidate, active-version, temporal, exact-span, statement-support, and coverage
-rules. A rejected decision contains no coverage or statements. Mapping accepted decisions to
-canonical persistence records and safe output remains a downstream application step.
+rules. A rejected decision contains no coverage or statements. The Research application maps an
+accepted decision to canonical statements, exact spans, supporting relationships, and immutable
+validation records in one unit of work. Insufficient and rejected outcomes persist their terminal
+answer and validation findings without creating usable statements or citations.

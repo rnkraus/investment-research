@@ -191,6 +191,12 @@ Schema rules:
 - foreign keys, uniqueness rules, and check constraints enforce relationships that the database can verify;
 - repositories still enforce workspace and lifecycle eligibility because identifiers and database relations are not authorization.
 
+Answer generation completes before the answer-persistence transaction opens. Canonical evidence
+reload, validation, lifecycle transitions, statements, exact spans, relationships, and validation
+records then share one answer-validation unit of work. The service explicitly flushes staged parent
+records before adding their identifier-based foreign-key dependents; this orders SQL inside the same
+transaction and is not an early commit. Any later failure rolls back the complete answer aggregate.
+
 Alembic autogeneration may propose a migration, but the migration is reviewed before use. Verification upgrades an empty database to head and checks that model metadata and migration state do not drift.
 
 ## 6. Processing flow
@@ -276,11 +282,14 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
 ### Step 7 — Generation and evidence validation
 
 - Implement `AnswerGenerator` and the deterministic fixture adapter.
-- Persist the typed answer, statements, evidence spans, links, and validation results.
+- Generate before opening the persistence transaction, then atomically persist the terminal answer,
+  statements, evidence spans, links, and validation results.
 - Implement validation for workspace, active version, candidate eligibility, exact span/hash match, statement support, and coverage.
 - Reject tampered or invented identifiers and make insufficient coverage explicit.
 
-**Gate:** only accepted statements can reach an output contract; invalid evidence cannot be converted into a citation.
+**Gate:** only accepted statements can reach an output contract; insufficient and rejected answers
+contain no usable statements or citations; invalid evidence cannot be converted into a citation; and
+a late persistence failure rolls back the complete answer aggregate.
 
 ### Step 8 — Web vertical slice
 

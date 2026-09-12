@@ -5,6 +5,10 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 from uuid import UUID
 
+from investment_research.modules.evidence.ports import (
+    CanonicalEvidenceSourceReader,
+    EvidenceRepository,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -82,4 +86,29 @@ class ResearchRetrievalUnitOfWork(Protocol):
 type ResearchRetrievalUnitOfWorkFactory = Callable[
     [],
     AbstractContextManager[ResearchRetrievalUnitOfWork],
+]
+
+
+class AnswerValidationUnitOfWork(Protocol):
+    """Canonical validation and answer persistence sharing one transaction."""
+
+    def flush(self) -> None:
+        """Write staged parent records without committing the transaction."""
+
+    @property
+    def research(self) -> ResearchRepository:
+        """Return the repository that stages the answer and accepted statements."""
+
+    @property
+    def evidence(self) -> EvidenceRepository:
+        """Return the repository that stages exact evidence and validation records."""
+
+    @property
+    def evidence_sources(self) -> CanonicalEvidenceSourceReader:
+        """Return the reader that rechecks proposed candidates in the same transaction."""
+
+
+type AnswerValidationUnitOfWorkFactory = Callable[
+    [],
+    AbstractContextManager[AnswerValidationUnitOfWork],
 ]

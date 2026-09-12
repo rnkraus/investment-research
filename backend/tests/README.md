@@ -29,6 +29,7 @@ flowchart TD
     POSTGRES --> SEARCH[Lexical query eligibility, ranking, and persistence]
     POSTGRES --> RESEARCH[Answer lifecycle and statement ordering]
     POSTGRES --> EVIDENCE[Evidence chain and validation integrity]
+    POSTGRES --> ANSWER[Atomic validated-answer aggregate]
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
@@ -54,7 +55,11 @@ preservation, effective temporal filters, hit-to-candidate alignment, one atomic
 run, and candidates, and complete rollback after a post-search persistence failure. Evidence coverage
 verifies atomically persisted exact spans, statement relationships, and answer validations; stable
 scoped reads; cross-workspace source and subject rejection; and unique answer- and statement-level
-rule results. Generation and canonical evidence validation behavior remain Step 7 scope.
+rule results. Generation coverage proves that the untrusted generator runs outside the transaction,
+only canonical validated statements become visible output, and insufficient or rejected results
+persist without usable content. The PostgreSQL orchestration tests verify the complete answer,
+statement, span, relationship, and validation round trip plus rollback of every staged record when a
+late validation write fails.
 
 For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
 named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies
