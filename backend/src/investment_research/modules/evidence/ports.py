@@ -4,12 +4,32 @@ from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
 
+from investment_research.modules.evidence.contracts import CanonicalEvidenceSource
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceSpan,
     StatementEvidence,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+
+
+class CanonicalEvidenceSourceReader(Protocol):
+    """Reload one proposed candidate through the canonical workspace boundary."""
+
+    def get_source(
+        self,
+        context: WorkspaceContext,
+        retrieval_run_id: UUID,
+        retrieval_candidate_id: UUID,
+    ) -> CanonicalEvidenceSource | None:
+        """Return matching canonical state without disclosing inaccessible identifiers."""
+
+
+class StatementSupportEvaluator(Protocol):
+    """Evaluate whether exact canonical source text supports one generated statement."""
+
+    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
+        """Return a deterministic support decision for one complete statement."""
 
 
 class EvidenceRepository(Protocol):
