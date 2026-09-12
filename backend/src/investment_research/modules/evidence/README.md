@@ -6,8 +6,10 @@ This module owns exact source spans, statement-to-source relationships, and immu
 
 | File             | Responsibility                                                                    |
 | ---------------- | --------------------------------------------------------------------------------- |
+| `application.py` | Revalidates generated claims against canonical scoped source state.               |
+| `contracts.py`   | Defines canonical source snapshots, rule findings, and safe validation decisions. |
 | `domain.py`      | Defines exact spans, relationships, validation rules, hashes, and invariants.     |
-| `ports.py`       | Defines the application-owned `EvidenceRepository` contract.                      |
+| `ports.py`       | Defines canonical source, statement-support, and persistence contracts.           |
 | `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior. |
 
 ## Evidence chain
@@ -35,7 +37,7 @@ EvidenceSpan.exact_text
 EvidenceSpan.text_sha256
 ```
 
-Offsets are relative to the referenced structure block. A valid span has ordered offsets, matching character length, visible exact text, and the correct SHA-256 hash. Step 7 additionally reloads the canonical block and verifies that slicing it at those offsets produces exactly the stored text before a citation can be emitted.
+Offsets are relative to the referenced structure block. A valid span has ordered offsets, matching character length, visible exact text, and the correct SHA-256 hash. Step 7 reloads the canonical block and verifies that slicing it at those offsets produces exactly the proposed text before the range becomes a validated reference.
 
 ## Validation records
 
@@ -73,4 +75,7 @@ flowchart LR
 
 Evidence exposes contracts that Research may call; Evidence never imports Research persistence or application code. Its SQLAlchemy mappings use identifier-based foreign keys to module-owned tables. Every repository query and write includes the trusted workspace boundary, and repositories never commit independently.
 
-This Step 3 module establishes persistence and local invariants. Step 7 implements canonical block lookup, candidate and temporal eligibility, complete server-side validation, and the rule that only accepted results may reach output.
+Step 7 now reloads the complete candidate source through a workspace-scoped port and applies
+workspace, retrieval-candidate, active-version, temporal, exact-span, statement-support, and coverage
+rules. A rejected decision contains no coverage or statements. Mapping accepted decisions to
+canonical persistence records and safe output remains a downstream application step.

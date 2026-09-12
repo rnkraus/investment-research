@@ -212,6 +212,26 @@ class UnvalidatedGeneratedStatement(ImmutableResearchContract):
             raise ValueError("statement text must contain a non-whitespace character")
         return value
 
+    @field_validator("evidence")
+    @classmethod
+    def require_unique_evidence_references(
+        cls,
+        value: tuple[UnvalidatedEvidenceReference, ...],
+    ) -> tuple[UnvalidatedEvidenceReference, ...]:
+        """Reject duplicate proposed candidate ranges before canonical validation."""
+
+        keys = tuple(
+            (
+                reference.retrieval_candidate_id,
+                reference.start_character,
+                reference.end_character,
+            )
+            for reference in value
+        )
+        if len(keys) != len(set(keys)):
+            raise ValueError("generated statement evidence references must be unique")
+        return value
+
 
 class UnvalidatedGeneratedAnswer(ImmutableResearchContract):
     """Schema-valid generator output that must not escape before evidence validation."""
