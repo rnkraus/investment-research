@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from investment_research.infrastructure.generation.deterministic import (
+    M0_0_FIXTURE_ANSWER_CASE,
+    M0_0_INSUFFICIENT_MESSAGE,
     DeterministicFixtureAnswerGenerator,
     FixtureAnswerCase,
 )
@@ -23,24 +25,17 @@ CHUNK_ID = UUID("30000000-0000-4000-8000-000000000001")
 DOCUMENT_ID = UUID("40000000-0000-4000-8000-000000000001")
 VERSION_ID = UUID("50000000-0000-4000-8000-000000000001")
 BLOCK_ID = UUID("60000000-0000-4000-8000-000000000001")
-QUESTION = "What was Northstar Grid Analytics' FY2025 revenue, and how did it change from FY2024?"
-EVIDENCE_TEXT = "FY2025 revenue was $184.2 million, up 22.0% from $151.0 million in FY2024."
-STATEMENT = (
-    "Northstar Grid Analytics reported FY2025 revenue of $184.2 million, "
-    "up 22.0% from $151.0 million in FY2024."
-)
-INSUFFICIENT_MESSAGE = "The archive does not contain sufficient evidence to answer this question."
+QUESTION = M0_0_FIXTURE_ANSWER_CASE.question
+EVIDENCE_TEXT = M0_0_FIXTURE_ANSWER_CASE.evidence_text
+STATEMENT = M0_0_FIXTURE_ANSWER_CASE.statement
+INSUFFICIENT_MESSAGE = M0_0_INSUFFICIENT_MESSAGE
 
 
 def make_generator() -> AnswerGenerator:
     """Return the adapter through the application-owned port type."""
 
     return DeterministicFixtureAnswerGenerator(
-        answerable_case=FixtureAnswerCase(
-            question=QUESTION,
-            statement=STATEMENT,
-            evidence_text=EVIDENCE_TEXT,
-        ),
+        answerable_case=M0_0_FIXTURE_ANSWER_CASE,
         insufficient_message=INSUFFICIENT_MESSAGE,
     )
 

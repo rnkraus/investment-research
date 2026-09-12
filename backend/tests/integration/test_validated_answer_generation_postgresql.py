@@ -2,12 +2,14 @@
 
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Engine, func, select
 
+from investment_research.bootstrap import build_container
 from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
@@ -24,6 +26,8 @@ from investment_research.infrastructure.evidence.postgresql import (
     PostgresCanonicalEvidenceSourceReader,
 )
 from investment_research.infrastructure.generation.deterministic import (
+    M0_0_FIXTURE_ANSWER_CASE,
+    M0_0_INSUFFICIENT_MESSAGE,
     DeterministicFixtureAnswerGenerator,
     FixtureAnswerCase,
 )
@@ -36,10 +40,12 @@ from investment_research.modules.evidence.persistence import (
     StatementEvidenceRow,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
 from investment_research.modules.research.application import GenerateValidatedAnswerService
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
+    ResearchRetrievalInput,
     ResearchRetrievalResult,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
@@ -57,6 +63,7 @@ from investment_research.modules.research.ports import (
     AnswerValidationUnitOfWorkFactory,
 )
 from investment_research.modules.search.contracts import LexicalSearchHit
+from investment_research.settings import Settings
 from tests.integration.factories import (
     FIXTURE_TIME,
     ResearchSource,
@@ -197,6 +204,70 @@ def prepare_source(engine: Engine, *, label: str) -> tuple[ResearchSource, Resea
     persist_research_source(engine, source)
     persist_retrieval_result(engine, source, retrieval)
     return source, make_application_result(source, retrieval)
+
+
+def test_container_wires_the_manifest_answer_path(
+    integration_database_engine: Engine,
+    integration_database_settings: Settings,
+) -> None:
+    source = make_research_source(label="Container Answer Path")
+    answerable_text = (
+        f"{M0_0_FIXTURE_ANSWER_CASE.question} {M0_0_FIXTURE_ANSWER_CASE.evidence_text}"
+    )
+    blocks = (
+        source.blocks[0].model_copy(
+            update={
+                "page_number": 2,
+                "text": answerable_text,
+                "end_character": len(answerable_text),
+            }
+        ),
+        source.blocks[1],
+    )
+    chunks = (
+        source.chunks[0].model_copy(
+            update={
+                "text": answerable_text,
+                "token_count": len(answerable_text.split()),
+            }
+        ),
+        source.chunks[1],
+    )
+    source = replace(
+        source,
+        processing_run=source.processing_run.model_copy(
+            update={
+                "lexical_config_version": M0_0_PROCESSING_PROFILE.lexical_config_version,
+            }
+        ),
+        blocks=blocks,
+        chunk_set=source.chunk_set.model_copy(
+            update={
+                "lexical_config_version": M0_0_PROCESSING_PROFILE.lexical_config_version,
+            }
+        ),
+        chunks=chunks,
+    )
+    persist_research_source(integration_database_engine, source)
+    container = build_container(integration_database_settings)
+
+    try:
+        result = container.answer_research_request_service.answer(
+            source.context,
+            ResearchRetrievalInput(
+                question=M0_0_FIXTURE_ANSWER_CASE.question,
+                document_ids=(source.document.id,),
+            ),
+        )
+    finally:
+        container.close()
+
+    assert result.answer.state is AnswerState.STREAMED
+    assert result.answer.rendered_text == M0_0_FIXTURE_ANSWER_CASE.statement
+    assert result.statements[0].text == M0_0_FIXTURE_ANSWER_CASE.statement
+    assert result.evidence_spans[0].page_number == 2
+    assert result.evidence_spans[0].exact_text == M0_0_FIXTURE_ANSWER_CASE.evidence_text
+    assert M0_0_INSUFFICIENT_MESSAGE not in result.answer.rendered_text
 
 
 def test_validated_answer_round_trips_as_one_complete_aggregate(

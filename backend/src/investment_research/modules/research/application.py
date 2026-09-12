@@ -1,6 +1,7 @@
 """Application services for research retrieval and validated answer generation."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -507,3 +508,21 @@ class GenerateValidatedAnswerService:
         if current_time.tzinfo is None or current_time.utcoffset() is None:
             raise RuntimeError("research clock must return a timezone-aware datetime")
         return current_time.astimezone(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerResearchRequestService:
+    """Run retrieval and validated answer persistence as one application use case."""
+
+    retrieval_service: RetrieveResearchService
+    generation_service: GenerateValidatedAnswerService
+
+    def answer(
+        self,
+        context: WorkspaceContext,
+        retrieval_input: ResearchRetrievalInput,
+    ) -> ValidatedAnswerResult:
+        """Return only the validated terminal result of one research request."""
+
+        retrieval_result = self.retrieval_service.retrieve(context, retrieval_input)
+        return self.generation_service.generate(context, retrieval_result)

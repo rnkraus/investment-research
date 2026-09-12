@@ -28,13 +28,21 @@ flowchart TD
     SESSIONS --> STATUSUOW[Processing read unit-of-work factory]
     SESSIONS --> PROCESSUOW[Processing unit-of-work factory]
     SESSIONS --> RETRIEVALUOW[Research retrieval unit-of-work factory]
+    SESSIONS --> ANSWERUOW[Answer validation unit-of-work factory]
     BOOT --> STORAGE[ObjectStorage adapter]
+    BOOT --> GENERATOR[Deterministic answer generator]
+    BOOT --> SUPPORT[Independent statement-support evaluator]
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
     READUOW --> ORIGINAL[OpenOriginalService]
     STATUSUOW --> STATUS[GetProcessingRunService]
     PROCESSUOW --> PROCESS[ProcessDocumentService]
     RETRIEVALUOW --> RETRIEVE[RetrieveResearchService]
     RETRIEVALUOW --> LEXICAL[PostgreSQL LexicalSearch adapter]
+    ANSWERUOW --> GENERATE[GenerateValidatedAnswerService]
+    GENERATOR --> GENERATE
+    SUPPORT --> GENERATE
+    RETRIEVE --> ANSWERREQUEST[AnswerResearchRequestService]
+    GENERATE --> ANSWERREQUEST
     STORAGE --> CAPTURE
     STORAGE --> ORIGINAL
     ORIGINAL --> PROCESS
@@ -43,7 +51,7 @@ flowchart TD
     ORIGINAL --> STATE
     STATUS --> STATE
     PROCESS --> STATE
-    RETRIEVE --> STATE
+    ANSWERREQUEST --> STATE
     MAIN --> LIMIT[Request-body limit]
     LIMIT --> ROUTES[HTTP routes]
     MAIN --> ERRORS[Safe error handlers]
@@ -93,7 +101,13 @@ API returns only its public state and sanitized failure summary and cannot invok
 
 For research retrieval, `RetrieveResearchService` creates the immutable request, executes the
 eligible PostgreSQL lexical query, and stages the completed run and ordered candidates through one
-shared short-lived transaction. The service is available in the container, but no public research
-route is registered until the answer and evidence path can produce a safe terminal response.
+shared short-lived transaction. `GenerateValidatedAnswerService` is wired with the deterministic
+M0.0 generator, an independent support evaluator, and the answer-validation unit of work. It
+reloads canonical evidence and persists only a safe terminal aggregate.
+
+`AnswerResearchRequestService` composes those two focused services into the complete application
+use case. A later HTTP route calls this single boundary and receives only `ValidatedAnswerResult`;
+it does not coordinate retrieval and generation or gain access to unvalidated generator output. No
+public research route is registered yet.
 
 The package follows the boundaries in [`docs/02-system-design.md`](../../../docs/02-system-design.md#4-component-boundaries).
