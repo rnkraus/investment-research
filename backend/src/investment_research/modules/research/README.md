@@ -44,7 +44,9 @@ translation once, so Search receives concrete predicates and does not depend on 
 
 ```mermaid
 flowchart LR
-    INPUT[ResearchRetrievalInput] --> REQUEST[ResearchRequest]
+    INPUT[ResearchRetrievalInput] --> USECASE[AnswerResearchRequestService]
+    USECASE --> RETRIEVE[RetrieveResearchService]
+    RETRIEVE --> REQUEST[ResearchRequest]
     INPUT --> FILTERS[Effective RetrievalFilters]
     FILTERS --> QUERY[LexicalSearchQuery]
     REQUEST --> UOW[ResearchRetrievalUnitOfWork]
@@ -54,6 +56,9 @@ flowchart LR
     HITS --> CANDIDATES[Ranked RetrievalCandidates]
     CANDIDATES --> RUN[RetrievalRun plus candidates]
     UOW -->|one commit or rollback| PG[(PostgreSQL)]
+    RUN --> RESULT[ResearchRetrievalResult]
+    RESULT --> GENERATE[GenerateValidatedAnswerService]
+    GENERATE --> OUTPUT[ValidatedAnswerResult]
 ```
 
 The service creates all identifiers server-side, retains the exact question, normalizes only its
@@ -61,6 +66,11 @@ search form, and maps each ordered hit to one persisted `LEXICAL` candidate. An 
 a valid reproducible retrieval result and does not create invented candidates. The returned
 `ResearchRetrievalResult` keeps each persisted candidate aligned with the canonical hit data needed
 by the later generation and evidence path.
+
+`AnswerResearchRequestService` is the route-facing application use case. It passes the committed
+retrieval result directly to `GenerateValidatedAnswerService` and returns only the validated
+terminal result. This small composition keeps HTTP code unaware of intermediate retrieval data and
+preserves the two focused services as independently testable boundaries.
 
 ## Answer-generation boundary
 
@@ -135,5 +145,6 @@ complete aggregate.
 
 Step 6 creates and atomically persists the request, lexical retrieval run, and selected candidates.
 Step 7 now provides the typed generator boundary, canonical evidence validation, and atomic terminal
-answer persistence. HTTP output remains separate: the API must consume only `ValidatedAnswerResult`
-and must never receive an `UnvalidatedGeneratedAnswer`.
+answer persistence. `AnswerResearchRequestService` composes those operations as one complete use
+case. HTTP output remains separate: the API must consume only `ValidatedAnswerResult` and must never
+receive an `UnvalidatedGeneratedAnswer`.

@@ -16,6 +16,11 @@ from investment_research.modules.processing.application import (
     GetProcessingRunService,
     ProcessDocumentService,
 )
+from investment_research.modules.research.application import (
+    AnswerResearchRequestService,
+    GenerateValidatedAnswerService,
+    RetrieveResearchService,
+)
 from investment_research.settings import Settings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
@@ -49,6 +54,15 @@ def test_build_container_wires_application_resources(tmp_path: Path) -> None:
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.get_processing_run_service, GetProcessingRunService)
             assert isinstance(container.process_document_service, ProcessDocumentService)
+            assert isinstance(container.retrieve_research_service, RetrieveResearchService)
+            assert isinstance(
+                container.generate_validated_answer_service,
+                GenerateValidatedAnswerService,
+            )
+            assert isinstance(
+                container.answer_research_request_service,
+                AnswerResearchRequestService,
+            )
             assert not storage_root.exists()
         finally:
             session.close()

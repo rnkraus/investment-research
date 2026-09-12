@@ -59,7 +59,10 @@ rule results. Generation coverage proves that the untrusted generator runs outsi
 only canonical validated statements become visible output, and insufficient or rejected results
 persist without usable content. The PostgreSQL orchestration tests verify the complete answer,
 statement, span, relationship, and validation round trip plus rollback of every staged record when a
-late validation write fails.
+late validation write fails. A composition-root integration case additionally calls the complete
+`AnswerResearchRequestService` created by `build_container()` and proves that the pinned M0.0
+processing, retrieval, generation, support, and validation profiles produce the manifest answer and
+exact page-two span together.
 
 For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
 named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies

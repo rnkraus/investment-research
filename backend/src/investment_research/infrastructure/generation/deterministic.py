@@ -29,6 +29,21 @@ class FixtureAnswerCase:
                 raise ValueError(f"{field_name} must contain a non-whitespace character")
 
 
+M0_0_FIXTURE_ANSWER_CASE = FixtureAnswerCase(
+    question=(
+        "What was Northstar Grid Analytics' FY2025 revenue, and how did it change from FY2024?"
+    ),
+    statement=(
+        "Northstar Grid Analytics reported FY2025 revenue of $184.2 million, "
+        "up 22.0% from $151.0 million in FY2024."
+    ),
+    evidence_text=("FY2025 revenue was $184.2 million, up 22.0% from $151.0 million in FY2024."),
+)
+M0_0_INSUFFICIENT_MESSAGE = (
+    "The archive does not contain sufficient evidence to answer this question."
+)
+
+
 class DeterministicFixtureAnswerGenerator:
     """Generate only the configured answer when its exact evidence was retrieved."""
 

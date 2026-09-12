@@ -37,5 +37,11 @@ ordered retrieval source. The proposed citation retains the selected candidate i
 exact range within that source. An unknown question or missing passage returns explicit
 `INSUFFICIENT` coverage with no statements.
 
+`M0_0_FIXTURE_ANSWER_CASE` is the typed runtime configuration for the one answerable proof case, and
+`M0_0_INSUFFICIENT_MESSAGE` is the application-owned safe fallback text. Their values mirror
+[`fixtures/m0_0/manifest.yaml`](../../../../../fixtures/m0_0/manifest.yaml), which remains the
+fixture and acceptance specification. M0.0 does not add a runtime YAML dependency merely to build
+the deterministic adapter; the final acceptance suite is responsible for detecting manifest drift.
+
 This adapter is deliberately M0.0-only. A later approved AI-provider adapter may replace it behind
 the same port, while deterministic tests and server-side evidence validation remain.
