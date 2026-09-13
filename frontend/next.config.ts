@@ -1,8 +1,43 @@
 import type { NextConfig } from "next";
 
+const DEFAULT_API_ORIGIN = "http://127.0.0.1:8000";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function resolveApiOrigin(): string {
+  const configuredOrigin =
+    process.env.INVESTMENT_RESEARCH_API_ORIGIN ?? DEFAULT_API_ORIGIN;
+  const parsedOrigin = new URL(configuredOrigin);
+
+  if (
+    !["http:", "https:"].includes(parsedOrigin.protocol) ||
+    !LOOPBACK_HOSTS.has(parsedOrigin.hostname) ||
+    parsedOrigin.username ||
+    parsedOrigin.password ||
+    parsedOrigin.pathname !== "/" ||
+    parsedOrigin.search ||
+    parsedOrigin.hash
+  ) {
+    throw new Error(
+      "INVESTMENT_RESEARCH_API_ORIGIN must be a credential-free loopback HTTP origin",
+    );
+  }
+
+  return parsedOrigin.origin;
+}
+
+const apiOrigin = resolveApiOrigin();
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${apiOrigin}/api/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

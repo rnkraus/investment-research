@@ -6,14 +6,21 @@ This directory contains deterministic tests for frontend-owned behavior and the 
 
 | File or command        | Responsibility                                                                        |
 | ---------------------- | ------------------------------------------------------------------------------------- |
+| `api-client.test.mjs`  | Verifies multipart, safe errors, runtime contracts, SSE framing, and local API paths. |
 | `product.test.mjs`     | Verifies the product identity and evidence-focused description.                       |
 | `pnpm contracts:check` | Verifies that generated TypeScript declarations match the committed OpenAPI snapshot. |
 
 ```mermaid
 flowchart LR
     TEST[pnpm test] --> CONTRACT[Contract drift check]
-    CONTRACT --> PRODUCT[Node product test]
-    PRODUCT --> RESULT[Pass or fail]
+    CONTRACT --> DISCOVERY[Node test discovery]
+    DISCOVERY --> API[API client tests]
+    DISCOVERY --> PRODUCT[Product test]
+    API --> RESULT[Pass or fail]
+    PRODUCT --> RESULT
 ```
 
-Tests run through the frontend package script and therefore through the repository-level `pnpm test` command and CI. Browser interaction and accessibility tests should be added with actual user workflows; they should not be introduced as empty infrastructure before a feature requires them.
+Tests run through the frontend package script and therefore through the repository-level `pnpm test`
+command and CI. The Node test runner discovers conventionally named test files automatically.
+Browser interaction and accessibility tests should be added with actual user workflows; they should
+not be introduced as empty infrastructure before a feature requires them.
