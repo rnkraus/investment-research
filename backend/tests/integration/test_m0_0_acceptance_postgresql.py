@@ -175,3 +175,41 @@ def test_complete_m0_0_journey_opens_exact_source_and_refuses_missing_evidence(
         assert insufficient_events[0]["data"]["message"] == M0_0_INSUFFICIENT_MESSAGE
         assert "answer.statement" not in insufficient_response.text
         assert "answer.citation" not in insufficient_response.text
+
+
+def test_m0_0_api_rejects_pdf_above_the_configured_upload_limit(
+    integration_database_settings: Settings,
+    tmp_path: Path,
+) -> None:
+    """Prove the multipart API rejects oversized content before publishing an object."""
+
+    storage_root = tmp_path / "objects"
+    settings = integration_database_settings.model_copy(
+        update={
+            "object_storage_root": storage_root,
+            "max_upload_bytes": FIXTURE_PDF.stat().st_size - 1,
+        }
+    )
+    application = create_app(settings)
+
+    with TestClient(application) as client, FIXTURE_PDF.open("rb") as fixture_file:
+        response = client.post(
+            "/api/v1/documents",
+            data={
+                "title": "Oversized M0.0 acceptance fixture",
+                "language": "en",
+                "published_at": EXPECTED_PUBLICATION_TIME,
+            },
+            files={
+                "file": (
+                    FIXTURE_PDF.name,
+                    fixture_file,
+                    "application/pdf",
+                )
+            },
+        )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert response.json()["error"]["message"] == ("uploaded PDF exceeds the configured size limit")
+    assert not storage_root.exists()
