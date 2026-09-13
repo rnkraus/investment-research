@@ -22,6 +22,7 @@ Use these documents as the project specification:
 - `docs/06-future-features.md` — unscheduled ideas, not approved implementation scope.
 - `docs/07-m0-0-architecture-flows.md` — paired target and M0.0 module, workflow, and lifecycle diagrams.
 - `docs/08-m0-0-implementation-plan.md` — implementation-ready M0.0 repository structure, contracts, sequence, and verification gates.
+- `docs/09-m0-implementation-plan.md` — implementation-ready M0 runtime topology, replacement sequence, work blocks, and verification gates.
 - `docs/adr/` — accepted architectural decisions when they exist.
 
 Accepted ADRs govern the decisions they address. Keep affected compact documents synchronized with later decisions. Report conflicts instead of choosing silently.

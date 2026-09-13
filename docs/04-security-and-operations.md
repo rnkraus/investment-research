@@ -118,7 +118,9 @@ Uploads must be processed as hostile data:
 V1 accepts PDFs and pasted text only. URLs, archives, office files, scripts, and active document content remain disabled until separately designed and tested.
 
 These ingestion controls are an M0 implementation gate, not a description of the narrower M0.0
-runner. ADR-0004 records the temporary synthetic-fixture exception and its removal criteria.
+runner. ADR-0004 records the temporary synthetic-fixture exception and its removal criteria. The
+implementation and negative-test sequence is maintained in
+[09-m0-implementation-plan.md](./09-m0-implementation-plan.md).
 
 ## 6. AI and RAG safety
 

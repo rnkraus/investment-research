@@ -75,7 +75,7 @@ CPU-heavy parsing on the API event loop. This process and resource separation is
 operating-system sandbox: [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md) limits accepted
 M0.0 processing to the frozen synthetic fixture and makes tested parser isolation an M0 gate.
 
-Application-owned contracts, Alembic migrations, module boundaries, and the real evidence validator are established in M0.0. Development-only artifact storage and processing delivery are replaced during M0. Passing M0.0 does not satisfy the M0 or M1 exit gates. The paired diagrams are maintained in [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), and the exact implementation sequence is maintained in [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md).
+Application-owned contracts, Alembic migrations, module boundaries, and the real evidence validator are established in M0.0. Development-only artifact storage and processing delivery are replaced during M0. Passing M0.0 does not satisfy the M0 or M1 exit gates. The paired diagrams are maintained in [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), the completed proof sequence in [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), and the M0 replacement sequence in [09-m0-implementation-plan.md](./09-m0-implementation-plan.md).
 
 ## 4. Component boundaries
 
