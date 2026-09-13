@@ -7,6 +7,7 @@ This directory contains the English-first Next.js web application. It presents a
 | Path                 | Responsibility                                           |
 | -------------------- | -------------------------------------------------------- |
 | `src/app/`           | Next.js App Router layout, pages, and global styles.     |
+| `src/features/`      | Feature-owned UI state, components, and English copy.    |
 | `src/lib/`           | Shared product copy and the typed API boundary.          |
 | `tests/`             | Deterministic frontend contract and product tests.       |
 | `.env.example`       | Safe local example for the server-only FastAPI origin.   |
@@ -19,7 +20,8 @@ This directory contains the English-first Next.js web application. It presents a
 
 ```mermaid
 flowchart LR
-    UI[Next.js UI] --> CLIENT[Typed API client]
+    PAGE[Next.js page] --> UI[Feature-owned UI]
+    UI --> CLIENT[Typed API client]
     CLIENT --> TYPES[Generated OpenAPI types]
     CLIENT --> API[FastAPI]
     API --> STORES[Canonical and derived stores]
