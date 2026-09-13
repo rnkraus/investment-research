@@ -64,6 +64,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/research-requests": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Answer Research Request
+         * @description Execute one bounded request and stream only its validated terminal output.
+         */
+        readonly post: operations["answer_research_request_api_v1_research_requests_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/health": {
         readonly parameters: {
             readonly query?: never;
@@ -289,7 +309,7 @@ export interface components {
          * @description Stable public error categories without internal details.
          * @enum {string}
          */
-        readonly ErrorCode: "INVALID_REQUEST" | "NOT_FOUND" | "CONFLICT" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "PROCESSING_FAILED" | "INTERNAL_ERROR";
+        readonly ErrorCode: "INVALID_REQUEST" | "NOT_FOUND" | "CONFLICT" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "PROCESSING_FAILED" | "EVIDENCE_VALIDATION_FAILED" | "INTERNAL_ERROR";
         /**
          * ErrorDetail
          * @description Safe machine-readable error detail.
@@ -445,11 +465,8 @@ export interface components {
          * @description Explicit archive filters supplied with a research question.
          */
         readonly ResearchRequestContext: {
-            /**
-             * Cutoff At
-             * @default null
-             */
-            readonly cutoff_at: string | null;
+            /** Cutoff At */
+            readonly cutoff_at?: string | null;
             /**
              * Document Ids
              * @default []
@@ -629,6 +646,48 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly answer_research_request_api_v1_research_requests_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ResearchRequestInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Validated research answer events */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "text/event-stream": components["schemas"]["ResearchStreamEvent"];
                 };
             };
             /** @description Unprocessable Content */

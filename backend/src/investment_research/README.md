@@ -106,8 +106,9 @@ M0.0 generator, an independent support evaluator, and the answer-validation unit
 reloads canonical evidence and persists only a safe terminal aggregate.
 
 `AnswerResearchRequestService` composes those two focused services into the complete application
-use case. A later HTTP route calls this single boundary and receives only `ValidatedAnswerResult`;
-it does not coordinate retrieval and generation or gain access to unvalidated generator output. No
-public research route is registered yet.
+use case. The research HTTP route calls this single boundary and receives only
+`ValidatedAnswerResult`; it does not coordinate retrieval and generation or gain access to
+unvalidated generator output. The route serializes the validated terminal aggregate into typed SSE
+events and never emits raw generator tokens or validation details.
 
 The package follows the boundaries in [`docs/02-system-design.md`](../../../docs/02-system-design.md#4-component-boundaries).

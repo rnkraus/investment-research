@@ -62,7 +62,10 @@ statement, span, relationship, and validation round trip plus rollback of every 
 late validation write fails. A composition-root integration case additionally calls the complete
 `AnswerResearchRequestService` created by `build_container()` and proves that the pinned M0.0
 processing, retrieval, generation, support, and validation profiles produce the manifest answer and
-exact page-two span together.
+exact page-two span together. Research-route unit tests verify safe SSE mapping, terminal event
+shapes, request translation, and failure redaction. PostgreSQL API tests exercise the answerable and
+unanswerable manifest questions through the real container and prove that foreign document filters
+remain indistinguishable from unknown identifiers without emitting answer content.
 
 For a complete local check, `uv run --locked python -m scripts.verify_postgres` creates a uniquely
 named disposable Docker environment, migrates and seeds it, runs this integration suite, verifies

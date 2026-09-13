@@ -2,7 +2,6 @@
 
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import replace
 from datetime import timedelta
 from uuid import UUID, uuid4
 
@@ -70,6 +69,7 @@ from tests.integration.factories import (
     RetrievalResultFixture,
     make_research_source,
     make_retrieval_result,
+    make_searchable_research_source,
     persist_research_source,
     persist_retrieval_result,
 )
@@ -210,43 +210,13 @@ def test_container_wires_the_manifest_answer_path(
     integration_database_engine: Engine,
     integration_database_settings: Settings,
 ) -> None:
-    source = make_research_source(label="Container Answer Path")
     answerable_text = (
         f"{M0_0_FIXTURE_ANSWER_CASE.question} {M0_0_FIXTURE_ANSWER_CASE.evidence_text}"
     )
-    blocks = (
-        source.blocks[0].model_copy(
-            update={
-                "page_number": 2,
-                "text": answerable_text,
-                "end_character": len(answerable_text),
-            }
-        ),
-        source.blocks[1],
-    )
-    chunks = (
-        source.chunks[0].model_copy(
-            update={
-                "text": answerable_text,
-                "token_count": len(answerable_text.split()),
-            }
-        ),
-        source.chunks[1],
-    )
-    source = replace(
-        source,
-        processing_run=source.processing_run.model_copy(
-            update={
-                "lexical_config_version": M0_0_PROCESSING_PROFILE.lexical_config_version,
-            }
-        ),
-        blocks=blocks,
-        chunk_set=source.chunk_set.model_copy(
-            update={
-                "lexical_config_version": M0_0_PROCESSING_PROFILE.lexical_config_version,
-            }
-        ),
-        chunks=chunks,
+    source = make_searchable_research_source(
+        label="Container Answer Path",
+        primary_text=answerable_text,
+        lexical_config_version=M0_0_PROCESSING_PROFILE.lexical_config_version,
     )
     persist_research_source(integration_database_engine, source)
     container = build_container(integration_database_settings)

@@ -1,6 +1,6 @@
 """Reusable synthetic object graphs for PostgreSQL integration tests."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -220,6 +220,48 @@ def make_research_source(*, label: str = "Research Source") -> ResearchSource:
         chunk_set=chunk_set,
         chunks=chunks,
         request=request,
+    )
+
+
+def make_searchable_research_source(
+    *,
+    label: str,
+    primary_text: str,
+    lexical_config_version: str,
+    primary_page_number: int = 2,
+) -> ResearchSource:
+    """Build a source whose primary block is eligible for one real lexical query."""
+
+    source = make_research_source(label=label)
+    blocks = (
+        source.blocks[0].model_copy(
+            update={
+                "page_number": primary_page_number,
+                "text": primary_text,
+                "end_character": len(primary_text),
+            }
+        ),
+        source.blocks[1],
+    )
+    chunks = (
+        source.chunks[0].model_copy(
+            update={
+                "text": primary_text,
+                "token_count": len(primary_text.split()),
+            }
+        ),
+        source.chunks[1],
+    )
+    return replace(
+        source,
+        processing_run=source.processing_run.model_copy(
+            update={"lexical_config_version": lexical_config_version}
+        ),
+        blocks=blocks,
+        chunk_set=source.chunk_set.model_copy(
+            update={"lexical_config_version": lexical_config_version}
+        ),
+        chunks=chunks,
     )
 
 
