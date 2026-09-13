@@ -5,7 +5,7 @@ export const archiveCopy = {
     "Import the synthetic earnings brief, process it locally, and ask an evidence-grounded question.",
   workspaceLabel: "Evidence workspace",
   localOnly: "Local-only · Synthetic fixture · English archive",
-  safetyNote: "Public or synthetic documents only during M0.0.",
+  safetyNote: "Accepted M0.0 workflow: included synthetic fixture only.",
   steps: ["Import", "Process", "Research", "Open citation"],
   upload: {
     eyebrow: "Step 1",
@@ -13,7 +13,8 @@ export const archiveCopy = {
     description:
       "The original PDF is preserved before a separate local runner creates searchable text.",
     fileLabel: "PDF document",
-    fileHint: "PDF only, up to the configured local upload limit.",
+    fileHint:
+      "Use the included synthetic PDF fixture for the accepted M0.0 workflow.",
     selectedFile: "Selected PDF",
     titleLabel: "Document title",
     titlePlaceholder: "Northstar Grid Analytics Ltd. - FY2025 Earnings Brief",
