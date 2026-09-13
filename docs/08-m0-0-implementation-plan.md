@@ -1,6 +1,6 @@
 # Investment Research Archive — M0.0 Implementation Plan
 
-**Status:** Active implementation plan v0.2 — implemented through Step 3
+**Status:** M0.0 implemented and locally accepted on 2026-09-13
 **Scope:** Exact repository shape, contracts, build sequence, and verification for M0.0
 **Related:** [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [05-delivery-plan.md](./05-delivery-plan.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md)
 
@@ -337,26 +337,104 @@ indistinguishable.
 
 Normal verification must not require a paid or live AI provider.
 
-## 9. M0 replacement matrix
+## 9. Post-M0.0 replacement matrix
 
-| M0.0 implementation | M0 action | Retained contract or behavior |
-|---|---|---|
-| PostgreSQL-only Compose service | Expand Compose with web, API, worker, Redis, and MinIO | Database schema history and application modules |
-| Immutable local `ObjectStorage` adapter | Replace with MinIO adapter | Object keys, checksums, immutable capture semantics, port |
-| Single-job development runner | Deliver run IDs through Redis/Celery | `ProcessingRun`, processing service, state contract, independent unit of work |
-| Fixed local development identity | Add production-shaped authentication boundary later in M1 | Server-resolved workspace context and scoped repositories |
-| Deterministic fixture generator | Retain for tests and add approved provider adapter | `AnswerGenerator` and typed result |
-| PostgreSQL lexical retrieval | Retain and later add dense retrieval | `LexicalSearch`, eligibility checks, evidence assembly input |
-| Minimal checks and CI | Add pre-commit and full container/integration CI | Existing commands and regression fixtures |
+| M0.0 implementation | Required next action | Target stage | Retained contract or behavior |
+|---|---|---|---|
+| PostgreSQL-only Compose service | Expand Compose with web, API, worker, Redis, and MinIO | M0 | Database schema history and application modules |
+| Immutable local `ObjectStorage` adapter | Replace with a MinIO adapter through the existing port | M0 | Object keys, checksums, immutable capture semantics, `ObjectStorage` port |
+| Single-job development runner | Deliver run IDs through Redis and Celery | M0 | `ProcessingRun`, processing service, state contract, independent unit of work |
+| Minimal process-level checks and CI | Add pre-commit checks, container builds, and full container CI | M0 | Existing commands, PostgreSQL checks, and regression fixtures |
+| Fixed local development identity | Retain for M0 infrastructure work; add the production-shaped authentication boundary | M1 | Server-resolved workspace context and scoped repositories |
+| Deterministic fixture generator | Retain as the default test adapter; add an approved provider adapter | M1 | `AnswerGenerator` port and typed result |
+| PostgreSQL lexical retrieval | Retain and add dense retrieval and fusion | M1 | `LexicalSearch`, eligibility checks, and evidence assembly input |
 
 M0 must not rename shared domain concepts, move module ownership, or bypass existing ports merely to connect the production adapters.
 
-## 10. Ready-to-start checklist
+## 10. Implementation prerequisites
 
-Implementation may begin when:
+These prerequisites were satisfied before M0.0 implementation began:
 
-- this plan and the M0.0 flow comparisons have no unresolved contradiction with the compact specifications;
-- the fixture choice and redistribution terms are approved;
-- any new production dependency beyond the fixed technical baseline is separately explained and approved;
-- no private archive data or credentials are required;
-- the first implementation change is limited to Step 0 or Step 1 and includes its corresponding verification.
+- The plan and M0.0 flow comparisons had no unresolved contradiction with the compact specifications.
+- The synthetic CC0 fixture and its redistribution terms were approved and frozen in `fixtures/m0_0/manifest.yaml`.
+- Production dependency additions were reviewed separately and resolved through the committed lockfiles.
+- No private archive data or live provider credentials were required.
+- Implementation began with the bounded fixture and foundation steps and their verification gates.
+
+## 11. M0.0 completion record
+
+### 11.1 Accepted assumptions and limits
+
+- The proof is local-only, English-only, and limited to a synthetic four-page text PDF.
+- PostgreSQL 17 and the ignored local object directory are the only runtime stores.
+- One server-resolved development identity and workspace replace authentication; the client never
+  supplies authorization through a `workspace_id`.
+- Processing uses a bounded single-job process without queue durability, retries, concurrency, or
+  availability guarantees.
+- Answer generation is deterministic. No paid or live AI provider was required or measured.
+- The measurements below demonstrate deterministic correctness on the fixture. They are not load,
+  capacity, cost, or production-latency benchmarks.
+
+### 11.2 Recorded evidence
+
+| Exit condition | Recorded evidence |
+|---|---|
+| Complete answerable journey | `test_complete_m0_0_journey_opens_exact_source_and_refuses_missing_evidence` captures the real multipart fixture, runs processing in a separate process, retrieves, generates, validates, and opens the exact original bytes at page 2. |
+| Explicit insufficient coverage | The same acceptance test asks the frozen dividend question and receives only `answer.insufficient`, with no statement or citation event. |
+| Invalid output and tampered citation | `test_api_rejects_untrusted_answer_without_exposing_usable_content` proves unsupported statements and one-character citation changes end as `research.failed`; rejected output is not persisted as usable statements or evidence. |
+| Upload limit | `test_m0_0_api_rejects_pdf_above_the_configured_upload_limit` receives `413 PAYLOAD_TOO_LARGE` before any object is published. |
+| Workspace and eligibility isolation | Repository and API integration tests cover unknown and foreign identifiers, composite cross-workspace constraints, inactive chunk sets, and non-current document versions. |
+| Migration safety | `scripts.verify_postgres` migrates an empty PostgreSQL database to `head`, checks model drift, downgrades to `base`, upgrades to `head` again, and removes the disposable database and volume. |
+| Contract consistency | CI checks FastAPI against the committed OpenAPI snapshot; frontend tests check the generated TypeScript declaration and all terminal stream events. |
+| Browser usability | A manual local smoke test completed upload, processing, answerable and unanswerable research, and opening the cited original on page 2. |
+
+### 11.3 Measurements and implementation effort
+
+The final local verification on 2026-09-13 recorded:
+
+| Measurement | Result | Interpretation |
+|---|---:|---|
+| Frozen fixture | 10,840 bytes, 4 pages | Small deterministic proof fixture, not a representative corpus |
+| Backend unit suite | 337 passed in 1.51 seconds | Deterministic checks without PostgreSQL or live providers |
+| PostgreSQL integration and acceptance suite | 51 passed in 2.17 seconds | Pytest-reported execution time after database startup and migration |
+| Frontend deterministic tests | 13 passed in 81.7 milliseconds | Node test-runner duration; contract generation and production build excluded |
+| Migration/model drift | No new upgrade operations detected | SQLAlchemy metadata matched migration `head` before and after the downgrade/upgrade cycle |
+| Manual browser journey | Functionally passed | No browser latency instrumentation was present, so no latency claim is made |
+| Live-provider calls and cost | Not run; zero required | Deliberately outside the deterministic M0.0 gate |
+
+Repository commit dates place the finalized architecture plan on 2026-09-03 and this acceptance
+closure on 2026-09-13, a ten-calendar-day delivery span. This is not a person-hour measurement:
+continuous work time, review time, and waiting time were not instrumented. The auditable effort unit
+is therefore the ten gated implementation steps and their focused commits rather than an invented
+hour estimate.
+
+### 11.4 Observed failure modes and lessons
+
+| Observed failure | Cause and resolution | Required follow-through |
+|---|---|---|
+| Upload returned HTTP 500 against an older local database | The application code expected migration `0002`, while the database remained at `0001` with the removed `original_artifacts.page_count` requirement. Upgrading to Alembic `head` restored schema/code agreement. | M0 startup and container workflows must apply migrations before serving traffic and expose migration state clearly. |
+| PostgreSQL rejected a changed local password | The existing Docker volume retained credentials from its first initialization; changing environment input does not rotate an existing PostgreSQL role password. | Document safe development reset and explicit credential-rotation paths; never imply that restarting a persisted volume reinitializes credentials. |
+| A fixture command failed from the wrong working directory | Its relative path resolved outside `fixtures/`. The documented commands now state their required root or `backend/` context. | Container entrypoints and M0 task commands must use explicit working directories and validated paths. |
+| Invalid generated evidence reached validation | The validator rejected unsupported text and tampered exact spans before emitting or persisting usable evidence. | Keep the validator as a mandatory boundary when the deterministic adapter is replaced by a live provider. |
+| Next.js build could not bind an internal port inside a restricted development sandbox | Turbopack required a local process/port capability unavailable in that sandbox; the same production build passed in the normal local environment. | Keep CI as the environment-neutral build gate; do not weaken application security settings to accommodate a tooling sandbox. |
+
+### 11.5 Retained M0 contracts
+
+M0 should extend the proof by replacing adapters and strengthening operations, not by rebuilding its
+domain path. Retain:
+
+- the `Identity`, `Documents`, `Processing`, `Search`, `Research`, and `Evidence` module ownership and
+  dependency direction;
+- `WorkspaceContext`, workspace-scoped repositories, and indistinguishable foreign/unknown lookup
+  behavior;
+- immutable document versions, original checksums and object keys, `ProcessingRun`, structure blocks,
+  chunk sets, chunks, research requests, answers, statements, evidence spans, and validations;
+- application-owned `ObjectStorage`, processing, lexical search, evidence source, and
+  `AnswerGenerator` boundaries;
+- Pydantic HTTP and event contracts, the committed OpenAPI snapshot, and generated TypeScript types;
+- Alembic history, caller-owned transaction boundaries, server-side evidence validation, and the
+  deterministic acceptance fixture and regression tests.
+
+The M0 replacements listed in section 9 must run the same acceptance cases through MinIO,
+Redis/Celery, and the production-shaped container boundaries. Until that succeeds, M0.0 remains a
+validated product proof rather than a production-ready foundation.
