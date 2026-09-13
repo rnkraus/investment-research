@@ -383,6 +383,7 @@ These prerequisites were satisfied before M0.0 implementation began:
 | Explicit insufficient coverage | The same acceptance test asks the frozen dividend question and receives only `answer.insufficient`, with no statement or citation event. |
 | Invalid output and tampered citation | `test_api_rejects_untrusted_answer_without_exposing_usable_content` proves unsupported statements and one-character citation changes end as `research.failed`; rejected output is not persisted as usable statements or evidence. |
 | Upload limit | `test_m0_0_api_rejects_pdf_above_the_configured_upload_limit` receives `413 PAYLOAD_TOO_LARGE` before any object is published. |
+| Repeated answerable request | `test_research_api_reuses_canonical_evidence_for_repeated_answers` proves two requests can share one canonical evidence span while retaining separate answers, statements, and relationships. |
 | Workspace and eligibility isolation | Repository and API integration tests cover unknown and foreign identifiers, composite cross-workspace constraints, inactive chunk sets, and non-current document versions. |
 | Migration safety | `scripts.verify_postgres` migrates an empty PostgreSQL database to `head`, checks model drift, downgrades to `base`, upgrades to `head` again, and removes the disposable database and volume. |
 | Contract consistency | CI checks FastAPI against the committed OpenAPI snapshot; frontend tests check the generated TypeScript declaration and all terminal stream events. |
@@ -395,8 +396,8 @@ The final local verification on 2026-09-13 recorded:
 | Measurement | Result | Interpretation |
 |---|---:|---|
 | Frozen fixture | 10,840 bytes, 4 pages | Small deterministic proof fixture, not a representative corpus |
-| Backend unit suite | 337 passed in 1.51 seconds | Deterministic checks without PostgreSQL or live providers |
-| PostgreSQL integration and acceptance suite | 51 passed in 2.17 seconds | Pytest-reported execution time after database startup and migration |
+| Backend unit suite | 337 passed in 1.47 seconds | Deterministic checks without PostgreSQL or live providers |
+| PostgreSQL integration and acceptance suite | 52 passed in 2.31 seconds | Pytest-reported execution time after database startup and migration |
 | Frontend deterministic tests | 13 passed in 81.7 milliseconds | Node test-runner duration; contract generation and production build excluded |
 | Migration/model drift | No new upgrade operations detected | SQLAlchemy metadata matched migration `head` before and after the downgrade/upgrade cycle |
 | Manual browser journey | Functionally passed | No browser latency instrumentation was present, so no latency claim is made |
@@ -412,6 +413,7 @@ hour estimate.
 
 | Observed failure | Cause and resolution | Required follow-through |
 |---|---|---|
+| A repeated answerable request collided with the canonical evidence-span constraint | Each answer initially generated a new span ID for the same source location. The Evidence repository now atomically inserts or reuses the canonical span, verifies its content, and returns the persisted ID for the new statement relationship. | Preserve canonical span reuse when later generation and persistence adapters are introduced. |
 | Upload returned HTTP 500 against an older local database | The application code expected migration `0002`, while the database remained at `0001` with the removed `original_artifacts.page_count` requirement. Upgrading to Alembic `head` restored schema/code agreement. | M0 startup and container workflows must apply migrations before serving traffic and expose migration state clearly. |
 | PostgreSQL rejected a changed local password | The existing Docker volume retained credentials from its first initialization; changing environment input does not rotate an existing PostgreSQL role password. | Document safe development reset and explicit credential-rotation paths; never imply that restarting a persisted volume reinitializes credentials. |
 | A fixture command failed from the wrong working directory | Its relative path resolved outside `fixtures/`. The documented commands now state their required root or `backend/` context. | Container entrypoints and M0 task commands must use explicit working directories and validated paths. |

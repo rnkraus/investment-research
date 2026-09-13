@@ -120,6 +120,7 @@ class RecordingAnswerValidationUnitOfWork:
         self.research_mock = create_autospec(ResearchRepository, instance=True)
         self.evidence_mock = create_autospec(EvidenceRepository, instance=True)
         self.research_mock.update_answer.return_value = True
+        self.evidence_mock.get_or_add_span.side_effect = lambda _context, span: span
         self.research = cast(ResearchRepository, self.research_mock)
         self.evidence = cast(EvidenceRepository, self.evidence_mock)
         self.evidence_sources: CanonicalEvidenceSourceReader = RecordingSourceReader()
@@ -314,7 +315,8 @@ def test_valid_answer_persists_only_validated_content_in_one_unit_of_work() -> N
         AnswerState.STREAMED,
     ]
     unit_of_work.research_mock.add_statements.assert_called_once()
-    unit_of_work.evidence_mock.add_span.assert_called_once()
+    unit_of_work.evidence_mock.get_or_add_span.assert_called_once()
+    unit_of_work.evidence_mock.add_span.assert_not_called()
     unit_of_work.evidence_mock.add_statement_evidence.assert_called_once()
     unit_of_work.evidence_mock.add_answer_validations.assert_called_once()
 

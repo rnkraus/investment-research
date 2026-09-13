@@ -53,6 +53,13 @@ class EvidenceRepository(Protocol):
     def add_span(self, context: WorkspaceContext, span: EvidenceSpan) -> None:
         """Stage one exact immutable source span."""
 
+    def get_or_add_span(
+        self,
+        context: WorkspaceContext,
+        span: EvidenceSpan,
+    ) -> EvidenceSpan:
+        """Return the canonical matching span, inserting it when it does not exist."""
+
     def get_span_by_id(
         self,
         context: WorkspaceContext,

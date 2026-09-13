@@ -39,6 +39,24 @@ EvidenceSpan.text_sha256
 
 Offsets are relative to the referenced structure block. A valid span has ordered offsets, matching character length, visible exact text, and the correct SHA-256 hash. Step 7 reloads the canonical block and verifies that slicing it at those offsets produces exactly the proposed text before the range becomes a validated reference.
 
+The canonical span identity is its workspace, document version, structure block, and character
+range. Repeated answers therefore reuse one persisted `EvidenceSpan` while creating their own
+`StatementEvidence` relationships:
+
+```mermaid
+flowchart LR
+    PROPOSED[Validated proposed span] --> UPSERT[Insert by canonical source location]
+    UPSERT -->|new location| CREATED[Store new EvidenceSpan]
+    UPSERT -->|existing location| REUSE[Load existing EvidenceSpan]
+    CREATED --> VERIFY[Verify page, exact text, and hash]
+    REUSE --> VERIFY
+    VERIFY --> LINK[Link the current AnswerStatement]
+```
+
+The PostgreSQL insert is conflict-safe, so concurrent answers do not rely on an unsafe
+read-before-write sequence. An existing location is never reused when its page, exact text, or hash
+differs from the validated proposal.
+
 ## Validation records
 
 ```mermaid

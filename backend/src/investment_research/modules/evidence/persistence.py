@@ -20,6 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from investment_research.infrastructure.database.base import Base
@@ -289,6 +290,53 @@ class SqlAlchemyEvidenceRepository:
 
         self._require_scope(context, span.workspace_id)
         self._session.add(EvidenceSpanRow.from_domain(span))
+
+    def get_or_add_span(
+        self,
+        context: WorkspaceContext,
+        span: EvidenceSpan,
+    ) -> EvidenceSpan:
+        """Insert one canonical span or return its existing source-location identity."""
+
+        self._require_scope(context, span.workspace_id)
+        statement = (
+            pg_insert(EvidenceSpanRow)
+            .values(**span.model_dump())
+            .on_conflict_do_nothing(
+                index_elements=(
+                    EvidenceSpanRow.workspace_id,
+                    EvidenceSpanRow.document_version_id,
+                    EvidenceSpanRow.structure_block_id,
+                    EvidenceSpanRow.start_character,
+                    EvidenceSpanRow.end_character,
+                )
+            )
+            .returning(EvidenceSpanRow)
+        )
+        row = self._session.scalar(statement)
+        if row is None:
+            row = self._session.scalar(
+                select(EvidenceSpanRow).where(
+                    EvidenceSpanRow.workspace_id == context.workspace_id,
+                    EvidenceSpanRow.document_version_id == span.document_version_id,
+                    EvidenceSpanRow.structure_block_id == span.structure_block_id,
+                    EvidenceSpanRow.start_character == span.start_character,
+                    EvidenceSpanRow.end_character == span.end_character,
+                )
+            )
+        if row is None:
+            raise EvidenceRelationshipError("canonical evidence span could not be resolved")
+
+        canonical_span = row.to_domain()
+        if (
+            canonical_span.page_number != span.page_number
+            or canonical_span.exact_text != span.exact_text
+            or canonical_span.text_sha256 != span.text_sha256
+        ):
+            raise EvidenceRelationshipError(
+                "canonical evidence span conflicts with its source content"
+            )
+        return canonical_span
 
     def get_span_by_id(
         self,
