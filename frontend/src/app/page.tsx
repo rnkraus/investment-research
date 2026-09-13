@@ -1,51 +1,70 @@
+import { archiveCopy } from "@/features/archive/copy";
+import { DocumentWorkflow } from "@/features/archive/document-workflow";
 import { productCopy } from "@/lib/product-copy";
-
-const foundationItems = [
-  "English-first interface",
-  "FastAPI contract boundary",
-  "Local PostgreSQL runtime",
-] as const;
 
 export default function Home() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl items-center px-6 py-20 sm:px-10">
-      <section className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
-        <div className="bg-slate-900 px-8 py-10 text-white sm:px-12">
-          <p className="text-sm font-semibold tracking-[0.2em] text-teal-300 uppercase">
-            M0.0 local proof
+    <main className="min-h-screen px-5 py-6 sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-7xl">
+        <header className="flex items-center justify-between border-b border-slate-200 pb-5">
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="grid size-10 place-items-center rounded-xl bg-slate-950 text-sm font-bold tracking-tight text-white"
+            >
+              IR
+            </span>
+            <div>
+              <p className="font-semibold tracking-tight text-slate-950">
+                {productCopy.name}
+              </p>
+              <p className="text-xs text-slate-500">
+                {archiveCopy.workspaceLabel}
+              </p>
+            </div>
+          </div>
+          <p className="hidden rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 sm:block">
+            {archiveCopy.localOnly}
           </p>
-          <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
-            {productCopy.name}
-          </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-300">
-            {productCopy.description}
-          </p>
-        </div>
+        </header>
 
-        <div className="grid gap-8 px-8 py-10 sm:px-12 lg:grid-cols-[1.4fr_1fr]">
+        <section className="grid gap-10 py-14 lg:grid-cols-[1.2fr_0.8fr] lg:items-end lg:py-20">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Foundation in progress
-            </h2>
-            <p className="mt-3 max-w-xl leading-7 text-slate-600">
-              This local-only application will import research documents,
-              preserve their originals, and answer questions with verifiable
-              citations.
+            <p className="text-xs font-bold tracking-[0.22em] text-teal-700 uppercase">
+              {archiveCopy.eyebrow}
+            </p>
+            <h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-[-0.04em] text-balance text-slate-950 sm:text-6xl lg:text-7xl">
+              {archiveCopy.heading}
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
+              {archiveCopy.introduction}
             </p>
           </div>
 
-          <ul className="space-y-3" aria-label="Foundation scope">
-            {foundationItems.map((item) => (
-              <li
-                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700"
-                key={item}
-              >
-                {item}
+          <ol
+            aria-label="M0.0 workflow"
+            className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200"
+          >
+            {archiveCopy.steps.map((step, index) => (
+              <li className="bg-white p-4 sm:p-5" key={step}>
+                <span className="text-xs font-bold text-teal-700">
+                  0{index + 1}
+                </span>
+                <p className="mt-1 text-sm font-semibold text-slate-800">
+                  {step}
+                </p>
               </li>
             ))}
-          </ul>
-        </div>
-      </section>
+          </ol>
+        </section>
+
+        <DocumentWorkflow />
+
+        <footer className="mt-12 flex flex-col gap-2 border-t border-slate-200 py-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>{productCopy.description}</p>
+          <p>{archiveCopy.safetyNote}</p>
+        </footer>
+      </div>
     </main>
   );
 }
