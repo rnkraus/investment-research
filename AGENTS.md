@@ -49,7 +49,7 @@ Follow `docs/02-system-design.md`. The fixed baseline is:
 - OpenTelemetry/OpenInference and optional LangSmith for observability, never canonical state;
 - Docker Compose as the local multi-service runtime.
 
-M0.0 is the only approved exception to this full runtime baseline. It is a local-only proof using public or synthetic fixtures and the minimum Next.js, FastAPI, and PostgreSQL path described in `docs/05-delivery-plan.md` and `docs/08-m0-0-implementation-plan.md`. It must not use private data, become publicly reachable, or be treated as satisfying M0 or M1. Model it as a subset of the target system and reuse production module, entity, state, and workflow names wherever their meaning is the same. Preserve reusable application contracts, then replace all M0.0-only storage and execution shortcuts during M0 before continuing to M1.
+M0.0 is the only approved exception to this full runtime baseline. It is a local-only proof using the repository-owned frozen synthetic fixture and the minimum Next.js, FastAPI, and PostgreSQL path described in `docs/05-delivery-plan.md` and `docs/08-m0-0-implementation-plan.md`. Its parser boundary is governed by `docs/adr/0004-m0-0-parser-isolation-boundary.md`. It must not use private data, become publicly reachable, or be treated as satisfying M0 or M1. Model it as a subset of the target system and reuse production module, entity, state, and workflow names wherever their meaning is the same. Preserve reusable application contracts, then replace all M0.0-only storage and execution shortcuts during M0 before continuing to M1.
 
 Use `pnpm` for frontend dependencies and scripts. Keep `pnpm-lock.yaml` under version control once the frontend is scaffolded; do not use npm, Yarn, Bun, or competing frontend lockfiles.
 

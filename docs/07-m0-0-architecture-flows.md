@@ -51,7 +51,7 @@ flowchart LR
 
     API --> PG[(PostgreSQL)]
     API --> S3[(Object Storage<br/>Development Adapter)]
-    RUNNER[Bounded Development Runner] --> PG
+    RUNNER[Bounded Development Runner<br/>Frozen synthetic fixture only] --> PG
     RUNNER --> S3
     API --> GEN[Answer Generation Port]
     GEN --> DET[Deterministic Fixture Generator]
@@ -109,7 +109,7 @@ Arrows show code dependency direction, not request-and-response traffic. Return 
 flowchart LR
     A[Upload PDF / Text] --> B[Store immutable original]
     B --> C[Create document version and processing run]
-    C --> D[Execute processing run]
+    C --> D[Bounded development runner<br/>not OS-isolated]
     D --> E[Parse structure and pages]
     E --> F[Create versioned chunks]
     F --> G[Write lexical content to PostgreSQL]
@@ -135,7 +135,13 @@ flowchart LR
 
 M0.0 source: [docs/05-delivery-plan.md — §4 M0.0](./05-delivery-plan.md#4-m00--lean-proof-of-value)
 
-This follows the production ingestion prefix while narrowing the accepted M0.0 input to PDF. In M0.0, `Execute processing run` is performed by the separate bounded development runner. In M0, Redis and Celery deliver the same `ProcessingRun` identifier to a Celery worker, which invokes the same processing application service. M1 appends embeddings, Pinecone indexing, and `Mark searchable`; optional enrichment remains later in the same flow.
+This follows the production ingestion prefix while narrowing accepted M0.0 processing to the frozen
+synthetic PDF. `Execute processing run` is performed by the separate bounded development runner, but
+process and resource limits do not provide operating-system secret, filesystem, or network
+isolation. [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md) makes that isolation a mandatory
+M0 gate. In M0, Redis and Celery deliver the same `ProcessingRun` identifier to a Celery worker,
+which invokes the same processing application service. M1 appends embeddings, Pinecone indexing,
+and `Mark searchable`; optional enrichment remains later in the same flow.
 
 ## 5. Direct RAG
 
@@ -365,4 +371,5 @@ M0.0 is easy to extend only if M0 changes adapters and operational guarantees ra
 2. replace processing delivery with Redis and Celery while keeping the processing application service and `ProcessingRun` contract;
 3. keep document versions, structure blocks, chunks, evidence spans, statements, and validation results semantically compatible;
 4. rerun the same M0.0 acceptance fixtures through MinIO, Celery, Redis, and the production-shaped service boundaries;
-5. reject any M0.0 shortcut that would bypass authorization, immutable originals, canonical eligibility, or evidence validation.
+5. implement and test the parser-isolation gate from ADR-0004 before expanding document input;
+6. reject any M0.0 shortcut that would bypass authorization, immutable originals, canonical eligibility, or evidence validation.

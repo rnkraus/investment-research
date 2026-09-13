@@ -80,11 +80,15 @@ The target-to-M0.0 module and workflow mappings are maintained in [07-m0-0-archi
 
 ### Constraints
 
-- Use only synthetic, openly licensed, or otherwise redistributable fixtures.
+- Use the repository-owned frozen synthetic PDF as the only accepted M0.0 processing and research
+  fixture. Technically parsing another file does not place it inside the approved proof boundary.
 - Bind services to local development access only; no public deployment or private archive data is allowed.
 - Do not add Pinecone, Redis, Celery, MinIO, LangSmith, reranking, conversation memory, lifecycle workflows, or future-feature modules.
 - Treat M0.0 as a subset of the target system: reuse the production module, entity, state, and workflow names whenever their meaning is the same.
 - Keep final application-owned contracts, module directions, and migrations; mark only the local storage adapter, local processing runner, and deterministic fixture generator as M0.0 implementations.
+- Treat the bounded development runner as process and resource separation, not as secret,
+  filesystem, or network isolation; [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md)
+  governs this exception and its mandatory M0 removal.
 - Return accepted upload metadata and processing status from the API; never perform PDF parsing on the API event loop or share SQLAlchemy sessions across requests and runner executions.
 - Emit progress before validation if useful, but emit no answer statement or citation until the complete typed result passes server-side validation.
 - Use the smallest physical schema that preserves the selected domain semantics; do not create empty modules or tables solely because the conceptual V1 model contains them.
@@ -107,6 +111,8 @@ The target-to-M0.0 module and workflow mappings are maintained in [07-m0-0-archi
 - Retain proven M0.0 contracts where they preserve the target architecture and replace all development-only storage and execution shortcuts.
 - Extend the M0.0 repository structure for the production worker process, operational adapters, and broader tests without moving the established application modules.
 - Add Dockerfiles and Docker Compose for Next.js, FastAPI, Celery, PostgreSQL, Redis, and MinIO.
+- Establish and test a least-privilege parser boundary that receives no application or provider
+  credentials, sees only bounded parse input and output, and cannot use unnecessary network access.
 - Add configuration validation, ignored local secrets, health checks, and structured logging.
 - Continue the M0.0 Alembic history and add a repeatable local reset/seed workflow that cannot target broad filesystem paths.
 - Extend the M0.0 formatting, linting, type checking, and test commands with pre-commit checks and full container CI.
@@ -116,6 +122,8 @@ The target-to-M0.0 module and workflow mappings are maintained in [07-m0-0-archi
 
 - A new developer can start the complete local stack from documented steps.
 - Web, API, worker, database, queue, and object storage health checks pass.
+- Parser-isolation tests prove secret non-disclosure, restricted filesystem access, blocked
+  unnecessary network access, enforced resource limits, and a safe canonical failure state.
 - CI builds the containers and runs the initial automated checks.
 - Secrets and generated data are not committed.
 - The M0.0 acceptance cases still pass through the production-shaped local service boundaries.
