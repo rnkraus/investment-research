@@ -29,6 +29,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/api/v1/documents",
         "/api/v1/documents/{document_id}/versions/{version_id}/original",
         "/api/v1/processing-runs/{processing_run_id}",
+        "/api/v1/research-requests",
     }
 
 
@@ -108,6 +109,23 @@ def test_processing_status_exposes_safe_scoped_result_without_workspace_input() 
         "$ref": "#/components/schemas/ProcessingRunResult"
     }
     for status_code in ("404", "422", "500"):
+        assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+
+
+def test_research_route_exposes_scoped_input_and_typed_event_stream() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/research-requests"]["post"]
+
+    assert operation["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ResearchRequestInput"
+    }
+    assert "workspace_id" not in json.dumps(operation)
+    assert operation["responses"]["200"]["content"]["text/event-stream"]["schema"] == {
+        "$ref": "#/components/schemas/ResearchStreamEvent"
+    }
+    for status_code in ("422", "500"):
         assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
             "$ref": "#/components/schemas/ErrorResponse"
         }

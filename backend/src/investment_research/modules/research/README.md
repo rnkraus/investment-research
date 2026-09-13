@@ -146,5 +146,6 @@ complete aggregate.
 Step 6 creates and atomically persists the request, lexical retrieval run, and selected candidates.
 Step 7 now provides the typed generator boundary, canonical evidence validation, and atomic terminal
 answer persistence. `AnswerResearchRequestService` composes those operations as one complete use
-case. HTTP output remains separate: the API must consume only `ValidatedAnswerResult` and must never
-receive an `UnvalidatedGeneratedAnswer`.
+case. The HTTP route consumes only `ValidatedAnswerResult` and maps it to versioned terminal stream
+events; it never receives an `UnvalidatedGeneratedAnswer`. Resolving a citation identifier to an
+authorized source location remains a separate Evidence application and HTTP boundary.

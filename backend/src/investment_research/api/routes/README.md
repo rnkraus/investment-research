@@ -10,9 +10,10 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 | `documents.py` | `POST /api/v1/documents`                                                    | Captures one validated PDF and returns canonical identifiers with HTTP 202. |
 | `documents.py` | `GET /api/v1/documents/{document_id}/versions/{version_id}/original`        | Streams one authorized and integrity-checked current PDF original.          |
 | `processing.py` | `GET /api/v1/processing-runs/{processing_run_id}`                          | Returns one workspace-scoped run state with safe failure details.            |
+| `research.py`  | `POST /api/v1/research-requests`                                             | Streams only validated statements, citation references, or a safe terminal outcome. |
 
-Research and evidence resolution remain planned product routes. They must not be advertised as
-working endpoints before their implementation blocks are complete.
+Evidence resolution remains a planned product route. It must not be advertised as a working
+endpoint before its implementation block is complete.
 
 ```mermaid
 flowchart LR
@@ -57,3 +58,19 @@ The status route accepts only the processing-run UUID. Its response contains the
 source document-version identifier, current state, and an optional application-sanitized failure
 summary. Unknown and cross-workspace identifiers share the same `404 NOT_FOUND` response, and
 successful responses disable private caching.
+
+```mermaid
+flowchart LR
+    REQUEST[ResearchRequestInput] --> CONTEXT[Resolve trusted context]
+    CONTEXT --> SERVICE[AnswerResearchRequestService]
+    SERVICE --> VALIDATED[ValidatedAnswerResult]
+    VALIDATED --> MAP[Map safe terminal events]
+    MAP --> SSE[text/event-stream]
+```
+
+The research route accepts a question and optional document and temporal filters but no workspace
+identifier. It calls one complete application use case and maps only its validated terminal result.
+Streamed answers emit each statement followed by its ordered citation references and one completion
+event. Insufficient and rejected results emit no statements or citations. Database failures are
+translated before streaming begins, and successful responses disable private caching and content
+sniffing.

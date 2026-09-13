@@ -330,6 +330,7 @@
           "PAYLOAD_TOO_LARGE",
           "UNSUPPORTED_MEDIA_TYPE",
           "PROCESSING_FAILED",
+          "EVIDENCE_VALIDATION_FAILED",
           "INTERNAL_ERROR"
         ],
         "title": "ErrorCode",
@@ -618,7 +619,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Cutoff At"
           },
           "document_ids": {
@@ -929,6 +929,58 @@
         "summary": "Get Processing Run",
         "tags": [
           "processing"
+        ]
+      }
+    },
+    "/api/v1/research-requests": {
+      "post": {
+        "description": "Execute one bounded request and stream only its validated terminal output.",
+        "operationId": "answer_research_request_api_v1_research_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchRequestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchStreamEvent"
+                }
+              }
+            },
+            "description": "Validated research answer events"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Answer Research Request",
+        "tags": [
+          "research"
         ]
       }
     },

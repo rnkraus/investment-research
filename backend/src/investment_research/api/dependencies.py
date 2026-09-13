@@ -11,6 +11,7 @@ from investment_research.modules.documents.application import (
 )
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import GetProcessingRunService
+from investment_research.modules.research.application import AnswerResearchRequestService
 
 
 def get_container(request: Request) -> ApplicationContainer:
@@ -64,6 +65,20 @@ def get_processing_run_service(
 GetProcessingRunServiceDependency = Annotated[
     GetProcessingRunService,
     Depends(get_processing_run_service),
+]
+
+
+def get_answer_research_request_service(
+    container: ContainerDependency,
+) -> AnswerResearchRequestService:
+    """Return the complete validated research-request use case."""
+
+    return container.answer_research_request_service
+
+
+AnswerResearchRequestServiceDependency = Annotated[
+    AnswerResearchRequestService,
+    Depends(get_answer_research_request_service),
 ]
 
 

@@ -153,6 +153,12 @@ The research endpoint may emit:
 
 Every event includes a schema version and `research_request_id`. No raw model token or unvalidated statement is part of the stream.
 
+The implemented synchronous M0.0 endpoint completes retrieval, generation, validation, and
+persistence before constructing its SSE response. It therefore emits only validated statement and
+citation events followed by one terminal event; it does not fabricate progress events after the work
+has completed. `research.progress` remains in the versioned contract for a later observable
+execution boundary that can report genuine stage changes.
+
 ### 4.3 Application ports retained after M0.0
 
 | Port | M0.0 adapter | Later adapter or extension |

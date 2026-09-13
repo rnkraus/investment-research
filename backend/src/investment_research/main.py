@@ -17,6 +17,7 @@ from investment_research.api.openapi import install_openapi
 from investment_research.api.routes.documents import router as documents_router
 from investment_research.api.routes.health import router as health_router
 from investment_research.api.routes.processing import router as processing_router
+from investment_research.api.routes.research import router as research_router
 from investment_research.bootstrap import build_container
 from investment_research.settings import Settings, get_settings
 
@@ -53,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.include_router(documents_router)
     application.include_router(processing_router)
+    application.include_router(research_router)
     application.include_router(health_router)
     install_openapi(application)
     return application
