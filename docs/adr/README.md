@@ -22,6 +22,8 @@ Write the ADR immediately before the decision becomes an implementation constrai
 
 | ADR | Decision | Status |
 |---|---|---|
+| [ADR-0001](./0001-modular-monolith-and-workers.md) | Modular monolith with separate API, worker, and parser runtime boundaries | Accepted |
+| [ADR-0002](./0002-canonical-and-derived-stores.md) | Explicit canonical, rebuildable, transient, and observational store ownership | Accepted |
 | [ADR-0003](./0003-workspace-isolation-strategy.md) | Trusted application context, scoped repositories and storage, and workspace-aware relational constraints | Accepted |
 | [ADR-0004](./0004-m0-0-parser-isolation-boundary.md) | Narrow synthetic-fixture exception with a mandatory parser-isolation gate in M0 | Accepted |
 
@@ -29,8 +31,6 @@ Write the ADR immediately before the decision becomes an implementation constrai
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
-| ADR-0001 | Modular monolith with asynchronous workers | M0.0 evidence is reviewed and repository and application boundaries are finalized | M0.0–M0 |
-| ADR-0002 | Canonical versus derived data ownership | M0.0 storage findings are reviewed and persistent-store recovery behavior becomes an implementation constraint | M0–M1 |
 | ADR-0005 | Application-owned RAG core and provider ports | First AI, vector, and object-store adapters are implemented | M1 |
 | ADR-0006 | Stable evidence anchors and versioned processing outputs | Parser, structure-block, chunk, and citation contracts are finalized | M1–M2 |
 | ADR-0007 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
