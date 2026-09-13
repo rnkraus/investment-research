@@ -18,7 +18,7 @@ from investment_research.modules.evidence.domain import (
     StatementEvidence,
     ValidationRule,
 )
-from investment_research.modules.evidence.ports import StatementSupportEvaluator
+from investment_research.modules.evidence.ports import EvidenceRepository, StatementSupportEvaluator
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -261,8 +261,11 @@ class GenerateValidatedAnswerService:
                     result.answer,
                     result.statements,
                 )
-                for span in result.evidence_spans:
-                    unit_of_work.evidence.add_span(context, span)
+                result = self._reuse_canonical_evidence_spans(
+                    context,
+                    unit_of_work.evidence,
+                    result,
+                )
                 unit_of_work.flush()
                 for statement in result.statements:
                     relationships = tuple(
@@ -282,6 +285,33 @@ class GenerateValidatedAnswerService:
             )
 
         return result
+
+    @staticmethod
+    def _reuse_canonical_evidence_spans(
+        context: WorkspaceContext,
+        repository: EvidenceRepository,
+        result: ValidatedAnswerResult,
+    ) -> ValidatedAnswerResult:
+        """Replace proposed span IDs with their canonical persisted identities."""
+
+        canonical_by_proposed_id = {
+            span.id: repository.get_or_add_span(context, span) for span in result.evidence_spans
+        }
+        relationships = tuple(
+            relationship.model_copy(
+                update={
+                    "evidence_span_id": canonical_by_proposed_id[relationship.evidence_span_id].id
+                }
+            )
+            for relationship in result.statement_evidence
+        )
+        return ValidatedAnswerResult(
+            answer=result.answer,
+            statements=result.statements,
+            evidence_spans=tuple(canonical_by_proposed_id.values()),
+            statement_evidence=relationships,
+            validations=result.validations,
+        )
 
     @staticmethod
     def _build_generation_input(

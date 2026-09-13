@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, func, select
 
 from investment_research.api.dependencies import get_workspace_context
 from investment_research.infrastructure.generation.deterministic import (
@@ -14,6 +14,10 @@ from investment_research.infrastructure.generation.deterministic import (
     M0_0_INSUFFICIENT_MESSAGE,
 )
 from investment_research.main import create_app
+from investment_research.modules.evidence.persistence import (
+    EvidenceSpanRow,
+    StatementEvidenceRow,
+)
 from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
 from investment_research.settings import Settings
 from tests.integration.factories import (
@@ -92,6 +96,52 @@ def test_research_api_emits_the_validated_manifest_answer(
         event["payload"]["research_request_id"] == events[0]["payload"]["research_request_id"]
         for event in events
     )
+
+
+def test_research_api_reuses_canonical_evidence_for_repeated_answers(
+    integration_database_settings: Settings,
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    source = make_manifest_source(label="Research API Repeated Answer")
+    persist_research_source(integration_database_engine, source)
+    application = create_app(
+        integration_database_settings.model_copy(
+            update={"object_storage_root": tmp_path / "objects"}
+        )
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+    request_body = {
+        "question": M0_0_FIXTURE_ANSWER_CASE.question,
+        "context": {"document_ids": [str(source.document.id)]},
+    }
+
+    with TestClient(application) as client:
+        first_response = client.post("/api/v1/research-requests", json=request_body)
+        second_response = client.post("/api/v1/research-requests", json=request_body)
+
+    first_events = parse_server_sent_events(first_response.text)
+    second_events = parse_server_sent_events(second_response.text)
+    first_citation = first_events[1]["payload"]
+    second_citation = second_events[1]["payload"]
+    assert first_response.status_code == second_response.status_code == 200
+    assert first_citation["evidence_span_id"] == second_citation["evidence_span_id"]
+    assert first_citation["research_request_id"] != second_citation["research_request_id"]
+
+    with integration_database_engine.connect() as connection:
+        span_count = connection.scalar(
+            select(func.count())
+            .select_from(EvidenceSpanRow)
+            .where(EvidenceSpanRow.workspace_id == source.context.workspace_id)
+        )
+        relationship_count = connection.scalar(
+            select(func.count())
+            .select_from(StatementEvidenceRow)
+            .where(StatementEvidenceRow.workspace_id == source.context.workspace_id)
+        )
+
+    assert span_count == 1
+    assert relationship_count == 2
 
 
 def test_research_api_emits_no_content_for_the_unanswerable_manifest_question(
