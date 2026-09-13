@@ -94,6 +94,9 @@ jobs:
       - name: Verify deterministic backend checks
         run: uv run --locked python -m scripts.verify_backend
 
+      - name: Check FastAPI OpenAPI contract
+        run: uv run --locked python -m scripts.export_openapi --check
+
       - name: Migrate empty database to Alembic head
         run: uv run --locked alembic -c alembic.ini upgrade head
 
