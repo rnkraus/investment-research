@@ -1,6 +1,6 @@
 # Architecture Decision Record Plan
 
-**Status:** Active — accepted decisions and a provisional backlog
+**Status:** Active — accepted and proposed decisions with a provisional backlog
 
 **Purpose:** Record important architectural decisions when they become implementation constraints
 
@@ -28,11 +28,16 @@ Write the ADR immediately before the decision becomes an implementation constrai
 | [ADR-0004](./0004-m0-0-parser-isolation-boundary.md) | Narrow synthetic-fixture exception with a mandatory parser-isolation gate in M0 | Accepted |
 | [ADR-0005](./0005-at-least-once-processing-delivery.md) | Versioned jobs, canonical execution leases, and bounded at-least-once Celery delivery | Accepted |
 
-## 3. Planned ADR backlog
+## 3. Proposed ADRs
+
+| ADR | Decision | Remaining acceptance evidence |
+|---|---|---|
+| [ADR-0006](./0006-credential-free-parser-runtime.md) | Dedicated parser container on a credential-free isolated network | Final parser image and protocol on Docker Desktop and Linux CI |
+
+## 4. Planned ADR backlog
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
-| ADR-0006 | Credential-free parser runtime boundary | The M0 parser topology passes its Linux and Docker Desktop feasibility checks | M0 |
 | ADR-0007 | Application-owned RAG core and provider ports | First AI, vector, and object-store adapters are implemented | M1 |
 | ADR-0008 | Stable evidence anchors and versioned processing outputs | Parser, structure-block, chunk, and citation contracts are finalized | M1–M2 |
 | ADR-0009 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
@@ -45,7 +50,7 @@ Write the ADR immediately before the decision becomes an implementation constrai
 
 IDs are provisional until the corresponding ADR file is created. A backlog entry may be removed, combined, split, or reordered if implementation evidence changes the decision boundary.
 
-## 4. ADR lifecycle
+## 5. ADR lifecycle
 
 Use these statuses:
 
@@ -56,7 +61,7 @@ Use these statuses:
 
 Accepted ADRs are not rewritten to make history appear cleaner. Minor corrections may be appended, but a changed decision receives a new ADR that supersedes the old one.
 
-## 5. Minimal ADR structure
+## 6. Minimal ADR structure
 
 Each future ADR should contain only:
 
@@ -70,7 +75,7 @@ Each future ADR should contain only:
 
 Target one to two pages. Link to deeper benchmarks, diagrams, or experiments rather than copying them into the ADR.
 
-## 6. Review points
+## 7. Review points
 
 Review the backlog:
 
