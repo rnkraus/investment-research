@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/client";
 
 import { archiveCopy, fixtureDefaults } from "./copy";
+import { ResearchWorkflow } from "./research-workflow";
 
 const PROCESSING_POLL_INTERVAL_MS = 2_000;
 
@@ -387,6 +388,15 @@ export function DocumentWorkflow() {
           </div>
         )}
       </section>
+
+      {accepted !== undefined && processing?.state === "LEXICAL_READY" ? (
+        <div className="lg:col-span-2">
+          <ResearchWorkflow
+            documentId={accepted.document_id}
+            key={accepted.document_id}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

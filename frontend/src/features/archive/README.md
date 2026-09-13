@@ -11,6 +11,7 @@ PostgreSQL, or process PDF content.
 | `copy.ts`               | Centralizes feature text and synthetic fixture defaults for later localization. |
 | `document-workflow.tsx` | Captures one PDF, presents the runner command, and polls canonical status.      |
 | `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.           |
+| `research-workflow.tsx` | Asks a bounded question and opens resolved evidence in the original PDF.        |
 
 ## Capture and processing flow
 
@@ -56,3 +57,25 @@ flowchart LR
 research request, rejects duplicate or out-of-order relationships, and refuses to complete an answer
 whose statement has no citation. Resolving a citation remains a separate authorized API call; only
 then does `attachCitationSource` add the exact source location to the completed UI state.
+
+## Research UI flow
+
+```mermaid
+flowchart LR
+    READY[LEXICAL_READY document] --> FORM[ResearchWorkflow]
+    FORM --> STREAM[Typed research event stream]
+    STREAM --> SESSION[Research session reducer]
+    SESSION -->|validated completion| IDS[Evidence span IDs]
+    IDS --> RESOLVE[Authorized evidence endpoint]
+    RESOLVE --> SAFE[Verified local viewer path]
+    SAFE --> RESULT[Exact quote and original-page link]
+    SESSION -->|insufficient evidence| EMPTY[Explicit empty result]
+    SESSION -->|invalid sequence| REJECT[Discard partial result]
+```
+
+`document-workflow.tsx` mounts the research UI only for a `LEXICAL_READY` processing run. The UI
+submits the current document ID as an explicit research filter and never treats streamed partial text
+as a usable answer. After a validated terminal event, each unique evidence span is resolved through
+the workspace-scoped API. The resulting viewer URL must still pass the frontend's local API-path
+check before it becomes an external-page link. This avoids trusting an arbitrary URL returned over
+the network and keeps exact source text separate from the streamed answer contract.

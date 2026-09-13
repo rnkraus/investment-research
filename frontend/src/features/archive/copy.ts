@@ -38,6 +38,34 @@ export const archiveCopy = {
     ready: "Searchable evidence is ready.",
     failed: "Processing stopped safely.",
   },
+  research: {
+    eyebrow: "Step 3",
+    heading: "Ask the archive",
+    description:
+      "The answer is limited to validated evidence from this processed document.",
+    questionLabel: "Research question",
+    answerableExample: "Use answerable example",
+    unanswerableExample: "Use insufficient-evidence example",
+    submitIdle: "Research document",
+    submitBusy: "Researching…",
+    progress: {
+      RETRIEVING: "Finding eligible passages in the document…",
+      GENERATING: "Drafting statements from the retrieved evidence…",
+      VALIDATING: "Checking that every statement has valid evidence…",
+    },
+    resultLabel: "Validated answer",
+    coverageLabel: "Evidence coverage",
+    insufficientLabel: "Insufficient evidence",
+    failedLabel: "Research stopped safely",
+  },
+  citation: {
+    eyebrow: "Step 4",
+    supports: "Supporting evidence",
+    conflicts: "Conflicting evidence",
+    resolving: "Resolving exact source…",
+    pageLabel: "Page",
+    openOriginal: "Open original page",
+  },
   errors: {
     missingFile: "Choose a PDF before importing.",
     unexpected: "The local application could not complete this request.",
@@ -47,4 +75,8 @@ export const archiveCopy = {
 export const fixtureDefaults = {
   title: "Northstar Grid Analytics Ltd. - FY2025 Earnings Brief",
   language: "en",
+  answerableQuestion:
+    "What was Northstar Grid Analytics' FY2025 revenue, and how did it change from FY2024?",
+  unanswerableQuestion:
+    "What dividend did Northstar Grid Analytics declare for FY2025?",
 } as const;
