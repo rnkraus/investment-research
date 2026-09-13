@@ -2,7 +2,7 @@
 
 **Status:** Draft v0.2 — aligned with the implementation-ready M0.0 plan
 **Scope:** Compare the production-target flows with the deliberately smaller M0.0 walking skeleton
-**Related:** [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [05-delivery-plan.md](./05-delivery-plan.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
+**Related:** [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [05-delivery-plan.md](./05-delivery-plan.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md)
 
 ## 1. Reading rule
 
@@ -109,8 +109,9 @@ Arrows show code dependency direction, not request-and-response traffic. Return 
 flowchart LR
     A[Upload PDF / Text] --> B[Store immutable original]
     B --> C[Create document version and processing run]
-    C --> D[Bounded development runner<br/>not OS-isolated]
-    D --> E[Parse structure and pages]
+    C --> D[Celery worker]
+    D --> P[Restricted parser boundary]
+    P --> E[Parse structure and pages]
     E --> F[Create versioned chunks]
     F --> G[Write lexical content to PostgreSQL]
     G --> H[Create embeddings]
@@ -142,6 +143,9 @@ isolation. [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md) makes that i
 M0 gate. In M0, Redis and Celery deliver the same `ProcessingRun` identifier to a Celery worker,
 which invokes the same processing application service. M1 appends embeddings, Pinecone indexing,
 and `Mark searchable`; optional enrichment remains later in the same flow.
+
+The exact M0 replacement and parser-isolation sequence is defined in
+[09-m0-implementation-plan.md](./09-m0-implementation-plan.md).
 
 ## 5. Direct RAG
 

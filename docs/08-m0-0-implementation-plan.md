@@ -452,4 +452,5 @@ domain path. Retain:
 The M0 replacements listed in section 9 must run the same acceptance cases through MinIO,
 Redis/Celery, the tested parser-isolation boundary, and the production-shaped container boundaries.
 Until that succeeds, M0.0 remains a validated product proof rather than a production-ready
-foundation.
+foundation. Their implementation order, repository delta, and verification gates are defined in
+[09-m0-implementation-plan.md](./09-m0-implementation-plan.md).

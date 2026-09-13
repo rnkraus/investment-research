@@ -3,7 +3,7 @@
 **Status:** Active v0.3 — M0.0 implementation in progress
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
-**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
+**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md)
 
 ## 1. Delivery strategy
 
@@ -105,6 +105,10 @@ The target-to-M0.0 module and workflow mappings are maintained in [07-m0-0-archi
 - No M0.0-only storage or execution shortcut is treated as satisfying an M0 or M1 reliability gate.
 
 ## 5. M0 — Engineering foundation
+
+The exact M0 runtime topology, retained contracts, adapter-replacement order, work blocks, and
+verification matrix are maintained in
+[09-m0-implementation-plan.md](./09-m0-implementation-plan.md).
 
 ### Build
 
