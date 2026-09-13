@@ -12,7 +12,7 @@
     "format:write": "prettier --write .",
     "lint": "eslint .",
     "start": "next start --hostname 127.0.0.1",
-    "test": "pnpm contracts:check && node --test tests/product.test.mjs",
+    "test": "pnpm contracts:check && node --test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
