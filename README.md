@@ -2,7 +2,11 @@
 
 Investment Research Archive is an evidence-grounded research application. It will import research documents, preserve their originals, make them searchable, and answer questions with exact, verifiable citations.
 
-The current M0.0 milestone is a local-only proof of the smallest end-to-end path. Use only public or synthetic fixtures. It is not a production deployment, trading system, or investment-advice application.
+The current M0.0 milestone is a local-only proof of the smallest end-to-end path. Use only the
+included synthetic fixture for accepted processing and research; the parser is not an
+operating-system sandbox, as recorded in
+[ADR-0004](docs/adr/0004-m0-0-parser-isolation-boundary.md). It is not a production deployment,
+trading system, or investment-advice application.
 
 ## Prerequisites
 

@@ -42,16 +42,23 @@ The demo workspace contains only synthetic, openly licensed, or otherwise redist
 
 The pre-foundation M0.0 proof is not a release environment. It must:
 
-- use only synthetic, openly licensed, or otherwise redistributable fixtures;
+- use only the repository-owned, frozen synthetic fixture for accepted processing and research
+  evidence;
 - remain reachable only from the local development environment;
 - contain no private, sensitive, or personal archive data;
 - use an external AI provider only when the fixture is public and that provider use is explicitly approved;
 - derive the fixed local identity and workspace context on the server rather than accepting client-supplied authorization scope;
 - allowlist the supported PDF type, verify its content signature, enforce byte, page, memory, and processing-time limits, and use server-generated storage keys outside the web application root;
 - keep original artifacts immutable, checksum-recorded, non-executable, and accessible only through an authorized API route;
-- run parsing in the separate bounded development runner with a new database session and without application secrets or unnecessary network access;
+- run parsing outside the API process in the separate bounded development runner with a new
+  database session, while making no operating-system secret, filesystem, or network-isolation claim;
 - validate typed generation output and every statement-to-evidence relationship before emitting answer content;
 - exclude public hosting and make no availability, durability, retry, backup, or deletion guarantee.
+
+The parser exception is governed by
+[ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md). The current runner may technically parse
+another PDF, but doing so is outside the accepted M0.0 security boundary. M0 must implement and test
+the stronger parser boundary in section 5 before M1 accepts broader document input.
 
 All M0.0-only data may be discarded before M0. No fixture or result is migrated into a private or demo workspace unless it independently satisfies the later provenance, licensing, and isolation requirements.
 
@@ -109,6 +116,9 @@ Uploads must be processed as hostile data:
 - add malware scanning before public uploads are enabled.
 
 V1 accepts PDFs and pasted text only. URLs, archives, office files, scripts, and active document content remain disabled until separately designed and tested.
+
+These ingestion controls are an M0 implementation gate, not a description of the narrower M0.0
+runner. ADR-0004 records the temporary synthetic-fixture exception and its removal criteria.
 
 ## 6. AI and RAG safety
 

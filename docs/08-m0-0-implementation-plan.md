@@ -1,6 +1,6 @@
 # Investment Research Archive — M0.0 Implementation Plan
 
-**Status:** M0.0 implemented and locally accepted on 2026-09-13
+**Status:** M0.0 implemented and locally accepted on 2026-09-13 within the ADR-0004 fixture boundary
 **Scope:** Exact repository shape, contracts, build sequence, and verification for M0.0
 **Related:** [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [05-delivery-plan.md](./05-delivery-plan.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md)
 
@@ -12,7 +12,9 @@ M0.0 proves one complete English-only archive journey:
 Upload fixture PDF → preserve original → process → lexical search → generate typed answer → validate evidence → open exact source
 ```
 
-The same path must return explicit insufficient coverage for a known unanswerable question. M0.0 is local-only, uses public or synthetic fixtures, and does not claim production reliability.
+The same path must return explicit insufficient coverage for a known unanswerable question. M0.0 is
+local-only, uses the repository-owned frozen synthetic fixture, and does not claim production
+reliability.
 
 M0.0 establishes reusable application contracts and the evidence path. It does not implement OIDC, Redis, Celery, MinIO, Pinecone, dense retrieval, retries, deletion, conversations, full observability, or public deployment.
 
@@ -30,6 +32,9 @@ M0.0 establishes reusable application contracts and the evidence path. It does n
 10. **Validation before answer output:** generation completes into a typed result, then server-side validation runs. Only accepted statements and citations are emitted; pre-validation streaming is limited to progress events.
 11. **Server-owned workspace context:** the server resolves a fixed local development identity and workspace. The client cannot select or prove authorization with `workspace_id`.
 12. **Immutable local originals:** the M0.0 storage adapter writes under a configured, Git-ignored storage root outside the web root, uses server-generated keys and atomic writes, verifies checksums, never overwrites an existing object, and refuses symbolic links at every object-key path component.
+13. **Narrow parser exception:** the development runner provides process separation and resource
+    bounds, not operating-system secret, filesystem, or network isolation. ADR-0004 restricts
+    accepted M0.0 processing to the frozen synthetic fixture and makes tested isolation an M0 gate.
 
 These decisions are implementation rules for M0.0. Only decisions that remain cross-cutting and expensive to reverse are promoted to ADRs after the proof provides evidence.
 
@@ -111,7 +116,7 @@ Create files only when their implementation step begins; do not scaffold empty p
 ├── fixtures/
 │   └── m0_0/
 │       ├── manifest.yaml                 # license, checksum, questions, expected spans
-│       └── documents/                    # public or synthetic fixture only
+│       └── documents/                    # frozen synthetic fixture only
 └── docs/
 ```
 
@@ -275,7 +280,9 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
 - Implement the separate single-job runner and its independent unit of work.
 - Ensure failure leaves the immutable original and canonical run state inspectable.
 
-**Gate:** the fixture moves `CAPTURED → PARSING → LEXICAL_READY`; a parser failure becomes `FAILED`; the API remains outside the parsing execution path.
+**Gate:** the fixture moves `CAPTURED → PARSING → LEXICAL_READY`; a parser failure becomes `FAILED`;
+the API remains outside the parsing execution path; and the runner is not mislabeled as an
+operating-system sandbox.
 
 ### Step 6 — Lexical retrieval
 
@@ -344,6 +351,7 @@ Normal verification must not require a paid or live AI provider.
 | PostgreSQL-only Compose service | Expand Compose with web, API, worker, Redis, and MinIO | M0 | Database schema history and application modules |
 | Immutable local `ObjectStorage` adapter | Replace with a MinIO adapter through the existing port | M0 | Object keys, checksums, immutable capture semantics, `ObjectStorage` port |
 | Single-job development runner | Deliver run IDs through Redis and Celery | M0 | `ProcessingRun`, processing service, state contract, independent unit of work |
+| Parser in the runner's application process | Add and test a least-privilege parser boundary without application credentials or unnecessary network access | M0 | `DocumentParser` port, parser limits, versioned output, and failure states |
 | Minimal process-level checks and CI | Add pre-commit checks, container builds, and full container CI | M0 | Existing commands, PostgreSQL checks, and regression fixtures |
 | Fixed local development identity | Retain for M0 infrastructure work; add the production-shaped authentication boundary | M1 | Server-resolved workspace context and scoped repositories |
 | Deterministic fixture generator | Retain as the default test adapter; add an approved provider adapter | M1 | `AnswerGenerator` port and typed result |
@@ -371,6 +379,9 @@ These prerequisites were satisfied before M0.0 implementation began:
   supplies authorization through a `workspace_id`.
 - Processing uses a bounded single-job process without queue durability, retries, concurrency, or
   availability guarantees.
+- The parser shares the runner's operating-system permissions and is not isolated from its database
+  configuration, filesystem view, or available network interfaces. ADR-0004 accepts this only for
+  the frozen synthetic fixture and blocks broader document input until the M0 isolation gate passes.
 - Answer generation is deterministic. No paid or live AI provider was required or measured.
 - The measurements below demonstrate deterministic correctness on the fixture. They are not load,
   capacity, cost, or production-latency benchmarks.
@@ -414,6 +425,7 @@ hour estimate.
 | Observed failure | Cause and resolution | Required follow-through |
 |---|---|---|
 | A repeated answerable request collided with the canonical evidence-span constraint | Each answer initially generated a new span ID for the same source location. The Evidence repository now atomically inserts or reuses the canonical span, verifies its content, and returns the persisted ID for the new statement relationship. | Preserve canonical span reuse when later generation and persistence adapters are introduced. |
+| The bounded parser shared the runner's application permissions | A separate runner and resource limits protected the API and bounded execution but did not remove database configuration, filesystem access, or network capability from parser code. ADR-0004 narrows accepted M0.0 use to the frozen fixture instead of claiming full isolation. | M0 must implement automated secret, filesystem, network, and resource-isolation tests before M1 expands document input. |
 | Upload returned HTTP 500 against an older local database | The application code expected migration `0002`, while the database remained at `0001` with the removed `original_artifacts.page_count` requirement. Upgrading to Alembic `head` restored schema/code agreement. | M0 startup and container workflows must apply migrations before serving traffic and expose migration state clearly. |
 | PostgreSQL rejected a changed local password | The existing Docker volume retained credentials from its first initialization; changing environment input does not rotate an existing PostgreSQL role password. | Document safe development reset and explicit credential-rotation paths; never imply that restarting a persisted volume reinitializes credentials. |
 | A fixture command failed from the wrong working directory | Its relative path resolved outside `fixtures/`. The documented commands now state their required root or `backend/` context. | Container entrypoints and M0 task commands must use explicit working directories and validated paths. |
@@ -438,5 +450,6 @@ domain path. Retain:
   deterministic acceptance fixture and regression tests.
 
 The M0 replacements listed in section 9 must run the same acceptance cases through MinIO,
-Redis/Celery, and the production-shaped container boundaries. Until that succeeds, M0.0 remains a
-validated product proof rather than a production-ready foundation.
+Redis/Celery, the tested parser-isolation boundary, and the production-shaped container boundaries.
+Until that succeeds, M0.0 remains a validated product proof rather than a production-ready
+foundation.
