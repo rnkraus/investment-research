@@ -7,8 +7,9 @@
 [04-security-and-operations.md](./04-security-and-operations.md),
 [05-delivery-plan.md](./05-delivery-plan.md),
 [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), and
-[ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md) and
-[ADR-0005](./adr/0005-at-least-once-processing-delivery.md)
+[ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md),
+[ADR-0005](./adr/0005-at-least-once-processing-delivery.md), and
+[proposed ADR-0006](./adr/0006-credential-free-parser-runtime.md)
 
 ## 1. Purpose and scope
 
@@ -129,6 +130,13 @@ flowchart LR
   temporary filesystem, dropped Linux capabilities, `no-new-privileges`, and CPU, memory, process,
   request-size, response-size, and wall-clock limits.
 - No Docker socket or broad host directory is mounted into an application container.
+
+A Docker Desktop feasibility probe has confirmed the intended isolated-network channel, non-root
+identity, dropped capabilities, `no-new-privileges`, read-only root filesystem, bounded writable
+temporary storage, absent synthetic worker-secret markers, and blocked backend and external
+network paths. This probe used an Alpine helper image and therefore validates only the Docker
+mechanics. Proposed ADR-0006 remains unaccepted until the final parser image and protocol pass the
+equivalent Docker Desktop and Linux CI negative tests.
 
 ### 4.3 Processing sequence
 
@@ -281,8 +289,8 @@ Backend and architecture:
 - specify the minimal `ProcessingRun` execution lease, attempt ceiling, expiry, and reclaim rules
   needed for at-least-once delivery without introducing the M2 `Job` and `ProcessingStage` model;
 - accept ADR-0005 for the complete publish, claim, acknowledgement, retry, and recovery behavior;
-- validate the proposed parser-service topology on Linux CI and Docker Desktop before accepting its
-  runtime ADR;
+- record the locally validated Docker Desktop mechanics in proposed ADR-0006, then keep final parser
+  image and protocol checks on Docker Desktop and Linux CI as its acceptance gate;
 - record why the parser boundary is infrastructure isolation rather than a business microservice.
 
 CI:
