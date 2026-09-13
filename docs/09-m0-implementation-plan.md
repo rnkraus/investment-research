@@ -7,7 +7,8 @@
 [04-security-and-operations.md](./04-security-and-operations.md),
 [05-delivery-plan.md](./05-delivery-plan.md),
 [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), and
-[ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md)
+[ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md) and
+[ADR-0005](./adr/0005-at-least-once-processing-delivery.md)
 
 ## 1. Purpose and scope
 
@@ -240,7 +241,8 @@ only when its owning step requires working behavior and tests.
 4. **At-least-once safety:** task and processing services are idempotent before late acknowledgement
    is enabled. A short canonical execution lease on `ProcessingRun` prevents concurrent execution
    and permits recovery after worker loss. Permanent validation/parser failures are not retried;
-   transient infrastructure failures use bounded retry with backoff and jitter.
+   transient infrastructure failures use bounded retry with backoff and jitter. ADR-0005 governs
+   the payload, claim, completion, failure, acknowledgement, and recovery rules.
 5. **No cross-module persistence access:** queue and parser adapters call typed application services
    and ports. They do not query another module's tables directly.
 6. **MinIO behind the retained port:** application modules do not import an S3 SDK. Immutable create,
@@ -278,6 +280,7 @@ Backend and architecture:
   object as an application contract;
 - specify the minimal `ProcessingRun` execution lease, attempt ceiling, expiry, and reclaim rules
   needed for at-least-once delivery without introducing the M2 `Job` and `ProcessingStage` model;
+- accept ADR-0005 for the complete publish, claim, acknowledgement, retry, and recovery behavior;
 - validate the proposed parser-service topology on Linux CI and Docker Desktop before accepting its
   runtime ADR;
 - record why the parser boundary is infrastructure isolation rather than a business microservice.

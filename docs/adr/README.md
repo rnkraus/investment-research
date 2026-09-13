@@ -26,20 +26,22 @@ Write the ADR immediately before the decision becomes an implementation constrai
 | [ADR-0002](./0002-canonical-and-derived-stores.md) | Explicit canonical, rebuildable, transient, and observational store ownership | Accepted |
 | [ADR-0003](./0003-workspace-isolation-strategy.md) | Trusted application context, scoped repositories and storage, and workspace-aware relational constraints | Accepted |
 | [ADR-0004](./0004-m0-0-parser-isolation-boundary.md) | Narrow synthetic-fixture exception with a mandatory parser-isolation gate in M0 | Accepted |
+| [ADR-0005](./0005-at-least-once-processing-delivery.md) | Versioned jobs, canonical execution leases, and bounded at-least-once Celery delivery | Accepted |
 
 ## 3. Planned ADR backlog
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
-| ADR-0005 | Application-owned RAG core and provider ports | First AI, vector, and object-store adapters are implemented | M1 |
-| ADR-0006 | Stable evidence anchors and versioned processing outputs | Parser, structure-block, chunk, and citation contracts are finalized | M1–M2 |
-| ADR-0007 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
-| ADR-0008 | Hybrid retrieval with RRF and multilingual reranking | Direct-RAG retrieval baseline is finalized | M4 |
-| ADR-0009 | Typed answers with server-side evidence validation | Answer contract becomes production behavior | M4 |
-| ADR-0010 | LangSmith for AI observability with canonical audit in PostgreSQL | Tracing and evaluation integration is finalized | M4 |
-| ADR-0011 | Public hosting platform | Local release is stable and public deployment begins | M6 |
-| ADR-0012 | Representative-corpus retrieval changes | Evaluation justifies BM25, learned sparse, late interaction, or another major retrieval change | M7 |
-| ADR-0013 | Bounded LangGraph adoption | A measured multi-step use case passes the agent admission gate | M9 |
+| ADR-0006 | Credential-free parser runtime boundary | The M0 parser topology passes its Linux and Docker Desktop feasibility checks | M0 |
+| ADR-0007 | Application-owned RAG core and provider ports | First AI, vector, and object-store adapters are implemented | M1 |
+| ADR-0008 | Stable evidence anchors and versioned processing outputs | Parser, structure-block, chunk, and citation contracts are finalized | M1–M2 |
+| ADR-0009 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
+| ADR-0010 | Hybrid retrieval with RRF and multilingual reranking | Direct-RAG retrieval baseline is finalized | M4 |
+| ADR-0011 | Typed answers with server-side evidence validation | Answer contract becomes production behavior | M4 |
+| ADR-0012 | LangSmith for AI observability with canonical audit in PostgreSQL | Tracing and evaluation integration is finalized | M4 |
+| ADR-0013 | Public hosting platform | Local release is stable and public deployment begins | M6 |
+| ADR-0014 | Representative-corpus retrieval changes | Evaluation justifies BM25, learned sparse, late interaction, or another major retrieval change | M7 |
+| ADR-0015 | Bounded LangGraph adoption | A measured multi-step use case passes the agent admission gate | M9 |
 
 IDs are provisional until the corresponding ADR file is created. A backlog entry may be removed, combined, split, or reordered if implementation evidence changes the decision boundary.
 
