@@ -4,14 +4,14 @@ This directory owns HTTP-facing concerns. It translates between FastAPI requests
 
 ## Contents
 
-| Path              | Responsibility                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------ |
-| `contracts.py`    | Strict request, result, error, evidence, and versioned stream-event schemas.         |
-| `dependencies.py` | Exposes application services and the server-resolved workspace context to routes.   |
-| `errors.py`       | Serializes expected failures and validation errors without exposing private input.  |
-| `middleware.py`   | Rejects oversized or ambiguously framed request bodies before multipart parsing.    |
-| `openapi.py`      | Registers public Pydantic contracts in the generated OpenAPI document.               |
-| `routes/`         | Thin HTTP endpoint modules.                                                          |
+| Path              | Responsibility                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `contracts.py`    | Strict request, result, error, evidence, and versioned stream-event schemas.       |
+| `dependencies.py` | Exposes application services and the server-resolved workspace context to routes.  |
+| `errors.py`       | Serializes expected failures and validation errors without exposing private input. |
+| `middleware.py`   | Rejects oversized or ambiguously framed request bodies before multipart parsing.   |
+| `openapi.py`      | Registers public Pydantic contracts in the generated OpenAPI document.             |
+| `routes/`         | Thin HTTP endpoint modules.                                                        |
 
 ## Request boundary
 
@@ -51,6 +51,13 @@ validated aggregate, followed by one terminal event. Insufficient and rejected r
 statement or citation events. Genuine live progress events remain part of the versioned contract but
 require a later observable execution boundary; the route does not fabricate progress after work has
 already completed.
+
+The evidence-span route accepts only a citation UUID and resolves it through the trusted workspace
+context. The application rechecks that the span belongs to the current version of an active
+document and is linked to a validated statement in a streamed answer. Unknown, foreign, stale, and
+unlinked identifiers share one `404 NOT_FOUND` response. The result contains the canonical page,
+character range, exact text, and hash plus a protected original-document URL; storage keys and
+filesystem paths never cross the API boundary.
 
 The authoritative HTTP surface is defined in
 [`docs/08-m0-0-implementation-plan.md`](../../../../docs/08-m0-0-implementation-plan.md#41-http-surface).

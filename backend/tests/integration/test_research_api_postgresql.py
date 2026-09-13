@@ -166,3 +166,89 @@ def test_research_api_hides_foreign_documents_like_unknown_documents(
     assert foreign_event["payload"]["message"] == unknown_event["payload"]["message"]
     assert "answer.statement" not in foreign_response.text
     assert "answer.citation" not in foreign_response.text
+
+
+def test_evidence_api_resolves_a_streamed_citation_to_its_exact_active_source(
+    integration_database_settings: Settings,
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    source = make_manifest_source(label="Evidence API Source")
+    persist_research_source(integration_database_engine, source)
+    application = create_app(
+        integration_database_settings.model_copy(
+            update={"object_storage_root": tmp_path / "objects"}
+        )
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+
+    with TestClient(application) as client:
+        answer_response = client.post(
+            "/api/v1/research-requests",
+            json={
+                "question": M0_0_FIXTURE_ANSWER_CASE.question,
+                "context": {"document_ids": [str(source.document.id)]},
+            },
+        )
+        citation_event = parse_server_sent_events(answer_response.text)[1]
+        evidence_response = client.get(
+            f"/api/v1/evidence-spans/{citation_event['payload']['evidence_span_id']}"
+        )
+
+    payload = evidence_response.json()
+    expected_start = len(M0_0_FIXTURE_ANSWER_CASE.question) + 1
+    assert answer_response.status_code == 200
+    assert citation_event["event_name"] == "answer.citation"
+    assert evidence_response.status_code == 200
+    assert payload["evidence_span_id"] == citation_event["payload"]["evidence_span_id"]
+    assert payload["document_id"] == str(source.document.id)
+    assert payload["document_version_id"] == str(source.version.id)
+    assert payload["page"] == 2
+    assert payload["start_character"] == expected_start
+    assert payload["end_character"] == (
+        expected_start + len(M0_0_FIXTURE_ANSWER_CASE.evidence_text)
+    )
+    assert payload["exact_text"] == M0_0_FIXTURE_ANSWER_CASE.evidence_text
+    assert payload["viewer_url"] == (
+        f"/api/v1/documents/{source.document.id}/versions/{source.version.id}/original#page=2"
+    )
+    assert evidence_response.headers["cache-control"] == "private, no-store"
+    assert "storage_key" not in evidence_response.text
+
+
+def test_evidence_api_hides_a_foreign_citation_like_an_unknown_span(
+    integration_database_settings: Settings,
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    owner = make_manifest_source(label="Evidence API Owner")
+    foreign = make_research_source(label="Evidence API Foreign")
+    persist_research_source(integration_database_engine, owner)
+    persist_workspace(integration_database_engine, foreign)
+    application = create_app(
+        integration_database_settings.model_copy(
+            update={"object_storage_root": tmp_path / "objects"}
+        )
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: owner.context
+
+    with TestClient(application) as client:
+        answer_response = client.post(
+            "/api/v1/research-requests",
+            json={
+                "question": M0_0_FIXTURE_ANSWER_CASE.question,
+                "context": {"document_ids": [str(owner.document.id)]},
+            },
+        )
+        citation_event = parse_server_sent_events(answer_response.text)[1]
+        application.dependency_overrides[get_workspace_context] = lambda: foreign.context
+        foreign_response = client.get(
+            f"/api/v1/evidence-spans/{citation_event['payload']['evidence_span_id']}"
+        )
+        unknown_response = client.get(f"/api/v1/evidence-spans/{uuid4()}")
+
+    assert answer_response.status_code == 200
+    assert foreign_response.status_code == unknown_response.status_code == 404
+    assert foreign_response.json() == unknown_response.json()
+    assert foreign_response.json()["error"]["code"] == "NOT_FOUND"
+    assert citation_event["payload"]["evidence_span_id"] not in foreign_response.text

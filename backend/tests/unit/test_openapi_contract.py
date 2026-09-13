@@ -28,6 +28,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/health",
         "/api/v1/documents",
         "/api/v1/documents/{document_id}/versions/{version_id}/original",
+        "/api/v1/evidence-spans/{evidence_span_id}",
         "/api/v1/processing-runs/{processing_run_id}",
         "/api/v1/research-requests",
     }
@@ -107,6 +108,32 @@ def test_processing_status_exposes_safe_scoped_result_without_workspace_input() 
     assert "workspace_id" not in json.dumps(operation)
     assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/ProcessingRunResult"
+    }
+    for status_code in ("404", "422", "500"):
+        assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+
+
+def test_evidence_route_exposes_canonical_location_without_workspace_input() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/evidence-spans/{evidence_span_id}"]["get"]
+
+    assert operation["parameters"] == [
+        {
+            "name": "evidence_span_id",
+            "in": "path",
+            "required": True,
+            "schema": {
+                "type": "string",
+                "format": "uuid",
+                "title": "Evidence Span Id",
+            },
+        }
+    ]
+    assert "workspace_id" not in json.dumps(operation)
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/EvidenceSpanResult"
     }
     for status_code in ("404", "422", "500"):
         assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {

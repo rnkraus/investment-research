@@ -7,6 +7,7 @@ from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
     EvidenceValidationDecision,
+    ResolvedEvidenceSpan,
     ValidatedEvidenceReference,
     ValidatedStatementProposal,
     ValidationFinding,
@@ -14,6 +15,7 @@ from investment_research.modules.evidence.contracts import (
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
+    EvidenceReadUnitOfWorkFactory,
     StatementSupportEvaluator,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -24,6 +26,44 @@ from investment_research.modules.research.contracts import (
 )
 from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.search.domain import RetrievalOrigin
+
+
+class EvidenceSpanUnavailableError(Exception):
+    """Hide whether a citation span is unknown, inaccessible, stale, or unlinked."""
+
+
+class ResolveEvidenceSpanService:
+    """Authorize one exact citation against current canonical archive state."""
+
+    def __init__(self, unit_of_work_factory: EvidenceReadUnitOfWorkFactory) -> None:
+        self._unit_of_work_factory = unit_of_work_factory
+
+    def resolve(
+        self,
+        context: WorkspaceContext,
+        evidence_span_id: UUID,
+    ) -> ResolvedEvidenceSpan:
+        """Return one current validated span or the uniform unavailable outcome."""
+
+        with self._unit_of_work_factory() as unit_of_work:
+            source = unit_of_work.evidence_spans.get_span_source(
+                context,
+                evidence_span_id,
+            )
+
+        if (
+            source is None
+            or source.span.workspace_id != context.workspace_id
+            or source.document_lifecycle_state is not DocumentLifecycleState.ACTIVE
+            or source.document_current_version_id != source.span.document_version_id
+            or not source.linked_to_streamed_answer
+        ):
+            raise EvidenceSpanUnavailableError("evidence span is unavailable")
+
+        return ResolvedEvidenceSpan(
+            span=source.span,
+            document_id=source.document_id,
+        )
 
 
 class ValidateGeneratedAnswerService:

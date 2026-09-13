@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.evidence.domain import (
     ConfigurationVersion,
+    EvidenceSpan,
     ValidationReason,
     ValidationRule,
 )
@@ -27,6 +28,23 @@ class EvidenceValidationProfile(ImmutableEvidenceContract):
     """Versioned application-selected evidence-validation behavior."""
 
     validation_config_version: ConfigurationVersion
+
+
+class CanonicalEvidenceSpanSource(ImmutableEvidenceContract):
+    """Canonical state needed to authorize one persisted citation span."""
+
+    span: EvidenceSpan
+    document_id: UUID
+    document_lifecycle_state: DocumentLifecycleState
+    document_current_version_id: UUID | None
+    linked_to_streamed_answer: bool
+
+
+class ResolvedEvidenceSpan(ImmutableEvidenceContract):
+    """Authorized citation location safe for transport-layer mapping."""
+
+    span: EvidenceSpan
+    document_id: UUID
 
 
 class CanonicalEvidenceSource(ImmutableEvidenceContract):

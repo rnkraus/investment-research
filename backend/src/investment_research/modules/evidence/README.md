@@ -4,13 +4,13 @@ This module owns exact source spans, statement-to-source relationships, and immu
 
 ## Contents
 
-| File             | Responsibility                                                                    |
-| ---------------- | --------------------------------------------------------------------------------- |
-| `application.py` | Revalidates generated claims against canonical scoped source state.               |
-| `contracts.py`   | Defines canonical source snapshots, rule findings, and safe validation decisions. |
-| `domain.py`      | Defines exact spans, relationships, validation rules, hashes, and invariants.     |
-| `ports.py`       | Defines canonical source, statement-support, and persistence contracts.           |
-| `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior. |
+| File             | Responsibility                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| `application.py` | Revalidates generated claims and authorizes later citation resolution.             |
+| `contracts.py`   | Defines canonical source snapshots, validation decisions, and resolved spans.      |
+| `domain.py`      | Defines exact spans, relationships, validation rules, hashes, and invariants.      |
+| `ports.py`       | Defines canonical source, citation-read, statement-support, and persistence ports. |
+| `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.  |
 
 ## Evidence chain
 
@@ -84,3 +84,28 @@ rules. A rejected decision contains no coverage or statements. The Research appl
 accepted decision to canonical statements, exact spans, supporting relationships, and immutable
 validation records in one unit of work. Insufficient and rejected outcomes persist their terminal
 answer and validation findings without creating usable statements or citations.
+
+## Citation resolution
+
+```mermaid
+flowchart LR
+    ID[Evidence span ID] --> SERVICE[ResolveEvidenceSpanService]
+    CTX[Trusted WorkspaceContext] --> SERVICE
+    SERVICE --> PORT[CanonicalEvidenceSpanReader]
+    PORT --> SOURCE[CanonicalEvidenceSpanSource]
+    SOURCE --> ACTIVE{Active current version?}
+    ACTIVE -->|no| HIDDEN[Unavailable]
+    ACTIVE -->|yes| LINKED{Linked to validated streamed answer?}
+    LINKED -->|no| HIDDEN
+    LINKED -->|yes| RESULT[ResolvedEvidenceSpan]
+```
+
+`CanonicalEvidenceSpanSource` is a set of database facts, not an authorization result. The
+application service fails closed unless the span belongs to the trusted workspace, its document is
+active, its version is still current, and at least one validated statement in a streamed answer
+links to it. Every failed condition raises the same application error, so callers cannot distinguish
+an unknown identifier from inaccessible or stale evidence.
+
+`ResolvedEvidenceSpan` contains only the authorized domain span and its document identifier. The
+HTTP layer constructs the protected viewer URL because URLs are a transport concern rather than an
+Evidence domain value.
