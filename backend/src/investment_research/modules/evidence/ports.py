@@ -1,10 +1,14 @@
 """Application-owned persistence contracts for evidence and validation."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from typing import Protocol
 from uuid import UUID
 
-from investment_research.modules.evidence.contracts import CanonicalEvidenceSource
+from investment_research.modules.evidence.contracts import (
+    CanonicalEvidenceSource,
+    CanonicalEvidenceSpanSource,
+)
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceSpan,
@@ -23,6 +27,17 @@ class CanonicalEvidenceSourceReader(Protocol):
         retrieval_candidate_id: UUID,
     ) -> CanonicalEvidenceSource | None:
         """Return matching canonical state without disclosing inaccessible identifiers."""
+
+
+class CanonicalEvidenceSpanReader(Protocol):
+    """Load the canonical relationships needed to authorize one citation span."""
+
+    def get_span_source(
+        self,
+        context: WorkspaceContext,
+        evidence_span_id: UUID,
+    ) -> CanonicalEvidenceSpanSource | None:
+        """Return scoped canonical state without disclosing unavailable identifiers."""
 
 
 class StatementSupportEvaluator(Protocol):
@@ -74,3 +89,17 @@ class EvidenceRepository(Protocol):
         answer_id: UUID,
     ) -> Sequence[AnswerValidation]:
         """Return a scoped answer's validation results in stable rule order."""
+
+
+class EvidenceReadUnitOfWork(Protocol):
+    """Canonical citation reader scoped to one non-writing application operation."""
+
+    @property
+    def evidence_spans(self) -> CanonicalEvidenceSpanReader:
+        """Return the reader used to authorize an exact evidence span."""
+
+
+type EvidenceReadUnitOfWorkFactory = Callable[
+    [],
+    AbstractContextManager[EvidenceReadUnitOfWork],
+]

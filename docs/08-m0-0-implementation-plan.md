@@ -292,10 +292,15 @@ Follow the sequence strictly enough that each step leaves a runnable, reviewable
   statements, evidence spans, links, and validation results.
 - Implement validation for workspace, active version, candidate eligibility, exact span/hash match, statement support, and coverage.
 - Reject tampered or invented identifiers and make insufficient coverage explicit.
+- Resolve persisted citations through an application-owned read port, rechecking the trusted
+  workspace, active current document version, validated statement, and streamed answer before
+  returning an exact source location and protected original-document target.
 
 **Gate:** only accepted statements can reach an output contract; insufficient and rejected answers
 contain no usable statements or citations; invalid evidence cannot be converted into a citation; and
-a late persistence failure rolls back the complete answer aggregate.
+a late persistence failure rolls back the complete answer aggregate. A usable citation resolves only
+inside its owning workspace while foreign, unknown, stale, and unlinked identifiers remain
+indistinguishable.
 
 ### Step 8 — Web vertical slice
 

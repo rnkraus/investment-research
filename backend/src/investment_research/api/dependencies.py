@@ -9,6 +9,7 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import GetProcessingRunService
 from investment_research.modules.research.application import AnswerResearchRequestService
@@ -51,6 +52,20 @@ def get_open_original_service(
 OpenOriginalServiceDependency = Annotated[
     OpenOriginalService,
     Depends(get_open_original_service),
+]
+
+
+def get_resolve_evidence_span_service(
+    container: ContainerDependency,
+) -> ResolveEvidenceSpanService:
+    """Return the application-owned service for authorized citation reads."""
+
+    return container.resolve_evidence_span_service
+
+
+ResolveEvidenceSpanServiceDependency = Annotated[
+    ResolveEvidenceSpanService,
+    Depends(get_resolve_evidence_span_service),
 ]
 
 

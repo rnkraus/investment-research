@@ -6,7 +6,11 @@ from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
-from investment_research.modules.evidence.contracts import CanonicalEvidenceSource
+from investment_research.modules.evidence.contracts import (
+    CanonicalEvidenceSource,
+    CanonicalEvidenceSpanSource,
+)
+from investment_research.modules.evidence.persistence import EvidenceSpanRow, StatementEvidenceRow
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.persistence import (
     ChunkRow,
@@ -14,10 +18,90 @@ from investment_research.modules.processing.persistence import (
     ProcessingRunRow,
     StructureBlockRow,
 )
+from investment_research.modules.research.domain import AnswerState, StatementSupportStatus
+from investment_research.modules.research.persistence import AnswerRow, AnswerStatementRow
 from investment_research.modules.search.persistence import (
     RetrievalCandidateRow,
     RetrievalRunRow,
 )
+
+
+class PostgresCanonicalEvidenceSpanReader:
+    """Load a citation span with its current document and published-answer state."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_span_source(
+        self,
+        context: WorkspaceContext,
+        evidence_span_id: UUID,
+    ) -> CanonicalEvidenceSpanSource | None:
+        """Return canonical citation state from the trusted workspace only."""
+
+        linked_to_streamed_answer = (
+            select(StatementEvidenceRow.id)
+            .join(
+                AnswerStatementRow,
+                and_(
+                    AnswerStatementRow.workspace_id == StatementEvidenceRow.workspace_id,
+                    AnswerStatementRow.id == StatementEvidenceRow.answer_statement_id,
+                ),
+            )
+            .join(
+                AnswerRow,
+                and_(
+                    AnswerRow.workspace_id == AnswerStatementRow.workspace_id,
+                    AnswerRow.id == AnswerStatementRow.answer_id,
+                ),
+            )
+            .where(
+                StatementEvidenceRow.workspace_id == EvidenceSpanRow.workspace_id,
+                StatementEvidenceRow.evidence_span_id == EvidenceSpanRow.id,
+                AnswerStatementRow.support_status == StatementSupportStatus.VALIDATED,
+                AnswerRow.state == AnswerState.STREAMED,
+            )
+            .exists()
+        )
+        statement = (
+            select(
+                EvidenceSpanRow,
+                DocumentVersionRow.document_id,
+                DocumentRow.lifecycle_state,
+                DocumentRow.current_version_id,
+                linked_to_streamed_answer.label("linked_to_streamed_answer"),
+            )
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == EvidenceSpanRow.workspace_id,
+                    DocumentVersionRow.id == EvidenceSpanRow.document_version_id,
+                ),
+            )
+            .join(
+                DocumentRow,
+                and_(
+                    DocumentRow.workspace_id == DocumentVersionRow.workspace_id,
+                    DocumentRow.id == DocumentVersionRow.document_id,
+                ),
+            )
+            .where(
+                EvidenceSpanRow.workspace_id == context.workspace_id,
+                EvidenceSpanRow.id == evidence_span_id,
+            )
+        )
+        row = self._session.execute(statement).one_or_none()
+        if row is None:
+            return None
+
+        span, document_id, lifecycle_state, current_version_id, is_linked = row
+        return CanonicalEvidenceSpanSource(
+            span=span.to_domain(),
+            document_id=document_id,
+            document_lifecycle_state=lifecycle_state,
+            document_current_version_id=current_version_id,
+            linked_to_streamed_answer=is_linked,
+        )
 
 
 class PostgresCanonicalEvidenceSourceReader:

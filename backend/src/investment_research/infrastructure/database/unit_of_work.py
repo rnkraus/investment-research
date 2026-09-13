@@ -12,6 +12,7 @@ from investment_research.infrastructure.database.session import (
 )
 from investment_research.infrastructure.evidence.postgresql import (
     PostgresCanonicalEvidenceSourceReader,
+    PostgresCanonicalEvidenceSpanReader,
 )
 from investment_research.infrastructure.search.postgresql import PostgresLexicalSearch
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
@@ -25,6 +26,9 @@ from investment_research.modules.documents.ports import (
 from investment_research.modules.evidence.persistence import SqlAlchemyEvidenceRepository
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
+    CanonicalEvidenceSpanReader,
+    EvidenceReadUnitOfWork,
+    EvidenceReadUnitOfWorkFactory,
     EvidenceRepository,
 )
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
@@ -60,6 +64,13 @@ class SqlAlchemyDocumentReadRepositories:
     """Document repository bound to one short-lived read session."""
 
     documents: DocumentRepository
+
+
+@dataclass(frozen=True, slots=True)
+class SqlAlchemyEvidenceReadRepositories:
+    """Canonical citation reader bound to one short-lived read session."""
+
+    evidence_spans: CanonicalEvidenceSpanReader
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +133,18 @@ def sqlalchemy_document_read_unit_of_work(
     with session_factory() as session:
         yield SqlAlchemyDocumentReadRepositories(
             documents=SqlAlchemyDocumentRepository(session),
+        )
+
+
+@contextmanager
+def sqlalchemy_evidence_read_unit_of_work(
+    session_factory: SessionFactory,
+) -> Iterator[EvidenceReadUnitOfWork]:
+    """Expose canonical citation reads without committing a transaction."""
+
+    with session_factory() as session:
+        yield SqlAlchemyEvidenceReadRepositories(
+            evidence_spans=PostgresCanonicalEvidenceSpanReader(session),
         )
 
 
@@ -196,6 +219,17 @@ def create_document_read_unit_of_work_factory(
 
     def create_unit_of_work() -> AbstractContextManager[DocumentReadUnitOfWork]:
         return sqlalchemy_document_read_unit_of_work(session_factory)
+
+    return create_unit_of_work
+
+
+def create_evidence_read_unit_of_work_factory(
+    session_factory: SessionFactory,
+) -> EvidenceReadUnitOfWorkFactory:
+    """Bind citation-resolution reads to one process-wide session factory."""
+
+    def create_unit_of_work() -> AbstractContextManager[EvidenceReadUnitOfWork]:
+        return sqlalchemy_evidence_read_unit_of_work(session_factory)
 
     return create_unit_of_work
 

@@ -12,6 +12,7 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.processing.application import (
     GetProcessingRunService,
     ProcessDocumentService,
@@ -62,6 +63,10 @@ def test_build_container_wires_application_resources(tmp_path: Path) -> None:
             assert isinstance(
                 container.answer_research_request_service,
                 AnswerResearchRequestService,
+            )
+            assert isinstance(
+                container.resolve_evidence_span_service,
+                ResolveEvidenceSpanService,
             )
             assert not storage_root.exists()
         finally:

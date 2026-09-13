@@ -6,11 +6,11 @@ not persist or publish generated answer content.
 
 ## Contents
 
-| File               | Responsibility                                                                     |
-| ------------------ | ---------------------------------------------------------------------------------- |
-| `__init__.py`      | Identifies the evidence-adapter package without exporting implementations.         |
-| `deterministic.py` | Implements the explicit synthetic M0.0 statement-to-evidence support rule.         |
-| `postgresql.py`    | Reloads one scoped retrieval candidate and all canonical eligibility dependencies. |
+| File               | Responsibility                                                             |
+| ------------------ | -------------------------------------------------------------------------- |
+| `__init__.py`      | Identifies the evidence-adapter package without exporting implementations. |
+| `deterministic.py` | Implements the explicit synthetic M0.0 statement-to-evidence support rule. |
+| `postgresql.py`    | Reloads scoped candidate sources and already-persisted citation sources.   |
 
 ## Canonical reload
 
@@ -37,6 +37,27 @@ The reader returns canonical facts rather than deciding whether they pass curren
 This cross-module physical read belongs in infrastructure because it must join mappings owned by
 Search, Processing, and Documents. Business modules continue to avoid importing another module's
 `persistence.py`.
+
+## Citation reload
+
+```mermaid
+flowchart LR
+    ID[Evidence span ID] --> READER[PostgresCanonicalEvidenceSpanReader]
+    CTX[Trusted WorkspaceContext] --> READER
+    READER --> SPAN[EvidenceSpan]
+    SPAN --> VERSION[DocumentVersion]
+    VERSION --> DOCUMENT[Document state and current version]
+    SPAN --> EXISTS[Validated statement in streamed answer exists]
+    DOCUMENT --> SNAPSHOT[CanonicalEvidenceSpanSource]
+    EXISTS --> SNAPSHOT
+    SNAPSHOT --> SERVICE[Evidence application service]
+```
+
+The citation reader filters the main query by the trusted workspace and uses a correlated `EXISTS`
+query to establish whether the span participates in a validated statement whose answer reached the
+`STREAMED` state. It returns the boolean and current document facts to the application service; it
+does not make the authorization decision itself. A short-lived read unit of work owns the SQLAlchemy
+session and never commits.
 
 ## M0.0 support evaluator
 

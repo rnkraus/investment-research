@@ -407,7 +407,7 @@
             "type": "string"
           },
           "end_character": {
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "End Character",
             "type": "integer"
           },
@@ -422,12 +422,12 @@
             "type": "string"
           },
           "page": {
-            "minimum": 1,
+            "minimum": 1.0,
             "title": "Page",
             "type": "integer"
           },
           "start_character": {
-            "minimum": 0,
+            "minimum": 0.0,
             "title": "Start Character",
             "type": "integer"
           },
@@ -865,6 +865,70 @@
         "summary": "Open Original",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/v1/evidence-spans/{evidence_span_id}": {
+      "get": {
+        "description": "Return an exact current citation location without storage implementation details.",
+        "operationId": "resolve_evidence_span_api_v1_evidence_spans__evidence_span_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_span_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Span Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceSpanResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Resolve Evidence Span",
+        "tags": [
+          "evidence"
         ]
       }
     },

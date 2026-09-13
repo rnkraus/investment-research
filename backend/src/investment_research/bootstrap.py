@@ -14,6 +14,7 @@ from investment_research.infrastructure.database.unit_of_work import (
     create_answer_validation_unit_of_work_factory,
     create_capture_unit_of_work_factory,
     create_document_read_unit_of_work_factory,
+    create_evidence_read_unit_of_work_factory,
     create_processing_read_unit_of_work_factory,
     create_processing_unit_of_work_factory,
     create_research_retrieval_unit_of_work_factory,
@@ -34,6 +35,7 @@ from investment_research.modules.documents.application import (
     OpenOriginalService,
 )
 from investment_research.modules.documents.ports import ObjectStorage
+from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.evidence.contracts import EvidenceValidationProfile
 from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
@@ -80,6 +82,7 @@ class ApplicationContainer:
     retrieve_research_service: RetrieveResearchService
     generate_validated_answer_service: GenerateValidatedAnswerService
     answer_research_request_service: AnswerResearchRequestService
+    resolve_evidence_span_service: ResolveEvidenceSpanService
 
     def close(self) -> None:
         """Release process-wide resources owned by the container."""
@@ -152,5 +155,8 @@ def build_container(settings: Settings) -> ApplicationContainer:
         answer_research_request_service=AnswerResearchRequestService(
             retrieval_service=retrieve_research_service,
             generation_service=generate_validated_answer_service,
+        ),
+        resolve_evidence_span_service=ResolveEvidenceSpanService(
+            create_evidence_read_unit_of_work_factory(session_factory)
         ),
     )

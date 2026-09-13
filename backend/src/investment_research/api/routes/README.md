@@ -4,16 +4,14 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 
 ## Current routes
 
-| File           | Endpoint                                                                    | Purpose                                                                    |
-| -------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `health.py`    | `GET /health`                                                               | Reports process liveness without dependency details or credentials.        |
-| `documents.py` | `POST /api/v1/documents`                                                    | Captures one validated PDF and returns canonical identifiers with HTTP 202. |
-| `documents.py` | `GET /api/v1/documents/{document_id}/versions/{version_id}/original`        | Streams one authorized and integrity-checked current PDF original.          |
-| `processing.py` | `GET /api/v1/processing-runs/{processing_run_id}`                          | Returns one workspace-scoped run state with safe failure details.            |
-| `research.py`  | `POST /api/v1/research-requests`                                             | Streams only validated statements, citation references, or a safe terminal outcome. |
-
-Evidence resolution remains a planned product route. It must not be advertised as a working
-endpoint before its implementation block is complete.
+| File            | Endpoint                                                             | Purpose                                                                             |
+| --------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `health.py`     | `GET /health`                                                        | Reports process liveness without dependency details or credentials.                 |
+| `documents.py`  | `POST /api/v1/documents`                                             | Captures one validated PDF and returns canonical identifiers with HTTP 202.         |
+| `documents.py`  | `GET /api/v1/documents/{document_id}/versions/{version_id}/original` | Streams one authorized and integrity-checked current PDF original.                  |
+| `processing.py` | `GET /api/v1/processing-runs/{processing_run_id}`                    | Returns one workspace-scoped run state with safe failure details.                   |
+| `research.py`   | `POST /api/v1/research-requests`                                     | Streams only validated statements, citation references, or a safe terminal outcome. |
+| `evidence.py`   | `GET /api/v1/evidence-spans/{evidence_span_id}`                      | Resolves one authorized streamed citation to its exact active source.               |
 
 ```mermaid
 flowchart LR
@@ -74,3 +72,18 @@ Streamed answers emit each statement followed by its ordered citation references
 event. Insufficient and rejected results emit no statements or citations. Database failures are
 translated before streaming begins, and successful responses disable private caching and content
 sniffing.
+
+```mermaid
+flowchart LR
+    REQUEST[Evidence span GET] --> CONTEXT[Resolve trusted context]
+    CONTEXT --> SERVICE[ResolveEvidenceSpanService]
+    SERVICE --> READ[Short-lived read session]
+    READ --> CANONICAL[Canonical span, document, and answer state]
+    CANONICAL --> CHECK[Active, current, validated, and streamed]
+    CHECK --> RESULT[EvidenceSpanResult and protected viewer URL]
+```
+
+The evidence route accepts no workspace identifier and exposes no object-storage location. It maps
+unknown, foreign, stale, and unlinked span identifiers to the same `404 NOT_FOUND` response. A
+successful response identifies the exact immutable document version, page, character range, text,
+and hash, and its viewer target points back through the protected original-document route.
