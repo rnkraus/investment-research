@@ -10,6 +10,7 @@ PostgreSQL, or process PDF content.
 | ----------------------- | ------------------------------------------------------------------------------- |
 | `copy.ts`               | Centralizes feature text and synthetic fixture defaults for later localization. |
 | `document-workflow.tsx` | Captures one PDF, presents the runner command, and polls canonical status.      |
+| `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.           |
 
 ## Capture and processing flow
 
@@ -36,3 +37,22 @@ status contract.
 All network access goes through `src/lib/api/client.ts`. Raw exceptions are not rendered. The
 component displays only safe API messages or a generic local failure message, and active requests
 are aborted when their component lifecycle ends.
+
+## Research state flow
+
+```mermaid
+flowchart LR
+    START[RUNNING session] --> EVENT[Validated SSE event]
+    EVENT --> STATEMENT[Add unique statement]
+    STATEMENT --> CITATION[Attach ordered citation reference]
+    CITATION --> COMPLETE{Terminal event}
+    COMPLETE -->|answer.completed and every statement cited| RESULT[COMPLETED]
+    COMPLETE -->|answer.insufficient and no statements| EMPTY[INSUFFICIENT]
+    COMPLETE -->|research.failed and no statements| FAILED[FAILED]
+    EVENT -->|wrong request, order, or relationship| REJECT[ResearchSequenceError]
+```
+
+`research-session.ts` has no React or network dependency. It keeps streamed events tied to one
+research request, rejects duplicate or out-of-order relationships, and refuses to complete an answer
+whose statement has no citation. Resolving a citation remains a separate authorized API call; only
+then does `attachCitationSource` add the exact source location to the completed UI state.
