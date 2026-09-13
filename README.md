@@ -84,54 +84,35 @@ pnpm dev
 
 Open the web application at <http://127.0.0.1:3000>. The API health endpoint is available at <http://127.0.0.1:8000/health>.
 
-Step 4 exposes document capture and verified original access through the API; the web upload
-interface remains Step 8. With the API running, capture the synthetic fixture from another
-repository-root terminal:
+Complete the M0.0 browser journey with the synthetic fixture:
 
-```shell
-curl --fail-with-body \
-  --form 'title=Northstar Grid Analytics FY2025 Earnings Brief' \
-  --form 'language=en' \
-  --form 'file=@fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf;type=application/pdf' \
-  http://127.0.0.1:8000/api/v1/documents
-```
+1. In the import form, choose
+   `fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf`. The synthetic title,
+   publication date, and English language metadata are already selected.
+2. Import the document. The API preserves the verified immutable original, creates a canonical
+   processing run, and returns without parsing the PDF in the request process.
+3. Copy the displayed local processing command and run it in a separate repository-root terminal.
+   The page polls the canonical run status and enables research after it reaches `LEXICAL_READY`.
+4. Submit the prefilled revenue question. The expected validated answer reports FY2025 revenue of
+   $184.2 million, up 22.0% from $151.0 million in FY2024.
+5. Open the supporting citation. Its exact passage is displayed in the answer, and the protected
+   original opens on page 2 in a new browser tab.
+6. Select the insufficient-evidence example and submit it. The result must explicitly report missing
+   evidence and contain no answer statements or citations.
 
-The successful response has HTTP status 202 and contains the new document, document-version, and
-processing-run identifiers. Capture stores the verified immutable original and pending processing
-intent; it does not parse the PDF. In a separate terminal, pass the returned `processing_run_id` to
-the bounded single-job runner:
-
-```shell
-cd backend
-uv run --locked python -m investment_research.runner {processing_run_id}
-```
-
-The runner processes exactly one captured run and then exits. It resolves the local workspace on the
-server, uses its own database sessions, limits wall-clock processing time and virtual memory, and
-never executes PDF parsing in FastAPI. A successful command reports `LEXICAL_READY`; a failed command
-returns a non-zero exit code without printing parser or database internals. The default bounds are
-30 seconds and 512 MiB of additional virtual memory above the loaded runner runtime. Override them
-only within the validated safety ceilings with
+The displayed runner processes exactly one captured run and then exits. It resolves the local
+workspace on the server, uses its own database sessions, limits wall-clock processing time and
+virtual memory, and never executes PDF parsing in FastAPI. A successful command reports
+`LEXICAL_READY`; a failed command returns a non-zero exit code without printing parser or database
+internals. The default bounds are 30 seconds and 512 MiB of additional virtual memory above the
+loaded runner runtime. Override them only within the validated safety ceilings with
 `INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS` and
 `INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES`.
 
-Insert the returned document identifiers into this URL to open the verified original inline in a
-browser:
-
-```text
-http://127.0.0.1:8000/api/v1/documents/{document_id}/versions/{document_version_id}/original
-```
-
-The original route rechecks the server-owned workspace, current document version, byte count, and
-checksum before sending PDF content. Insert the returned processing-run identifier into this URL to
-read its current canonical state before or after running the separate processor:
-
-```text
-http://127.0.0.1:8000/api/v1/processing-runs/{processing_run_id}
-```
-
-The status response contains the run and document-version identifiers, state, and an optional safe
-failure summary. It never exposes workspace scope or internal parser and database errors.
+All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
+recheck the server-owned workspace, active document version, validation state, byte count, and
+checksum before returning source content; the browser never receives workspace credentials or
+connects directly to PostgreSQL.
 
 Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
 
