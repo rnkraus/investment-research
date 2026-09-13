@@ -7,7 +7,7 @@ This directory contains deterministic tests for frontend-owned behavior and the 
 | File or command        | Responsibility                                                                        |
 | ---------------------- | ------------------------------------------------------------------------------------- |
 | `api-client.test.mjs`  | Verifies multipart, safe errors, runtime contracts, SSE framing, and local API paths. |
-| `product.test.mjs`     | Verifies the product identity and evidence-focused description.                       |
+| `product.test.mjs`     | Verifies product identity, evidence-focused copy, and the M0.0 fixture boundary.      |
 | `pnpm contracts:check` | Verifies that generated TypeScript declarations match the committed OpenAPI snapshot. |
 
 ```mermaid
