@@ -117,3 +117,41 @@ jobs:
 
       - name: Recheck metadata after migration cycle
         run: uv run --locked alembic -c alembic.ini check
+
+  backend-images:
+    name: Backend images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: backend/pyproject.toml
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Check backend Dockerfile
+        run: docker buildx build --check --file Dockerfile .
+
+      - name: Validate Docker Compose configuration
+        working-directory: .
+        env:
+          POSTGRES_DB: investment_research
+          POSTGRES_PASSWORD: ci-compose-validation-only
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: investment_research
+        run: docker compose --file compose.yaml config --quiet
+
+      - name: Build and verify backend images
+        run: uv run --locked python -m scripts.verify_backend_images
