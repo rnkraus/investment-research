@@ -8,8 +8,8 @@
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `main.py`         | Creates FastAPI, installs transport safeguards and error handlers, attaches the container, and registers routes.       |
 | `runner.py`       | Executes exactly one processing run with process-level time and memory bounds outside FastAPI.                         |
-| `bootstrap.py`    | Composition root that selects concrete implementations for application-owned contracts.                                |
-| `settings.py`     | Loads process-first local configuration and validates secret-safe runtime settings.                                     |
+| `bootstrap.py`    | Separate API and worker composition roots that select concrete implementations for application-owned contracts.          |
+| `settings.py`     | Loads least-privilege API, worker, parser, and database-maintenance configuration.                                       |
 | `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
 | `infrastructure/` | Technical database, lexical-search, parsing, and secure local object-storage adapters.                                   |
 | `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                               |
@@ -18,15 +18,14 @@
 
 ```mermaid
 flowchart TD
-    SETTINGS[Validated settings] --> MAIN[create_app]
+    SETTINGS[ApiSettings] --> MAIN[create_app]
     MAIN --> LIFE[FastAPI lifespan]
-    LIFE -->|startup| BOOT[build_container]
+    LIFE -->|startup| BOOT[build_api_container]
     BOOT --> ENGINE[SQLAlchemy engine]
     ENGINE --> SESSIONS[Session factory]
     SESSIONS --> CAPTUREUOW[Capture unit-of-work factory]
     SESSIONS --> READUOW[Document read unit-of-work factory]
     SESSIONS --> STATUSUOW[Processing read unit-of-work factory]
-    SESSIONS --> PROCESSUOW[Processing unit-of-work factory]
     SESSIONS --> RETRIEVALUOW[Research retrieval unit-of-work factory]
     SESSIONS --> ANSWERUOW[Answer validation unit-of-work factory]
     BOOT --> STORAGE[ObjectStorage adapter]
@@ -35,7 +34,6 @@ flowchart TD
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
     READUOW --> ORIGINAL[OpenOriginalService]
     STATUSUOW --> STATUS[GetProcessingRunService]
-    PROCESSUOW --> PROCESS[ProcessDocumentService]
     RETRIEVALUOW --> RETRIEVE[RetrieveResearchService]
     RETRIEVALUOW --> LEXICAL[PostgreSQL LexicalSearch adapter]
     ANSWERUOW --> GENERATE[GenerateValidatedAnswerService]
@@ -45,12 +43,10 @@ flowchart TD
     GENERATE --> ANSWERREQUEST
     STORAGE --> CAPTURE
     STORAGE --> ORIGINAL
-    ORIGINAL --> PROCESS
-    BOOT --> STATE[Application container]
+    BOOT --> STATE[ApiContainer]
     CAPTURE --> STATE
     ORIGINAL --> STATE
     STATUS --> STATE
-    PROCESS --> STATE
     ANSWERREQUEST --> STATE
     MAIN --> LIMIT[Request-body limit]
     LIMIT --> ROUTES[HTTP routes]
@@ -63,13 +59,17 @@ flowchart TD
 
 `main.py` and `bootstrap.py` are the outer composition layer. Module domain and application files must remain independent of this layer. Application startup must never create or mutate database schemas.
 
-The runner is a second entry point into the same composition root:
+The runner is a second process entry point with its own composition root:
 
 ```mermaid
 flowchart LR
-    CLI[runner.py<br/>run ID only] --> BOOT[build_container]
+    SETTINGS[WorkerSettings] --> CLI[runner.py<br/>run ID only]
+    CLI --> BOOT[build_worker_container]
     BOOT --> ID[Server-owned identity context]
+    BOOT --> DB[(PostgreSQL resources)]
+    BOOT --> STORAGE[ObjectStorage adapter]
     BOOT --> SERVICE[ProcessDocumentService]
+    STORAGE --> SERVICE
     ID --> EXECUTE[SingleJobProcessingExecutor]
     SERVICE --> EXECUTE
     EXECUTE --> LIMITS[Apply process time and memory limits]
@@ -80,6 +80,12 @@ flowchart LR
 The command-line caller never supplies workspace scope or a database session. `runner.py` resolves
 the fixed local identity, invokes one run, prints only a safe outcome, closes process-owned resources,
 and exits. It is a development delivery adapter rather than a durable queue or retry system.
+
+`ApiSettings` and `WorkerSettings` may load the ignored root development file. `ParserSettings`
+loads only its allowlisted process variables, exposes no database field, and rejects known
+application credential variables. `runtime_location=host` restricts bind and database targets to
+loopback; `runtime_location=container` permits the fixed internal Compose targets required by the
+service topology.
 
 Importing `create_app` or exporting OpenAPI does not allocate database resources. The FastAPI
 lifespan creates them only when the server starts and releases them during shutdown. Sessions are
