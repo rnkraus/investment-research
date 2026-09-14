@@ -12,12 +12,12 @@ from pathlib import Path
 from types import FrameType
 from uuid import UUID
 
-from investment_research.bootstrap import build_container
+from investment_research.bootstrap import build_worker_container
 from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.processing.application import ProcessDocumentService
 from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
 from investment_research.modules.processing.ports import ProcessingExecutionLimitError
-from investment_research.settings import Settings, load_settings
+from investment_research.settings import WorkerSettings, load_worker_settings
 
 EXIT_SUCCESS = 0
 EXIT_PROCESSING_FAILED = 1
@@ -146,12 +146,12 @@ class SingleJobProcessingExecutor:
 
 
 def execute_single_job(
-    settings: Settings,
+    settings: WorkerSettings,
     processing_run_id: UUID,
 ) -> ProcessingRun:
     """Build runner-owned resources, execute one run, and always release them."""
 
-    container = build_container(settings)
+    container = build_worker_container(settings)
     try:
         executor = SingleJobProcessingExecutor(
             processing_service=container.process_document_service,
@@ -180,7 +180,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     arguments = build_argument_parser().parse_args(argv)
     try:
-        settings = load_settings()
+        settings = load_worker_settings()
         settings.require_database_url()
     except (ValueError, RuntimeError) as error:
         del error

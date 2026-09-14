@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import MetaData, create_engine, pool
 
 from investment_research.infrastructure.database.metadata import get_model_metadata
-from investment_research.settings import get_settings
+from investment_research.settings import load_database_settings
 
 config = context.config
 
@@ -20,7 +20,7 @@ def run_migrations_offline() -> None:
     """Render migrations without opening a database connection."""
 
     context.configure(
-        url=get_settings().require_database_url(),
+        url=load_database_settings().require_database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -36,7 +36,7 @@ def run_migrations_online() -> None:
     """Run migrations through one short-lived PostgreSQL connection."""
 
     engine = create_engine(
-        get_settings().require_database_url(),
+        load_database_settings().require_database_url(),
         poolclass=pool.NullPool,
         hide_parameters=True,
     )

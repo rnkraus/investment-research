@@ -19,18 +19,18 @@ from investment_research.api.routes.evidence import router as evidence_router
 from investment_research.api.routes.health import router as health_router
 from investment_research.api.routes.processing import router as processing_router
 from investment_research.api.routes.research import router as research_router
-from investment_research.bootstrap import build_container
-from investment_research.settings import Settings, get_settings
+from investment_research.bootstrap import build_api_container
+from investment_research.settings import ApiSettings, get_api_settings
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: ApiSettings | None = None) -> FastAPI:
     """Create the API with explicit dependencies and no runtime schema mutation."""
 
-    resolved_settings = settings or get_settings()
+    resolved_settings = settings or get_api_settings()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        container = build_container(resolved_settings)
+        container = build_api_container(resolved_settings)
         application.state.container = container
         try:
             yield

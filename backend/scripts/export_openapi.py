@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from investment_research.main import create_app
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = REPOSITORY_ROOT / "frontend/src/lib/api/generated/openapi.json"
@@ -14,7 +14,7 @@ DEFAULT_OUTPUT = REPOSITORY_ROOT / "frontend/src/lib/api/generated/openapi.json"
 def render_openapi() -> str:
     """Render a stable JSON representation of the application contract."""
 
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     return f"{json.dumps(schema, indent=2, sort_keys=True)}\n"
 
 
