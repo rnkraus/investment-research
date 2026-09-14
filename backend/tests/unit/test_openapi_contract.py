@@ -26,12 +26,27 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
 
     assert set(schema["paths"]) == {
         "/health",
+        "/ready",
         "/api/v1/documents",
         "/api/v1/documents/{document_id}/versions/{version_id}/original",
         "/api/v1/evidence-spans/{evidence_span_id}",
         "/api/v1/processing-runs/{processing_run_id}",
         "/api/v1/research-requests",
     }
+
+
+def test_readiness_exposes_only_the_aggregate_state() -> None:
+    schema = create_app(ApiSettings(environment="test")).openapi()
+    operation = schema["paths"]["/ready"]["get"]
+
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ReadinessResponse"
+    }
+    assert operation["responses"]["503"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ReadinessResponse"
+    }
+    assert "database" not in json.dumps(operation)
+    assert "postgresql" not in json.dumps(operation)
 
 
 def test_document_capture_uses_scoped_multipart_contract() -> None:
