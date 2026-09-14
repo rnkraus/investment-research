@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select
@@ -287,6 +287,13 @@ def test_evidence_api_hides_a_foreign_citation_like_an_unknown_span(
 
     assert answer_response.status_code == 200
     assert foreign_response.status_code == unknown_response.status_code == 404
-    assert foreign_response.json() == unknown_response.json()
-    assert foreign_response.json()["error"]["code"] == "NOT_FOUND"
+    foreign_error = foreign_response.json()["error"]
+    unknown_error = unknown_response.json()["error"]
+    assert foreign_error["code"] == unknown_error["code"] == "NOT_FOUND"
+    assert foreign_error["message"] == unknown_error["message"]
+    assert UUID(foreign_error["request_id"])
+    assert UUID(unknown_error["request_id"])
+    assert foreign_response.headers["x-request-id"] == foreign_error["request_id"]
+    assert unknown_response.headers["x-request-id"] == unknown_error["request_id"]
+    assert foreign_error["request_id"] != unknown_error["request_id"]
     assert citation_event["payload"]["evidence_span_id"] not in foreign_response.text

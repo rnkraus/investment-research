@@ -239,13 +239,11 @@ def test_invalid_form_returns_stable_error_without_echoing_input(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "error": {
-            "code": "INVALID_REQUEST",
-            "message": "request validation failed",
-            "request_id": None,
-        }
-    }
+    error = response.json()["error"]
+    request_id = UUID(error["request_id"])
+    assert error["code"] == "INVALID_REQUEST"
+    assert error["message"] == "request validation failed"
+    assert response.headers["x-request-id"] == str(request_id)
     assert "invalid language" not in response.text
     assert service.calls == []
 

@@ -1,6 +1,7 @@
 """End-to-end document API tests against PostgreSQL and local object storage."""
 
 from pathlib import Path
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
@@ -97,9 +98,16 @@ def test_upload_and_open_original_enforce_canonical_workspace(
     assert original_response.headers["content-type"] == "application/pdf"
     assert original_response.headers["x-content-type-options"] == "nosniff"
     assert mismatched_response.status_code == 404
-    assert mismatched_response.json()["error"]["code"] == "NOT_FOUND"
     assert foreign_response.status_code == 404
-    assert foreign_response.json() == mismatched_response.json()
+    mismatched_error = mismatched_response.json()["error"]
+    foreign_error = foreign_response.json()["error"]
+    assert mismatched_error["code"] == foreign_error["code"] == "NOT_FOUND"
+    assert mismatched_error["message"] == foreign_error["message"]
+    assert UUID(mismatched_error["request_id"])
+    assert UUID(foreign_error["request_id"])
+    assert mismatched_response.headers["x-request-id"] == mismatched_error["request_id"]
+    assert foreign_response.headers["x-request-id"] == foreign_error["request_id"]
+    assert mismatched_error["request_id"] != foreign_error["request_id"]
 
     context = WorkspaceContext(
         user_id=LOCAL_DEVELOPMENT_USER_ID,
