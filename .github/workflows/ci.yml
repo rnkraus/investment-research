@@ -147,11 +147,43 @@ jobs:
       - name: Validate Docker Compose configuration
         working-directory: .
         env:
+          COMPOSE_DISABLE_ENV_FILE: "1"
+          INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID: ci-validation-app-access
+          INVESTMENT_RESEARCH_S3_BUCKET: ci-validation-storage
+          INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY: ci-validation-app-secret
           POSTGRES_DB: investment_research
           POSTGRES_PASSWORD: ci-compose-validation-only
           POSTGRES_PORT: "5432"
           POSTGRES_USER: investment_research
+          SEAWEEDFS_ADMIN_ACCESS_KEY: ci-validation-admin-access
+          SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY: ci-validation-admin-secret
         run: docker compose --file compose.yaml config --quiet
 
       - name: Build and verify backend images
         run: uv run --locked python -m scripts.verify_backend_images
+
+  object-storage:
+    name: Object storage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: backend/pyproject.toml
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Verify isolated SeaweedFS object storage
+        run: uv run --locked python -m scripts.verify_object_storage
