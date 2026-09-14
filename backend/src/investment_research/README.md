@@ -94,6 +94,14 @@ templates and never logs raw paths, query strings, headers, or bodies. `SafeJson
 fixed field allowlist; arbitrary messages, values, exception details, and traceback text are
 discarded rather than copied into logs. Safe API error envelopes carry the same request ID.
 
+Health reporting has two layers. `/health` reads only already-created FastAPI metadata and proves
+that the API process can answer HTTP; it never calls a dependency probe. `/ready` asks the
+container-owned `CompositeReadinessProbe` whether every required dependency is usable. Its current
+`PostgreSQLReadinessProbe` requires both a successful connection and the exact Alembic head expected
+by this application version. The response exposes only `ready` or `not_ready`; safe structured logs
+retain the broad operational failure category. Later MinIO and Redis probes join the composite
+without changing the route contract.
+
 Importing `create_app` or exporting OpenAPI does not allocate database resources. The FastAPI
 lifespan creates them only when the server starts and releases them during shutdown. Sessions are
 still created per unit of work; they are never shared across requests or runner executions.

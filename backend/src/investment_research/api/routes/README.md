@@ -7,6 +7,7 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 | File            | Endpoint                                                             | Purpose                                                                             |
 | --------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `health.py`     | `GET /health`                                                        | Reports process liveness without dependency details or credentials.                 |
+| `health.py`     | `GET /ready`                                                         | Reports aggregate dependency readiness without identifying a failed dependency.     |
 | `documents.py`  | `POST /api/v1/documents`                                             | Captures one validated PDF and returns canonical identifiers with HTTP 202.         |
 | `documents.py`  | `GET /api/v1/documents/{document_id}/versions/{version_id}/original` | Streams one authorized and integrity-checked current PDF original.                  |
 | `processing.py` | `GET /api/v1/processing-runs/{processing_run_id}`                    | Returns one workspace-scoped run state with safe failure details.                   |
@@ -24,6 +25,19 @@ flowchart LR
 ```
 
 Routes must not open another module's tables directly, choose infrastructure adapters, perform long-running parsing, or accept a client-provided workspace as authorization.
+
+```mermaid
+flowchart LR
+    LIVE[GET /health] --> PROCESS[FastAPI process metadata]
+    READY[GET /ready] --> CONTAINER[ApiContainer]
+    CONTAINER --> COMPOSITE[CompositeReadinessProbe]
+    COMPOSITE --> POSTGRES[PostgreSQL connection and Alembic head]
+    POSTGRES --> RESULT[200 ready or 503 not_ready]
+```
+
+Liveness deliberately avoids the application container's dependencies. Readiness delegates to the
+container-owned probe and serializes only the aggregate result. It never returns dependency names,
+connection targets, migration revisions, credentials, exception messages, or tracebacks.
 
 The capture route accepts `file`, `title`, `language`, `published_at`, and `available_at` as multipart
 fields. `workspace_id` is intentionally absent. It returns document, document-version, and
