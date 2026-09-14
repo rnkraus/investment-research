@@ -43,10 +43,14 @@ Create the local Docker Compose configuration:
 cp .env.example .env
 ```
 
-Keep all four PostgreSQL entries and replace the password placeholder in `.env` with a local-only
-password. The file is ignored by Git and must never be committed. Docker Compose and the local
-backend require the complete PostgreSQL configuration and read the same values; an explicitly
-configured process environment variable takes precedence over the file.
+Keep the host-runtime and all four PostgreSQL entries, and replace the password placeholder in
+`.env` with a local-only password. The file is ignored by Git and must never be committed. Docker
+Compose and local database-capable backend processes require the complete PostgreSQL configuration;
+an explicitly configured process environment variable takes precedence over the file.
+
+`INVESTMENT_RESEARCH_RUNTIME_LOCATION=host` keeps local API binds and database targets on loopback.
+Compose later overrides this value separately inside each container rather than changing the host
+development file.
 
 ## Run locally
 
@@ -74,12 +78,12 @@ cd backend
 uv run uvicorn investment_research.main:create_app --factory --reload --host 127.0.0.1 --port 8000
 ```
 
-The API derives a validated loopback database URL from the root `.env`, creates the process-wide
-database resources during startup, and releases them during shutdown. An explicit
+The API loads `ApiSettings`, derives a validated loopback database URL from the root `.env`, creates
+only its process-owned database and application resources during startup, and releases them during
+shutdown. The separate processing runner loads `WorkerSettings`. An explicit
 `INVESTMENT_RESEARCH_DATABASE_URL` remains available for CI and isolated tooling and overrides the
-local file. During M0.0, database URL query parameters are rejected so driver options cannot
-redirect a loopback URL to another target. Application startup does not create or migrate tables
-automatically.
+local file. Database URL query parameters are rejected so driver options cannot redirect a
+validated target. Application startup does not create or migrate tables automatically.
 
 Start the web application in a third terminal from the repository root:
 
