@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
 
 from investment_research.api.contracts import ErrorCode, ErrorDetail, ErrorResponse
+from investment_research.infrastructure.logging import current_request_id
 
 
 class ApiError(Exception):
@@ -23,7 +24,13 @@ async def api_error_handler(request: Request, error: Exception) -> JSONResponse:
     del request
     if not isinstance(error, ApiError):
         raise error
-    response = ErrorResponse(error=ErrorDetail(code=error.code, message=error.safe_message))
+    response = ErrorResponse(
+        error=ErrorDetail(
+            code=error.code,
+            message=error.safe_message,
+            request_id=current_request_id(),
+        )
+    )
     return JSONResponse(
         status_code=error.status_code,
         content=response.model_dump(mode="json"),
@@ -43,6 +50,7 @@ async def request_validation_error_handler(
         error=ErrorDetail(
             code=ErrorCode.INVALID_REQUEST,
             message="request validation failed",
+            request_id=current_request_id(),
         )
     )
     return JSONResponse(
