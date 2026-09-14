@@ -12,7 +12,7 @@ from uuid import UUID
 import pytest
 
 from investment_research import runner
-from investment_research.bootstrap import ApplicationContainer
+from investment_research.bootstrap import WorkerContainer
 from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import ProcessDocumentService
@@ -21,7 +21,7 @@ from investment_research.modules.processing.ports import (
     ProcessingExecutionLimitError,
     ProcessingExecutor,
 )
-from investment_research.settings import Settings
+from investment_research.settings import WorkerSettings
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -50,10 +50,10 @@ def make_ready_run() -> ProcessingRun:
     )
 
 
-def make_settings() -> Settings:
+def make_settings() -> WorkerSettings:
     """Build valid local settings without opening a database connection."""
 
-    return Settings.model_validate({"database_url": LOCAL_DATABASE_URL})
+    return WorkerSettings.model_validate({"database_url": LOCAL_DATABASE_URL})
 
 
 def test_current_virtual_memory_measurement_is_available() -> None:
@@ -172,10 +172,10 @@ def test_executor_applies_bounds_and_resolves_trusted_context(
 def test_execute_single_job_always_closes_its_container(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    container = create_autospec(ApplicationContainer, instance=True)
+    container = create_autospec(WorkerContainer, instance=True)
     executor = create_autospec(runner.SingleJobProcessingExecutor, instance=True)
     executor.execute.side_effect = RuntimeError("synthetic execution failure")
-    monkeypatch.setattr(runner, "build_container", lambda settings: container)
+    monkeypatch.setattr(runner, "build_worker_container", lambda settings: container)
     monkeypatch.setattr(
         runner,
         "SingleJobProcessingExecutor",
@@ -193,7 +193,7 @@ def test_main_reports_success_without_internal_details(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     settings = make_settings()
-    monkeypatch.setattr(runner, "load_settings", lambda: settings)
+    monkeypatch.setattr(runner, "load_worker_settings", lambda: settings)
     monkeypatch.setattr(
         runner,
         "execute_single_job",
@@ -221,7 +221,7 @@ def test_main_reports_persisted_processing_failure(
             "error_summary": "Safe parser failure",
         }
     )
-    monkeypatch.setattr(runner, "load_settings", lambda: settings)
+    monkeypatch.setattr(runner, "load_worker_settings", lambda: settings)
     monkeypatch.setattr(
         runner,
         "execute_single_job",
@@ -244,12 +244,12 @@ def test_main_reports_configuration_failure_without_attempting_processing(
 ) -> None:
     processing_called = False
 
-    def record_processing(settings: Settings, run_id: UUID) -> ProcessingRun:
+    def record_processing(settings: WorkerSettings, run_id: UUID) -> ProcessingRun:
         nonlocal processing_called
         processing_called = True
         return make_ready_run()
 
-    monkeypatch.setattr(runner, "load_settings", Settings)
+    monkeypatch.setattr(runner, "load_worker_settings", WorkerSettings)
     monkeypatch.setattr(runner, "execute_single_job", record_processing)
 
     exit_code = runner.main([str(PROCESSING_RUN_ID)])
@@ -266,9 +266,9 @@ def test_main_redacts_unexpected_processing_failure(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     settings = make_settings()
-    monkeypatch.setattr(runner, "load_settings", lambda: settings)
+    monkeypatch.setattr(runner, "load_worker_settings", lambda: settings)
 
-    def fail_safely(loaded_settings: Settings, run_id: UUID) -> ProcessingRun:
+    def fail_safely(loaded_settings: WorkerSettings, run_id: UUID) -> ProcessingRun:
         del loaded_settings, run_id
         raise RuntimeError("sensitive database or parser detail")
 

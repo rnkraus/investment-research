@@ -20,7 +20,7 @@ from investment_research.infrastructure.generation.deterministic import (
     M0_0_INSUFFICIENT_MESSAGE,
 )
 from investment_research.main import create_app
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings, WorkerSettings
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
@@ -48,7 +48,7 @@ def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
 
 
 def process_captured_run(
-    settings: Settings,
+    settings: WorkerSettings,
     processing_run_id: str,
 ) -> subprocess.CompletedProcess[str]:
     """Execute the same bounded separate runner presented by the web UI."""
@@ -84,15 +84,18 @@ def process_captured_run(
 
 
 def test_complete_m0_0_journey_opens_exact_source_and_refuses_missing_evidence(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
+    integration_worker_settings: WorkerSettings,
     tmp_path: Path,
 ) -> None:
     """Prove capture, processing, research, citation, and refusal as one journey."""
 
-    settings = integration_database_settings.model_copy(
-        update={"object_storage_root": tmp_path / "objects"}
+    storage_root = tmp_path / "objects"
+    api_settings = integration_api_settings.model_copy(update={"object_storage_root": storage_root})
+    worker_settings = integration_worker_settings.model_copy(
+        update={"object_storage_root": storage_root}
     )
-    application = create_app(settings)
+    application = create_app(api_settings)
 
     with TestClient(application) as client:
         with FIXTURE_PDF.open("rb") as fixture_file:
@@ -115,7 +118,7 @@ def test_complete_m0_0_journey_opens_exact_source_and_refuses_missing_evidence(
         assert capture_response.status_code == 202
         capture = DocumentAccepted.model_validate(capture_response.json())
 
-        runner = process_captured_run(settings, str(capture.processing_run_id))
+        runner = process_captured_run(worker_settings, str(capture.processing_run_id))
         assert runner.returncode == 0, runner.stderr
         assert runner.stderr == ""
 
@@ -178,13 +181,13 @@ def test_complete_m0_0_journey_opens_exact_source_and_refuses_missing_evidence(
 
 
 def test_m0_0_api_rejects_pdf_above_the_configured_upload_limit(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     tmp_path: Path,
 ) -> None:
     """Prove the multipart API rejects oversized content before publishing an object."""
 
     storage_root = tmp_path / "objects"
-    settings = integration_database_settings.model_copy(
+    settings = integration_api_settings.model_copy(
         update={
             "object_storage_root": storage_root,
             "max_upload_bytes": FIXTURE_PDF.stat().st_size - 1,

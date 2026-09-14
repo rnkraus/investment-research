@@ -19,7 +19,7 @@ from investment_research.modules.evidence.persistence import (
     StatementEvidenceRow,
 )
 from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     ResearchSource,
     make_research_source,
@@ -60,16 +60,14 @@ def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
 
 
 def test_research_api_emits_the_validated_manifest_answer(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
     source = make_manifest_source(label="Research API Answer")
     persist_research_source(integration_database_engine, source)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: source.context
 
@@ -99,16 +97,14 @@ def test_research_api_emits_the_validated_manifest_answer(
 
 
 def test_research_api_reuses_canonical_evidence_for_repeated_answers(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
     source = make_manifest_source(label="Research API Repeated Answer")
     persist_research_source(integration_database_engine, source)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: source.context
     request_body = {
@@ -145,16 +141,14 @@ def test_research_api_reuses_canonical_evidence_for_repeated_answers(
 
 
 def test_research_api_emits_no_content_for_the_unanswerable_manifest_question(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
     source = make_manifest_source(label="Research API Insufficient")
     persist_research_source(integration_database_engine, source)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: source.context
 
@@ -177,7 +171,7 @@ def test_research_api_emits_no_content_for_the_unanswerable_manifest_question(
 
 
 def test_research_api_hides_foreign_documents_like_unknown_documents(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
@@ -186,9 +180,7 @@ def test_research_api_hides_foreign_documents_like_unknown_documents(
     persist_research_source(integration_database_engine, owner)
     persist_workspace(integration_database_engine, foreign)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: foreign.context
 
@@ -219,16 +211,14 @@ def test_research_api_hides_foreign_documents_like_unknown_documents(
 
 
 def test_evidence_api_resolves_a_streamed_citation_to_its_exact_active_source(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
     source = make_manifest_source(label="Evidence API Source")
     persist_research_source(integration_database_engine, source)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: source.context
 
@@ -267,7 +257,7 @@ def test_evidence_api_resolves_a_streamed_citation_to_its_exact_active_source(
 
 
 def test_evidence_api_hides_a_foreign_citation_like_an_unknown_span(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
@@ -276,9 +266,7 @@ def test_evidence_api_hides_a_foreign_citation_like_an_unknown_span(
     persist_research_source(integration_database_engine, owner)
     persist_workspace(integration_database_engine, foreign)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: owner.context
 

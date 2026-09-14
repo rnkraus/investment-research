@@ -23,7 +23,7 @@ from investment_research.modules.evidence.application import (
 from investment_research.modules.evidence.contracts import ResolvedEvidenceSpan
 from investment_research.modules.evidence.domain import EvidenceSpan
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -90,7 +90,7 @@ def evidence_client(
     """Run the real route with controlled service and workspace dependencies."""
 
     application = create_app(
-        Settings.model_validate(
+        ApiSettings.model_validate(
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,

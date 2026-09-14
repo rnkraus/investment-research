@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import Engine, func, select
 
-from investment_research.bootstrap import build_container
+from investment_research.bootstrap import build_api_container
 from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
@@ -62,7 +62,7 @@ from investment_research.modules.research.ports import (
     AnswerValidationUnitOfWorkFactory,
 )
 from investment_research.modules.search.contracts import LexicalSearchHit
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     FIXTURE_TIME,
     ResearchSource,
@@ -208,7 +208,7 @@ def prepare_source(engine: Engine, *, label: str) -> tuple[ResearchSource, Resea
 
 def test_container_wires_the_manifest_answer_path(
     integration_database_engine: Engine,
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
 ) -> None:
     answerable_text = (
         f"{M0_0_FIXTURE_ANSWER_CASE.question} {M0_0_FIXTURE_ANSWER_CASE.evidence_text}"
@@ -219,7 +219,7 @@ def test_container_wires_the_manifest_answer_path(
         lexical_config_version=M0_0_PROCESSING_PROFILE.lexical_config_version,
     )
     persist_research_source(integration_database_engine, source)
-    container = build_container(integration_database_settings)
+    container = build_api_container(integration_api_settings)
 
     try:
         result = container.answer_research_request_service.answer(

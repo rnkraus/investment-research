@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from investment_research.bootstrap import ApplicationContainer, build_container
+from investment_research.bootstrap import (
+    ApiContainer,
+    build_api_container,
+    build_worker_container,
+)
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.main import create_app
 from investment_research.modules.documents.application import (
@@ -22,15 +26,15 @@ from investment_research.modules.research.application import (
     GenerateValidatedAnswerService,
     RetrieveResearchService,
 )
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings, WorkerSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 
 
-def make_settings(object_storage_root: Path) -> Settings:
-    """Build deterministic local settings without opening a database connection."""
+def make_api_settings(object_storage_root: Path) -> ApiSettings:
+    """Build deterministic API settings without opening a database connection."""
 
-    return Settings.model_validate(
+    return ApiSettings.model_validate(
         {
             "environment": "test",
             "database_url": LOCAL_DATABASE_URL,
@@ -39,10 +43,22 @@ def make_settings(object_storage_root: Path) -> Settings:
     )
 
 
-def test_build_container_wires_application_resources(tmp_path: Path) -> None:
+def make_worker_settings(object_storage_root: Path) -> WorkerSettings:
+    """Build deterministic worker settings without opening a database connection."""
+
+    return WorkerSettings.model_validate(
+        {
+            "environment": "test",
+            "database_url": LOCAL_DATABASE_URL,
+            "object_storage_root": object_storage_root,
+        }
+    )
+
+
+def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
     storage_root = tmp_path / "objects"
-    settings = make_settings(storage_root)
-    container = build_container(settings)
+    settings = make_api_settings(storage_root)
+    container = build_api_container(settings)
 
     try:
         session = container.session_factory()
@@ -54,7 +70,6 @@ def test_build_container_wires_application_resources(tmp_path: Path) -> None:
             assert isinstance(container.capture_document_service, CaptureDocumentService)
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.get_processing_run_service, GetProcessingRunService)
-            assert isinstance(container.process_document_service, ProcessDocumentService)
             assert isinstance(container.retrieve_research_service, RetrieveResearchService)
             assert isinstance(
                 container.generate_validated_answer_service,
@@ -68,6 +83,30 @@ def test_build_container_wires_application_resources(tmp_path: Path) -> None:
                 container.resolve_evidence_span_service,
                 ResolveEvidenceSpanService,
             )
+            assert not hasattr(container, "process_document_service")
+            assert not storage_root.exists()
+        finally:
+            session.close()
+    finally:
+        container.close()
+
+
+def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) -> None:
+    storage_root = tmp_path / "objects"
+    settings = make_worker_settings(storage_root)
+    container = build_worker_container(settings)
+
+    try:
+        session = container.session_factory()
+        try:
+            assert container.settings is settings
+            assert container.database_engine.dialect.name == "postgresql"
+            assert session.bind is container.database_engine
+            assert isinstance(container.object_storage, LocalObjectStorage)
+            assert isinstance(container.open_original_service, OpenOriginalService)
+            assert isinstance(container.process_document_service, ProcessDocumentService)
+            assert not hasattr(container, "capture_document_service")
+            assert not hasattr(container, "answer_research_request_service")
             assert not storage_root.exists()
         finally:
             session.close()
@@ -79,19 +118,19 @@ def test_application_lifespan_owns_container(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    closed_containers: list[ApplicationContainer] = []
+    closed_containers: list[ApiContainer] = []
 
-    def record_close(container: ApplicationContainer) -> None:
+    def record_close(container: ApiContainer) -> None:
         closed_containers.append(container)
 
-    monkeypatch.setattr(ApplicationContainer, "close", record_close)
-    application = create_app(make_settings(tmp_path / "objects"))
+    monkeypatch.setattr(ApiContainer, "close", record_close)
+    application = create_app(make_api_settings(tmp_path / "objects"))
 
     assert not hasattr(application.state, "container")
 
     with TestClient(application):
         container = application.state.container
-        assert isinstance(container, ApplicationContainer)
+        assert isinstance(container, ApiContainer)
 
     assert closed_containers == [container]
     assert not hasattr(application.state, "container")

@@ -11,7 +11,7 @@ from investment_research.modules.identity.application import (
     LOCAL_DEVELOPMENT_USER_ID,
     LOCAL_DEVELOPMENT_WORKSPACE_ID,
 )
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 
@@ -23,7 +23,7 @@ class ContextResponse(TypedDict):
 
 def test_client_workspace_id_cannot_override_server_context() -> None:
     application = create_app(
-        Settings.model_validate({"environment": "test", "database_url": LOCAL_DATABASE_URL})
+        ApiSettings.model_validate({"environment": "test", "database_url": LOCAL_DATABASE_URL})
     )
 
     @application.get("/_test/context")
