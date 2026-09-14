@@ -28,6 +28,11 @@ from investment_research.infrastructure.generation.deterministic import (
     M0_0_INSUFFICIENT_MESSAGE,
     DeterministicFixtureAnswerGenerator,
 )
+from investment_research.infrastructure.health import (
+    CompositeReadinessProbe,
+    PostgreSQLReadinessProbe,
+    ReadinessProbe,
+)
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.documents.application import (
@@ -93,6 +98,7 @@ class ApiContainer:
     identity_context_provider: IdentityContextProvider
     database_engine: Engine
     session_factory: SessionFactory
+    readiness_probe: ReadinessProbe
     object_storage: ObjectStorage
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
@@ -169,6 +175,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         identity_context_provider=FixedLocalIdentityContextProvider(),
         database_engine=database.engine,
         session_factory=database.session_factory,
+        readiness_probe=CompositeReadinessProbe((PostgreSQLReadinessProbe(database.engine),)),
         object_storage=object_storage,
         capture_document_service=CaptureDocumentService(
             object_storage=object_storage,
