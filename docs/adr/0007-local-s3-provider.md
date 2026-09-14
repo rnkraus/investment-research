@@ -81,6 +81,31 @@ adopted after that period only when it contains all applicable fixes. If an appl
 high-severity fix arrives inside the settling period, implementation pauses for an explicit risk
 review rather than choosing either an unpatched or insufficiently reviewed image silently.
 
+### Reviewed SeaweedFS 4.47 release-age exception
+
+On 2026-09-14, the project owner explicitly approved a narrow release-age exception for SeaweedFS
+4.47. The release was less than seven days old, but the immediately preceding eligible image had
+applicable critical and high dependency findings that 4.47 reduced. Waiting or selecting the older
+image therefore did not provide the normally intended security benefit of the settling period.
+
+The exception applies only to the local M0 and disposable CI image identified by the multi-platform
+digest `sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882`.
+Before approval:
+
+- the 4.47 tag resolved to the same digest through Docker Hub and GitHub Container Registry;
+- Cosign verified the tag against the official
+  `container_release_unified.yml@refs/tags/4.47` GitHub Actions identity and transparency log;
+- Docker Scout scans of the resolved Linux AMD64 and ARM64 images reported no critical findings;
+- both platforms reported one high `google.golang.org/grpc` finding, whose published affected path
+  requires an xDS-created gRPC server; the selected master, volume, filer, and S3 commands do not
+  enable that xDS server path;
+- the local ARM64 binary reported version 4.47 and source revision `c50733600`.
+
+This is a bounded risk acceptance, not a change to the general release-age policy. The image remains
+local-only, receives no private archive data, exposes no public endpoint, and must be rescanned once
+seven full days have elapsed and before any public use. A new applicable finding, provenance change,
+or digest change invalidates the exception and pauses adoption for another review.
+
 This ADR supersedes only provider-specific MinIO references in ADR-0001 and ADR-0002. Their process
 boundaries and canonical-versus-derived ownership decisions remain accepted and unchanged.
 
@@ -113,7 +138,8 @@ Before Step 2 is complete, Docker Desktop and Linux CI must verify:
 5. web and parser processes receive no storage credentials;
 6. restart preserves committed originals, while test cleanup removes only its unique project data;
 7. only the required S3 data-plane endpoint is reachable from application processes;
-8. the pinned image and Python SDK pass the repository's security and release-age checks.
+8. the pinned image and Python SDK pass the repository's security and release-age checks or one
+   explicit, documented, and bounded exception.
 
 Reconsider SeaweedFS if these checks fail, upstream maintenance stops, applicable vulnerabilities
 cannot be mitigated promptly, required S3 semantics diverge, or local operation becomes too complex.
@@ -123,6 +149,8 @@ Select the managed public provider in a separate ADR when public deployment begi
 
 - [MinIO legal notice and open-source end of life](https://www.min.io/legal)
 - [SeaweedFS project, license, Docker path, and S3 capabilities](https://github.com/seaweedfs/seaweedfs)
+- [SeaweedFS 4.47 release](https://github.com/seaweedfs/seaweedfs/releases/tag/4.47)
 - [SeaweedFS security policy](https://github.com/seaweedfs/seaweedfs/blob/master/SECURITY.md)
+- [gRPC xDS denial-of-service advisory](https://github.com/grpc/grpc-go/security/advisories/GHSA-2v4p-qf9q-27wj)
 - [Boto3 package and support metadata](https://pypi.org/project/boto3/)
 - [Amazon S3 conditional `PutObject`](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/put_object.html)
