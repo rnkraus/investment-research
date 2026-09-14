@@ -44,7 +44,7 @@ Follow `docs/02-system-design.md`. The fixed baseline is:
 - modular monolith with separate FastAPI API and Celery worker processes;
 - Next.js, TypeScript, Tailwind CSS, and shadcn/ui for the web application;
 - Python, FastAPI, Pydantic, SQLAlchemy, and Alembic for the backend;
-- PostgreSQL and S3-compatible object storage, with MinIO locally, as canonical stores;
+- PostgreSQL and S3-compatible object storage, with SeaweedFS locally, as canonical stores;
 - Redis for transient queue, lock, and cache state;
 - Pinecone as a derived, rebuildable dense retrieval index;
 - OpenTelemetry/OpenInference and optional LangSmith for observability, never canonical state;
@@ -56,7 +56,15 @@ Use `pnpm` for frontend dependencies and scripts. Keep `pnpm-lock.yaml` under ve
 
 Use `uv` for Python dependency management, environments, locking, and backend commands. Keep `uv.lock` under version control once the backend is scaffolded; do not manage project dependencies with direct `pip install` commands.
 
-The frontend accesses data through FastAPI, never directly through PostgreSQL, Pinecone, Redis, MinIO, or AI providers. Backend modules communicate through typed application services rather than another module's internal persistence implementation. Keep provider SDKs behind small, typed, application-owned adapters.
+The local object-storage provider and later public-storage boundary are governed by
+`docs/adr/0007-local-s3-provider.md`. Use SeaweedFS only for the local Docker Compose runtime and
+select a managed S3-compatible service separately before public deployment. Keep the application
+dependent on its provider-neutral `ObjectStorage` contract.
+
+The frontend accesses data through FastAPI, never directly through PostgreSQL, Pinecone, Redis,
+object storage, or AI providers. Backend modules communicate through typed application services
+rather than another module's internal persistence implementation. Keep provider SDKs behind small,
+typed, application-owned adapters.
 
 Do not introduce AWS-specific infrastructure, Kubernetes, microservices, or additional distributed services before a measured requirement and accepted architectural decision justify them.
 
