@@ -97,7 +97,11 @@ Start the web application in a third terminal from the repository root:
 pnpm dev
 ```
 
-Open the web application at <http://127.0.0.1:3000>. The API health endpoint is available at <http://127.0.0.1:8000/health>.
+Open the web application at <http://127.0.0.1:3000>. The API liveness endpoint is available at
+<http://127.0.0.1:8000/health>; it reports only whether the API process is running. The readiness
+endpoint at <http://127.0.0.1:8000/ready> returns `200` only when PostgreSQL is reachable and its
+Alembic revision exactly matches the schema required by this API version. A failed readiness check
+returns only `503 {"status":"not_ready"}` and never exposes dependency or error details.
 
 Complete the M0.0 browser journey with the synthetic fixture:
 
