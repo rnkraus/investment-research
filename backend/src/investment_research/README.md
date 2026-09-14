@@ -11,7 +11,7 @@
 | `bootstrap.py`    | Separate API and worker composition roots that select concrete implementations for application-owned contracts.          |
 | `settings.py`     | Loads least-privilege API, worker, parser, and database-maintenance configuration.                                       |
 | `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
-| `infrastructure/` | Technical database, lexical-search, parsing, and secure local object-storage adapters.                                   |
+| `infrastructure/` | Technical database, logging, lexical-search, parsing, and secure local object-storage adapters.                          |
 | `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                               |
 
 ## Startup flow
@@ -86,6 +86,13 @@ loads only its allowlisted process variables, exposes no database field, and rej
 application credential variables. `runtime_location=host` restricts bind and database targets to
 loopback; `runtime_location=container` permits the fixed internal Compose targets required by the
 service topology.
+
+API requests pass through a server-owned correlation boundary before body limits and route
+handling. `RequestLoggingMiddleware` replaces any client-supplied request ID, adds the generated UUID
+to the response, and emits one completion or failure event. It matches only registered route
+templates and never logs raw paths, query strings, headers, or bodies. `SafeJsonFormatter` emits a
+fixed field allowlist; arbitrary messages, values, exception details, and traceback text are
+discarded rather than copied into logs. Safe API error envelopes carry the same request ID.
 
 Importing `create_app` or exporting OpenAPI does not allocate database resources. The FastAPI
 lifespan creates them only when the server starts and releases them during shutdown. Sessions are

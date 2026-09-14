@@ -85,6 +85,12 @@ shutdown. The separate processing runner loads `WorkerSettings`. An explicit
 local file. Database URL query parameters are rejected so driver options cannot redirect a
 validated target. Application startup does not create or migrate tables automatically.
 
+The API writes one structured JSON completion or failure event per HTTP request at the configured
+`INVESTMENT_RESEARCH_LOG_LEVEL`. It generates the correlation identifier on the server and returns
+it in the `x-request-id` response header and safe JSON error envelope. Request bodies, query strings,
+raw unmatched paths, headers, credentials, exception messages, and traceback text are excluded from
+these application events.
+
 Start the web application in a third terminal from the repository root:
 
 ```shell
