@@ -39,7 +39,7 @@ from investment_research.modules.documents.ports import (
 )
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -123,7 +123,7 @@ def capture_client(
     """Run the real FastAPI boundary with deterministic dependency overrides."""
 
     application = create_app(
-        Settings.model_validate(
+        ApiSettings.model_validate(
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,
@@ -151,7 +151,7 @@ def original_client(
     """Run the original route with a controlled application service."""
 
     application = create_app(
-        Settings.model_validate(
+        ApiSettings.model_validate(
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,

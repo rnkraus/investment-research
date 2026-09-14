@@ -1,5 +1,6 @@
-"""Tests for local-only runtime settings."""
+"""Tests for process-specific runtime settings."""
 
+from os import environ
 from pathlib import Path
 
 import pytest
@@ -13,47 +14,85 @@ from investment_research.settings import (
     MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES,
     MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
     MIN_PROCESSING_MEMORY_LIMIT_BYTES,
+    PARSER_FORBIDDEN_ENVIRONMENT_NAMES,
+    PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES,
     PROJECT_ROOT,
-    Settings,
-    load_settings,
+    ApiSettings,
+    ParserSettings,
+    WorkerSettings,
+    load_api_settings,
+    load_database_settings,
+    load_parser_settings,
+    load_worker_settings,
 )
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+CONTAINER_DATABASE_URL = "postgresql+psycopg://test-user:test-password@postgres:5432/test-database"
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
     "POSTGRES_USER",
     "POSTGRES_PASSWORD",
     "POSTGRES_PORT",
 )
+type ObjectStorageSettingsFactory = type[ApiSettings] | type[WorkerSettings]
+type ParserLimitSettingsFactory = type[WorkerSettings] | type[ParserSettings]
 
 
-def test_settings_load_supported_environment_values(
+def clear_parser_forbidden_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove host-specific credential variables from one parser-loader test."""
+
+    for name in tuple(environ):
+        if name in PARSER_FORBIDDEN_ENVIRONMENT_NAMES or name.startswith(
+            PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+
+def test_api_settings_load_only_supported_environment_values(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     object_storage_root = tmp_path / "objects"
     monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "host")
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_HOST", "localhost")
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_PORT", "8123")
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
-    monkeypatch.setenv(
-        "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
-        str(object_storage_root),
-    )
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT", str(object_storage_root))
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
-    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
-    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "1500000")
-    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS", "45")
-    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES", "268435456")
 
-    settings = load_settings(env_file=None)
+    settings = load_api_settings(env_file=None)
 
     assert settings.environment == "test"
+    assert settings.runtime_location == "host"
     assert settings.api_host == "localhost"
     assert settings.api_port == 8123
     assert settings.require_database_url() == LOCAL_DATABASE_URL
     assert settings.object_storage_root == object_storage_root
     assert settings.max_upload_bytes == 1_048_576
+    assert "test-password" not in repr(settings)
+
+
+def test_worker_settings_load_only_supported_environment_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    object_storage_root = tmp_path / "objects"
+    monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "host")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT", str(object_storage_root))
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "1500000")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES", "268435456")
+
+    settings = load_worker_settings(env_file=None)
+
+    assert settings.environment == "test"
+    assert settings.runtime_location == "host"
+    assert settings.require_database_url() == LOCAL_DATABASE_URL
+    assert settings.object_storage_root == object_storage_root
     assert settings.max_pdf_pages == 100
     assert settings.max_extracted_characters == 1_500_000
     assert settings.processing_timeout_seconds == 45
@@ -61,30 +100,42 @@ def test_settings_load_supported_environment_values(
     assert "test-password" not in repr(settings)
 
 
-def test_settings_resolve_relative_object_storage_root_from_project_root(
+def test_database_settings_ignore_unowned_api_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(
-        "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
-        "output/test-object-storage",
-    )
+    monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_API_HOST", "public.example.invalid")
 
-    settings = load_settings(env_file=None)
+    settings = load_database_settings(env_file=None)
+
+    assert settings.require_database_url() == LOCAL_DATABASE_URL
+    assert "api_host" not in type(settings).model_fields
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+def test_settings_resolve_relative_object_storage_root_from_project_root(
+    settings_factory: ObjectStorageSettingsFactory,
+) -> None:
+    settings = settings_factory(object_storage_root=Path("output/test-object-storage"))
 
     assert settings.object_storage_root == PROJECT_ROOT / "output" / "test-object-storage"
 
 
-def test_settings_reject_object_storage_inside_frontend() -> None:
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+def test_settings_reject_object_storage_inside_frontend(
+    settings_factory: ObjectStorageSettingsFactory,
+) -> None:
     with pytest.raises(ValidationError, match="outside the frontend web root"):
-        Settings(object_storage_root=PROJECT_ROOT / "frontend" / "uploads")
+        settings_factory(object_storage_root=PROJECT_ROOT / "frontend" / "uploads")
 
 
 @pytest.mark.parametrize("max_upload_bytes", [0, 101 * 1024 * 1024])
-def test_settings_reject_unsafe_upload_limit(max_upload_bytes: int) -> None:
+def test_api_settings_reject_unsafe_upload_limit(max_upload_bytes: int) -> None:
     with pytest.raises(ValidationError, match="max_upload_bytes"):
-        Settings(max_upload_bytes=max_upload_bytes)
+        ApiSettings(max_upload_bytes=max_upload_bytes)
 
 
+@pytest.mark.parametrize("settings_factory", [WorkerSettings, ParserSettings])
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -102,9 +153,13 @@ def test_settings_reject_unsafe_upload_limit(max_upload_bytes: int) -> None:
         ),
     ],
 )
-def test_settings_reject_unsafe_parser_limit(field: str, value: int) -> None:
+def test_processing_settings_reject_unsafe_parser_limit(
+    settings_factory: ParserLimitSettingsFactory,
+    field: str,
+    value: int,
+) -> None:
     with pytest.raises(ValidationError) as error:
-        Settings.model_validate({field: value})
+        settings_factory.model_validate({field: value})
 
     assert error.value.errors()[0]["loc"] == (field,)
 
@@ -130,24 +185,18 @@ def test_settings_reject_unsafe_parser_limit(field: str, value: int) -> None:
         ),
     ],
 )
-def test_settings_reject_unsafe_processing_limit(field: str, value: int) -> None:
+def test_worker_settings_reject_unsafe_execution_limit(field: str, value: int) -> None:
     with pytest.raises(ValidationError) as error:
-        Settings.model_validate({field: value})
+        WorkerSettings.model_validate({field: value})
 
     assert error.value.errors()[0]["loc"] == (field,)
 
 
-def test_settings_build_database_url_from_local_env_file(
+def test_api_settings_build_database_url_from_local_env_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    for name in (
-        "INVESTMENT_RESEARCH_DATABASE_URL",
-        "POSTGRES_DB",
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD",
-        "POSTGRES_PORT",
-    ):
+    for name in ("INVESTMENT_RESEARCH_DATABASE_URL", *POSTGRES_SETTING_NAMES):
         monkeypatch.delenv(name, raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text(
@@ -162,7 +211,7 @@ def test_settings_build_database_url_from_local_env_file(
         encoding="utf-8",
     )
 
-    settings = load_settings(env_file=env_file)
+    settings = load_api_settings(env_file=env_file)
 
     assert settings.require_database_url() == (
         "postgresql+psycopg://local%20researcher:test%40password%2Fwith%3Asymbols"
@@ -178,7 +227,7 @@ def test_process_database_url_overrides_local_env_file(
     env_file.write_text("POSTGRES_PASSWORD=file-password\n", encoding="utf-8")
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
 
-    settings = load_settings(env_file=env_file)
+    settings = load_api_settings(env_file=env_file)
 
     assert settings.require_database_url() == LOCAL_DATABASE_URL
 
@@ -187,7 +236,7 @@ def test_process_database_url_overrides_local_env_file(
     "missing_name",
     ["POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"],
 )
-def test_settings_reject_incomplete_local_postgres_configuration(
+def test_api_settings_reject_incomplete_local_postgres_configuration(
     missing_name: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -208,16 +257,16 @@ def test_settings_reject_incomplete_local_postgres_configuration(
     )
 
     with pytest.raises(ValueError, match=missing_name):
-        load_settings(env_file=env_file)
+        load_api_settings(env_file=env_file)
 
 
 @pytest.mark.parametrize("postgres_port", ["not-a-number", "0", "65536"])
-def test_settings_reject_invalid_local_postgres_port(
+def test_api_settings_reject_invalid_local_postgres_port(
     postgres_port: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    for name in ("INVESTMENT_RESEARCH_DATABASE_URL", "POSTGRES_PASSWORD", "POSTGRES_PORT"):
+    for name in ("INVESTMENT_RESEARCH_DATABASE_URL", *POSTGRES_SETTING_NAMES):
         monkeypatch.delenv(name, raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text(
@@ -229,12 +278,18 @@ def test_settings_reject_invalid_local_postgres_port(
     )
 
     with pytest.raises(ValueError, match="POSTGRES_PORT"):
-        load_settings(env_file=env_file)
+        load_api_settings(env_file=env_file)
 
 
-def test_settings_reject_non_loopback_api_host() -> None:
-    with pytest.raises(ValidationError, match="loopback"):
-        Settings(api_host="0.0.0.0")
+def test_api_settings_reject_non_loopback_host_runtime_bind() -> None:
+    with pytest.raises(ValidationError, match="api_host"):
+        ApiSettings(api_host="0.0.0.0")
+
+
+def test_api_settings_allow_container_runtime_bind() -> None:
+    settings = ApiSettings(runtime_location="container", api_host="0.0.0.0")
+
+    assert settings.api_host == "0.0.0.0"
 
 
 @pytest.mark.parametrize(
@@ -276,34 +331,125 @@ def test_settings_reject_non_loopback_api_host() -> None:
             "query parameters",
             id="query-host-override",
         ),
-        pytest.param(
-            "postgresql+psycopg://test-user:test-password@127.0.0.1/test-database"
-            "?hostaddr=203.0.113.10",
-            "query parameters",
-            id="query-hostaddr-override",
-        ),
-        pytest.param(
-            "postgresql+psycopg://test-user:test-password@127.0.0.1/test-database"
-            "?service=external-service",
-            "query parameters",
-            id="query-service-override",
-        ),
-        pytest.param(
-            "postgresql+psycopg://test-user:test-password@127.0.0.1/test-database"
-            "?application_name=research-api",
-            "query parameters",
-            id="all-query-options-rejected",
-        ),
     ],
 )
-def test_settings_reject_unsafe_database_url(
+def test_database_settings_reject_unsafe_host_url(
     database_url: str,
     expected_error: str,
 ) -> None:
     with pytest.raises(ValidationError, match=expected_error):
-        Settings.model_validate({"database_url": database_url})
+        ApiSettings.model_validate({"database_url": database_url})
 
 
-def test_settings_require_database_url_for_database_access() -> None:
+def test_database_settings_allow_only_compose_postgres_in_container() -> None:
+    settings = ApiSettings.model_validate(
+        {
+            "runtime_location": "container",
+            "api_host": "0.0.0.0",
+            "database_url": CONTAINER_DATABASE_URL,
+        }
+    )
+
+    assert settings.require_database_url() == CONTAINER_DATABASE_URL
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        LOCAL_DATABASE_URL,
+        "postgresql+psycopg://test-user:test-password@database:5432/test-database",
+    ],
+)
+def test_database_settings_reject_other_targets_in_container(database_url: str) -> None:
+    with pytest.raises(ValidationError, match="Compose postgres service"):
+        ApiSettings.model_validate(
+            {
+                "runtime_location": "container",
+                "api_host": "0.0.0.0",
+                "database_url": database_url,
+            }
+        )
+
+
+def test_container_loader_rejects_postgres_bootstrap_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("INVESTMENT_RESEARCH_DATABASE_URL", raising=False)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "container")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_API_HOST", "0.0.0.0")
+    monkeypatch.setenv("POSTGRES_DB", "test-database")
+    monkeypatch.setenv("POSTGRES_USER", "test-user")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "test-password")
+    monkeypatch.setenv("POSTGRES_PORT", "5432")
+
+    with pytest.raises(ValueError, match="require INVESTMENT_RESEARCH_DATABASE_URL"):
+        load_api_settings(env_file=None)
+
+
+def test_database_settings_require_url_for_database_access() -> None:
     with pytest.raises(RuntimeError, match="PostgreSQL configuration"):
-        Settings().require_database_url()
+        ApiSettings().require_database_url()
+
+
+def test_process_models_expose_only_their_owned_configuration() -> None:
+    assert "database_url" in ApiSettings.model_fields
+    assert "database_url" in WorkerSettings.model_fields
+    assert "database_url" not in ParserSettings.model_fields
+    assert "app_name" in ApiSettings.model_fields
+    assert "app_name" not in WorkerSettings.model_fields
+    assert "app_name" not in ParserSettings.model_fields
+    assert "api_host" not in WorkerSettings.model_fields
+    assert "api_host" not in ParserSettings.model_fields
+    assert "processing_timeout_seconds" not in ApiSettings.model_fields
+    assert "processing_timeout_seconds" not in ParserSettings.model_fields
+
+
+def test_parser_settings_load_non_secret_process_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_parser_forbidden_environment(monkeypatch)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "container")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_HOST", "0.0.0.0")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_PORT", "8124")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "80")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "500000")
+
+    settings = load_parser_settings()
+
+    assert settings.environment == "test"
+    assert settings.runtime_location == "container"
+    assert settings.parser_host == "0.0.0.0"
+    assert settings.parser_port == 8124
+    assert settings.max_pdf_pages == 80
+    assert settings.max_extracted_characters == 500_000
+
+
+@pytest.mark.parametrize(
+    "forbidden_name",
+    [
+        "INVESTMENT_RESEARCH_DATABASE_URL",
+        "POSTGRES_PASSWORD",
+        "MINIO_ROOT_PASSWORD",
+        "AWS_SECRET_ACCESS_KEY",
+        "OPENAI_API_KEY",
+        "LANGSMITH_API_KEY",
+    ],
+)
+def test_parser_settings_reject_application_credentials(
+    forbidden_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_parser_forbidden_environment(monkeypatch)
+    marker = "synthetic-secret-value"
+    monkeypatch.setenv(forbidden_name, marker)
+
+    with pytest.raises(ValueError, match=forbidden_name) as error:
+        load_parser_settings()
+
+    assert marker not in str(error.value)
+
+
+def test_parser_settings_reject_public_bind_on_host() -> None:
+    with pytest.raises(ValidationError, match="parser_host"):
+        ParserSettings(parser_host="0.0.0.0")

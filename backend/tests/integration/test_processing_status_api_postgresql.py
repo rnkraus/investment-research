@@ -8,7 +8,7 @@ from sqlalchemy import Engine
 
 from investment_research.api.dependencies import get_workspace_context
 from investment_research.main import create_app
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     make_research_source,
     persist_research_source,
@@ -17,7 +17,7 @@ from tests.integration.factories import (
 
 
 def test_processing_status_hides_cross_workspace_and_unknown_runs(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
@@ -26,9 +26,7 @@ def test_processing_status_hides_cross_workspace_and_unknown_runs(
     persist_research_source(integration_database_engine, owner)
     persist_workspace(integration_database_engine, foreign)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: owner.context
 

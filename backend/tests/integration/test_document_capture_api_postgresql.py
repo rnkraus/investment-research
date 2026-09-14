@@ -21,7 +21,7 @@ from investment_research.modules.identity.application import (
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 from scripts.seed_m0_0 import ISOLATION_TEST_WORKSPACE_ID
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -50,12 +50,12 @@ def capture_fixture(client: TestClient, *, title: str) -> DocumentAccepted:
 
 
 def test_upload_and_open_original_enforce_canonical_workspace(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
 ) -> None:
     storage_root = tmp_path / "objects"
-    settings = integration_database_settings.model_copy(
+    settings = integration_api_settings.model_copy(
         update={
             "object_storage_root": storage_root,
             "max_upload_bytes": FIXTURE_PDF.stat().st_size,

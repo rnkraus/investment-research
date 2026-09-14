@@ -8,21 +8,21 @@ import pytest
 
 from investment_research.api.openapi import _merge_schema
 from investment_research.main import create_app
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 OPENAPI_SNAPSHOT = REPOSITORY_ROOT / "frontend/src/lib/api/generated/openapi.json"
 
 
 def test_committed_openapi_snapshot_matches_application() -> None:
-    application_schema = create_app(Settings(environment="test")).openapi()
+    application_schema = create_app(ApiSettings(environment="test")).openapi()
     committed_schema = json.loads(OPENAPI_SNAPSHOT.read_text())
 
     assert committed_schema == application_schema
 
 
 def test_openapi_advertises_only_implemented_product_routes() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
 
     assert set(schema["paths"]) == {
         "/health",
@@ -35,7 +35,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
 
 
 def test_document_capture_uses_scoped_multipart_contract() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     operation = schema["paths"]["/api/v1/documents"]["post"]
     body_reference = operation["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
     body_name = body_reference.rsplit("/", maxsplit=1)[-1]
@@ -60,7 +60,7 @@ def test_document_capture_uses_scoped_multipart_contract() -> None:
 
 
 def test_original_route_exposes_binary_pdf_without_workspace_input() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     operation = schema["paths"]["/api/v1/documents/{document_id}/versions/{version_id}/original"][
         "get"
     ]
@@ -90,7 +90,7 @@ def test_original_route_exposes_binary_pdf_without_workspace_input() -> None:
 
 
 def test_processing_status_exposes_safe_scoped_result_without_workspace_input() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     operation = schema["paths"]["/api/v1/processing-runs/{processing_run_id}"]["get"]
 
     assert operation["parameters"] == [
@@ -116,7 +116,7 @@ def test_processing_status_exposes_safe_scoped_result_without_workspace_input() 
 
 
 def test_evidence_route_exposes_canonical_location_without_workspace_input() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     operation = schema["paths"]["/api/v1/evidence-spans/{evidence_span_id}"]["get"]
 
     assert operation["parameters"] == [
@@ -142,7 +142,7 @@ def test_evidence_route_exposes_canonical_location_without_workspace_input() -> 
 
 
 def test_research_route_exposes_scoped_input_and_typed_event_stream() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     operation = schema["paths"]["/api/v1/research-requests"]["post"]
 
     assert operation["requestBody"]["content"]["application/json"]["schema"] == {
@@ -186,14 +186,14 @@ def test_schema_merge_still_rejects_real_definition_conflict() -> None:
 
 
 def test_research_input_schema_has_no_client_workspace_scope() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     research_input = schema["components"]["schemas"]["ResearchRequestInput"]
 
     assert "workspace_id" not in json.dumps(research_input)
 
 
 def test_research_context_schema_defaults_to_current_temporal_mode() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     research_context = schema["components"]["schemas"]["ResearchRequestContext"]
     temporal_mode = schema["components"]["schemas"]["TemporalMode"]
 
@@ -206,7 +206,7 @@ def test_research_context_schema_defaults_to_current_temporal_mode() -> None:
 
 
 def test_openapi_exposes_discriminated_research_stream_union() -> None:
-    schema = create_app(Settings(environment="test")).openapi()
+    schema = create_app(ApiSettings(environment="test")).openapi()
     stream_event = schema["components"]["schemas"]["ResearchStreamEvent"]
 
     assert stream_event["discriminator"]["propertyName"] == "event"

@@ -44,7 +44,7 @@ from investment_research.modules.research.contracts import (
 )
 from investment_research.modules.research.domain import AnswerState, CoverageStatus
 from investment_research.modules.research.persistence import AnswerRow, AnswerStatementRow
-from investment_research.settings import Settings
+from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     make_searchable_research_source,
     persist_research_source,
@@ -113,7 +113,7 @@ def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
     ],
 )
 def test_api_rejects_untrusted_answer_without_exposing_usable_content(
-    integration_database_settings: Settings,
+    integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     tmp_path: Path,
     adversarial_case: AdversarialCase,
@@ -130,9 +130,7 @@ def test_api_rejects_untrusted_answer_without_exposing_usable_content(
     )
     persist_research_source(integration_database_engine, source)
     application = create_app(
-        integration_database_settings.model_copy(
-            update={"object_storage_root": tmp_path / "objects"}
-        )
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
     )
     application.dependency_overrides[get_workspace_context] = lambda: source.context
 

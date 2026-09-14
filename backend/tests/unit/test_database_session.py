@@ -12,7 +12,7 @@ from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
 )
-from investment_research.settings import Settings
+from investment_research.settings import DatabaseSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 
@@ -33,7 +33,7 @@ def temporary_database() -> Iterator[tuple[Engine, Table]]:
 
 
 def test_create_database_engine_uses_safe_postgresql_configuration() -> None:
-    settings = Settings.model_validate({"database_url": LOCAL_DATABASE_URL})
+    settings = DatabaseSettings.model_validate({"database_url": LOCAL_DATABASE_URL})
 
     engine = create_database_engine(settings)
 
