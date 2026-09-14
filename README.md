@@ -174,6 +174,15 @@ cd backend
 uv run --locked python -m scripts.verify_postgres
 ```
 
+Verify the pinned non-root backend image targets from `backend/`. This command builds the API,
+worker, and parser targets, checks their runtime contents and image metadata, starts the API against
+a freshly migrated disposable PostgreSQL database, verifies `/health` and `/ready`, and removes all
+resources it created:
+
+```shell
+uv run --locked python -m scripts.verify_backend_images
+```
+
 ## Run database migrations and seed data
 
 With PostgreSQL running and the root `.env` configured, migrate the schema and create the two
@@ -196,7 +205,9 @@ uv run alembic -c alembic.ini current
 
 CI runs the deterministic frontend and backend checks, migrates an empty PostgreSQL 17 service,
 applies the synthetic seed, runs all PostgreSQL integration tests, checks metadata drift, and proves
-the reviewed migration can downgrade to base and upgrade back to head.
+the reviewed migration can downgrade to base and upgrade back to head. A separate image job validates
+the Dockerfile and Compose configuration, then builds and exercises every backend target through the
+same disposable API-readiness gate used locally.
 
 ## Update API contracts
 
@@ -233,6 +244,8 @@ uv audit --locked
 
 - `frontend/` contains the Next.js, TypeScript, and Tailwind CSS web application.
 - `backend/` contains the shared FastAPI and single-job processing application package and its tests.
+- `backend/Dockerfile` currently provides a runnable API target plus the worker and parser image
+  foundations that M0 Step 3 replaces with their final process entry points.
 - `compose.yaml` provides a loopback-only PostgreSQL service for local development.
 - The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
   reviewed Alembic-managed PostgreSQL schema and caller-owned transaction boundaries.
