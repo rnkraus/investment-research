@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from investment_research.bootstrap import ApplicationContainer
+from investment_research.bootstrap import ApiContainer
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
@@ -15,16 +15,16 @@ from investment_research.modules.processing.application import GetProcessingRunS
 from investment_research.modules.research.application import AnswerResearchRequestService
 
 
-def get_container(request: Request) -> ApplicationContainer:
+def get_container(request: Request) -> ApiContainer:
     """Return the container installed by the application factory."""
 
     container = getattr(request.app.state, "container", None)
-    if not isinstance(container, ApplicationContainer):
+    if not isinstance(container, ApiContainer):
         raise RuntimeError("application container is not configured")
     return container
 
 
-ContainerDependency = Annotated[ApplicationContainer, Depends(get_container)]
+ContainerDependency = Annotated[ApiContainer, Depends(get_container)]
 
 
 def get_capture_document_service(

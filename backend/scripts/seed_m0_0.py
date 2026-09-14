@@ -22,7 +22,7 @@ from investment_research.modules.identity.domain import (
     WorkspaceType,
 )
 from investment_research.modules.identity.persistence import SqlAlchemyWorkspaceRepository
-from investment_research.settings import load_settings
+from investment_research.settings import load_database_settings
 
 ISOLATION_TEST_WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000003")
 SEED_CREATED_AT = datetime(2026, 1, 1, tzinfo=UTC)
@@ -93,7 +93,7 @@ def seed_database(engine: Engine) -> SeedResult:
 def main() -> int:
     """Load validated local settings, seed PostgreSQL, and report the outcome."""
 
-    engine = create_database_engine(load_settings())
+    engine = create_database_engine(load_database_settings())
     try:
         result = seed_database(engine)
     finally:

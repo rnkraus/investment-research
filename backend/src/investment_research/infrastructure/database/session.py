@@ -6,12 +6,12 @@ from contextlib import contextmanager
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from investment_research.settings import Settings
+from investment_research.settings import DatabaseSettings
 
 type SessionFactory = sessionmaker[Session]
 
 
-def create_database_engine(settings: Settings) -> Engine:
+def create_database_engine(settings: DatabaseSettings) -> Engine:
     """Create the process-wide PostgreSQL engine without opening a connection."""
 
     return create_engine(
