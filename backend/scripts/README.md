@@ -4,14 +4,15 @@ This directory contains small, reviewable development utilities. Scripts support
 
 ## Contents
 
-| File                 | Responsibility                                                                           |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `__init__.py`        | Makes development commands importable for tests and `python -m` execution.               |
-| `export_openapi.py`  | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
-| `seed_m0_0.py`       | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
-| `verify_backend.py`  | Runs all deterministic backend static checks and unit tests.                             |
-| `verify_paths.py`    | Runs deterministic checks for explicitly selected backend Python files.                  |
-| `verify_postgres.py` | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
+| File                       | Responsibility                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| `__init__.py`              | Makes development commands importable for tests and `python -m` execution.               |
+| `export_openapi.py`        | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
+| `seed_m0_0.py`             | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
+| `verify_backend.py`        | Runs all deterministic backend static checks and unit tests.                             |
+| `verify_backend_images.py` | Builds and exercises every backend image target in an isolated runtime.                  |
+| `verify_paths.py`          | Runs deterministic checks for explicitly selected backend Python files.                  |
+| `verify_postgres.py`       | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 
 ## Contract flow
 
@@ -98,3 +99,35 @@ The verification command selects an available loopback port, generates a random 
 password, and uses a unique Compose project name. Cleanup runs after success, command failure, or
 test failure. It removes only resources owned by that invocation and never targets the normal M0.0
 development database or its volume.
+
+## Backend image verification
+
+```mermaid
+flowchart LR
+    COMMAND[verify_backend_images.py] --> BUILD[Build API, worker, parser]
+    BUILD --> METADATA[Check target metadata and secret absence]
+    METADATA --> RUNTIME[Run minimal non-root smoke tests]
+    RUNTIME --> POSTGRES[Create isolated PostgreSQL]
+    POSTGRES --> MIGRATE[Alembic upgrade to head]
+    MIGRATE --> API[Start API image]
+    API --> HEALTH[Check Docker health, /health, and /ready]
+    HEALTH --> CLEANUP[Remove images, container, network, and volume]
+```
+
+Run the complete image gate from `backend/` with Docker running:
+
+```shell
+uv run --locked python -m scripts.verify_backend_images
+```
+
+The command builds the `api`, `worker`, and `parser` targets from the committed lockfile. For every
+target it verifies the declared non-root user, exact entry point, expected healthcheck, minimal
+runtime contents, read-only application source for the runtime user, and the absence of forbidden
+credential names from image configuration and build history.
+
+It then creates a uniquely named PostgreSQL Compose project with a random disposable password,
+migrates the empty database to Alembic `head`, and supplies the API database URL only through the
+container's runtime environment. The API must become healthy and return the exact public liveness
+and readiness responses. Displayed commands contain environment-variable names but never their
+values. Cleanup removes only the resources and temporary image tags owned by that invocation,
+including after a failed build or runtime check.
