@@ -1,6 +1,6 @@
 # Investment Research Archive — System Design
 
-**Status:** Draft v0.2
+**Status:** Draft v0.3
 **Scope:** V1 production architecture with planned extension points  
 **Related:** [01-product-scope.md](./01-product-scope.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
 
@@ -26,7 +26,7 @@ flowchart LR
     WEB --> API[FastAPI Modular Monolith]
 
     API --> PG[(PostgreSQL)]
-    API --> S3[(Object Storage<br/>MinIO locally)]
+    API --> S3[(Object Storage<br/>SeaweedFS locally)]
     API --> REDIS[(Redis)]
     API --> PINE[(Pinecone)]
     API --> AI[AI Provider APIs]
@@ -52,12 +52,12 @@ The first public deployment is a separate milestone. The containers and provider
 | Web | Next.js, TypeScript, Tailwind CSS, shadcn/ui | English user interface, streaming chat, document and citation views |
 | API | Python, FastAPI, Pydantic | Typed HTTP and streaming APIs, application orchestration |
 | Persistence | PostgreSQL, SQLAlchemy, Alembic | Canonical business, provenance, audit, and lexical-search state |
-| Original files | S3-compatible object storage; MinIO locally | Immutable PDFs and submitted-text originals |
+| Original files | S3-compatible object storage; SeaweedFS locally | Immutable PDFs and submitted-text originals |
 | Background work | Celery and Redis | Retryable parsing, enrichment, embedding, and index jobs |
 | Vector retrieval | Pinecone | Managed dense retrieval with metadata filtering |
 | AI integrations | Thin application-owned provider adapters | Replaceable LLM, embedding, and reranking providers |
 | AI observability | OpenTelemetry/OpenInference and LangSmith | Tracing, experiments, evaluation, and failure analysis |
-| Runtime | Docker Compose, PostgreSQL, Redis, MinIO | Complete production-shaped local environment |
+| Runtime | Docker Compose, PostgreSQL, Redis, SeaweedFS | Complete production-shaped local environment |
 | Public hosting — later | Container platform plus managed database and object storage | Selected after the local vertical slice; AWS remains one option |
 
 The RAG core is implemented in application code. LlamaIndex and LangChain are not required in the direct V1 path. LangGraph is introduced later only for bounded multi-step workflows.
@@ -67,11 +67,11 @@ The RAG core is implemented in application code. LlamaIndex and LangChain are no
 M0.0 precedes this production baseline with a local-only walking skeleton. It may use only Next.js, FastAPI, PostgreSQL, development-only local artifact storage, and a bounded development processing runner to validate one answerable and one unanswerable fixture case. PostgreSQL lexical retrieval is sufficient for this proof.
 
 M0.0 is an implementation experiment, not an alternative V1 architecture. It excludes Celery,
-Redis, MinIO, Pinecone, reranking, LangSmith, public deployment, and private data. The API records a
-canonical `ProcessingRun`; a separate, single-job development runner invokes the same processing
-application service that the Celery worker will invoke from M0 onward. The runner has no durability,
-retry, or availability guarantee. It never shares an API database session and never performs
-CPU-heavy parsing on the API event loop. This process and resource separation is not an
+Redis, SeaweedFS, Pinecone, reranking, LangSmith, public deployment, and private data. The API
+records a canonical `ProcessingRun`; a separate, single-job development runner invokes the same
+processing application service that the Celery worker will invoke from M0 onward. The runner has no
+durability, retry, or availability guarantee. It never shares an API database session and never
+performs CPU-heavy parsing on the API event loop. This process and resource separation is not an
 operating-system sandbox: [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md) limits accepted
 M0.0 processing to the frozen synthetic fixture and makes tested parser isolation an M0 gate.
 
@@ -100,7 +100,7 @@ Modules communicate through application services and typed contracts, not direct
 | Store | Role | Recovery rule |
 |---|---|---|
 | PostgreSQL | Canonical metadata, document versions, chunks, lifecycle, answers, evidence, jobs, and audit records | Restore from tested database backups |
-| Object storage | Canonical immutable originals and durable processing artifacts | MinIO locally; versioned managed storage after deployment |
+| Object storage | Canonical immutable originals and durable processing artifacts | SeaweedFS locally; versioned managed storage after deployment |
 | Pinecone | Derived dense retrieval index | Rebuild from active canonical chunk and embedding versions |
 | Redis | Temporary queue, lock, and cache state | Safe to recreate; never the only copy of business state |
 | LangSmith | Operational AI traces and evaluation workspace | Never the only copy of product-critical audit data |
@@ -242,7 +242,7 @@ Docker Compose runs:
 - separate Celery workers;
 - PostgreSQL;
 - Redis;
-- MinIO as S3-compatible object storage.
+- SeaweedFS as S3-compatible object storage.
 
 Pinecone and approved AI providers remain managed external services. OpenTelemetry trace IDs connect web requests, jobs, retrieval, and AI calls. LangSmith stores AI traces and evaluation results, while PostgreSQL retains product-critical audit data.
 
@@ -282,4 +282,6 @@ Separate ADRs should record the reasons for:
 - LangSmith for AI observability while PostgreSQL retains canonical audit data;
 - delayed, bounded LangGraph adoption;
 - local Docker Compose first and the later public-hosting selection;
+- [SeaweedFS for local S3-compatible storage and a separately selected managed public
+  service](./adr/0007-local-s3-provider.md);
 - provider integrations behind thin application-owned ports.

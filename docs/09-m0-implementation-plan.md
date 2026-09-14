@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.3 — Step 1 completed on 2026-09-14; Step 2 next \
+**Status:** Active v0.4 — Step 1 completed on 2026-09-14; Step 2 provider selected \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -9,7 +9,8 @@
 [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), and
 [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md),
 [ADR-0005](./adr/0005-at-least-once-processing-delivery.md), and
-[proposed ADR-0006](./adr/0006-credential-free-parser-runtime.md)
+[proposed ADR-0006](./adr/0006-credential-free-parser-runtime.md), and
+[ADR-0007](./adr/0007-local-s3-provider.md)
 
 ## 1. Purpose and scope
 
@@ -34,9 +35,9 @@ Those remain in their assigned later milestones.
 M0 is complete only when:
 
 1. one documented command starts the complete local web, API, worker, parser, PostgreSQL, Redis, and
-   MinIO topology;
+   SeaweedFS topology;
 2. migrations finish before API and worker readiness;
-3. the API stores originals through the existing `ObjectStorage` port in MinIO;
+3. the API stores originals through the existing `ObjectStorage` port in SeaweedFS locally;
 4. the API dispatches a canonical `ProcessingRun` through Redis to Celery without parsing the PDF;
 5. the Celery worker invokes a credential-free parser boundary and persists the same versioned
    structure blocks, chunks, and lexical index proven in M0.0;
@@ -55,7 +56,7 @@ M0 is complete only when:
 | FastAPI modular monolith | Containerize and add readiness/structured logs | Pydantic/OpenAPI contract and module direction |
 | Next.js local process | Containerize after backend runtime is stable | Typed API client and same-origin API boundary |
 | PostgreSQL Compose service | Retain and make migration readiness explicit | Alembic history and canonical relational state |
-| Local filesystem object storage | Replace with S3-compatible MinIO adapter | `ObjectStorage`, immutable keys, checksum, workspace scope |
+| Local filesystem object storage | Replace with a provider-neutral S3 adapter backed by SeaweedFS locally | `ObjectStorage`, immutable keys, checksum, workspace scope |
 | Manual single-job runner | Replace with Redis/Celery delivery | `ProcessingRun`, processing service, independent unit of work |
 | Parser inside runner permissions | Replace with a credential-free parser service boundary | `DocumentParser`, limits, typed parsed result, safe failure |
 | Deterministic generator | Retain unchanged | `AnswerGenerator` and server-side validation |
@@ -77,16 +78,16 @@ flowchart LR
 
     API --> PG[(PostgreSQL)]
     API --> REDIS[(Redis broker)]
-    API --> MINIO[(MinIO originals)]
+    API --> S3[(SeaweedFS S3 endpoint)]
 
     REDIS --> WORKER[Celery worker]
     WORKER --> PG
-    WORKER --> MINIO
+    WORKER --> S3
     WORKER --> PARSER[Parser boundary]
 
     PARSER -. no route .-> PG
     PARSER -. no route .-> REDIS
-    PARSER -. no route .-> MINIO
+    PARSER -. no route .-> S3
     PARSER -. no route .-> INTERNET[External network]
 ```
 
@@ -111,7 +112,15 @@ flowchart LR
         WORKER[worker]
         PG[(postgres)]
         REDIS[(redis)]
-        MINIO[(minio)]
+        S3[SeaweedFS S3 endpoint]
+    end
+
+    subgraph STORE[internal storage network]
+        S3
+        STORAGE[(SeaweedFS storage/control)]
+        BOOT[one-shot storage bootstrap]
+        BOOT --> S3
+        S3 --> STORAGE
     end
 
     subgraph PARSE[internal parser network]
@@ -121,9 +130,11 @@ flowchart LR
 ```
 
 - Only web and API ports bind to host loopback.
-- PostgreSQL, Redis, MinIO, worker, and parser have no public host port.
+- PostgreSQL, Redis, SeaweedFS, worker, parser, and storage bootstrap have no public host port.
 - The backend and parser networks use Compose isolation; the parser network has no external route.
-- The parser receives no application, database, Redis, MinIO, or provider credentials.
+- API and worker reach only the SeaweedFS S3 data-plane endpoint; unnecessary storage control
+  surfaces remain on the separate internal storage network.
+- The parser receives no application, database, Redis, object-storage, or provider credentials.
 - The worker is the only component connected to both backend and parser networks and exposes no
   listener on the parser network.
 - Containers run as non-root. The parser additionally uses a read-only root filesystem, a bounded
@@ -147,7 +158,7 @@ sequenceDiagram
     participant PG as PostgreSQL
     participant MQ as Redis
     participant Worker as Celery worker
-    participant S3 as MinIO
+    participant S3 as SeaweedFS
     participant Parser as Isolated parser
 
     Web->>API: Upload synthetic PDF
@@ -203,7 +214,7 @@ compatibility, release-age, and security review before changing a manifest or lo
 │   │   ├── infrastructure/
 │   │   │   ├── health.py                    # dependency readiness probes
 │   │   │   ├── logging.py                   # structured, redacted process logs
-│   │   │   ├── object_storage/s3.py         # MinIO/S3 adapter
+│   │   │   ├── object_storage/s3.py         # provider-neutral S3 adapter
 │   │   │   ├── parsing/client.py            # bounded worker-to-parser adapter
 │   │   │   └── queue/
 │   │   │       ├── __init__.py
@@ -216,7 +227,7 @@ compatibility, release-age, and security review before changing a manifest or lo
 │   │       └── search/ports.py               # dense, embedding, reranking seams
 │   └── tests/
 │       ├── unit/                             # settings, adapters, tasks, health, logging
-│       ├── integration/                      # Redis, Celery, MinIO, PostgreSQL combinations
+│       ├── integration/                      # Redis, Celery, SeaweedFS, PostgreSQL combinations
 │       ├── security/                         # parser-boundary negative tests
 │       └── acceptance/                       # complete Compose journey
 ├── frontend/
@@ -232,7 +243,8 @@ compatibility, release-age, and security review before changing a manifest or lo
     └── adr/
         ├── 0001-modular-monolith-and-workers.md
         ├── 0002-canonical-and-derived-stores.md
-        └── parser-runtime decision            # numbered only when accepted
+        ├── 0006-credential-free-parser-runtime.md
+        └── 0007-local-s3-provider.md
 ```
 
 The tree is a change map, not permission to create every file in one commit. A listed file is added
@@ -253,8 +265,9 @@ only when its owning step requires working behavior and tests.
    the payload, claim, completion, failure, acknowledgement, and recovery rules.
 5. **No cross-module persistence access:** queue and parser adapters call typed application services
    and ports. They do not query another module's tables directly.
-6. **MinIO behind the retained port:** application modules do not import an S3 SDK. Immutable create,
-   checksum verification, not-found non-disclosure, and workspace prefixes remain adapter behavior.
+6. **S3 behind the retained port:** application modules do not import an S3 SDK. SeaweedFS is a
+   local infrastructure choice; immutable create, checksum verification, not-found non-disclosure,
+   and workspace prefixes remain provider-neutral adapter behavior governed by ADR-0007.
 7. **Parser output is untrusted:** the worker validates response schema, size, ordering, source
    bounds, page bounds, text bounds, and configured parser version before persistence.
 8. **Credential separation:** Compose injects only the credentials a process needs. Parser settings
@@ -283,7 +296,8 @@ reviewable.
 Backend and architecture:
 
 - accept ADR-0001 for the modular monolith with separate API and Celery processes;
-- accept ADR-0002 for canonical PostgreSQL/MinIO ownership and derived Redis/future Pinecone state;
+- accept ADR-0002 for canonical PostgreSQL/object-storage ownership and derived Redis/future
+  Pinecone state;
 - specify the versioned processing-job payload and idempotency behavior without selecting a Celery
   object as an application contract;
 - specify the minimal `ProcessingRun` execution lease, attempt ceiling, expiry, and reclaim rules
@@ -292,6 +306,8 @@ Backend and architecture:
 - record the locally validated Docker Desktop mechanics in proposed ADR-0006, then keep final parser
   image and protocol checks on Docker Desktop and Linux CI as its acceptance gate;
 - record why the parser boundary is infrastructure isolation rather than a business microservice.
+- accept ADR-0007 for SeaweedFS in the local stack, a provider-neutral S3 adapter, and a managed
+  S3-compatible service selected separately before public deployment.
 
 CI:
 
@@ -345,25 +361,31 @@ image-metadata, non-root runtime, API-readiness, frontend contract, frontend tes
 build gates passed. The committed workflow subsequently passed its frontend, backend, and backend
 image jobs on the hosted GitHub runner, completing Step 1.
 
-### Step 2 — MinIO object storage replacement
+### Step 2 — SeaweedFS object storage replacement
 
 **Suggested branch:** `feat/m0-object-storage`
 
 Backend:
 
 - review and select the maintained S3-compatible Python client before changing dependencies;
-- add the MinIO adapter behind the existing `ObjectStorage` protocol;
+- add a provider-neutral S3 adapter behind the existing `ObjectStorage` protocol and configure it
+  for SeaweedFS locally;
 - preserve conditional immutable creation, streaming checksums, byte counts, workspace-scoped keys,
   uniform unavailable-object errors, and compensating cleanup after failed canonical capture;
-- configure separate MinIO administrative bootstrap credentials and least-privilege application
-  credentials; neither reaches web or parser;
+- pin the SeaweedFS image by eligible version and digest after compatibility, provenance, and
+  vulnerability review; never use `latest`;
+- prove whether the single-process local mode can hide unnecessary control surfaces from API and
+  worker; otherwise split the S3 gateway and internal storage services before the gate passes;
+- configure separate SeaweedFS administrative bootstrap credentials and least-privilege application
+  credentials; neither administrative access nor any storage credential reaches web or parser;
 - retain `LocalObjectStorage` only for focused unit tests until the M0 acceptance path is migrated;
-- add unit and MinIO integration tests for create, duplicate create, checksum, open, missing/foreign
-  non-disclosure, path-like keys, cleanup, restart persistence, and cross-workspace isolation.
+- add unit and SeaweedFS integration tests for create, concurrent duplicate create, checksum, open,
+  missing/foreign non-disclosure, path-like keys, cleanup, restart persistence, credential scope,
+  endpoint reachability, and cross-workspace isolation.
 
 CI:
 
-- start disposable MinIO, initialize the test bucket/policy, and run object-storage integration
+- start disposable SeaweedFS, initialize the test bucket/policy, and run object-storage integration
   tests with generated credentials;
 - prove cleanup targets only the unique Compose test project and its volumes.
 
@@ -371,10 +393,11 @@ Frontend:
 
 - no product behavior change; run all existing frontend gates.
 
-**Gate:** capture and authorized original opening pass through MinIO with the same API contract and
-without direct SDK imports in application modules.
+**Gate:** capture and authorized original opening pass through SeaweedFS with the same API contract;
+conditional-create concurrency, credential separation, control-surface isolation, checksum
+integrity, and restart persistence pass without direct SDK imports in application modules.
 
-**Suggested commits:** dependency and adapter; MinIO topology; integration tests; CI and docs.
+**Suggested commits:** dependency and adapter; SeaweedFS topology; integration tests; CI and docs.
 
 ### Step 3 — Redis/Celery delivery and isolated parsing
 
@@ -427,8 +450,8 @@ Frontend:
 - show automatic queued/processing status through the existing canonical status endpoint;
 - keep the same processing states and safe error copy.
 
-**Gate:** upload automatically reaches `LEXICAL_READY` through Redis, Celery, MinIO, and the isolated
-parser; duplicate delivery produces one active output; all ADR-0004 negative tests pass.
+**Gate:** upload automatically reaches `LEXICAL_READY` through Redis, Celery, SeaweedFS, and the
+isolated parser; duplicate delivery produces one active output; all ADR-0004 negative tests pass.
 
 **Suggested commits:** processing contracts; queue adapter; Celery worker; parser boundary; security
 tests; frontend state/copy; CI and docs.
@@ -440,7 +463,7 @@ tests; frontend state/copy; CI and docs.
 Backend and runtime:
 
 - add the one-shot migration service and readiness dependency order;
-- finalize API, worker, parser, PostgreSQL, Redis, and MinIO health checks;
+- finalize API, worker, parser, PostgreSQL, Redis, and SeaweedFS health checks;
 - ensure restart does not reinitialize persisted credentials or silently rerun destructive seed
   behavior;
 - expose only documented loopback ports and verify explicit service networks.
@@ -511,7 +534,7 @@ CI:
 Frontend:
 
 - perform the browser journey through the containerized same-origin path;
-- confirm the exact citation still opens the immutable MinIO original at the expected page.
+- confirm the exact citation still opens the immutable SeaweedFS original at the expected page.
 
 Documentation:
 
@@ -532,7 +555,7 @@ Documentation:
 | Configuration leakage or wrong target | per-process settings tests and secret-marker scan |
 | Container privilege | non-root, capabilities, read-only filesystem, mount, and network assertions |
 | Schema drift | Alembic upgrade/check/downgrade/upgrade cycle |
-| MinIO overwrite or workspace leak | conditional-create and cross-workspace integration tests |
+| S3 overwrite or workspace leak | conditional-create and cross-workspace integration tests |
 | Lost or duplicate queue delivery | canonical `CAPTURED` state, execution lease, and idempotent redelivery tests |
 | Unsafe retry | transient/permanent classification and bounded exhaustion tests |
 | Parser compromise path | secret, filesystem, network, process, memory, and timeout negative tests |
@@ -572,7 +595,8 @@ Stop the active work block and review before continuing when:
 
 - the parser boundary cannot pass the Linux and Docker Desktop isolation tests without privileged
   mode, a Docker-socket mount, or broad host mounts;
-- a MinIO client cannot preserve immutable conditional creation and checksum behavior;
+- the selected S3 client or SeaweedFS cannot preserve immutable conditional creation and checksum
+  behavior;
 - Celery redelivery cannot be made idempotent with the retained `ProcessingRun` model;
 - a new dependency is unmaintained, vulnerable, too new for the release-age policy, or incompatible
   with Python 3.14 or the pinned Node runtime;

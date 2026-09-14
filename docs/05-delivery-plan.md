@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v0.4 — M0 implementation in progress
+**Status:** Active v0.5 — M0 implementation in progress
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md)
@@ -85,7 +85,8 @@ The target-to-M0.0 module and workflow mappings are maintained in [07-m0-0-archi
 - Use the repository-owned frozen synthetic PDF as the only accepted M0.0 processing and research
   fixture. Technically parsing another file does not place it inside the approved proof boundary.
 - Bind services to local development access only; no public deployment or private archive data is allowed.
-- Do not add Pinecone, Redis, Celery, MinIO, LangSmith, reranking, conversation memory, lifecycle workflows, or future-feature modules.
+- Do not add Pinecone, Redis, Celery, SeaweedFS, LangSmith, reranking, conversation memory,
+  lifecycle workflows, or future-feature modules.
 - Treat M0.0 as a subset of the target system: reuse the production module, entity, state, and workflow names whenever their meaning is the same.
 - Keep final application-owned contracts, module directions, and migrations; mark only the local storage adapter, local processing runner, and deterministic fixture generator as M0.0 implementations.
 - Treat the bounded development runner as process and resource separation, not as secret,
@@ -116,7 +117,9 @@ verification matrix are maintained in
 
 - Retain proven M0.0 contracts where they preserve the target architecture and replace all development-only storage and execution shortcuts.
 - Extend the M0.0 repository structure for the production worker process, operational adapters, and broader tests without moving the established application modules.
-- Add Dockerfiles and Docker Compose for Next.js, FastAPI, Celery, PostgreSQL, Redis, and MinIO.
+- Add Dockerfiles and Docker Compose for Next.js, FastAPI, Celery, PostgreSQL, Redis, and SeaweedFS.
+- Keep object-storage access provider-neutral in application code and apply the local-versus-public
+  boundary from [ADR-0007](./adr/0007-local-s3-provider.md).
 - Establish and test a least-privilege parser boundary that receives no application or provider
   credentials, sees only bounded parse input and output, and cannot use unnecessary network access.
 - Add configuration validation, ignored local secrets, health checks, and structured logging.
@@ -142,7 +145,8 @@ The first production-shaped slice hardens the M0.0 product proof and intentional
 
 1. Authenticate the owner and create private and demo workspace fixtures.
 2. Upload one text PDF or submit pasted text.
-3. Store the immutable original in MinIO and canonical metadata in PostgreSQL.
+3. Store the immutable original through the S3-compatible adapter and canonical metadata in
+   PostgreSQL; SeaweedFS supplies the local object store.
 4. Enqueue and run parsing, structure-block creation, chunking, embedding, and indexing.
 5. Display document processing state.
 6. Run lexical and dense retrieval for one archive question.

@@ -1,6 +1,6 @@
 # Investment Research Archive — Security and Operations
 
-**Status:** Draft v0.2
+**Status:** Draft v0.3
 **Scope:** V1 local runtime and requirements for a later public deployment  
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
 
@@ -121,6 +121,27 @@ These ingestion controls are an M0 implementation gate, not a description of the
 runner. ADR-0004 records the temporary synthetic-fixture exception and its removal criteria. The
 implementation and negative-test sequence is maintained in
 [09-m0-implementation-plan.md](./09-m0-implementation-plan.md).
+
+### Local object-storage boundary
+
+[ADR-0007](./adr/0007-local-s3-provider.md) selects SeaweedFS only for the local Docker Compose
+runtime and retains a provider-neutral S3 adapter for a later managed public service. The local
+runtime must:
+
+- pin the reviewed SeaweedFS image by version and digest rather than use a floating tag;
+- keep the bucket private and avoid publishing object-storage ports beyond the documented local
+  boundary;
+- expose only the required S3 data-plane endpoint to API and worker processes;
+- separate administrative bootstrap access from least-privilege application credentials;
+- give object-storage credentials only to API and worker processes, never web or parser processes;
+- restrict application access to the required bucket and operations, without ACL administration;
+- preserve workspace-scoped server-generated keys and uniform inaccessible-object responses;
+- test conditional create, checksum integrity, restart persistence, credential scope, endpoint
+  reachability, and cross-workspace non-disclosure on Docker Desktop and Linux CI.
+
+The local single-node volume is development persistence, not a backup or availability guarantee.
+Before public deployment, select and validate a managed S3-compatible service with versioning,
+encryption, lifecycle, backup, recovery, and provider-specific contract tests.
 
 ## 6. AI and RAG safety
 

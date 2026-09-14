@@ -61,7 +61,7 @@ both the backend network and parser network.
 The data flow is:
 
 ```text
-MinIO -> worker -> bounded PDF request -> parser -> typed bounded result -> worker -> PostgreSQL
+S3-compatible object storage -> worker -> bounded PDF request -> parser -> typed bounded result -> worker -> PostgreSQL
 ```
 
 The parser never receives an object key or credentials and never reads canonical stores directly.
@@ -82,7 +82,8 @@ The parser runtime must:
 - drop all Linux capabilities and set `no-new-privileges`;
 - apply CPU, memory, process-count, request-size, response-size, page-count, extracted-text, and
   wall-clock limits;
-- receive no database, Redis, MinIO, AI-provider, tracing-provider, or application credentials;
+- receive no database, Redis, object-storage, AI-provider, tracing-provider, or application
+  credentials;
 - have no backend-network membership, public host port, external route, Docker socket, or broad
   host mount;
 - expose only the narrow worker-to-parser listener on the internal parser network;
