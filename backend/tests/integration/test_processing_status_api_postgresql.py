@@ -1,7 +1,7 @@
 """PostgreSQL API tests for processing-status workspace isolation."""
 
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
@@ -47,4 +47,12 @@ def test_processing_status_hides_cross_workspace_and_unknown_runs(
     assert visible_response.headers["cache-control"] == "private, no-store"
     assert unknown_response.status_code == 404
     assert foreign_response.status_code == 404
-    assert foreign_response.json() == unknown_response.json()
+    unknown_error = unknown_response.json()["error"]
+    foreign_error = foreign_response.json()["error"]
+    assert unknown_error["code"] == foreign_error["code"] == "NOT_FOUND"
+    assert unknown_error["message"] == foreign_error["message"]
+    assert UUID(unknown_error["request_id"])
+    assert UUID(foreign_error["request_id"])
+    assert unknown_response.headers["x-request-id"] == unknown_error["request_id"]
+    assert foreign_response.headers["x-request-id"] == foreign_error["request_id"]
+    assert unknown_error["request_id"] != foreign_error["request_id"]

@@ -55,6 +55,7 @@ def test_api_settings_load_only_supported_environment_values(
     object_storage_root = tmp_path / "objects"
     monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
     monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "host")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_HOST", "localhost")
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_PORT", "8123")
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
@@ -65,6 +66,7 @@ def test_api_settings_load_only_supported_environment_values(
 
     assert settings.environment == "test"
     assert settings.runtime_location == "host"
+    assert settings.log_level == "DEBUG"
     assert settings.api_host == "localhost"
     assert settings.api_port == 8123
     assert settings.require_database_url() == LOCAL_DATABASE_URL
@@ -80,6 +82,7 @@ def test_worker_settings_load_only_supported_environment_values(
     object_storage_root = tmp_path / "objects"
     monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
     monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "host")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_LOG_LEVEL", "WARNING")
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
     monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT", str(object_storage_root))
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
@@ -91,6 +94,7 @@ def test_worker_settings_load_only_supported_environment_values(
 
     assert settings.environment == "test"
     assert settings.runtime_location == "host"
+    assert settings.log_level == "WARNING"
     assert settings.require_database_url() == LOCAL_DATABASE_URL
     assert settings.object_storage_root == object_storage_root
     assert settings.max_pdf_pages == 100
@@ -404,12 +408,21 @@ def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "processing_timeout_seconds" not in ParserSettings.model_fields
 
 
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings, ParserSettings])
+def test_runtime_settings_reject_unknown_log_level(
+    settings_factory: type[ApiSettings] | type[WorkerSettings] | type[ParserSettings],
+) -> None:
+    with pytest.raises(ValidationError, match="log_level"):
+        settings_factory.model_validate({"log_level": "VERBOSE"})
+
+
 def test_parser_settings_load_non_secret_process_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clear_parser_forbidden_environment(monkeypatch)
     monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
     monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "container")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_LOG_LEVEL", "ERROR")
     monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_HOST", "0.0.0.0")
     monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_PORT", "8124")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "80")
@@ -419,6 +432,7 @@ def test_parser_settings_load_non_secret_process_values(
 
     assert settings.environment == "test"
     assert settings.runtime_location == "container"
+    assert settings.log_level == "ERROR"
     assert settings.parser_host == "0.0.0.0"
     assert settings.parser_port == 8124
     assert settings.max_pdf_pages == 80
