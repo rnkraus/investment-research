@@ -1,5 +1,6 @@
 """Tests for process-specific runtime settings."""
 
+from collections.abc import Callable
 from os import environ
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from investment_research.settings import (
     PROJECT_ROOT,
     ApiSettings,
     ParserSettings,
+    S3Settings,
     WorkerSettings,
     load_api_settings,
     load_database_settings,
@@ -34,7 +36,16 @@ POSTGRES_SETTING_NAMES = (
     "POSTGRES_PASSWORD",
     "POSTGRES_PORT",
 )
+S3_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER",
+    "INVESTMENT_RESEARCH_S3_ENDPOINT_URL",
+    "INVESTMENT_RESEARCH_S3_REGION_NAME",
+    "INVESTMENT_RESEARCH_S3_BUCKET",
+    "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
+    "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
+)
 type ObjectStorageSettingsFactory = type[ApiSettings] | type[WorkerSettings]
+type ObjectStorageSettingsLoader = Callable[..., ApiSettings | WorkerSettings]
 type ParserLimitSettingsFactory = type[WorkerSettings] | type[ParserSettings]
 
 
@@ -46,6 +57,41 @@ def clear_parser_forbidden_environment(monkeypatch: pytest.MonkeyPatch) -> None:
             PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES
         ):
             monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def clear_object_storage_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every settings test independent of host S3 configuration."""
+
+    for name in S3_SETTING_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+
+def valid_s3_configuration(
+    *,
+    endpoint_url: str = "http://127.0.0.1:8333",
+    bucket: str = "investment-research-originals",
+    access_key_id: str = "synthetic-application-key",
+    secret_access_key: str = "synthetic-application-secret",
+) -> dict[str, str]:
+    """Return one complete synthetic S3 connection configuration."""
+
+    return {
+        "endpoint_url": endpoint_url,
+        "region_name": "us-east-1",
+        "bucket": bucket,
+        "access_key_id": access_key_id,
+        "secret_access_key": secret_access_key,
+    }
+
+
+def valid_s3_values(**overrides: str) -> dict[str, object]:
+    """Return complete provider values with optional S3 field overrides."""
+
+    return {
+        "object_storage_provider": "s3",
+        "s3": valid_s3_configuration(**overrides),
+    }
 
 
 def test_api_settings_load_only_supported_environment_values(
@@ -102,6 +148,160 @@ def test_worker_settings_load_only_supported_environment_values(
     assert settings.processing_timeout_seconds == 45
     assert settings.processing_memory_limit_bytes == 256 * 1024 * 1024
     assert "test-password" not in repr(settings)
+
+
+@pytest.mark.parametrize("loader", [load_api_settings, load_worker_settings])
+def test_object_storage_settings_load_complete_s3_configuration(
+    loader: ObjectStorageSettingsLoader,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-application-secret"
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER", "s3")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_ENDPOINT_URL", "http://127.0.0.1:8333")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_REGION_NAME", "us-east-1")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_BUCKET", "investment-research-originals")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID", "synthetic-application-key")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY", marker)
+
+    settings = loader(env_file=None)
+    s3 = settings.require_s3_settings()
+
+    assert s3.endpoint_url == "http://127.0.0.1:8333"
+    assert s3.region_name == "us-east-1"
+    assert s3.bucket == "investment-research-originals"
+    assert s3.access_key_id.get_secret_value() == "synthetic-application-key"
+    assert s3.secret_access_key.get_secret_value() == marker
+    assert marker not in repr(settings)
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+def test_s3_settings_allow_only_compose_gateway_in_container(
+    settings_factory: ObjectStorageSettingsFactory,
+) -> None:
+    settings = settings_factory.model_validate(
+        {
+            "runtime_location": "container",
+            **valid_s3_values(endpoint_url="http://seaweedfs-s3:8333"),
+        }
+    )
+
+    assert settings.require_s3_settings().endpoint_url == "http://seaweedfs-s3:8333"
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+@pytest.mark.parametrize(
+    ("endpoint_url", "expected_error"),
+    [
+        pytest.param("ftp://127.0.0.1:8333", "HTTP or HTTPS", id="wrong-scheme"),
+        pytest.param(
+            "http://user:password@127.0.0.1:8333",
+            "must not contain credentials",
+            id="embedded-credentials",
+        ),
+        pytest.param(
+            "http://127.0.0.1:8333/bucket",
+            "path, query, or fragment",
+            id="path",
+        ),
+        pytest.param(
+            "http://127.0.0.1:8333?bucket=private",
+            "path, query, or fragment",
+            id="query",
+        ),
+        pytest.param(
+            "http://127.0.0.1:8333#private",
+            "path, query, or fragment",
+            id="fragment",
+        ),
+        pytest.param(
+            "http://storage.example.invalid:8333",
+            "loopback",
+            id="remote-host",
+        ),
+    ],
+)
+def test_s3_settings_reject_unsafe_host_endpoint(
+    settings_factory: ObjectStorageSettingsFactory,
+    endpoint_url: str,
+    expected_error: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_error):
+        settings_factory.model_validate(valid_s3_values(endpoint_url=endpoint_url))
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+def test_s3_settings_reject_other_container_target(
+    settings_factory: ObjectStorageSettingsFactory,
+) -> None:
+    with pytest.raises(ValidationError, match="Compose seaweedfs-s3 service"):
+        settings_factory.model_validate(
+            {
+                "runtime_location": "container",
+                **valid_s3_values(endpoint_url="http://seaweedfs-master:9333"),
+            }
+        )
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+def test_s3_provider_requires_complete_s3_configuration(
+    settings_factory: ObjectStorageSettingsFactory,
+) -> None:
+    with pytest.raises(ValidationError, match="s3 configuration is required"):
+        settings_factory(object_storage_provider="s3")
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+@pytest.mark.parametrize(
+    "missing_field",
+    ["endpoint_url", "bucket", "access_key_id", "secret_access_key"],
+)
+def test_s3_provider_rejects_each_missing_required_field(
+    settings_factory: ObjectStorageSettingsFactory,
+    missing_field: str,
+) -> None:
+    s3 = valid_s3_configuration()
+    del s3[missing_field]
+
+    with pytest.raises(ValidationError) as error:
+        settings_factory.model_validate({"object_storage_provider": "s3", "s3": s3})
+
+    assert error.value.errors()[0]["loc"] == ("s3", missing_field)
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+def test_local_provider_rejects_unused_s3_configuration(
+    settings_factory: ObjectStorageSettingsFactory,
+) -> None:
+    with pytest.raises(ValidationError, match="not allowed for the local provider"):
+        settings_factory.model_validate(
+            {"object_storage_provider": "local", "s3": valid_s3_configuration()}
+        )
+
+
+@pytest.mark.parametrize(
+    "bucket",
+    ["ab", "UPPERCASE", "invalid_bucket", "192.168.0.1", "adjacent..dots"],
+)
+def test_s3_settings_reject_non_portable_bucket_names(bucket: str) -> None:
+    with pytest.raises(ValidationError, match="bucket"):
+        S3Settings.model_validate(valid_s3_configuration(bucket=bucket))
+
+
+@pytest.mark.parametrize("field", ["access_key_id", "secret_access_key"])
+def test_s3_settings_reject_blank_or_padded_credentials(field: str) -> None:
+    values = valid_s3_configuration()
+    marker = "synthetic-invalid-secret"
+    values[field] = f" {marker} "
+
+    with pytest.raises(ValidationError, match="normalized") as error:
+        S3Settings.model_validate(values)
+
+    assert marker not in str(error.value)
+
+
+def test_local_provider_does_not_expose_s3_settings() -> None:
+    with pytest.raises(RuntimeError, match="S3 configuration"):
+        ApiSettings().require_s3_settings()
 
 
 def test_database_settings_ignore_unowned_api_values(
@@ -399,6 +599,10 @@ def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "database_url" in ApiSettings.model_fields
     assert "database_url" in WorkerSettings.model_fields
     assert "database_url" not in ParserSettings.model_fields
+    assert "s3" in ApiSettings.model_fields
+    assert "s3" in WorkerSettings.model_fields
+    assert "s3" not in ParserSettings.model_fields
+    assert "object_storage_provider" not in ParserSettings.model_fields
     assert "app_name" in ApiSettings.model_fields
     assert "app_name" not in WorkerSettings.model_fields
     assert "app_name" not in ParserSettings.model_fields
@@ -445,6 +649,7 @@ def test_parser_settings_load_non_secret_process_values(
         "INVESTMENT_RESEARCH_DATABASE_URL",
         "POSTGRES_PASSWORD",
         "MINIO_ROOT_PASSWORD",
+        "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
         "AWS_SECRET_ACCESS_KEY",
         "OPENAI_API_KEY",
         "LANGSMITH_API_KEY",

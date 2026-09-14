@@ -34,6 +34,10 @@ from investment_research.infrastructure.health import (
     ReadinessProbe,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
+from investment_research.infrastructure.object_storage.s3 import (
+    S3ObjectStorage,
+    create_s3_client,
+)
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -59,7 +63,12 @@ from investment_research.modules.research.application import (
 )
 from investment_research.modules.research.contracts import AnswerGenerationProfile
 from investment_research.modules.search.contracts import LexicalSearchProfile
-from investment_research.settings import ApiSettings, DatabaseSettings, WorkerSettings
+from investment_research.settings import (
+    ApiSettings,
+    DatabaseSettings,
+    ObjectStorageSettings,
+    WorkerSettings,
+)
 
 M0_0_GENERATION_PROFILE = AnswerGenerationProfile(
     generator_version="deterministic-fixture-v1",
@@ -88,6 +97,22 @@ def _build_database_resources(settings: DatabaseSettings) -> _DatabaseResources:
         engine=engine,
         session_factory=create_session_factory(engine),
     )
+
+
+def _build_object_storage(settings: ObjectStorageSettings) -> ObjectStorage:
+    """Select one concrete adapter at the process composition boundary."""
+
+    if settings.object_storage_provider == "local":
+        return LocalObjectStorage(settings.object_storage_root)
+
+    s3 = settings.require_s3_settings()
+    client = create_s3_client(
+        endpoint_url=s3.endpoint_url,
+        region_name=s3.region_name,
+        access_key_id=s3.access_key_id.get_secret_value(),
+        secret_access_key=s3.secret_access_key.get_secret_value(),
+    )
+    return S3ObjectStorage(client=client, bucket=s3.bucket)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +161,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     """Wire API application services without constructing parser execution."""
 
     database = _build_database_resources(settings)
-    object_storage = LocalObjectStorage(settings.object_storage_root)
+    object_storage = _build_object_storage(settings)
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
             database.session_factory
@@ -204,7 +229,7 @@ def build_worker_container(settings: WorkerSettings) -> WorkerContainer:
     """Wire document processing without constructing API-only services."""
 
     database = _build_database_resources(settings)
-    object_storage = LocalObjectStorage(settings.object_storage_root)
+    object_storage = _build_object_storage(settings)
     open_original_service = OpenOriginalService(
         object_storage=object_storage,
         unit_of_work_factory=create_document_read_unit_of_work_factory(database.session_factory),

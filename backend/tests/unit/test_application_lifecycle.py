@@ -1,16 +1,19 @@
 """Unit tests for application resource wiring and lifecycle ownership."""
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from investment_research import bootstrap as bootstrap_module
 from investment_research.bootstrap import (
     ApiContainer,
     build_api_container,
     build_worker_container,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
+from investment_research.infrastructure.object_storage.s3 import S3ObjectStorage
 from investment_research.main import create_app
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -29,6 +32,19 @@ from investment_research.modules.research.application import (
 from investment_research.settings import ApiSettings, WorkerSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+
+
+class UnusedS3Client:
+    """Satisfy the narrow client protocol without allowing accidental network-like calls."""
+
+    def put_object(self, **kwargs: object) -> Mapping[str, object]:
+        raise AssertionError("container construction must not write to S3")
+
+    def get_object(self, **kwargs: object) -> Mapping[str, object]:
+        raise AssertionError("container construction must not read from S3")
+
+    def delete_object(self, **kwargs: object) -> Mapping[str, object]:
+        raise AssertionError("container construction must not delete from S3")
 
 
 def make_api_settings(object_storage_root: Path) -> ApiSettings:
@@ -53,6 +69,23 @@ def make_worker_settings(object_storage_root: Path) -> WorkerSettings:
             "object_storage_root": object_storage_root,
         }
     )
+
+
+def s3_provider_values() -> dict[str, object]:
+    """Build complete synthetic S3 values shared by API and worker tests."""
+
+    return {
+        "environment": "test",
+        "database_url": LOCAL_DATABASE_URL,
+        "object_storage_provider": "s3",
+        "s3": {
+            "endpoint_url": "http://127.0.0.1:8333",
+            "region_name": "us-east-1",
+            "bucket": "investment-research-originals",
+            "access_key_id": "synthetic-application-key",
+            "secret_access_key": "synthetic-application-secret",
+        },
+    }
 
 
 def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
@@ -112,6 +145,42 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             session.close()
     finally:
         container.close()
+
+
+def test_s3_provider_wires_same_adapter_into_api_and_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = UnusedS3Client()
+    client_calls: list[dict[str, object]] = []
+
+    def record_client_configuration(**kwargs: object) -> UnusedS3Client:
+        client_calls.append(kwargs)
+        return client
+
+    monkeypatch.setattr(bootstrap_module, "create_s3_client", record_client_configuration)
+    api_container = build_api_container(ApiSettings.model_validate(s3_provider_values()))
+    worker_container = build_worker_container(WorkerSettings.model_validate(s3_provider_values()))
+
+    try:
+        assert isinstance(api_container.object_storage, S3ObjectStorage)
+        assert isinstance(worker_container.object_storage, S3ObjectStorage)
+        assert client_calls == [
+            {
+                "endpoint_url": "http://127.0.0.1:8333",
+                "region_name": "us-east-1",
+                "access_key_id": "synthetic-application-key",
+                "secret_access_key": "synthetic-application-secret",
+            },
+            {
+                "endpoint_url": "http://127.0.0.1:8333",
+                "region_name": "us-east-1",
+                "access_key_id": "synthetic-application-key",
+                "secret_access_key": "synthetic-application-secret",
+            },
+        ]
+    finally:
+        api_container.close()
+        worker_container.close()
 
 
 def test_application_lifespan_owns_container(
