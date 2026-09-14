@@ -269,10 +269,16 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
     compose_environment = os.environ.copy()
     compose_environment.update(
         {
+            "COMPOSE_DISABLE_ENV_FILE": "1",
             "POSTGRES_DB": POSTGRES_DATABASE,
             "POSTGRES_USER": POSTGRES_USER,
             "POSTGRES_PASSWORD": postgres_password,
             "POSTGRES_PORT": str(postgres_port),
+            "SEAWEEDFS_ADMIN_ACCESS_KEY": "unused-admin-access",
+            "SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY": "unused-admin-secret",
+            "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID": "unused-application-access",
+            "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY": "unused-application-secret",
+            "INVESTMENT_RESEARCH_S3_BUCKET": "unused-storage-check",
         }
     )
     migration_environment = compose_environment | {

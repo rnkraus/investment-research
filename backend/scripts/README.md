@@ -11,6 +11,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `seed_m0_0.py`             | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
 | `verify_backend.py`        | Runs all deterministic backend static checks and unit tests.                             |
 | `verify_backend_images.py` | Builds and exercises every backend image target in an isolated runtime.                  |
+| `verify_object_storage.py` | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
 | `verify_paths.py`          | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`       | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 
@@ -99,6 +100,39 @@ The verification command selects an available loopback port, generates a random 
 password, and uses a unique Compose project name. Cleanup runs after success, command failure, or
 test failure. It removes only resources owned by that invocation and never targets the normal M0.0
 development database or its volume.
+
+## Isolated object-storage verification
+
+```mermaid
+flowchart LR
+    COMMAND[verify_object_storage.py] --> IMAGE[Locked non-root verification image]
+    IMAGE --> COMPOSE[Unique SeaweedFS Compose project]
+    COMPOSE --> BOOTSTRAP[Private bucket bootstrap]
+    BOOTSTRAP --> CONTRACTS[S3 and isolation contract tests]
+    CONTRACTS --> WRITE[Write persistence probe]
+    WRITE --> RESTART[Restart storage services]
+    RESTART --> READ[Read persistence probe]
+    READ --> CLEANUP[Remove project, volumes, and test image]
+```
+
+Run the complete SeaweedFS gate from `backend/` with Docker running:
+
+```shell
+uv run --locked python -m scripts.verify_object_storage
+```
+
+The command generates disposable administrator and application credentials, a private bucket, a
+unique Compose project, and a unique verification image. The test container reaches only the S3
+gateway through the internal `storage-data` network; SeaweedFS publishes no host port. Tests cover
+immutable conditional creation under concurrency, checksum and byte integrity, open and cleanup,
+missing/foreign non-disclosure, workspace key scope, least-privilege application credentials, and
+restart persistence. Runtime inspection also verifies non-root users, dropped capabilities,
+`no-new-privileges`, read-only control-service filesystems, unpublished storage ports, secret-file
+delivery, and control-plane network isolation.
+
+The command does not load repository `.env` values. Its generated secrets are passed without values
+in displayed command arguments. Cleanup always targets only that invocation's unique project,
+volumes, and verification image, including after a failed build or test.
 
 ## Backend image verification
 
