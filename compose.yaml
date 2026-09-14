@@ -1,5 +1,22 @@
 name: investment-research-m0-0
 
+x-seaweedfs-service: &seaweedfs-service
+  image: investment-research-seaweedfs:4.47
+  build:
+    context: .
+    dockerfile: docker/seaweedfs/Dockerfile
+  user: "65532:65532"
+  init: true
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  stop_grace_period: 15s
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -19,5 +36,169 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  seaweedfs-master:
+    <<: *seaweedfs-service
+    command:
+      - master
+      - -ip=seaweedfs-master
+      - -ip.bind=0.0.0.0
+      - -port=9333
+      - -mdir=/data/master
+      - -peers=none
+      - -telemetry=false
+      - -volumeSizeLimitMB=1024
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9333"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - seaweedfs-master-data:/data
+    networks:
+      - storage-control
+
+  seaweedfs-volume:
+    <<: *seaweedfs-service
+    command:
+      - volume
+      - -master=seaweedfs-master:9333
+      - -ip=seaweedfs-volume
+      - -ip.bind=0.0.0.0
+      - -port=8080
+      - -dir=/data/volume
+      - -dir.idx=/data/volume
+      - -index=leveldb
+      - -max=10
+      - -fileSizeLimitMB=100
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - seaweedfs-volume-data:/data
+    networks:
+      - storage-control
+
+  seaweedfs-filer:
+    <<: *seaweedfs-service
+    command:
+      - filer
+      - -master=seaweedfs-master:9333
+      - -ip=seaweedfs-filer
+      - -ip.bind=0.0.0.0
+      - -port=8888
+      - -defaultStoreDir=/data/filer
+      - -disableDirListing=true
+      - -exposeDirectoryData=false
+      - -allowedOrigins=
+      - -iam=false
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8888"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - seaweedfs-filer-data:/data
+    networks:
+      - storage-control
+
+  seaweedfs-s3:
+    <<: *seaweedfs-service
+    read_only: false
+    entrypoint:
+      - /usr/local/bin/start-seaweedfs-s3
+    command: []
+    environment:
+      INVESTMENT_RESEARCH_S3_BUCKET: ${INVESTMENT_RESEARCH_S3_BUCKET:?Set INVESTMENT_RESEARCH_S3_BUCKET in .env or the shell}
+    depends_on:
+      seaweedfs-filer:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8333"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    ports:
+      - "127.0.0.1:${SEAWEEDFS_S3_PORT:-8333}:8333"
+    secrets:
+      - seaweedfs_admin_access_key
+      - seaweedfs_admin_secret_access_key
+      - seaweedfs_application_access_key
+      - seaweedfs_application_secret_access_key
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /run/seaweedfs:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=65532,gid=65532
+    networks:
+      - storage-control
+      - storage-data
+
+  seaweedfs-bootstrap:
+    image: investment-research-backend-storage-bootstrap:local
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    user: "65532:65532"
+    init: true
+    read_only: false
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    entrypoint:
+      - /app/.venv/bin/python
+      - -m
+      - investment_research.infrastructure.object_storage.seaweedfs_bootstrap
+    command: []
+    environment:
+      INVESTMENT_RESEARCH_S3_ENDPOINT_URL: http://seaweedfs-s3:8333
+      INVESTMENT_RESEARCH_S3_REGION_NAME: ${INVESTMENT_RESEARCH_S3_REGION_NAME:-us-east-1}
+      INVESTMENT_RESEARCH_S3_BUCKET: ${INVESTMENT_RESEARCH_S3_BUCKET:?Set INVESTMENT_RESEARCH_S3_BUCKET in .env or the shell}
+    depends_on:
+      seaweedfs-s3:
+        condition: service_healthy
+    secrets:
+      - seaweedfs_admin_access_key
+      - seaweedfs_admin_secret_access_key
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    networks:
+      - storage-data
+    restart: "no"
+
 volumes:
   postgres-data:
+  seaweedfs-master-data:
+  seaweedfs-volume-data:
+  seaweedfs-filer-data:
+
+networks:
+  storage-control:
+    internal: true
+  storage-data:
+    internal: true
+
+secrets:
+  seaweedfs_admin_access_key:
+    environment: SEAWEEDFS_ADMIN_ACCESS_KEY
+  seaweedfs_admin_secret_access_key:
+    environment: SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY
+  seaweedfs_application_access_key:
+    environment: INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID
+  seaweedfs_application_secret_access_key:
+    environment: INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY

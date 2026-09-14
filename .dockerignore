@@ -1,0 +1,6 @@
+**
+
+!docker/
+!docker/seaweedfs/
+!docker/seaweedfs/Dockerfile
+!docker/seaweedfs/start-s3.sh
