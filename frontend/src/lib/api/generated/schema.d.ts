@@ -113,9 +113,29 @@ export interface paths {
         };
         /**
          * Read Health
-         * @description Report API process liveness.
+         * @description Report process liveness without touching runtime dependencies.
          */
         readonly get: operations["read_health_health_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/ready": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Read Readiness
+         * @description Report whether every API dependency can safely serve traffic.
+         */
+        readonly get: operations["read_readiness_ready_get"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -428,6 +448,17 @@ export interface components {
          * @enum {string}
          */
         readonly ProcessingState: "CAPTURED" | "PARSING" | "LEXICAL_READY" | "FAILED";
+        /**
+         * ReadinessResponse
+         * @description Public readiness result without dependency or failure details.
+         */
+        readonly ReadinessResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            readonly status: "ready" | "not_ready";
+        };
         /**
          * ResearchFailedEvent
          * @description Terminal event for a safely reported research failure.
@@ -795,6 +826,35 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    readonly read_readiness_ready_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
         };
