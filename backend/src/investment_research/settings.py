@@ -17,6 +17,7 @@ from investment_research.modules.processing.contracts import (
 
 type RuntimeEnvironment = Literal["development", "test"]
 type RuntimeLocation = Literal["host", "container"]
+type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
@@ -93,6 +94,7 @@ class RuntimeSettings(BaseModel):
 
     environment: RuntimeEnvironment = "development"
     runtime_location: RuntimeLocation = "host"
+    log_level: LogLevel = "INFO"
 
 
 class DatabaseSettings(RuntimeSettings):
@@ -270,6 +272,11 @@ def _runtime_values(file_values: dict[str, str | None]) -> dict[str, str | None]
             "INVESTMENT_RESEARCH_RUNTIME_LOCATION",
             file_values,
             "host",
+        ),
+        "log_level": _configuration_value(
+            "INVESTMENT_RESEARCH_LOG_LEVEL",
+            file_values,
+            "INFO",
         ),
     }
 
