@@ -6,6 +6,9 @@
 !src/
 !src/**
 
+!tests/
+!tests/**
+
 !alembic.ini
 !migrations/
 !migrations/**

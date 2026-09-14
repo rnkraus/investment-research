@@ -17,6 +17,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY src ./src
 
+FROM builder AS verification-builder
+
+ENV UV_NO_DEV=0
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --all-groups --no-install-project
+
+COPY tests ./tests
+
 FROM python:3.14.7-slim-trixie@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS runtime
 
 RUN groupadd --system --gid 65532 app \
@@ -56,3 +65,11 @@ FROM runtime AS parser
 LABEL org.opencontainers.image.description="Build foundation for the M0 credential-free parser runtime"
 ENTRYPOINT ["/app/.venv/bin/python"]
 CMD ["--version"]
+
+FROM runtime AS verification
+
+COPY --from=verification-builder /app/.venv /app/.venv
+COPY --from=verification-builder /app/tests /app/tests
+
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "pytest"]
+CMD []

@@ -174,6 +174,14 @@ cd backend
 uv run --locked python -m scripts.verify_postgres
 ```
 
+Verify the SeaweedFS S3 contracts in a separate internal Docker network. The command generates
+disposable credentials, checks concurrency, isolation, permissions, and restart persistence, and
+removes its unique containers, volumes, and verification image:
+
+```shell
+uv run --locked python -m scripts.verify_object_storage
+```
+
 Verify the pinned non-root backend image targets from `backend/`. This command builds the API,
 worker, and parser targets, checks their runtime contents and image metadata, starts the API against
 a freshly migrated disposable PostgreSQL database, verifies `/health` and `/ready`, and removes all

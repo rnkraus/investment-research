@@ -190,6 +190,10 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     assert migration_environment["INVESTMENT_RESEARCH_DATABASE_URL"].endswith(
         "@127.0.0.1:55432/investment_research"
     )
+    assert migration_environment["COMPOSE_DISABLE_ENV_FILE"] == "1"
+    assert migration_environment["INVESTMENT_RESEARCH_S3_BUCKET"] == "unused-storage-check"
+    assert "unused-application-access" not in api_command
+    assert "unused-application-secret" not in api_command
 
 
 def test_api_runtime_verification_removes_postgres_after_start_failure(
