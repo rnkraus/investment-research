@@ -4,6 +4,7 @@ from functools import lru_cache
 from ipaddress import ip_address
 from os import environ
 from pathlib import Path
+from re import fullmatch
 from typing import Literal
 from urllib.parse import quote, urlsplit
 
@@ -18,10 +19,12 @@ from investment_research.modules.processing.contracts import (
 type RuntimeEnvironment = Literal["development", "test"]
 type RuntimeLocation = Literal["host", "container"]
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+type ObjectStorageProvider = Literal["local", "s3"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
 DEFAULT_OBJECT_STORAGE_ROOT = PROJECT_ROOT / "output" / "object-storage"
+DEFAULT_S3_REGION_NAME = "us-east-1"
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
 DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_CONFIGURABLE_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -53,6 +56,7 @@ PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES = (
     "POSTGRES_",
     "MINIO_",
     "AWS_",
+    "INVESTMENT_RESEARCH_S3_",
     "OPENAI_",
     "LANGSMITH_",
 )
@@ -90,7 +94,7 @@ def _resolve_private_object_storage_root(value: Path) -> Path:
 class RuntimeSettings(BaseModel):
     """Values shared by all application-owned runtime processes."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
     environment: RuntimeEnvironment = "development"
     runtime_location: RuntimeLocation = "host"
@@ -146,13 +150,121 @@ class DatabaseSettings(RuntimeSettings):
         return self.database_url.get_secret_value()
 
 
-class ApiSettings(DatabaseSettings):
+class S3Settings(BaseModel):
+    """Validated S3 data-plane configuration shared by API and worker processes."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    endpoint_url: str
+    region_name: str = DEFAULT_S3_REGION_NAME
+    bucket: str
+    access_key_id: SecretStr
+    secret_access_key: SecretStr
+
+    @field_validator("region_name")
+    @classmethod
+    def require_normalized_region_name(cls, value: str) -> str:
+        """Accept one non-empty normalized region identifier."""
+
+        if not fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", value):
+            raise ValueError("region_name must be a normalized lowercase identifier")
+        return value
+
+    @field_validator("bucket")
+    @classmethod
+    def require_supported_bucket_name(cls, value: str) -> str:
+        """Restrict buckets to portable DNS-compatible S3 names."""
+
+        valid = (
+            3 <= len(value) <= 63
+            and fullmatch(r"[a-z0-9][a-z0-9.-]*[a-z0-9]", value) is not None
+            and ".." not in value
+            and ".-" not in value
+            and "-." not in value
+        )
+        if not valid:
+            raise ValueError("bucket must be a DNS-compatible S3 bucket name")
+        try:
+            ip_address(value)
+        except ValueError:
+            return value
+        raise ValueError("bucket must not be formatted as an IP address")
+
+    @field_validator("access_key_id", "secret_access_key")
+    @classmethod
+    def require_non_empty_secret(cls, value: SecretStr) -> SecretStr:
+        """Reject blank credentials without exposing their values."""
+
+        secret = value.get_secret_value()
+        if not secret or secret != secret.strip():
+            raise ValueError("S3 credentials must be non-empty normalized values")
+        return value
+
+
+class ObjectStorageSettings(DatabaseSettings):
+    """Configuration shared by processes that access canonical originals."""
+
+    object_storage_provider: ObjectStorageProvider = "local"
+    object_storage_root: Path = DEFAULT_OBJECT_STORAGE_ROOT
+    s3: S3Settings | None = None
+
+    @field_validator("object_storage_root")
+    @classmethod
+    def require_private_object_storage_root(cls, value: Path) -> Path:
+        """Resolve test-only local storage and keep it outside the web root."""
+
+        return _resolve_private_object_storage_root(value)
+
+    @model_validator(mode="after")
+    def require_matching_object_storage_configuration(self) -> ObjectStorageSettings:
+        """Require one complete provider configuration without unused S3 secrets."""
+
+        if self.object_storage_provider == "local":
+            if self.s3 is not None:
+                raise ValueError("s3 configuration is not allowed for the local provider")
+            return self
+
+        if self.s3 is None:
+            raise ValueError("s3 configuration is required for the s3 provider")
+
+        try:
+            endpoint = urlsplit(self.s3.endpoint_url)
+            port = endpoint.port
+        except ValueError as error:
+            raise ValueError("s3 endpoint_url must be a valid HTTP URL") from error
+        if endpoint.scheme not in {"http", "https"}:
+            raise ValueError("s3 endpoint_url must use HTTP or HTTPS")
+        if endpoint.username or endpoint.password:
+            raise ValueError("s3 endpoint_url must not contain credentials")
+        if endpoint.path not in {"", "/"} or endpoint.query or endpoint.fragment:
+            raise ValueError("s3 endpoint_url must not contain a path, query, or fragment")
+        if port is not None and port < 1:
+            raise ValueError("s3 endpoint_url port must be between 1 and 65535")
+
+        if self.runtime_location == "container":
+            valid_host = endpoint.hostname == "seaweedfs-s3"
+            target = "the Compose seaweedfs-s3 service"
+        else:
+            valid_host = endpoint.hostname is not None and _is_loopback_host(endpoint.hostname)
+            target = "localhost or a loopback IP address"
+        if not valid_host:
+            raise ValueError(f"s3 endpoint_url must target {target}")
+        return self
+
+    def require_s3_settings(self) -> S3Settings:
+        """Return complete S3 values only when the S3 provider is selected."""
+
+        if self.object_storage_provider != "s3" or self.s3 is None:
+            raise RuntimeError("S3 configuration is required for S3 object storage")
+        return self.s3
+
+
+class ApiSettings(ObjectStorageSettings):
     """Configuration available to the FastAPI process."""
 
     app_name: str = "Investment Research Archive"
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1024, le=65535)
-    object_storage_root: Path = DEFAULT_OBJECT_STORAGE_ROOT
     max_upload_bytes: int = Field(
         default=DEFAULT_MAX_UPLOAD_BYTES,
         ge=1024,
@@ -171,18 +283,10 @@ class ApiSettings(DatabaseSettings):
             raise ValueError("api_host is not allowed for the selected runtime location")
         return self
 
-    @field_validator("object_storage_root")
-    @classmethod
-    def require_private_object_storage_root(cls, value: Path) -> Path:
-        """Resolve local storage predictably and keep it outside the web root."""
 
-        return _resolve_private_object_storage_root(value)
-
-
-class WorkerSettings(DatabaseSettings):
+class WorkerSettings(ObjectStorageSettings):
     """Configuration available to the M0.0 runner and later Celery worker."""
 
-    object_storage_root: Path = DEFAULT_OBJECT_STORAGE_ROOT
     max_pdf_pages: int = Field(
         default=DEFAULT_MAX_PDF_PAGES,
         ge=1,
@@ -203,13 +307,6 @@ class WorkerSettings(DatabaseSettings):
         ge=MIN_PROCESSING_MEMORY_LIMIT_BYTES,
         le=MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES,
     )
-
-    @field_validator("object_storage_root")
-    @classmethod
-    def require_private_object_storage_root(cls, value: Path) -> Path:
-        """Resolve local storage predictably and keep it outside the web root."""
-
-        return _resolve_private_object_storage_root(value)
 
 
 class ParserSettings(RuntimeSettings):
@@ -335,6 +432,49 @@ def _database_runtime_values(file_values: dict[str, str | None]) -> dict[str, ob
     return values
 
 
+def _object_storage_runtime_values(file_values: dict[str, str | None]) -> dict[str, object]:
+    """Load provider selection and one optional complete S3 configuration."""
+
+    values: dict[str, object] = {
+        "object_storage_provider": _configuration_value(
+            "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER",
+            file_values,
+            "local",
+        ),
+        "object_storage_root": _configuration_value(
+            "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
+            file_values,
+            str(DEFAULT_OBJECT_STORAGE_ROOT),
+        ),
+    }
+    s3_values = {
+        "endpoint_url": _configuration_value(
+            "INVESTMENT_RESEARCH_S3_ENDPOINT_URL",
+            file_values,
+        ),
+        "region_name": _configuration_value(
+            "INVESTMENT_RESEARCH_S3_REGION_NAME",
+            file_values,
+        ),
+        "bucket": _configuration_value(
+            "INVESTMENT_RESEARCH_S3_BUCKET",
+            file_values,
+        ),
+        "access_key_id": _configuration_value(
+            "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
+            file_values,
+        ),
+        "secret_access_key": _configuration_value(
+            "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
+            file_values,
+        ),
+    }
+    configured_s3_values = {name: value for name, value in s3_values.items() if value is not None}
+    if configured_s3_values:
+        values["s3"] = configured_s3_values
+    return values
+
+
 def load_database_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> DatabaseSettings:
     """Load only values required for a direct PostgreSQL maintenance process."""
 
@@ -347,6 +487,7 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
     file_values = _read_local_values(env_file)
     values = {
         **_database_runtime_values(file_values),
+        **_object_storage_runtime_values(file_values),
         "app_name": _configuration_value(
             "INVESTMENT_RESEARCH_APP_NAME",
             file_values,
@@ -358,11 +499,6 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
             "127.0.0.1",
         ),
         "api_port": _configuration_value("INVESTMENT_RESEARCH_API_PORT", file_values, "8000"),
-        "object_storage_root": _configuration_value(
-            "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
-            file_values,
-            str(DEFAULT_OBJECT_STORAGE_ROOT),
-        ),
         "max_upload_bytes": _configuration_value(
             "INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES",
             file_values,
@@ -378,11 +514,7 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
     file_values = _read_local_values(env_file)
     values = {
         **_database_runtime_values(file_values),
-        "object_storage_root": _configuration_value(
-            "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
-            file_values,
-            str(DEFAULT_OBJECT_STORAGE_ROOT),
-        ),
+        **_object_storage_runtime_values(file_values),
         "max_pdf_pages": _configuration_value(
             "INVESTMENT_RESEARCH_MAX_PDF_PAGES",
             file_values,
