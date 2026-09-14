@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Draft v0.1 — implementation-ready proposal  
+**Status:** Active v0.2 — Step 1 implemented locally; hosted CI confirmation pending \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -336,6 +336,14 @@ Frontend:
 non-root, and contains no configured secrets.
 
 **Suggested commits:** settings; logging; health; backend image; CI and docs.
+
+**Local implementation record (2026-09-14):** Process-specific settings, structured safe logging,
+correlation identifiers, layered health, the backend image targets, and the independent CI image job
+are implemented. The digest-pinned image provides a runnable API target and explicit extension
+foundations for the Step 3 worker and parser entry points. Local backend, PostgreSQL migration,
+image-metadata, non-root runtime, API-readiness, frontend contract, frontend test, and production
+build gates passed. Step 1 remains pending only until the committed workflow passes on the hosted
+GitHub runner.
 
 ### Step 2 — MinIO object storage replacement
 
