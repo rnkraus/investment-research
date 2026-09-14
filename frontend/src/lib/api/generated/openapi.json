@@ -530,6 +530,24 @@
         "title": "ProcessingState",
         "type": "string"
       },
+      "ReadinessResponse": {
+        "description": "Public readiness result without dependency or failure details.",
+        "properties": {
+          "status": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ReadinessResponse",
+        "type": "object"
+      },
       "ResearchFailedEvent": {
         "additionalProperties": false,
         "description": "Terminal event for a safely reported research failure.",
@@ -1050,7 +1068,7 @@
     },
     "/health": {
       "get": {
-        "description": "Report API process liveness.",
+        "description": "Report process liveness without touching runtime dependencies.",
         "operationId": "read_health_health_get",
         "responses": {
           "200": {
@@ -1065,6 +1083,38 @@
           }
         },
         "summary": "Read Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "Report whether every API dependency can safely serve traffic.",
+        "operationId": "read_readiness_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read Readiness",
         "tags": [
           "health"
         ]
