@@ -1,6 +1,7 @@
 # Secrets and local environment
 .env
 .env.*
+storage.env
 !.env.example
 !*.env.example
 .envrc

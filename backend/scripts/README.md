@@ -106,10 +106,13 @@ development database or its volume.
 ```mermaid
 flowchart LR
     COMMAND[verify_object_storage.py] --> IMAGE[Locked non-root verification image]
-    IMAGE --> COMPOSE[Unique SeaweedFS Compose project]
+    IMAGE --> COMPOSE[Unique PostgreSQL and SeaweedFS Compose project]
+    COMPOSE --> MIGRATE[Alembic migration and workspace seed]
     COMPOSE --> BOOTSTRAP[Private bucket bootstrap]
-    BOOTSTRAP --> CONTRACTS[S3 and isolation contract tests]
-    CONTRACTS --> WRITE[Write persistence probe]
+    BOOTSTRAP --> CONTRACTS[Direct S3 and isolation contracts]
+    MIGRATE --> API[API capture and authorized original-open contract]
+    CONTRACTS --> API
+    API --> WRITE[Write persistence probe]
     WRITE --> RESTART[Restart storage services]
     RESTART --> READ[Read persistence probe]
     READ --> CLEANUP[Remove project, volumes, and test image]
@@ -121,18 +124,21 @@ Run the complete SeaweedFS gate from `backend/` with Docker running:
 uv run --locked python -m scripts.verify_object_storage
 ```
 
-The command generates disposable administrator and application credentials, a private bucket, a
-unique Compose project, and a unique verification image. The test container reaches only the S3
-gateway through the internal `storage-data` network; SeaweedFS publishes no host port. Tests cover
-immutable conditional creation under concurrency, checksum and byte integrity, open and cleanup,
-missing/foreign non-disclosure, workspace key scope, least-privilege application credentials, and
-restart persistence. Runtime inspection also verifies non-root users, dropped capabilities,
-`no-new-privileges`, read-only control-service filesystems, unpublished storage ports, secret-file
-delivery, and control-plane network isolation.
+The command generates a disposable PostgreSQL password, administrator and application credentials,
+a private bucket, a unique Compose project, and a unique verification image. Direct S3 tests reach
+only the gateway through the internal `storage-data` network. A separately confined API contract
+container joins that network and the project's PostgreSQL network, captures a synthetic PDF through
+`POST /api/v1/documents`, and reopens the immutable bytes through the authorized original endpoint.
+SeaweedFS publishes no host port. Tests cover immutable conditional creation under concurrency,
+checksum and byte integrity, open and cleanup, missing/foreign non-disclosure, workspace key scope,
+least-privilege application credentials, and restart persistence. Runtime inspection also verifies
+non-root users, dropped capabilities, `no-new-privileges`, read-only control-service filesystems,
+unpublished storage ports, secret-file delivery, and control-plane network isolation.
 
-The command does not load repository `.env` values. Its generated secrets are passed without values
-in displayed command arguments. Cleanup always targets only that invocation's unique project,
-volumes, and verification image, including after a failed build or test.
+The command does not load repository `.env` values. It migrates and seeds its own PostgreSQL volume;
+generated secrets are passed without values in displayed command arguments. Cleanup always targets
+only that invocation's unique project, networks, volumes, contract container, and verification
+image, including after a failed build or test.
 
 ## Backend image verification
 

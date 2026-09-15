@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.4 — Step 1 completed on 2026-09-14; Step 2 provider selected \
+**Status:** Active v0.5 — Step 1 completed; Step 2 implemented locally with hosted CI pending \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -398,6 +398,25 @@ conditional-create concurrency, credential separation, control-surface isolation
 integrity, and restart persistence pass without direct SDK imports in application modules.
 
 **Suggested commits:** dependency and adapter; SeaweedFS topology; integration tests; CI and docs.
+
+**Local implementation record (2026-09-15):** The provider-neutral `ObjectStorage` contract now has
+a Boto3-backed S3 adapter with conditional immutable writes, streaming checksums, uniform
+unavailable-object behavior, workspace-scoped keys, and compensating cleanup. The local Compose
+topology splits SeaweedFS master, volume, filer, S3 gateway, and one-shot bucket bootstrap across
+private control and data networks. The reviewed SeaweedFS 4.47 base image is pinned by version and
+digest under the bounded exception recorded in ADR-0007; administrative bootstrap and
+least-privilege application credentials are separate and delivered without values in container
+metadata.
+
+The isolated verification command creates its own PostgreSQL and SeaweedFS volumes, migrates and
+seeds PostgreSQL, runs direct S3 contracts on the private data network, and runs the unchanged API
+capture-and-authorized-open contract in a confined container connected only to PostgreSQL and the S3
+data plane. Conditional-write concurrency, checksums, byte integrity, missing/foreign
+non-disclosure, credential scope, control-plane isolation, runtime confinement, restart persistence,
+and scoped cleanup passed locally. The host API intentionally retains `LocalObjectStorage` until API
+and worker join Compose in Step 4; SeaweedFS has no host port. The dedicated CI job is implemented,
+but its successful hosted GitHub run remains the final remote confirmation before Step 2 is marked
+fully complete.
 
 ### Step 3 — Redis/Celery delivery and isolated parsing
 
