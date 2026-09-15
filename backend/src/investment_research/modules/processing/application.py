@@ -29,7 +29,6 @@ from investment_research.modules.processing.ports import (
     DocumentParserError,
     ParserLimitExceededError,
     ParserTransportError,
-    ProcessingExecutionLimitError,
     ProcessingOriginalProvider,
     ProcessingReadUnitOfWorkFactory,
     ProcessingUnitOfWorkFactory,
@@ -88,7 +87,7 @@ class ProcessingRunConflictError(Exception):
 
 
 class ProcessingParserVersionError(Exception):
-    """Raised when a runner cannot reproduce the run's recorded parser version."""
+    """Raised when processing cannot reproduce the run's recorded parser version."""
 
 
 class ProcessingRunAlreadyActiveError(Exception):
@@ -448,7 +447,7 @@ class ProcessDocumentService:
 
         if self._parser.parser_version != run.parser_version:
             raise ProcessingParserVersionError(
-                "runner parser version does not match the processing run"
+                "configured parser version does not match the processing run"
             )
 
     @staticmethod
@@ -469,8 +468,6 @@ class ProcessDocumentService:
 
         if isinstance(error, ParserLimitExceededError):
             return "Parser safety limit exceeded"
-        if isinstance(error, ProcessingExecutionLimitError):
-            return "Processing execution time limit exceeded"
         if isinstance(error, MemoryError):
             return "Processing memory limit exceeded"
         if isinstance(error, DocumentParserError):

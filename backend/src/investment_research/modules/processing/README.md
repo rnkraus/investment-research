@@ -4,13 +4,13 @@ This module owns canonical processing intent, page-aware parsed structure, versi
 
 ## Contents
 
-| File             | Responsibility                                                                                           |
-| ---------------- | -------------------------------------------------------------------------------------------------------- |
-| `application.py` | Creates and reads runs, builds lexical output, and orchestrates one bounded processing attempt.        |
-| `contracts.py`   | Defines bounded, immutable parser input and page-aware output types.                                    |
-| `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants.        |
-| `ports.py`       | Defines parser, verified-original-provider, repository, and processing unit-of-work contracts.          |
-| `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior.         |
+| File             | Responsibility                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `application.py` | Creates and reads runs, builds lexical output, and orchestrates one bounded processing attempt.  |
+| `contracts.py`   | Defines bounded, immutable parser input and page-aware output types.                             |
+| `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants. |
+| `ports.py`       | Defines parser, verified-original-provider, repository, and processing unit-of-work contracts.   |
+| `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior. |
 
 ## Ownership and provenance
 
@@ -49,10 +49,9 @@ processing transition errors.
 `attempt_count` records successful canonical claims, not broker deliveries. `lease_id` is the
 current attempt's ownership token, and `lease_expires_at` is the earliest UTC instant at which a new
 attempt may reclaim the run. M0 permits three attempts and uses a 360-second lease, which exceeds
-the maximum configurable 300-second processing timeout plus shutdown grace. The later Celery task
-will use `expire_lease_for_retry` only for classified transient infrastructure failures; this
-application-service block still maps its existing parser and execution failures to terminal
-`FAILED`.
+the maximum configurable 300-second processing timeout plus shutdown grace. The Celery task uses
+`expire_lease_for_retry` only for classified transient infrastructure failures; permanent parser
+and protocol failures become terminal `FAILED` states.
 
 Parser, parser configuration, chunker, chunking configuration, and lexical configuration versions
 are immutable properties of a run. `update_run` changes only lifecycle fields. The processing
@@ -61,9 +60,9 @@ document content directly.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the
 initial durable intent. The factory applies the versioned M0.0 profile and the trusted workspace
-context, so the documents module does not duplicate processing configuration knowledge. The runner
-requires its parser version to match that recorded profile rather than silently substituting
-different parsing semantics.
+context, so the documents module does not duplicate processing configuration knowledge. The
+processing service requires its configured parser version to match that recorded profile rather
+than silently substituting different parsing semantics.
 
 ## Parser boundary
 
@@ -83,17 +82,17 @@ the `DocumentParser` port and cannot leak library-specific page objects into dom
 code. The parser does not create blocks, chunks, or evidence spans; those require application-level
 versioning and provenance rules.
 
-M0.0 uses the BSD-3-Clause-licensed `pypdf` adapter in `infrastructure/parsing`. It opens PDFs in
-strict mode, rejects encrypted documents, checks the page limit before extraction, and checks the
-cumulative extracted-character limit after every page. The processing profile records the exact
-locked parser version. `INVESTMENT_RESEARCH_MAX_PDF_PAGES` and
+The isolated parser runtime uses the BSD-3-Clause-licensed `pypdf` adapter in
+`infrastructure/parsing`. It opens PDFs in strict mode, rejects encrypted documents, checks the page
+limit before extraction, and checks the cumulative extracted-character limit after every page. The
+processing profile records the exact locked parser version. `INVESTMENT_RESEARCH_MAX_PDF_PAGES` and
 `INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS` configure the active bounds, while the contracts
 retain absolute safety ceilings.
 
 Individual blank pages remain in the result so later citations retain physical PDF page numbering.
 The application service rejects a document with no usable text before it creates lexical output.
-Process-level time and memory bounds belong to the separate runner rather than this in-process data
-contract.
+Process-level CPU, memory, process-count, temporary-storage, and wall-clock bounds belong to the
+isolated parser and Celery runtime rather than this in-process data contract.
 
 ## Processing application flow
 
@@ -184,40 +183,14 @@ the processing service persist a safe canonical failure without storing HTTP, py
 exception details. See the [parsing infrastructure README](../../infrastructure/parsing/README.md)
 for the complete protocol boundary.
 
-| Observed parser failure | Application category | Canonical outcome |
-| --- | --- | --- |
-| Timeout or abrupt connection loss | `ParserTransportError` | Expire the lease and retry; after the third claim, store `FAILED` with `Processing attempt limit exceeded`. |
-| Malformed or contract-breaking response | `ParserProtocolError` | Store `FAILED` after the first claim with `Document parsing failed safely`. |
+| Observed parser failure                 | Application category   | Canonical outcome                                                                                           |
+| --------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Timeout or abrupt connection loss       | `ParserTransportError` | Expire the lease and retry; after the third claim, store `FAILED` with `Processing attempt limit exceeded`. |
+| Malformed or contract-breaking response | `ParserProtocolError`  | Store `FAILED` after the first claim with `Document parsing failed safely`.                                 |
 
 PostgreSQL integration tests exercise these categories through the real HTTP adapter. They require
 the original bytes to remain unchanged, the terminal lease to be cleared, and no structure block,
 chunk set, or chunk to be committed for a failed parse.
-
-## Single-job runner
-
-`investment_research.runner` is the development-only `ProcessingExecutor` adapter. It accepts one
-processing-run UUID, resolves the fixed local `WorkspaceContext`, applies the configured process
-bounds, explicitly injects the in-process `PypdfDocumentParser`, calls `ProcessDocumentService`, and
-exits. This remains only as the documented M0.0 fixture exception until the isolated Celery path
-passes its acceptance gate. It cannot accept an API session or client-chosen workspace identifier.
-
-```mermaid
-flowchart LR
-    CLI[Run ID] --> EXECUTOR[SingleJobProcessingExecutor]
-    SETTINGS[Validated time and memory bounds] --> EXECUTOR
-    IDENTITY[Fixed local identity provider] --> EXECUTOR
-    EXECUTOR --> SERVICE[ProcessDocumentService]
-    SERVICE --> RESULT[Committed terminal run]
-    RESULT --> EXIT[Safe message and process exit]
-```
-
-The wall-clock bound uses a process signal that raises `ProcessingExecutionLimitError` inside the
-active service call. The service can therefore commit a safe `FAILED` state before the command exits.
-The runner measures its already-loaded virtual address space and adds the configured processing
-budget before setting the kernel's virtual-memory soft limit. This avoids undercutting the Python
-runtime while still bounding new allocations, and it never relaxes a stricter operating-system
-limit. A `MemoryError` is translated to a fixed safe summary. This is defense in depth around the
-parser's page and extracted-character limits; it is not a durability or retry mechanism.
 
 ## M0.0 lexical mapping
 

@@ -152,7 +152,7 @@ def sqlalchemy_evidence_read_unit_of_work(
 def sqlalchemy_processing_unit_of_work(
     session_factory: SessionFactory,
 ) -> Iterator[ProcessingUnitOfWork]:
-    """Commit one runner state change and its related output atomically."""
+    """Commit one processing state change and its related output atomically."""
 
     with transactional_session(session_factory) as session:
         yield SqlAlchemyProcessingRepositories(
@@ -237,7 +237,7 @@ def create_evidence_read_unit_of_work_factory(
 def create_processing_unit_of_work_factory(
     session_factory: SessionFactory,
 ) -> ProcessingUnitOfWorkFactory:
-    """Bind runner transaction creation to one process-wide session factory."""
+    """Bind processing transactions to one process-wide session factory."""
 
     def create_unit_of_work() -> AbstractContextManager[ProcessingUnitOfWork]:
         return sqlalchemy_processing_unit_of_work(session_factory)

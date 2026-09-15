@@ -34,7 +34,6 @@ from investment_research.modules.processing.domain import (
 from investment_research.modules.processing.ports import (
     DocumentParserError,
     ParserTransportError,
-    ProcessingExecutionLimitError,
     ProcessingRepository,
     ProcessingUnitOfWork,
 )
@@ -353,39 +352,21 @@ def test_parser_transport_failure_at_attempt_limit_becomes_terminal() -> None:
     assert unit_of_work_factory.transaction_count == 2
 
 
-@pytest.mark.parametrize(
-    ("processing_error", "safe_summary"),
-    [
-        pytest.param(
-            ProcessingExecutionLimitError("sensitive timeout detail"),
-            "Processing execution time limit exceeded",
-            id="time-limit",
-        ),
-        pytest.param(
-            MemoryError("sensitive allocation detail"),
-            "Processing memory limit exceeded",
-            id="memory-limit",
-        ),
-    ],
-)
-def test_resource_failure_is_recorded_without_exception_details(
-    processing_error: Exception,
-    safe_summary: str,
-) -> None:
+def test_memory_failure_is_recorded_without_exception_details() -> None:
     repository = InMemoryProcessingRepository(make_run())
-    parser = RecordingParser(error=processing_error)
+    parser = RecordingParser(error=MemoryError("sensitive allocation detail"))
     service, unit_of_work_factory = make_service(
         repository,
         parser,
         RecordingOriginalProvider(),
     )
 
-    with pytest.raises(type(processing_error)):
+    with pytest.raises(MemoryError):
         service.process(make_context(), PROCESSING_RUN_ID)
 
     assert repository.run is not None
     assert repository.run.state is ProcessingState.FAILED
-    assert repository.run.error_summary == safe_summary
+    assert repository.run.error_summary == "Processing memory limit exceeded"
     assert "sensitive" not in repository.run.error_summary
     assert unit_of_work_factory.transaction_count == 2
 

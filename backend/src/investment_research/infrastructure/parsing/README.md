@@ -6,13 +6,13 @@ only receive bounded bytes and non-secret parsing metadata.
 
 ## Files
 
-| File | Responsibility |
-| --- | --- |
-| `__init__.py` | Declares the parsing infrastructure package without import-time work. |
-| `pypdf.py` | Extracts ordered page text and enforces page and character limits inside the parser runtime. |
-| `http_protocol.py` | Defines the single private path, media types, metadata header, and header-size limit. |
-| `client.py` | Implements `DocumentParser` for the worker through one bounded HTTP request. |
-| `../../parser_app.py` | Hosts pypdf in the credential-free internal parser process. |
+| File                  | Responsibility                                                                               |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| `__init__.py`         | Declares the parsing infrastructure package without import-time work.                        |
+| `pypdf.py`            | Extracts ordered page text and enforces page and character limits inside the parser runtime. |
+| `http_protocol.py`    | Defines the single private path, media types, metadata header, and header-size limit.        |
+| `client.py`           | Implements `DocumentParser` for the worker through one bounded HTTP request.                 |
+| `../../parser_app.py` | Hosts pypdf in the credential-free internal parser process.                                  |
 
 ## Trust boundary
 
@@ -41,19 +41,20 @@ count, and extracted-character count.
 
 ## Safe failures
 
-| Condition | Application-owned error |
-| --- | --- |
-| PDF, page, text, request, or response limit exceeded | `ParserLimitExceededError` |
-| Parser rejects malformed, encrypted, or unsupported PDF content | `DocumentParserError` |
-| Timeout, refused connection, interrupted response, or internal parser failure | `ParserTransportError` |
-| Wrong media type, malformed JSON, unknown schema, mismatched version, or excessive response | `ParserProtocolError` |
+| Condition                                                                                   | Application-owned error    |
+| ------------------------------------------------------------------------------------------- | -------------------------- |
+| PDF, page, text, request, or response limit exceeded                                        | `ParserLimitExceededError` |
+| Parser rejects malformed, encrypted, or unsupported PDF content                             | `DocumentParserError`      |
+| Timeout, refused connection, interrupted response, or internal parser failure               | `ParserTransportError`     |
+| Wrong media type, malformed JSON, unknown schema, mismatched version, or excessive response | `ParserProtocolError`      |
 
 HTTP bodies contain only the bounded success contract or one fixed `ParserFailureV1.code`. Exception
 messages, document text, and implementation details are not included in failure responses.
 
-## Transitional M0.0 exception
+## Active M0 boundary
 
-`investment_research.runner` still injects `PypdfDocumentParser` directly so the already accepted
-M0.0 fixture gate remains runnable until the Celery/Redis/isolated-parser acceptance path passes.
-The real Celery worker does not use that injection. Delete the runner and its exception after the M0
-replacement gate passes.
+The temporary M0.0 entry point that injected `PypdfDocumentParser` alongside database credentials
+has been removed after the Celery/Redis/isolated-parser acceptance path passed. The trusted worker
+constructs only `HttpDocumentParser`; `parser_app.py` is the sole runtime composition root that
+constructs `PypdfDocumentParser` directly. Isolation tests verify that this parser process receives
+no canonical credentials and cannot reach Redis or external networks.

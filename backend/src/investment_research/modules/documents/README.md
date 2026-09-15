@@ -4,13 +4,13 @@ This module owns logical archive documents, immutable content versions, and immu
 
 ## Contents
 
-| File             | Responsibility                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| `contracts.py`   | Defines validated capture metadata and the stable application result.                                 |
-| `application.py` | Captures bounded PDFs and resolves verified current originals for downloads or processing.             |
-| `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values.  |
-| `ports.py`       | Defines object storage, repository, binary-stream, and write/read unit-of-work contracts.             |
-| `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.             |
+| File             | Responsibility                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `contracts.py`   | Defines validated capture metadata and the stable application result.                                |
+| `application.py` | Captures bounded PDFs and resolves verified current originals for downloads or processing.           |
+| `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values. |
+| `ports.py`       | Defines object storage, repository, binary-stream, and write/read unit-of-work contracts.            |
+| `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.           |
 
 ## Entity ownership
 
@@ -55,8 +55,8 @@ publication failure records only the safe workspace and processing-run identifie
 committed capture result, and leaves the run visibly `CAPTURED` for recovery. Dispatch is outside the
 compensation block, so neither a broker failure nor an unexpected post-commit error can delete an
 already canonical original. The API container constructs the Celery adapter and provides its
-`ProcessingDispatcher` to the capture service explicitly. Focused service and retained M0.0 runner
-tests use typed recording dispatchers so they remain independent of a live broker.
+`ProcessingDispatcher` to the capture service explicitly. Focused service tests use typed recording
+dispatchers so they remain independent of a live broker.
 
 ## Original access
 
