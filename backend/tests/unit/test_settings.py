@@ -44,9 +44,15 @@ S3_SETTING_NAMES = (
     "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
     "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
 )
+QUEUE_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_REDIS_URL",
+    "REDIS_PASSWORD",
+    "REDIS_PORT",
+)
 type ObjectStorageSettingsFactory = type[ApiSettings] | type[WorkerSettings]
 type ObjectStorageSettingsLoader = Callable[..., ApiSettings | WorkerSettings]
 type ParserLimitSettingsFactory = type[WorkerSettings] | type[ParserSettings]
+type QueueSettingsFactory = type[ApiSettings] | type[WorkerSettings]
 
 
 def clear_parser_forbidden_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -60,10 +66,10 @@ def clear_parser_forbidden_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def clear_object_storage_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep every settings test independent of host S3 configuration."""
+def clear_external_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep settings tests independent of host queue and S3 configuration."""
 
-    for name in S3_SETTING_NAMES:
+    for name in (*S3_SETTING_NAMES, *QUEUE_SETTING_NAMES):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -105,6 +111,10 @@ def test_api_settings_load_only_supported_environment_values(
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_HOST", "localhost")
     monkeypatch.setenv("INVESTMENT_RESEARCH_API_PORT", "8123")
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_REDIS_URL",
+        "redis://:synthetic-redis-secret@127.0.0.1:6379/0",
+    )
     monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT", str(object_storage_root))
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
 
@@ -116,6 +126,7 @@ def test_api_settings_load_only_supported_environment_values(
     assert settings.api_host == "localhost"
     assert settings.api_port == 8123
     assert settings.require_database_url() == LOCAL_DATABASE_URL
+    assert settings.require_redis_url() == ("redis://:synthetic-redis-secret@127.0.0.1:6379/0")
     assert settings.object_storage_root == object_storage_root
     assert settings.max_upload_bytes == 1_048_576
     assert "test-password" not in repr(settings)
@@ -130,6 +141,10 @@ def test_worker_settings_load_only_supported_environment_values(
     monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "host")
     monkeypatch.setenv("INVESTMENT_RESEARCH_LOG_LEVEL", "WARNING")
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_REDIS_URL",
+        "redis://:synthetic-redis-secret@localhost:6379/0",
+    )
     monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT", str(object_storage_root))
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "1500000")
@@ -142,12 +157,124 @@ def test_worker_settings_load_only_supported_environment_values(
     assert settings.runtime_location == "host"
     assert settings.log_level == "WARNING"
     assert settings.require_database_url() == LOCAL_DATABASE_URL
+    assert settings.require_redis_url() == ("redis://:synthetic-redis-secret@localhost:6379/0")
     assert settings.object_storage_root == object_storage_root
     assert settings.max_pdf_pages == 100
     assert settings.max_extracted_characters == 1_500_000
     assert settings.processing_timeout_seconds == 45
     assert settings.processing_memory_limit_bytes == 256 * 1024 * 1024
     assert "test-password" not in repr(settings)
+    assert "synthetic-redis-secret" not in repr(settings)
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+def test_queue_settings_allow_only_compose_redis_service_in_container(
+    settings_factory: QueueSettingsFactory,
+) -> None:
+    settings = settings_factory.model_validate(
+        {
+            "runtime_location": "container",
+            "redis_url": "redis://:synthetic-secret@redis:6379/0",
+        }
+    )
+
+    assert settings.require_redis_url() == "redis://:synthetic-secret@redis:6379/0"
+
+
+@pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings])
+@pytest.mark.parametrize(
+    ("redis_url", "expected_error"),
+    [
+        pytest.param(
+            "rediss://:synthetic-secret@127.0.0.1:6379/0",
+            "redis scheme",
+            id="wrong-scheme",
+        ),
+        pytest.param(
+            "redis://:synthetic-secret@cache.example.invalid:6379/0",
+            "loopback",
+            id="remote-host",
+        ),
+        pytest.param(
+            "redis://default:synthetic-secret@127.0.0.1:6379/0",
+            "password-only",
+            id="username",
+        ),
+        pytest.param(
+            "redis://127.0.0.1:6379/0",
+            "include a password",
+            id="missing-password",
+        ),
+        pytest.param(
+            "redis://:synthetic-secret@127.0.0.1:6379/1",
+            "database /0",
+            id="wrong-database",
+        ),
+        pytest.param(
+            "redis://:synthetic-secret@127.0.0.1:6379/0?credential=marker",
+            "query parameters",
+            id="query",
+        ),
+        pytest.param(
+            "redis://:synthetic-secret@127.0.0.1:6379/0#marker",
+            "fragment",
+            id="fragment",
+        ),
+    ],
+)
+def test_queue_settings_reject_unsafe_broker_url(
+    settings_factory: QueueSettingsFactory,
+    redis_url: str,
+    expected_error: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_error) as error:
+        settings_factory.model_validate({"redis_url": redis_url})
+
+    assert "synthetic-secret" not in str(error.value)
+
+
+def test_queue_settings_require_configuration_only_when_queue_is_used() -> None:
+    with pytest.raises(RuntimeError, match="Redis configuration"):
+        ApiSettings().require_redis_url()
+
+
+@pytest.mark.parametrize("loader", [load_api_settings, load_worker_settings])
+def test_queue_settings_build_url_from_local_environment(
+    loader: ObjectStorageSettingsLoader,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REDIS_PASSWORD", "synthetic@password/with:symbols")
+    monkeypatch.setenv("REDIS_PORT", "6380")
+
+    settings = loader(env_file=None)
+
+    assert settings.require_redis_url() == (
+        "redis://:synthetic%40password%2Fwith%3Asymbols@127.0.0.1:6380/0"
+    )
+
+
+@pytest.mark.parametrize("loader", [load_api_settings, load_worker_settings])
+def test_queue_settings_reject_incomplete_local_environment(
+    loader: ObjectStorageSettingsLoader,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REDIS_PASSWORD", "synthetic-secret")
+
+    with pytest.raises(ValueError, match="missing: REDIS_PORT"):
+        loader(env_file=None)
+
+
+@pytest.mark.parametrize("loader", [load_api_settings, load_worker_settings])
+def test_queue_settings_require_explicit_url_in_container(
+    loader: ObjectStorageSettingsLoader,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "container")
+    monkeypatch.setenv("REDIS_PASSWORD", "synthetic-secret")
+    monkeypatch.setenv("REDIS_PORT", "6379")
+
+    with pytest.raises(ValueError, match="require INVESTMENT_RESEARCH_REDIS_URL"):
+        loader(env_file=None)
 
 
 @pytest.mark.parametrize("loader", [load_api_settings, load_worker_settings])
