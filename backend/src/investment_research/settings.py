@@ -42,6 +42,10 @@ POSTGRES_SETTING_NAMES = (
     "POSTGRES_PASSWORD",
     "POSTGRES_PORT",
 )
+REDIS_SETTING_NAMES = (
+    "REDIS_PASSWORD",
+    "REDIS_PORT",
+)
 PARSER_FORBIDDEN_ENVIRONMENT_NAMES = frozenset(
     {
         "INVESTMENT_RESEARCH_DATABASE_URL",
@@ -54,6 +58,7 @@ PARSER_FORBIDDEN_ENVIRONMENT_NAMES = frozenset(
 )
 PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES = (
     "POSTGRES_",
+    "REDIS_",
     "MINIO_",
     "AWS_",
     "INVESTMENT_RESEARCH_S3_",
@@ -150,6 +155,57 @@ class DatabaseSettings(RuntimeSettings):
         return self.database_url.get_secret_value()
 
 
+class QueueSettings(DatabaseSettings):
+    """Shared configuration for API and worker access to the transient broker."""
+
+    redis_url: SecretStr | None = None
+
+    @model_validator(mode="after")
+    def require_supported_redis_url(self) -> QueueSettings:
+        """Restrict M0 broker access to the authenticated local runtime topology."""
+
+        if self.redis_url is None:
+            return self
+
+        raw_url = self.redis_url.get_secret_value()
+        try:
+            parsed_url = urlsplit(raw_url)
+            port = parsed_url.port
+        except ValueError as error:
+            raise ValueError("redis_url must be a valid Redis URL") from error
+
+        if parsed_url.scheme != "redis":
+            raise ValueError("redis_url must use the redis scheme")
+        if self.runtime_location == "container":
+            valid_host = parsed_url.hostname == "redis"
+            target = "the Compose redis service"
+        else:
+            valid_host = parsed_url.hostname is not None and _is_loopback_host(parsed_url.hostname)
+            target = "localhost or a loopback IP address"
+        if not valid_host:
+            raise ValueError(f"redis_url must target {target}")
+        if parsed_url.username not in {None, ""}:
+            raise ValueError("redis_url must use the password-only M0 authentication format")
+        if not parsed_url.password:
+            raise ValueError("redis_url must include a password")
+        if port is not None and port < 1:
+            raise ValueError("redis_url port must be between 1 and 65535")
+        if parsed_url.path != "/0":
+            raise ValueError("redis_url must select the M0 broker database /0")
+        if parsed_url.query:
+            raise ValueError("redis_url must not include query parameters")
+        if parsed_url.fragment:
+            raise ValueError("redis_url must not include a fragment")
+        return self
+
+    def require_redis_url(self) -> str:
+        """Return the broker URL only for components that require queue access."""
+
+        if self.redis_url is None:
+            raise RuntimeError("Redis configuration is required for queue access")
+        return self.redis_url.get_secret_value()
+
+
 class S3Settings(BaseModel):
     """Validated S3 data-plane configuration shared by API and worker processes."""
 
@@ -201,7 +257,7 @@ class S3Settings(BaseModel):
         return value
 
 
-class ObjectStorageSettings(DatabaseSettings):
+class ObjectStorageSettings(QueueSettings):
     """Configuration shared by processes that access canonical originals."""
 
     object_storage_provider: ObjectStorageProvider = "local"
@@ -432,6 +488,51 @@ def _database_runtime_values(file_values: dict[str, str | None]) -> dict[str, ob
     return values
 
 
+def _redis_url(file_values: dict[str, str | None], runtime_location: object) -> str | None:
+    """Load an explicit URL or construct the host-development Redis URL."""
+
+    explicit_url = _configuration_value("INVESTMENT_RESEARCH_REDIS_URL", file_values)
+    if explicit_url is not None:
+        return explicit_url
+
+    redis_values = {name: _configuration_value(name, file_values) for name in REDIS_SETTING_NAMES}
+    if all(value is None for value in redis_values.values()):
+        return None
+    if runtime_location == "container":
+        raise ValueError("container application processes require INVESTMENT_RESEARCH_REDIS_URL")
+
+    missing_names = [name for name, value in redis_values.items() if not value]
+    if missing_names:
+        raise ValueError(
+            "local Redis configuration is incomplete; missing: " + ", ".join(missing_names)
+        )
+
+    password = redis_values["REDIS_PASSWORD"]
+    raw_port = redis_values["REDIS_PORT"]
+    assert password is not None
+    assert raw_port is not None
+
+    try:
+        port = int(raw_port)
+    except ValueError as error:
+        raise ValueError("REDIS_PORT must be an integer") from error
+    if not 1 <= port <= 65535:
+        raise ValueError("REDIS_PORT must be between 1 and 65535")
+
+    return f"redis://:{quote(password, safe='')}@127.0.0.1:{port}/0"
+
+
+def _queue_runtime_values(
+    file_values: dict[str, str | None],
+    runtime_location: object,
+) -> dict[str, object]:
+    """Load the transient Redis broker URL for API and worker processes."""
+
+    return {
+        "redis_url": _redis_url(file_values, runtime_location),
+    }
+
+
 def _object_storage_runtime_values(file_values: dict[str, str | None]) -> dict[str, object]:
     """Load provider selection and one optional complete S3 configuration."""
 
@@ -485,8 +586,10 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
     """Load only values required by the FastAPI process."""
 
     file_values = _read_local_values(env_file)
+    database_values = _database_runtime_values(file_values)
     values = {
-        **_database_runtime_values(file_values),
+        **database_values,
+        **_queue_runtime_values(file_values, database_values.get("runtime_location")),
         **_object_storage_runtime_values(file_values),
         "app_name": _configuration_value(
             "INVESTMENT_RESEARCH_APP_NAME",
@@ -512,8 +615,10 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
     """Load only values required by the M0.0 runner and later Celery worker."""
 
     file_values = _read_local_values(env_file)
+    database_values = _database_runtime_values(file_values)
     values = {
-        **_database_runtime_values(file_values),
+        **database_values,
+        **_queue_runtime_values(file_values, database_values.get("runtime_location")),
         **_object_storage_runtime_values(file_values),
         "max_pdf_pages": _configuration_value(
             "INVESTMENT_RESEARCH_MAX_PDF_PAGES",
