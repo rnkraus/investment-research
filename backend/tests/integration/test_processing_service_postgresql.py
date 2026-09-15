@@ -1,11 +1,15 @@
 """PostgreSQL integration tests for the single-document processing service."""
 
+import socket
+import time
 from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event, Thread
-from typing import BinaryIO
+from typing import BinaryIO, cast
 from uuid import uuid4
 
 import pytest
@@ -21,6 +25,8 @@ from investment_research.infrastructure.database.unit_of_work import (
     create_processing_unit_of_work_factory,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
+from investment_research.infrastructure.parsing.client import HttpDocumentParser
+from investment_research.infrastructure.parsing.http_protocol import PARSER_RESPONSE_CONTENT_TYPE
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -46,7 +52,11 @@ from investment_research.modules.processing.application import (
     ProcessingRunConflictError,
     ProcessingRunUnavailableError,
 )
-from investment_research.modules.processing.contracts import ParsedDocument, ParserLimits
+from investment_research.modules.processing.contracts import (
+    PDF_PARSER_CONFIG_VERSION_V1,
+    ParsedDocument,
+    ParserLimits,
+)
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import (
     ChunkRow,
@@ -58,6 +68,7 @@ from investment_research.modules.processing.persistence import (
 from investment_research.modules.processing.ports import (
     DocumentParser,
     ParserLimitExceededError,
+    ParserProtocolError,
     ParserTransportError,
 )
 from tests.fakes import RecordingProcessingDispatcher
@@ -191,6 +202,130 @@ class FailOnceParser:
         if self.calls == 1:
             raise ParserTransportError("synthetic private transport failure")
         return self._delegate.parse(content, limits=limits)
+
+
+class ParserFailureHttpServer(ThreadingHTTPServer):
+    """Expose one deterministic parser transport or protocol failure."""
+
+    daemon_threads = True
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        failure_mode: str,
+    ) -> None:
+        super().__init__(server_address, ParserFailureRequestHandler)
+        self.failure_mode = failure_mode
+
+
+class ParserFailureRequestHandler(BaseHTTPRequestHandler):
+    """Return only the failure behavior selected by the integration test."""
+
+    def do_POST(self) -> None:
+        """Consume the bounded request before failing in one controlled way."""
+
+        content_length = int(self.headers.get("Content-Length", "0"))
+        self.rfile.read(content_length)
+        self.close_connection = True
+        server = cast(ParserFailureHttpServer, self.server)
+        if server.failure_mode == "timeout":
+            time.sleep(1.25)
+            return
+        if server.failure_mode == "disconnect":
+            with suppress(OSError):
+                self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            return
+        if server.failure_mode != "malformed":
+            raise RuntimeError("unsupported parser failure mode")
+
+        body = b"not-json"
+        self.send_response(200)
+        self.send_header("Content-Type", PARSER_RESPONSE_CONTENT_TYPE)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, message_format: str, *args: object) -> None:
+        """Keep deterministic integration-test output free of server logs."""
+
+        del message_format, args
+
+
+@contextmanager
+def parser_failure_endpoint(failure_mode: str) -> Iterator[str]:
+    """Serve one local failure endpoint and always stop its listener thread."""
+
+    server = ParserFailureHttpServer(("127.0.0.1", 0), failure_mode)
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=5)
+
+
+def make_http_parser(endpoint_url: str) -> HttpDocumentParser:
+    """Create the real worker-side HTTP adapter with a short test timeout."""
+
+    return HttpDocumentParser(
+        endpoint_url=endpoint_url,
+        parser_version=PypdfDocumentParser().parser_version,
+        parser_config_version=PDF_PARSER_CONFIG_VERSION_V1,
+        timeout_seconds=1,
+        max_request_bytes=FIXTURE_PDF.stat().st_size + 1,
+    )
+
+
+def assert_safe_parser_failure(
+    engine: Engine,
+    context: WorkspaceContext,
+    storage: LocalObjectStorage,
+    capture: CaptureDocumentResult,
+    *,
+    expected_attempt_count: int,
+    expected_summary: str,
+) -> None:
+    """Require one inspectable failure, intact original, and no derived rows."""
+
+    session_factory = create_session_factory(engine)
+    with transactional_session(session_factory) as session:
+        processing = SqlAlchemyProcessingRepository(session)
+        documents = SqlAlchemyDocumentRepository(session)
+        persisted_run = processing.get_run_by_id(context, capture.processing_run_id)
+        original = documents.get_original_artifact(
+            context,
+            capture.document_id,
+            capture.document_version_id,
+        )
+        block_count = session.scalar(
+            select(func.count())
+            .select_from(StructureBlockRow)
+            .where(StructureBlockRow.processing_run_id == capture.processing_run_id)
+        )
+        chunk_set_count = session.scalar(
+            select(func.count())
+            .select_from(ChunkSetRow)
+            .where(ChunkSetRow.processing_run_id == capture.processing_run_id)
+        )
+        chunk_count = session.scalar(
+            select(func.count())
+            .select_from(ChunkRow)
+            .where(ChunkRow.processing_run_id == capture.processing_run_id)
+        )
+
+    assert persisted_run is not None
+    assert persisted_run.state is ProcessingState.FAILED
+    assert persisted_run.attempt_count == expected_attempt_count
+    assert persisted_run.lease_id is None
+    assert persisted_run.lease_expires_at is None
+    assert persisted_run.error_summary == expected_summary
+    assert original is not None
+    with storage.open(context, original.storage_key) as content:
+        assert content.read() == FIXTURE_PDF.read_bytes()
+    assert (block_count, chunk_set_count, chunk_count) == (0, 0, 0)
 
 
 def test_process_fixture_commits_searchable_output_and_ready_state(
@@ -400,6 +535,75 @@ def test_transient_parser_failure_at_attempt_limit_records_failed_state(
     assert persisted_run.completed_at == COMPLETED_AT
     assert persisted_run.error_summary == "Processing attempt limit exceeded"
     assert derived_row_count == 0
+
+
+@pytest.mark.parametrize("failure_mode", ["timeout", "disconnect"])
+def test_http_transport_failure_retries_then_records_safe_canonical_state(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+    failure_mode: str,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(integration_database_engine, context, storage)
+    timestamps = iter(
+        CAPTURED_AT + timedelta(seconds=offset)
+        for offset in range(1, M0_0_PROCESSING_PROFILE.maximum_attempts * 2 + 1)
+    )
+
+    with parser_failure_endpoint(failure_mode) as endpoint_url:
+        service = make_processing_service(
+            integration_database_engine,
+            storage,
+            limits=ParserLimits(max_pages=10, max_extracted_characters=100_000),
+            parser=make_http_parser(endpoint_url),
+            timestamps=timestamps,
+        )
+        for _ in range(M0_0_PROCESSING_PROFILE.maximum_attempts - 1):
+            with pytest.raises(
+                ProcessingRetryableError,
+                match="processing dependency is temporarily unavailable",
+            ):
+                service.process(context, capture.processing_run_id)
+        with pytest.raises(ParserTransportError, match="isolated parser transport failed"):
+            service.process(context, capture.processing_run_id)
+
+    assert_safe_parser_failure(
+        integration_database_engine,
+        context,
+        storage,
+        capture,
+        expected_attempt_count=M0_0_PROCESSING_PROFILE.maximum_attempts,
+        expected_summary="Processing attempt limit exceeded",
+    )
+
+
+def test_malformed_http_parser_response_fails_once_without_partial_output(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(integration_database_engine, context, storage)
+
+    with parser_failure_endpoint("malformed") as endpoint_url:
+        service = make_processing_service(
+            integration_database_engine,
+            storage,
+            limits=ParserLimits(max_pages=10, max_extracted_characters=100_000),
+            parser=make_http_parser(endpoint_url),
+        )
+        with pytest.raises(ParserProtocolError, match="parser response is invalid"):
+            service.process(context, capture.processing_run_id)
+
+    assert_safe_parser_failure(
+        integration_database_engine,
+        context,
+        storage,
+        capture,
+        expected_attempt_count=1,
+        expected_summary="Document parsing failed safely",
+    )
 
 
 def test_processing_service_does_not_disclose_cross_workspace_run(
