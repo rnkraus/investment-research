@@ -505,8 +505,12 @@ three-attempt profile before a safe terminal state; a protocol violation fails a
 every case the original remains intact, the terminal lease is cleared, and no partial lexical
 output exists. A dedicated Linux CI job now runs the parser-isolation and live queue-recovery gates
 from the locked backend environment; its first successful hosted GitHub run remains the remote
-confirmation. The step is not complete: that hosted CI confirmation, the automatic complete fixture
-path, frontend removal of the manual command, and the full Step 3 gate remain outstanding.
+confirmation. A separate disposable runtime gate now passes the complete frozen fixture journey
+without the M0.0 runner: API capture publishes to Redis, Celery and the isolated parser reach
+`LEXICAL_READY` using SeaweedFS originals, and the same validated answer, exact citation,
+byte-identical original, and insufficient-evidence response remain intact. The step is not complete:
+Linux CI coverage for this complete journey, hosted CI confirmation, frontend removal of the manual
+command, and the full Step 3 gate remain outstanding.
 
 ### Step 4 — Complete local container stack
 

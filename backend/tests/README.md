@@ -8,7 +8,7 @@ This directory verifies deterministic application behavior and architectural bou
 | -------------- | ------------------------------------------------------------------------------------------------- |
 | `unit/`        | Fast tests for settings, health, identity, contracts, OpenAPI drift, and module dependency rules. |
 | `integration/` | Opt-in PostgreSQL tests for migrations, seeds, persistence, constraints, and isolation.           |
-| `acceptance/`  | Added for the complete M0.0 fixture journey.                                                      |
+| `acceptance/`  | Complete fixture journeys through explicitly activated disposable runtimes.                     |
 
 ## Current coverage
 
@@ -20,6 +20,7 @@ flowchart TD
     TESTS --> OPENAPI[Committed contract drift]
     TESTS --> ARCH[Module import rules]
     TESTS --> POSTGRES[Opt-in PostgreSQL integration]
+    TESTS --> ACCEPTANCE[Opt-in complete M0 runtime]
     POSTGRES --> SEED[Deterministic workspace seed]
     POSTGRES --> TX[Commit and rollback]
     POSTGRES --> DOCS[Document workspace isolation]
@@ -30,9 +31,17 @@ flowchart TD
     POSTGRES --> RESEARCH[Answer lifecycle and statement ordering]
     POSTGRES --> EVIDENCE[Evidence chain and validation integrity]
     POSTGRES --> ANSWER[Atomic validated-answer aggregate]
+    ACCEPTANCE --> AUTO[Automatic Celery processing]
+    AUTO --> CITATION[Validated answer and exact original evidence]
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
+
+The M0 acceptance test is inactive during normal unit and PostgreSQL suites. The
+`scripts.verify_m0_runtime` command activates it only inside a non-root, read-only verification
+container connected to a disposable migrated Compose runtime. It proves automatic Celery processing,
+the validated answer and citation path, byte-identical original access, and explicit insufficient
+evidence without invoking the M0.0 manual runner.
 
 PostgreSQL integration tests are skipped unless `INVESTMENT_RESEARCH_DATABASE_URL` is explicitly
 configured. They additionally require `INVESTMENT_RESEARCH_ENVIRONMENT=test`, use a schema already
