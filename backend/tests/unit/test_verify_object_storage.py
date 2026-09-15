@@ -10,19 +10,21 @@ import pytest
 from scripts import verify_object_storage
 
 PROJECT_UUID = UUID("12345678-1234-4000-8000-123456789abc")
-TEST_CREDENTIALS = tuple(f"disposable-credential-{index}" for index in range(5))
+TEST_POSTGRES_PASSWORD = "disposable-postgres-password"
+TEST_STORAGE_CREDENTIALS = tuple(f"disposable-storage-credential-{index}" for index in range(4))
 
 
 def prepare_deterministic_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace discovery and random values without executing external commands."""
 
-    credentials = iter(TEST_CREDENTIALS)
+    credentials = iter((TEST_POSTGRES_PASSWORD, *TEST_STORAGE_CREDENTIALS))
     monkeypatch.setattr(
         verify_object_storage,
         "find_docker_executable",
         lambda: "/usr/local/bin/docker",
     )
     monkeypatch.setattr(verify_object_storage, "uuid4", lambda: PROJECT_UUID)
+    monkeypatch.setattr(verify_object_storage, "find_available_loopback_port", lambda: 55432)
     monkeypatch.setattr(
         verify_object_storage,
         "generate_disposable_credential",
@@ -46,6 +48,7 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
     healthy_services: list[str] = []
     metadata_credentials: list[tuple[str, ...]] = []
     isolated_projects: list[str] = []
+    api_contracts: list[tuple[str, str, Mapping[str, str]]] = []
 
     def record_command(
         label: str,
@@ -86,6 +89,14 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         del environment
         isolated_projects.append(project_name)
 
+    def record_api_contract(
+        *,
+        image: str,
+        project_name: str,
+        environment: Mapping[str, str],
+    ) -> None:
+        api_contracts.append((image, project_name, environment))
+
     monkeypatch.setattr(verify_object_storage, "run_command", record_command)
     monkeypatch.setattr(
         verify_object_storage,
@@ -103,13 +114,20 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         "verify_data_network_isolation",
         record_network_isolation,
     )
+    monkeypatch.setattr(
+        verify_object_storage,
+        "run_api_contract_test",
+        record_api_contract,
+    )
 
     result = verify_object_storage.verify_object_storage()
 
     assert result == 0
     assert [label for label, _, _ in calls] == [
         "Build object-storage verification image",
-        "Build and start isolated SeaweedFS",
+        "Build and start isolated PostgreSQL and SeaweedFS",
+        "Migrate isolated PostgreSQL database",
+        "Seed isolated PostgreSQL workspaces",
         "Verify idempotent bucket bootstrap",
         "Run SeaweedFS S3 contract tests",
         "Write restart-persistence probe object",
@@ -123,11 +141,17 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         "Remove isolated object-storage verification image",
     ]
     assert healthy_services == [
+        "postgres",
         *verify_object_storage.STORAGE_SERVICES,
         *verify_object_storage.STORAGE_SERVICES,
     ]
-    assert metadata_credentials == [TEST_CREDENTIALS[:4]]
+    assert metadata_credentials == [TEST_STORAGE_CREDENTIALS]
     assert isolated_projects == ["investment-research-storage-check-12345678"]
+    assert len(api_contracts) == 1
+    assert api_contracts[0][0] == "investment-research-object-storage-verification:12345678"
+    assert api_contracts[0][1] == "investment-research-storage-check-12345678"
+    assert api_contracts[0][2]["INVESTMENT_RESEARCH_RUNTIME_LOCATION"] == "container"
+    assert api_contracts[0][2]["INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER"] == "s3"
     assert calls[-2][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert calls[-1][1][-2:] == (
         "--force",
@@ -137,10 +161,17 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         credential not in argument
         for _, command, _ in calls
         for argument in command
-        for credential in TEST_CREDENTIALS
+        for credential in (TEST_POSTGRES_PASSWORD, *TEST_STORAGE_CREDENTIALS)
     )
     assert calls[0][2]["COMPOSE_DISABLE_ENV_FILE"] == "1"
     assert calls[0][2]["POSTGRES_PORT"] == "55432"
+    assert calls[2][2]["INVESTMENT_RESEARCH_DATABASE_URL"].endswith(
+        "@127.0.0.1:55432/investment_research"
+    )
+    direct_s3_command = next(
+        command for label, command, _ in calls if label == "Run SeaweedFS S3 contract tests"
+    )
+    assert "INVESTMENT_RESEARCH_DATABASE_URL" not in direct_s3_command
 
 
 def test_verification_cleans_up_and_preserves_failure_code(
@@ -184,6 +215,11 @@ def test_verification_cleans_up_and_preserves_failure_code(
         "verify_data_network_isolation",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        verify_object_storage,
+        "run_api_contract_test",
+        lambda *args, **kwargs: None,
+    )
 
     result = verify_object_storage.verify_object_storage()
 
@@ -203,6 +239,58 @@ def test_missing_docker_stops_before_generating_runtime_values(
     result = verify_object_storage.verify_object_storage()
 
     assert result == 127
+
+
+def test_api_contract_container_uses_both_data_networks_and_is_removed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, tuple[str, ...], bool]] = []
+    environment = {
+        name: f"value-{index}"
+        for index, name in enumerate(verify_object_storage.API_CONTRACT_ENVIRONMENT_NAMES)
+    }
+
+    def record_command(
+        label: str,
+        command: Sequence[str],
+        *,
+        working_directory: Path,
+        environment: Mapping[str, str],
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del working_directory, environment
+        calls.append((label, tuple(command), check))
+        return successful_command(command)
+
+    monkeypatch.setattr(verify_object_storage, "run_command", record_command)
+
+    verify_object_storage.run_api_contract_test(
+        image="verification-image:test",
+        project_name="isolated-project",
+        environment=environment,
+    )
+
+    assert [label for label, _, _ in calls] == [
+        "Create isolated API object-storage contract container",
+        "Connect API contract container to isolated PostgreSQL",
+        "Run API capture and authorized original-open contract",
+        "Remove isolated API object-storage contract container",
+    ]
+    assert "isolated-project_storage-data" in calls[0][1]
+    assert "INVESTMENT_RESEARCH_DATABASE_URL" in calls[0][1]
+    assert calls[1][1][-2:] == (
+        "isolated-project_default",
+        "isolated-project-api-contract",
+    )
+    assert calls[2][1][-2:] == ("--attach", "isolated-project-api-contract")
+    assert calls[3][1][-1] == "isolated-project-api-contract"
+    assert calls[3][2] is False
+    assert all(
+        value not in argument
+        for _, command, _ in calls
+        for argument in command
+        for value in environment.values()
+    )
 
 
 def test_disposable_credentials_are_distinct_and_safe() -> None:

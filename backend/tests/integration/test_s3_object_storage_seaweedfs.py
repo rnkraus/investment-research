@@ -10,18 +10,22 @@ from uuid import UUID, uuid4
 
 import pytest
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
+from fastapi.testclient import TestClient
 
+from investment_research.api.contracts import DocumentAccepted
 from investment_research.infrastructure.object_storage.s3 import (
     S3Client,
     S3ObjectStorage,
     create_s3_client,
 )
+from investment_research.main import create_app
 from investment_research.modules.documents.ports import (
     ObjectAlreadyExistsError,
     ObjectNotFoundError,
     ObjectStorageScopeError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.settings import load_api_settings
 
 INTEGRATION_FLAG = "INVESTMENT_RESEARCH_OBJECT_STORAGE_INTEGRATION"
 PERSISTENCE_PHASE = "INVESTMENT_RESEARCH_OBJECT_STORAGE_PERSISTENCE_PHASE"
@@ -186,6 +190,36 @@ def test_application_credentials_cannot_create_buckets(
         client.create_bucket(Bucket=f"unauthorized-{uuid4().hex}")
 
     assert error.value.response["ResponseMetadata"]["HTTPStatusCode"] == 403
+
+
+def test_api_capture_and_authorized_original_open_use_seaweedfs(
+    s3_configuration: S3IntegrationConfiguration,
+) -> None:
+    settings = load_api_settings(env_file=None)
+    assert settings.require_s3_settings().bucket == s3_configuration.bucket
+    application = create_app(settings)
+
+    with TestClient(application) as client:
+        capture_response = client.post(
+            "/api/v1/documents",
+            data={
+                "title": "Synthetic SeaweedFS API Integration",
+                "language": "en",
+                "published_at": "2026-02-19T00:00:00Z",
+            },
+            files={"file": ("integration.pdf", BytesIO(PDF_CONTENT), "application/pdf")},
+        )
+
+        assert capture_response.status_code == 202
+        capture = DocumentAccepted.model_validate(capture_response.json())
+        original_response = client.get(
+            f"/api/v1/documents/{capture.document_id}/versions/"
+            f"{capture.document_version_id}/original"
+        )
+
+    assert original_response.status_code == 200
+    assert original_response.headers["content-type"] == "application/pdf"
+    assert original_response.content == PDF_CONTENT
 
 
 def test_object_survives_storage_restart(
