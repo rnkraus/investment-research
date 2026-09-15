@@ -129,3 +129,10 @@ class ProcessingExecutor(Protocol):
 
     def execute(self, processing_run_id: UUID) -> ProcessingRun:
         """Resolve trusted scope and process exactly one run identifier."""
+
+
+class ProcessingJobExecutor(Protocol):
+    """Execute one validated processing job through a trusted workspace boundary."""
+
+    def execute(self, job: ProcessingJobV1) -> ProcessingRun:
+        """Validate canonical scope and process the job's referenced run."""

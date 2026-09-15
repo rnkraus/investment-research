@@ -22,6 +22,7 @@ from investment_research.modules.documents.application import (
 )
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.processing.application import (
+    ExecuteProcessingJobService,
     GetProcessingRunService,
     ProcessDocumentService,
 )
@@ -148,6 +149,10 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             assert isinstance(container.object_storage, LocalObjectStorage)
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.process_document_service, ProcessDocumentService)
+            assert isinstance(
+                container.execute_processing_job_service,
+                ExecuteProcessingJobService,
+            )
             assert not hasattr(container, "capture_document_service")
             assert not hasattr(container, "answer_research_request_service")
             assert not storage_root.exists()

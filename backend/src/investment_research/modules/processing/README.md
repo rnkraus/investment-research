@@ -97,6 +97,19 @@ contract.
 
 ## Processing application flow
 
+`ExecuteProcessingJobService` is the application boundary for a validated `ProcessingJobV1`. It
+resolves the trusted context from server-controlled identity state and requires the job's workspace
+identifier to match before forwarding only the run identifier to `ProcessDocumentService`. A
+foreign job and an unknown run therefore produce the same non-disclosing unavailable result.
+
+```mermaid
+flowchart LR
+    JOB[Validated ProcessingJobV1] --> CONTEXT[Resolve server-controlled context]
+    CONTEXT --> MATCH{Workspace matches?}
+    MATCH -->|no| HIDDEN[ProcessingRunUnavailableError]
+    MATCH -->|yes| SERVICE[ProcessDocumentService]
+```
+
 `ProcessDocumentService` accepts only a trusted `WorkspaceContext` and a processing-run identifier.
 It does not receive ORM objects from the API or hold a database transaction open while pypdf works.
 The repository locks a run with `SELECT ... FOR UPDATE` before each lifecycle write, preventing two
@@ -122,12 +135,12 @@ flowchart LR
 ```
 
 Only short database operations occur inside the write transactions. Parser errors are raised back
-to the command-line runner after the canonical `FAILED` state is committed. Exception text is
+to the active execution adapter after the canonical `FAILED` state is committed. Exception text is
 untrusted and is therefore mapped to bounded application-owned summaries instead of being stored
 verbatim. Missing and foreign run identifiers both produce `ProcessingRunUnavailableError`. An
-active duplicate raises `ProcessingRunAlreadyActiveError` without opening the original. A stale
-worker whose lease was replaced receives `ProcessingRunConflictError` before derived output is
-written.
+active duplicate raises `ProcessingRunAlreadyActiveError` without opening the original; the Celery
+task acknowledges that expected concurrent redelivery as a no-op. A stale worker whose lease was
+replaced receives `ProcessingRunConflictError` before derived output is written.
 
 ## Processing status
 
