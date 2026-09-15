@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
+from logging import getLogger
 from tempfile import SpooledTemporaryFile
 from typing import BinaryIO, Final, cast
 from uuid import UUID, uuid4
@@ -35,11 +36,17 @@ from investment_research.modules.processing.application import (
     ProcessingProfile,
     create_captured_processing_run,
 )
+from investment_research.modules.processing.contracts import ProcessingJobV1
+from investment_research.modules.processing.ports import (
+    ProcessingDispatcher,
+    ProcessingDispatchError,
+)
 
 PDF_HEADER_PATTERN: Final = re.compile(rb"%PDF-(?:1\.[0-9]|2\.0)")
 PDF_HEADER_LENGTH: Final = 8
 READ_CHUNK_SIZE: Final = 1024 * 1024
 M0_0_DOCUMENT_TYPE: Final = "earnings_brief"
+LOGGER = getLogger("investment_research.documents.capture")
 
 type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
@@ -208,6 +215,7 @@ class CaptureDocumentService:
         object_storage: ObjectStorage,
         unit_of_work_factory: CaptureUnitOfWorkFactory,
         max_upload_bytes: int,
+        processing_dispatcher: ProcessingDispatcher | None = None,
         processing_profile: ProcessingProfile = M0_0_PROCESSING_PROFILE,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
@@ -217,6 +225,7 @@ class CaptureDocumentService:
         self._object_storage = object_storage
         self._unit_of_work_factory = unit_of_work_factory
         self._max_upload_bytes = max_upload_bytes
+        self._processing_dispatcher = processing_dispatcher
         self._processing_profile = processing_profile
         self._clock = clock
         self._identifier_factory = identifier_factory
@@ -256,7 +265,7 @@ class CaptureDocumentService:
                 or stored_object.checksum_sha256 != checksum
             ):
                 raise ObjectStorageError("stored object verification failed")
-            return self._record_capture(
+            result = self._record_capture(
                 context=context,
                 capture_input=capture_input,
                 captured_at=captured_at,
@@ -276,6 +285,34 @@ class CaptureDocumentService:
                     f"uncommitted object cleanup failed: {type(cleanup_error).__name__}"
                 )
             raise
+
+        self._dispatch_processing(context, result.processing_run_id)
+        return result
+
+    def _dispatch_processing(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> None:
+        """Publish after commit while preserving canonical state on broker failure."""
+
+        if self._processing_dispatcher is None:
+            return
+
+        job = ProcessingJobV1.create(
+            workspace_id=context.workspace_id,
+            processing_run_id=processing_run_id,
+        )
+        try:
+            self._processing_dispatcher.dispatch(job)
+        except ProcessingDispatchError:
+            LOGGER.warning(
+                "processing.dispatch.failed",
+                extra={
+                    "workspace_id": context.workspace_id,
+                    "job_id": processing_run_id,
+                },
+            )
 
     def _record_capture(
         self,
