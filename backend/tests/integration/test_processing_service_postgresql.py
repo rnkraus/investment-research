@@ -48,6 +48,7 @@ from investment_research.modules.processing.persistence import (
     StructureBlockRow,
 )
 from investment_research.modules.processing.ports import ParserLimitExceededError
+from tests.fakes import RecordingProcessingDispatcher
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_PDF = (
@@ -87,6 +88,7 @@ def capture_fixture(
         object_storage=storage,
         unit_of_work_factory=create_capture_unit_of_work_factory(session_factory),
         max_upload_bytes=FIXTURE_PDF.stat().st_size + 1,
+        processing_dispatcher=RecordingProcessingDispatcher(),
         clock=lambda: CAPTURED_AT,
     )
     capture_input = CaptureDocumentInput(

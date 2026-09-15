@@ -36,6 +36,7 @@ from investment_research.modules.processing.persistence import (
     ProcessingRunRow,
     SqlAlchemyProcessingRepository,
 )
+from tests.fakes import RecordingProcessingDispatcher
 
 CAPTURED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 PDF_CONTENT = b"%PDF-1.7\nsynthetic PostgreSQL capture test\n%%EOF\n"
@@ -84,6 +85,7 @@ def make_capture_service(
         object_storage=LocalObjectStorage(storage_root),
         unit_of_work_factory=create_capture_unit_of_work_factory(session_factory),
         max_upload_bytes=1024,
+        processing_dispatcher=RecordingProcessingDispatcher(),
         clock=lambda: CAPTURED_AT,
         identifier_factory=identifier_factory,
     )

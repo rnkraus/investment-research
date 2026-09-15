@@ -18,6 +18,7 @@ from investment_research.modules.documents.contracts import CaptureDocumentInput
 from investment_research.modules.identity.application import FixedLocalIdentityContextProvider
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
+from tests.fakes import RecordingProcessingDispatcher
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
@@ -38,6 +39,7 @@ def test_runner_processes_one_captured_run_and_exits(
         object_storage=LocalObjectStorage(storage_root),
         unit_of_work_factory=create_capture_unit_of_work_factory(session_factory),
         max_upload_bytes=FIXTURE_PDF.stat().st_size + 1,
+        processing_dispatcher=RecordingProcessingDispatcher(),
         clock=lambda: CAPTURED_AT,
     )
     capture_input = CaptureDocumentInput(

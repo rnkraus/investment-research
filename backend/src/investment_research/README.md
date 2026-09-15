@@ -11,7 +11,7 @@
 | `bootstrap.py`    | Separate API and worker composition roots that select concrete implementations for application-owned contracts.          |
 | `settings.py`     | Loads least-privilege API, worker, parser, and database-maintenance configuration.                                       |
 | `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
-| `infrastructure/` | Technical database, logging, lexical-search, parsing, and secure local object-storage adapters.                          |
+| `infrastructure/` | Technical database, logging, queue, lexical-search, parsing, and secure local object-storage adapters.                   |
 | `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                               |
 
 ## Startup flow
@@ -29,6 +29,8 @@ flowchart TD
     SESSIONS --> RETRIEVALUOW[Research retrieval unit-of-work factory]
     SESSIONS --> ANSWERUOW[Answer validation unit-of-work factory]
     BOOT --> STORAGE[ObjectStorage adapter]
+    BOOT --> CELERY[Celery application]
+    CELERY --> DISPATCH[CeleryProcessingDispatcher]
     BOOT --> GENERATOR[Deterministic answer generator]
     BOOT --> SUPPORT[Independent statement-support evaluator]
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
@@ -42,8 +44,11 @@ flowchart TD
     RETRIEVE --> ANSWERREQUEST[AnswerResearchRequestService]
     GENERATE --> ANSWERREQUEST
     STORAGE --> CAPTURE
+    DISPATCH --> CAPTURE
     STORAGE --> ORIGINAL
     BOOT --> STATE[ApiContainer]
+    CELERY --> STATE
+    DISPATCH --> STATE
     CAPTURE --> STATE
     ORIGINAL --> STATE
     STATUS --> STATE
@@ -54,7 +59,7 @@ flowchart TD
     MAIN --> OPENAPI[OpenAPI contract]
     STATE --> ROUTES
     ROUTES --> ERRORS
-    LIFE -->|shutdown| CLOSE[Dispose engine pool]
+    LIFE -->|shutdown| CLOSE[Close Celery resources and engine pool]
 ```
 
 `main.py` and `bootstrap.py` are the outer composition layer. Module domain and application files must remain independent of this layer. Application startup must never create or mutate database schemas.
@@ -81,11 +86,13 @@ The command-line caller never supplies workspace scope or a database session. `r
 the fixed local identity, invokes one run, prints only a safe outcome, closes process-owned resources,
 and exits. It is a development delivery adapter rather than a durable queue or retry system.
 
-`ApiSettings` and `WorkerSettings` may load the ignored root development file. `ParserSettings`
-loads only its allowlisted process variables, exposes no database field, and rejects known
-application credential variables. `runtime_location=host` restricts bind and database targets to
-loopback; `runtime_location=container` permits the fixed internal Compose targets required by the
-service topology.
+`ApiSettings` and `WorkerSettings` may load the ignored root development file. The API requires an
+authenticated Redis broker URL when its container is built; host development may derive it from
+`REDIS_PASSWORD` and `REDIS_PORT`. `ParserSettings` loads only its allowlisted process variables,
+exposes no database or queue field, and rejects known application credential variables.
+`runtime_location=host` restricts bind, database, object-storage, and broker targets to loopback;
+`runtime_location=container` permits only the fixed internal Compose service targets required by
+the topology.
 
 API requests pass through a server-owned correlation boundary before body limits and route
 handling. `RequestLoggingMiddleware` replaces any client-supplied request ID, adds the generated UUID

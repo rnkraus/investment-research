@@ -49,6 +49,7 @@ VERSION_ID = UUID("10000000-0000-4000-8000-000000000002")
 ORIGINAL_ID = UUID("10000000-0000-4000-8000-000000000003")
 PROCESSING_RUN_ID = UUID("10000000-0000-4000-8000-000000000004")
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 PDF_CONTENT = b"%PDF-1.7\nsynthetic route test\n%%EOF\n"
 
 
@@ -127,6 +128,7 @@ def capture_client(
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,
+                "redis_url": LOCAL_REDIS_URL,
                 "object_storage_root": tmp_path / "objects",
                 "max_upload_bytes": 1024,
             }
@@ -155,6 +157,7 @@ def original_client(
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,
+                "redis_url": LOCAL_REDIS_URL,
                 "object_storage_root": tmp_path / "objects",
                 "max_upload_bytes": 1024,
             }

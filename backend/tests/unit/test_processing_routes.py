@@ -29,6 +29,7 @@ DOCUMENT_VERSION_ID = UUID("10000000-0000-4000-8000-000000000001")
 PROCESSING_RUN_ID = UUID("20000000-0000-4000-8000-000000000001")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 
 
 class FakeGetProcessingRunService:
@@ -85,6 +86,7 @@ def status_client(
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,
+                "redis_url": LOCAL_REDIS_URL,
                 "object_storage_root": tmp_path / "objects",
             }
         )

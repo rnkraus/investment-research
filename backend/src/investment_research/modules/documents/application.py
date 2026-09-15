@@ -215,7 +215,7 @@ class CaptureDocumentService:
         object_storage: ObjectStorage,
         unit_of_work_factory: CaptureUnitOfWorkFactory,
         max_upload_bytes: int,
-        processing_dispatcher: ProcessingDispatcher | None = None,
+        processing_dispatcher: ProcessingDispatcher,
         processing_profile: ProcessingProfile = M0_0_PROCESSING_PROFILE,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
@@ -295,9 +295,6 @@ class CaptureDocumentService:
         processing_run_id: UUID,
     ) -> None:
         """Publish after commit while preserving canonical state on broker failure."""
-
-        if self._processing_dispatcher is None:
-            return
 
         job = ProcessingJobV1.create(
             workspace_id=context.workspace_id,
