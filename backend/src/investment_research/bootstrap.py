@@ -57,6 +57,7 @@ from investment_research.modules.identity.application import (
 )
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
+    ExecuteProcessingJobService,
     GetProcessingRunService,
     ProcessDocumentService,
 )
@@ -159,6 +160,7 @@ class WorkerContainer:
     object_storage: ObjectStorage
     open_original_service: OpenOriginalService
     process_document_service: ProcessDocumentService
+    execute_processing_job_service: ExecuteProcessingJobService
 
     def close(self) -> None:
         """Release process-wide resources owned by the worker container."""
@@ -248,20 +250,26 @@ def build_worker_container(settings: WorkerSettings) -> WorkerContainer:
         object_storage=object_storage,
         unit_of_work_factory=create_document_read_unit_of_work_factory(database.session_factory),
     )
+    identity_context_provider = FixedLocalIdentityContextProvider()
+    process_document_service = ProcessDocumentService(
+        parser=PypdfDocumentParser(),
+        original_provider=open_original_service,
+        unit_of_work_factory=create_processing_unit_of_work_factory(database.session_factory),
+        parser_limits=ParserLimits(
+            max_pages=settings.max_pdf_pages,
+            max_extracted_characters=settings.max_extracted_characters,
+        ),
+    )
     return WorkerContainer(
         settings=settings,
-        identity_context_provider=FixedLocalIdentityContextProvider(),
+        identity_context_provider=identity_context_provider,
         database_engine=database.engine,
         session_factory=database.session_factory,
         object_storage=object_storage,
         open_original_service=open_original_service,
-        process_document_service=ProcessDocumentService(
-            parser=PypdfDocumentParser(),
-            original_provider=open_original_service,
-            unit_of_work_factory=create_processing_unit_of_work_factory(database.session_factory),
-            parser_limits=ParserLimits(
-                max_pages=settings.max_pdf_pages,
-                max_extracted_characters=settings.max_extracted_characters,
-            ),
+        process_document_service=process_document_service,
+        execute_processing_job_service=ExecuteProcessingJobService(
+            processing_service=process_document_service,
+            identity_context_provider=identity_context_provider,
         ),
     )

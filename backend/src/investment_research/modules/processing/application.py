@@ -5,8 +5,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.processing.contracts import ParsedDocument, ParserLimits
+from investment_research.modules.processing.contracts import (
+    ParsedDocument,
+    ParserLimits,
+    ProcessingJobV1,
+)
 from investment_research.modules.processing.domain import (
     Chunk,
     ChunkSet,
@@ -421,3 +426,19 @@ class ProcessDocumentService:
         if current_time.tzinfo is None or current_time.utcoffset() is None:
             raise RuntimeError("processing clock must return a timezone-aware datetime")
         return current_time.astimezone(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class ExecuteProcessingJobService:
+    """Execute a queue job only within server-controlled workspace scope."""
+
+    processing_service: ProcessDocumentService
+    identity_context_provider: IdentityContextProvider
+
+    def execute(self, job: ProcessingJobV1) -> ProcessingRun:
+        """Resolve trusted scope and process one matching canonical run."""
+
+        context = self.identity_context_provider.resolve()
+        if job.workspace_id != context.workspace_id:
+            raise ProcessingRunUnavailableError("processing run is unavailable")
+        return self.processing_service.process(context, job.processing_run_id)
