@@ -15,6 +15,7 @@ from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     ProcessDocumentService,
     ProcessingParserVersionError,
+    ProcessingRetryableError,
     ProcessingRunAlreadyActiveError,
     ProcessingRunUnavailableError,
 )
@@ -32,6 +33,7 @@ from investment_research.modules.processing.domain import (
 )
 from investment_research.modules.processing.ports import (
     DocumentParserError,
+    ParserTransportError,
     ProcessingExecutionLimitError,
     ProcessingRepository,
     ProcessingUnitOfWork,
@@ -290,6 +292,63 @@ def test_parser_failure_is_recorded_safely_in_a_new_transaction() -> None:
         ProcessingState.PARSING,
         ProcessingState.FAILED,
     ]
+    assert repository.lexical_outputs == []
+    assert unit_of_work_factory.transaction_count == 2
+
+
+def test_parser_transport_failure_expires_lease_and_requests_bounded_retry() -> None:
+    repository = InMemoryProcessingRepository(make_run())
+    parser = RecordingParser(error=ParserTransportError("sensitive transport detail"))
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        RecordingOriginalProvider(),
+    )
+
+    with pytest.raises(
+        ProcessingRetryableError,
+        match="processing dependency is temporarily unavailable",
+    ) as raised:
+        service.process(make_context(), PROCESSING_RUN_ID)
+
+    assert raised.value.__cause__ is None
+    assert "sensitive" not in str(raised.value)
+    assert repository.run is not None
+    assert repository.run.state is ProcessingState.PARSING
+    assert repository.run.attempt_count == 1
+    assert repository.run.lease_id == LEASE_ID
+    assert repository.run.lease_expires_at == COMPLETED_AT
+    assert repository.run.completed_at is None
+    assert repository.run.error_summary is None
+    assert [run.state for run in repository.updates] == [
+        ProcessingState.PARSING,
+        ProcessingState.PARSING,
+    ]
+    assert repository.lexical_outputs == []
+    assert unit_of_work_factory.transaction_count == 2
+
+
+def test_parser_transport_failure_at_attempt_limit_becomes_terminal() -> None:
+    repository = InMemoryProcessingRepository(make_run())
+    parser_error = ParserTransportError("safe adapter detail")
+    parser = RecordingParser(error=parser_error)
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        RecordingOriginalProvider(),
+        maximum_attempts=1,
+    )
+
+    with pytest.raises(ParserTransportError) as raised:
+        service.process(make_context(), PROCESSING_RUN_ID)
+
+    assert raised.value is parser_error
+    assert repository.run is not None
+    assert repository.run.state is ProcessingState.FAILED
+    assert repository.run.attempt_count == 1
+    assert repository.run.lease_id is None
+    assert repository.run.lease_expires_at is None
+    assert repository.run.error_summary == "Processing attempt limit exceeded"
     assert repository.lexical_outputs == []
     assert unit_of_work_factory.transaction_count == 2
 

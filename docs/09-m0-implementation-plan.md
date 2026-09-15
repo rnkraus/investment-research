@@ -489,9 +489,16 @@ Disposable Compose checks now deliver generated credentials through temporary mo
 files rather than raw Compose environment values. The Step 3 backend bridge remains non-internal
 only while host processes require the loopback PostgreSQL port; Step 4 removes that port after the
 API joins Compose and then makes the backend network internal. The parser network is already
-internal and unaffected by this transition. The step is not complete: canonical timeout, crash,
-malformed-response, retry, and duplicate-delivery outcomes, Linux CI, the automatic complete fixture
-path, frontend removal of the manual command, and the full Step 3 gate remain outstanding.
+internal and unaffected by this transition. Transient parser transport failures now expire their
+canonical lease before Celery applies at most two retries with exponential backoff, jitter, and a
+30-second cap; the initial delivery plus those retries match the processing profile's three-attempt
+ceiling. Permanent failures and exhausted attempts become terminal without retry. Late
+acknowledgement, one-message prefetch, worker-loss rejection, and a 420-second Redis visibility
+timeout are configured. Unit and PostgreSQL integration tests cover retry classification, bounded
+exhaustion, active duplicate rejection, expired-lease reclaim, stale-worker protection, and a
+single canonical output after retry. The step is not complete: live broker redelivery and worker-loss
+verification, canonical timeout/crash/malformed-response outcomes, Linux CI, the automatic complete
+fixture path, frontend removal of the manual command, and the full Step 3 gate remain outstanding.
 
 ### Step 4 — Complete local container stack
 

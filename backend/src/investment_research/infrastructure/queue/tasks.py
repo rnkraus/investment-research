@@ -6,13 +6,21 @@ from celery import Celery  # type: ignore[import-untyped]
 from pydantic import ValidationError
 
 from investment_research.infrastructure.queue.celery import PROCESS_DOCUMENT_TASK_NAME
-from investment_research.modules.processing.application import ProcessingRunAlreadyActiveError
+from investment_research.modules.processing.application import (
+    M0_0_PROCESSING_PROFILE,
+    ProcessingRetryableError,
+    ProcessingRunAlreadyActiveError,
+)
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.ports import ProcessingJobExecutor
 
 
 class InvalidProcessingJobPayloadError(ValueError):
     """Report an invalid queue payload without reproducing untrusted values."""
+
+
+PROCESSING_TASK_MAX_RETRIES = M0_0_PROCESSING_PROFILE.maximum_attempts - 1
+PROCESSING_TASK_MAX_BACKOFF_SECONDS = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,8 +52,14 @@ def register_processing_tasks(
     handler = ProcessingTaskHandler(executor)
 
     @application.task(  # type: ignore[untyped-decorator]
+        autoretry_for=(ProcessingRetryableError,),
         name=PROCESS_DOCUMENT_TASK_NAME,
         ignore_result=True,
+        max_retries=PROCESSING_TASK_MAX_RETRIES,
+        retry_backoff=True,
+        retry_backoff_max=PROCESSING_TASK_MAX_BACKOFF_SECONDS,
+        retry_jitter=True,
+        throws=(ProcessingRetryableError,),
         typing=True,
     )
     def process_document_task(*, payload: object) -> None:
