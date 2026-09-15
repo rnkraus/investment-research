@@ -16,6 +16,7 @@ from investment_research.settings import QueueSettings
 CELERY_APPLICATION_NAME: Final = "investment-research"
 PROCESSING_QUEUE_NAME: Final = "document-processing"
 PROCESS_DOCUMENT_TASK_NAME: Final = "investment_research.processing.process_document.v1"
+BROKER_VISIBILITY_TIMEOUT_SECONDS: Final = 420
 
 
 def create_celery_app(settings: QueueSettings) -> Celery:
@@ -29,10 +30,17 @@ def create_celery_app(settings: QueueSettings) -> Celery:
     application.conf.update(
         accept_content=("json",),
         broker_connection_retry_on_startup=True,
+        broker_transport_options={
+            "visibility_timeout": BROKER_VISIBILITY_TIMEOUT_SECONDS,
+        },
         enable_utc=True,
         result_backend=None,
+        result_backend_transport_options={
+            "visibility_timeout": BROKER_VISIBILITY_TIMEOUT_SECONDS,
+        },
         result_serializer="json",
-        task_acks_late=False,
+        task_acks_late=True,
+        task_acks_on_failure_or_timeout=True,
         task_create_missing_queues=False,
         task_default_queue=PROCESSING_QUEUE_NAME,
         task_ignore_result=True,
@@ -44,14 +52,17 @@ def create_celery_app(settings: QueueSettings) -> Celery:
             "max_retries": 3,
         },
         task_queues=(Queue(PROCESSING_QUEUE_NAME),),
-        task_reject_on_worker_lost=False,
+        task_reject_on_worker_lost=True,
         task_routes={
             PROCESS_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
         },
         task_serializer="json",
         task_store_errors_even_if_ignored=False,
         timezone="UTC",
+        visibility_timeout=BROKER_VISIBILITY_TIMEOUT_SECONDS,
+        worker_cancel_long_running_tasks_on_connection_loss=True,
         worker_hijack_root_logger=False,
+        worker_prefetch_multiplier=1,
         worker_redirect_stdouts=False,
     )
     return application

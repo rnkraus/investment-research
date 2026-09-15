@@ -11,6 +11,7 @@ from kombu.exceptions import KombuError  # type: ignore[import-untyped]
 from redis.exceptions import RedisError
 
 from investment_research.infrastructure.queue.celery import (
+    BROKER_VISIBILITY_TIMEOUT_SECONDS,
     PROCESS_DOCUMENT_TASK_NAME,
     PROCESSING_QUEUE_NAME,
     CeleryProcessingDispatcher,
@@ -52,8 +53,18 @@ def test_celery_app_is_json_only_broker_configuration() -> None:
     assert application.conf.task_ignore_result is True
     assert application.conf.task_store_errors_even_if_ignored is False
     assert application.conf.task_create_missing_queues is False
-    assert application.conf.task_acks_late is False
-    assert application.conf.task_reject_on_worker_lost is False
+    assert application.conf.task_acks_late is True
+    assert application.conf.task_acks_on_failure_or_timeout is True
+    assert application.conf.task_reject_on_worker_lost is True
+    assert application.conf.worker_cancel_long_running_tasks_on_connection_loss is True
+    assert application.conf.worker_prefetch_multiplier == 1
+    assert application.conf.broker_transport_options == {
+        "visibility_timeout": BROKER_VISIBILITY_TIMEOUT_SECONDS,
+    }
+    assert application.conf.result_backend_transport_options == {
+        "visibility_timeout": BROKER_VISIBILITY_TIMEOUT_SECONDS,
+    }
+    assert application.conf.visibility_timeout == BROKER_VISIBILITY_TIMEOUT_SECONDS
     assert application.conf.enable_utc is True
     assert application.conf.timezone == "UTC"
     assert tuple(queue.name for queue in application.conf.task_queues) == (PROCESSING_QUEUE_NAME,)

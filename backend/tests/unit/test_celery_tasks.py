@@ -9,11 +9,16 @@ from celery import Celery  # type: ignore[import-untyped]
 
 from investment_research.infrastructure.queue.celery import PROCESS_DOCUMENT_TASK_NAME
 from investment_research.infrastructure.queue.tasks import (
+    PROCESSING_TASK_MAX_BACKOFF_SECONDS,
+    PROCESSING_TASK_MAX_RETRIES,
     InvalidProcessingJobPayloadError,
     ProcessingTaskHandler,
     register_processing_tasks,
 )
-from investment_research.modules.processing.application import ProcessingRunAlreadyActiveError
+from investment_research.modules.processing.application import (
+    ProcessingRetryableError,
+    ProcessingRunAlreadyActiveError,
+)
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.domain import ProcessingRun
 
@@ -82,6 +87,15 @@ def test_handler_acknowledges_an_active_duplicate_without_hiding_other_errors() 
         ProcessingTaskHandler(unexpected).handle(make_job().model_dump(mode="json"))
 
 
+def test_handler_propagates_only_explicit_retry_request() -> None:
+    retryable = RecordingProcessingJobExecutor(
+        error=ProcessingRetryableError("safe transient failure")
+    )
+
+    with pytest.raises(ProcessingRetryableError, match="safe transient failure"):
+        ProcessingTaskHandler(retryable).handle(make_job().model_dump(mode="json"))
+
+
 def test_registration_uses_the_publisher_task_name_and_ignores_results() -> None:
     application = Celery("processing-task-test", broker="memory://")
     executor = RecordingProcessingJobExecutor()
@@ -92,4 +106,21 @@ def test_registration_uses_the_publisher_task_name_and_ignores_results() -> None
 
     assert task.name == PROCESS_DOCUMENT_TASK_NAME
     assert task.ignore_result is True
+    assert task.autoretry_for == (ProcessingRetryableError,)
+    assert task.max_retries == PROCESSING_TASK_MAX_RETRIES
+    assert task.retry_backoff is True
+    assert task.retry_backoff_max == PROCESSING_TASK_MAX_BACKOFF_SECONDS
+    assert task.retry_jitter is True
+    assert task.throws == (ProcessingRetryableError,)
     assert executor.jobs == [make_job()]
+
+    application.conf.task_always_eager = True
+    executor.error = ProcessingRetryableError("safe transient failure")
+    executor.jobs.clear()
+    retry_result = task.apply(
+        kwargs={"payload": make_job().model_dump(mode="json")},
+        throw=False,
+    )
+
+    assert retry_result.failed()
+    assert len(executor.jobs) == 3

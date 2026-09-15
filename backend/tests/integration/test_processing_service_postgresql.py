@@ -1,6 +1,7 @@
 """PostgreSQL integration tests for the single-document processing service."""
 
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event, Thread
@@ -39,6 +40,8 @@ from investment_research.modules.identity.persistence import SqlAlchemyWorkspace
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     ProcessDocumentService,
+    ProcessingProfile,
+    ProcessingRetryableError,
     ProcessingRunAlreadyActiveError,
     ProcessingRunConflictError,
     ProcessingRunUnavailableError,
@@ -55,6 +58,7 @@ from investment_research.modules.processing.persistence import (
 from investment_research.modules.processing.ports import (
     DocumentParser,
     ParserLimitExceededError,
+    ParserTransportError,
 )
 from tests.fakes import RecordingProcessingDispatcher
 
@@ -125,6 +129,7 @@ def make_processing_service(
     limits: ParserLimits,
     parser: DocumentParser | None = None,
     timestamps: Iterator[datetime] | None = None,
+    profile: ProcessingProfile = M0_0_PROCESSING_PROFILE,
 ) -> ProcessDocumentService:
     """Wire real M0.0 adapters around the processing application service."""
 
@@ -138,6 +143,7 @@ def make_processing_service(
         ),
         unit_of_work_factory=create_processing_unit_of_work_factory(session_factory),
         parser_limits=limits,
+        profile=profile,
         clock=lambda: next(resolved_timestamps),
     )
 
@@ -162,6 +168,28 @@ class BlockingParser:
         self.entered.set()
         if not self.release.wait(timeout=5):
             raise TimeoutError("blocking parser was not released by the test")
+        return self._delegate.parse(content, limits=limits)
+
+
+class FailOnceParser:
+    """Simulate one transient parser transport failure before recovery."""
+
+    def __init__(self) -> None:
+        self._delegate = PypdfDocumentParser()
+        self.calls = 0
+
+    @property
+    def parser_version(self) -> str:
+        """Expose the same reproducible version as the real parser."""
+
+        return self._delegate.parser_version
+
+    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+        """Fail the first delivery and parse normally on the retry."""
+
+        self.calls += 1
+        if self.calls == 1:
+            raise ParserTransportError("synthetic private transport failure")
         return self._delegate.parse(content, limits=limits)
 
 
@@ -280,6 +308,98 @@ def test_parser_limit_failure_preserves_original_and_records_failed_state(
     assert structure_block_count == 0
     assert chunk_set_count == 0
     assert chunk_count == 0
+
+
+def test_transient_parser_failure_expires_lease_and_retry_commits_once(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(integration_database_engine, context, storage)
+    parser = FailOnceParser()
+    first_failure_at = STARTED_AT + timedelta(seconds=1)
+    retry_started_at = STARTED_AT + timedelta(seconds=2)
+    retry_completed_at = STARTED_AT + timedelta(seconds=3)
+    service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=ParserLimits(max_pages=10, max_extracted_characters=100_000),
+        parser=parser,
+        timestamps=iter(
+            (
+                STARTED_AT,
+                first_failure_at,
+                retry_started_at,
+                retry_completed_at,
+            )
+        ),
+    )
+
+    with pytest.raises(
+        ProcessingRetryableError,
+        match="processing dependency is temporarily unavailable",
+    ):
+        service.process(context, capture.processing_run_id)
+
+    retried_result = service.process(context, capture.processing_run_id)
+
+    session_factory = create_session_factory(integration_database_engine)
+    with transactional_session(session_factory) as session:
+        persisted_run = SqlAlchemyProcessingRepository(session).get_run_by_id(
+            context,
+            capture.processing_run_id,
+        )
+        chunk_set_count = session.scalar(
+            select(func.count())
+            .select_from(ChunkSetRow)
+            .where(ChunkSetRow.processing_run_id == capture.processing_run_id)
+        )
+
+    assert parser.calls == 2
+    assert retried_result.state is ProcessingState.LEXICAL_READY
+    assert retried_result.attempt_count == 2
+    assert retried_result.completed_at == retry_completed_at
+    assert persisted_run == retried_result
+    assert chunk_set_count == 1
+
+
+def test_transient_parser_failure_at_attempt_limit_records_failed_state(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(integration_database_engine, context, storage)
+    service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=ParserLimits(max_pages=10, max_extracted_characters=100_000),
+        parser=FailOnceParser(),
+        profile=replace(M0_0_PROCESSING_PROFILE, maximum_attempts=1),
+    )
+
+    with pytest.raises(ParserTransportError, match="synthetic private transport failure"):
+        service.process(context, capture.processing_run_id)
+
+    session_factory = create_session_factory(integration_database_engine)
+    with transactional_session(session_factory) as session:
+        persisted_run = SqlAlchemyProcessingRepository(session).get_run_by_id(
+            context,
+            capture.processing_run_id,
+        )
+        derived_row_count = session.scalar(
+            select(func.count())
+            .select_from(StructureBlockRow)
+            .where(StructureBlockRow.processing_run_id == capture.processing_run_id)
+        )
+
+    assert persisted_run is not None
+    assert persisted_run.state is ProcessingState.FAILED
+    assert persisted_run.attempt_count == 1
+    assert persisted_run.completed_at == COMPLETED_AT
+    assert persisted_run.error_summary == "Processing attempt limit exceeded"
+    assert derived_row_count == 0
 
 
 def test_processing_service_does_not_disclose_cross_workspace_run(

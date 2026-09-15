@@ -28,6 +28,7 @@ from investment_research.modules.processing.ports import (
     DocumentParser,
     DocumentParserError,
     ParserLimitExceededError,
+    ParserTransportError,
     ProcessingExecutionLimitError,
     ProcessingOriginalProvider,
     ProcessingReadUnitOfWorkFactory,
@@ -92,6 +93,10 @@ class ProcessingParserVersionError(Exception):
 
 class ProcessingRunAlreadyActiveError(Exception):
     """Report a harmless duplicate delivery while another lease is active."""
+
+
+class ProcessingRetryableError(Exception):
+    """Request one bounded retry after canonical state is made reclaimable."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +280,32 @@ class ProcessDocumentService:
                 completed_at=completed_at,
             )
             self._commit_output(context, parsing_run, ready_run, output)
+        except ParserTransportError as error:
+            if parsing_run.attempt_count >= self._profile.maximum_attempts:
+                try:
+                    self._mark_failed(
+                        context,
+                        parsing_run,
+                        error,
+                        error_summary="Processing attempt limit exceeded",
+                    )
+                except Exception as recording_error:
+                    error.add_note(
+                        "processing failure state could not be recorded: "
+                        f"{type(recording_error).__name__}"
+                    )
+                raise
+            try:
+                self._expire_lease_for_retry(context, parsing_run)
+            except Exception as recording_error:
+                error.add_note(
+                    "processing retry state could not be recorded: "
+                    f"{type(recording_error).__name__}"
+                )
+                raise
+            raise ProcessingRetryableError(
+                "processing dependency is temporarily unavailable"
+            ) from None
         except Exception as error:
             try:
                 self._mark_failed(context, parsing_run, error)
@@ -362,6 +393,8 @@ class ProcessDocumentService:
         context: WorkspaceContext,
         parsing_run: ProcessingRun,
         error: Exception,
+        *,
+        error_summary: str | None = None,
     ) -> None:
         """Record a sanitized terminal failure in a fresh transaction."""
 
@@ -377,9 +410,32 @@ class ProcessDocumentService:
             failed_run = parsing_run.mark_failed(
                 lease_id=lease_id,
                 completed_at=self._aware_utc_now(),
-                error_summary=self._safe_error_summary(error),
+                error_summary=error_summary or self._safe_error_summary(error),
             )
             if not unit_of_work.processing.update_run(context, failed_run):
+                raise ProcessingRunUnavailableError("processing run is unavailable")
+
+    def _expire_lease_for_retry(
+        self,
+        context: WorkspaceContext,
+        parsing_run: ProcessingRun,
+    ) -> None:
+        """Commit an immediately reclaimable lease after a transient failure."""
+
+        lease_id = parsing_run.lease_id
+        if lease_id is None:
+            raise RuntimeError("active processing run has no lease identifier")
+        with self._unit_of_work_factory() as unit_of_work:
+            current_run = unit_of_work.processing.get_run_by_id_for_update(
+                context,
+                parsing_run.id,
+            )
+            self._require_unchanged_active_run(current_run, parsing_run)
+            retryable_run = parsing_run.expire_lease_for_retry(
+                lease_id=lease_id,
+                expired_at=self._aware_utc_now(),
+            )
+            if not unit_of_work.processing.update_run(context, retryable_run):
                 raise ProcessingRunUnavailableError("processing run is unavailable")
 
     def _require_parser_version(self, run: ProcessingRun) -> None:
