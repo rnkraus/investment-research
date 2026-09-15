@@ -18,7 +18,7 @@ from investment_research.modules.identity.application import IdentityContextProv
 from investment_research.modules.processing.application import ProcessDocumentService
 from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
 from investment_research.modules.processing.ports import ProcessingExecutionLimitError
-from investment_research.settings import WorkerSettings, load_worker_settings
+from investment_research.settings import ROOT_ENV_FILE, WorkerSettings, load_worker_settings
 
 EXIT_SUCCESS = 0
 EXIT_PROCESSING_FAILED = 1
@@ -176,12 +176,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    env_file: Path | None = ROOT_ENV_FILE,
+) -> int:
     """Run one bounded processing attempt without exposing internal error details."""
 
     arguments = build_argument_parser().parse_args(argv)
     try:
-        settings = load_worker_settings()
+        settings = load_worker_settings(env_file=env_file)
         settings.require_database_url()
     except (ValueError, RuntimeError) as error:
         del error

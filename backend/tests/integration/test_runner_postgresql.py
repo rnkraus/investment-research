@@ -26,6 +26,13 @@ FIXTURE_PDF = (
     REPOSITORY_ROOT / "fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf"
 )
 CAPTURED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
+ISOLATED_RUNNER_CODE = """\
+import sys
+
+from investment_research.runner import main
+
+raise SystemExit(main(sys.argv[1:], env_file=None))
+"""
 
 
 def test_runner_processes_one_captured_run_and_exits(
@@ -64,8 +71,8 @@ def test_runner_processes_one_captured_run_and_exits(
     completed = subprocess.run(
         [
             sys.executable,
-            "-m",
-            "investment_research.runner",
+            "-c",
+            ISOLATED_RUNNER_CODE,
             str(capture.processing_run_id),
         ],
         cwd=BACKEND_ROOT,
