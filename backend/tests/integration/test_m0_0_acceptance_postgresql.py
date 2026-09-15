@@ -30,6 +30,13 @@ FIXTURE_PDF = (
 UNANSWERABLE_QUESTION = "What dividend did Northstar Grid Analytics declare for FY2025?"
 EXPECTED_PUBLICATION_TIME = "2026-02-19T00:00:00Z"
 EXPECTED_CITATION_PAGE = 2
+ISOLATED_RUNNER_CODE = """\
+import sys
+
+from investment_research.runner import main
+
+raise SystemExit(main(sys.argv[1:], env_file=None))
+"""
 
 
 def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
@@ -70,8 +77,8 @@ def process_captured_run(
     return subprocess.run(
         [
             sys.executable,
-            "-m",
-            "investment_research.runner",
+            "-c",
+            ISOLATED_RUNNER_CODE,
             processing_run_id,
         ],
         cwd=BACKEND_ROOT,

@@ -5,6 +5,7 @@ import signal
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import cast
 from unittest.mock import create_autospec
 from uuid import UUID
@@ -208,20 +209,27 @@ def test_main_reports_success_without_internal_details(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     settings = make_settings()
-    monkeypatch.setattr(runner, "load_worker_settings", lambda: settings)
+    loaded_env_files: list[Path | None] = []
+
+    def load_settings(*, env_file: Path | None) -> WorkerSettings:
+        loaded_env_files.append(env_file)
+        return settings
+
+    monkeypatch.setattr(runner, "load_worker_settings", load_settings)
     monkeypatch.setattr(
         runner,
         "execute_single_job",
         lambda loaded_settings, run_id: make_ready_run(),
     )
 
-    exit_code = runner.main([str(PROCESSING_RUN_ID)])
+    exit_code = runner.main([str(PROCESSING_RUN_ID)], env_file=None)
 
     output = capsys.readouterr()
     assert exit_code == runner.EXIT_SUCCESS
     assert str(PROCESSING_RUN_ID) in output.out
     assert ProcessingState.LEXICAL_READY.value in output.out
     assert output.err == ""
+    assert loaded_env_files == [None]
 
 
 def test_main_reports_persisted_processing_failure(
@@ -236,7 +244,7 @@ def test_main_reports_persisted_processing_failure(
             "error_summary": "Safe parser failure",
         }
     )
-    monkeypatch.setattr(runner, "load_worker_settings", lambda: settings)
+    monkeypatch.setattr(runner, "load_worker_settings", lambda *, env_file: settings)
     monkeypatch.setattr(
         runner,
         "execute_single_job",
@@ -264,7 +272,11 @@ def test_main_reports_configuration_failure_without_attempting_processing(
         processing_called = True
         return make_ready_run()
 
-    monkeypatch.setattr(runner, "load_worker_settings", WorkerSettings)
+    monkeypatch.setattr(
+        runner,
+        "load_worker_settings",
+        lambda *, env_file: WorkerSettings(),
+    )
     monkeypatch.setattr(runner, "execute_single_job", record_processing)
 
     exit_code = runner.main([str(PROCESSING_RUN_ID)])
@@ -281,7 +293,7 @@ def test_main_redacts_unexpected_processing_failure(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     settings = make_settings()
-    monkeypatch.setattr(runner, "load_worker_settings", lambda: settings)
+    monkeypatch.setattr(runner, "load_worker_settings", lambda *, env_file: settings)
 
     def fail_safely(loaded_settings: WorkerSettings, run_id: UUID) -> ProcessingRun:
         del loaded_settings, run_id
