@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -11,6 +11,8 @@ from investment_research.modules.processing.domain import (
     Chunk,
     ChunkSet,
     ConfigurationVersion,
+    ProcessingAttemptLimitError,
+    ProcessingLeaseActiveError,
     ProcessingRun,
     ProcessingState,
     StructureBlock,
@@ -39,6 +41,16 @@ class ProcessingProfile:
     chunker_version: ConfigurationVersion
     chunking_config_version: ConfigurationVersion
     lexical_config_version: ConfigurationVersion
+    maximum_attempts: int
+    lease_duration: timedelta
+
+    def __post_init__(self) -> None:
+        """Reject an unsafe execution policy before a service starts."""
+
+        if self.maximum_attempts < 1:
+            raise ValueError("maximum_attempts must be positive")
+        if self.lease_duration <= timedelta(0):
+            raise ValueError("lease_duration must be positive")
 
 
 M0_0_PROCESSING_PROFILE = ProcessingProfile(
@@ -47,6 +59,8 @@ M0_0_PROCESSING_PROFILE = ProcessingProfile(
     chunker_version="m0.0-structure-block-v1",
     chunking_config_version="m0.0-structure-block-config-v1",
     lexical_config_version="m0.0-english-lexical-v1",
+    maximum_attempts=3,
+    lease_duration=timedelta(seconds=360),
 )
 
 
@@ -68,6 +82,18 @@ class ProcessingRunConflictError(Exception):
 
 class ProcessingParserVersionError(Exception):
     """Raised when a runner cannot reproduce the run's recorded parser version."""
+
+
+class ProcessingRunAlreadyActiveError(Exception):
+    """Report a harmless duplicate delivery while another lease is active."""
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessingClaim:
+    """Outcome of the short canonical claim transaction."""
+
+    run: ProcessingRun
+    claimed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,15 +221,19 @@ class ProcessDocumentService:
         original_provider: ProcessingOriginalProvider,
         unit_of_work_factory: ProcessingUnitOfWorkFactory,
         parser_limits: ParserLimits,
+        profile: ProcessingProfile = M0_0_PROCESSING_PROFILE,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
+        lease_identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
         self._parser = parser
         self._original_provider = original_provider
         self._unit_of_work_factory = unit_of_work_factory
         self._parser_limits = parser_limits
+        self._profile = profile
         self._clock = clock
         self._identifier_factory = identifier_factory
+        self._lease_identifier_factory = lease_identifier_factory
 
     def process(
         self,
@@ -212,7 +242,13 @@ class ProcessDocumentService:
     ) -> ProcessingRun:
         """Process one run by identifier and return its committed terminal state."""
 
-        parsing_run = self._start_run(context, processing_run_id)
+        claim = self._claim_run(context, processing_run_id)
+        if not claim.claimed:
+            return claim.run
+        parsing_run = claim.run
+        lease_id = parsing_run.lease_id
+        if lease_id is None:
+            raise RuntimeError("claimed processing run has no lease identifier")
         try:
             self._require_parser_version(parsing_run)
             with self._original_provider.open_for_processing(
@@ -228,7 +264,10 @@ class ProcessDocumentService:
                 created_at=completed_at,
                 id_factory=self._identifier_factory,
             )
-            ready_run = parsing_run.mark_lexical_ready(completed_at=completed_at)
+            ready_run = parsing_run.mark_lexical_ready(
+                lease_id=lease_id,
+                completed_at=completed_at,
+            )
             self._commit_output(context, parsing_run, ready_run, output)
         except Exception as error:
             try:
@@ -242,24 +281,51 @@ class ProcessDocumentService:
 
         return ready_run
 
-    def _start_run(
+    def _claim_run(
         self,
         context: WorkspaceContext,
         processing_run_id: UUID,
-    ) -> ProcessingRun:
-        """Atomically claim one captured run before opening its original."""
+    ) -> ProcessingClaim:
+        """Atomically claim eligible work or return a terminal no-op."""
 
         with self._unit_of_work_factory() as unit_of_work:
-            captured_run = unit_of_work.processing.get_run_by_id_for_update(
+            current_run = unit_of_work.processing.get_run_by_id_for_update(
                 context,
                 processing_run_id,
             )
-            if captured_run is None:
+            if current_run is None:
                 raise ProcessingRunUnavailableError("processing run is unavailable")
-            parsing_run = captured_run.start_parsing(started_at=self._aware_utc_now())
+
+            if current_run.state in {
+                ProcessingState.LEXICAL_READY,
+                ProcessingState.FAILED,
+            }:
+                return ProcessingClaim(run=current_run, claimed=False)
+
+            claimed_at = self._aware_utc_now()
+            try:
+                parsing_run = current_run.claim_for_processing(
+                    lease_id=self._lease_identifier_factory(),
+                    claimed_at=claimed_at,
+                    lease_expires_at=claimed_at + self._profile.lease_duration,
+                    maximum_attempts=self._profile.maximum_attempts,
+                )
+            except ProcessingLeaseActiveError as error:
+                raise ProcessingRunAlreadyActiveError(
+                    "processing run already has an active attempt"
+                ) from error
+            except ProcessingAttemptLimitError as error:
+                exhausted_run = current_run.mark_attempts_exhausted(
+                    completed_at=claimed_at,
+                    error_summary="Processing attempt limit exceeded",
+                )
+                if not unit_of_work.processing.update_run(context, exhausted_run):
+                    raise ProcessingRunUnavailableError("processing run is unavailable") from error
+                return ProcessingClaim(run=exhausted_run, claimed=False)
+
             if not unit_of_work.processing.update_run(context, parsing_run):
                 raise ProcessingRunUnavailableError("processing run is unavailable")
-        return parsing_run
+        return ProcessingClaim(run=parsing_run, claimed=True)
 
     def _commit_output(
         self,
@@ -293,6 +359,9 @@ class ProcessDocumentService:
     ) -> None:
         """Record a sanitized terminal failure in a fresh transaction."""
 
+        lease_id = parsing_run.lease_id
+        if lease_id is None:
+            raise RuntimeError("active processing run has no lease identifier")
         with self._unit_of_work_factory() as unit_of_work:
             current_run = unit_of_work.processing.get_run_by_id_for_update(
                 context,
@@ -300,6 +369,7 @@ class ProcessDocumentService:
             )
             self._require_unchanged_active_run(current_run, parsing_run)
             failed_run = parsing_run.mark_failed(
+                lease_id=lease_id,
                 completed_at=self._aware_utc_now(),
                 error_summary=self._safe_error_summary(error),
             )

@@ -15,6 +15,9 @@ from investment_research.modules.processing.domain import (
     Chunk,
     ChunkSet,
     InvalidProcessingTransitionError,
+    ProcessingAttemptLimitError,
+    ProcessingLeaseActiveError,
+    ProcessingLeaseOwnershipError,
     ProcessingRelationshipError,
     ProcessingRun,
     ProcessingScopeError,
@@ -40,7 +43,11 @@ BLOCK_ID = UUID("20000000-0000-4000-8000-000000000003")
 CHUNK_SET_ID = UUID("20000000-0000-4000-8000-000000000004")
 CHUNK_ID = UUID("20000000-0000-4000-8000-000000000005")
 OTHER_ID = UUID("20000000-0000-4000-8000-000000000006")
+LEASE_ID = UUID("20000000-0000-4000-8000-000000000007")
+OTHER_LEASE_ID = UUID("20000000-0000-4000-8000-000000000008")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
+CLAIMED_AT = CREATED_AT + timedelta(seconds=1)
+LEASE_EXPIRES_AT = CLAIMED_AT + timedelta(seconds=45)
 
 
 def make_context() -> WorkspaceContext:
@@ -55,12 +62,15 @@ def make_run(
 ) -> ProcessingRun:
     """Build a lifecycle-consistent processing run snapshot."""
 
-    started_at = None if state is ProcessingState.CAPTURED else CREATED_AT + timedelta(seconds=1)
+    started_at = None if state is ProcessingState.CAPTURED else CLAIMED_AT
     completed_at = (
         CREATED_AT + timedelta(seconds=2)
         if state in {ProcessingState.LEXICAL_READY, ProcessingState.FAILED}
         else None
     )
+    attempt_count = 0 if state is ProcessingState.CAPTURED else 1
+    lease_id = LEASE_ID if state is ProcessingState.PARSING else None
+    lease_expires_at = LEASE_EXPIRES_AT if state is ProcessingState.PARSING else None
     error_summary = "Synthetic parser failure" if state is ProcessingState.FAILED else None
     return ProcessingRun(
         id=PROCESSING_RUN_ID,
@@ -73,6 +83,9 @@ def make_run(
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
         created_at=CREATED_AT,
+        attempt_count=attempt_count,
+        lease_id=lease_id,
+        lease_expires_at=lease_expires_at,
         started_at=started_at,
         completed_at=completed_at,
         error_summary=error_summary,
@@ -180,12 +193,17 @@ def test_processing_run_rejects_inconsistent_lifecycle(
 
 def test_processing_run_exposes_valid_immutable_forward_transitions() -> None:
     captured = make_run()
-    started_at = CREATED_AT + timedelta(seconds=1)
     completed_at = CREATED_AT + timedelta(seconds=2)
 
-    parsing = captured.start_parsing(started_at=started_at)
-    ready = parsing.mark_lexical_ready(completed_at=completed_at)
+    parsing = captured.claim_for_processing(
+        lease_id=LEASE_ID,
+        claimed_at=CLAIMED_AT,
+        lease_expires_at=LEASE_EXPIRES_AT,
+        maximum_attempts=3,
+    )
+    ready = parsing.mark_lexical_ready(lease_id=LEASE_ID, completed_at=completed_at)
     failed = parsing.mark_failed(
+        lease_id=LEASE_ID,
         completed_at=completed_at,
         error_summary="PDF parsing failed safely",
     )
@@ -193,42 +211,146 @@ def test_processing_run_exposes_valid_immutable_forward_transitions() -> None:
     assert captured.state is ProcessingState.CAPTURED
     assert captured.started_at is None
     assert parsing.state is ProcessingState.PARSING
-    assert parsing.started_at == started_at
+    assert parsing.started_at == CLAIMED_AT
+    assert parsing.attempt_count == 1
+    assert parsing.lease_id == LEASE_ID
+    assert parsing.lease_expires_at == LEASE_EXPIRES_AT
     assert ready.state is ProcessingState.LEXICAL_READY
     assert ready.completed_at == completed_at
+    assert ready.lease_id is None
+    assert ready.lease_expires_at is None
     assert failed.state is ProcessingState.FAILED
     assert failed.error_summary == "PDF parsing failed safely"
+    assert failed.lease_id is None
+    assert failed.lease_expires_at is None
 
 
 def test_processing_run_rejects_skipped_and_terminal_transitions() -> None:
     captured = make_run()
-    parsing = captured.start_parsing(started_at=CREATED_AT + timedelta(seconds=1))
-    ready = parsing.mark_lexical_ready(completed_at=CREATED_AT + timedelta(seconds=2))
+    parsing = captured.claim_for_processing(
+        lease_id=LEASE_ID,
+        claimed_at=CLAIMED_AT,
+        lease_expires_at=LEASE_EXPIRES_AT,
+        maximum_attempts=3,
+    )
+    ready = parsing.mark_lexical_ready(
+        lease_id=LEASE_ID,
+        completed_at=CREATED_AT + timedelta(seconds=2),
+    )
 
     with pytest.raises(InvalidProcessingTransitionError, match="CAPTURED to LEXICAL_READY"):
-        captured.mark_lexical_ready(completed_at=CREATED_AT + timedelta(seconds=2))
+        captured.mark_lexical_ready(
+            lease_id=LEASE_ID,
+            completed_at=CREATED_AT + timedelta(seconds=2),
+        )
     with pytest.raises(InvalidProcessingTransitionError, match="CAPTURED to FAILED"):
         captured.mark_failed(
+            lease_id=LEASE_ID,
             completed_at=CREATED_AT + timedelta(seconds=2),
             error_summary="must start first",
         )
-    with pytest.raises(InvalidProcessingTransitionError, match="LEXICAL_READY to PARSING"):
-        ready.start_parsing(started_at=CREATED_AT + timedelta(seconds=3))
+    with pytest.raises(InvalidProcessingTransitionError, match=r"cannot claim.*LEXICAL_READY"):
+        ready.claim_for_processing(
+            lease_id=OTHER_LEASE_ID,
+            claimed_at=CREATED_AT + timedelta(seconds=3),
+            lease_expires_at=CREATED_AT + timedelta(seconds=48),
+            maximum_attempts=3,
+        )
 
 
 def test_processing_transitions_revalidate_times_and_safe_failure_summary() -> None:
     captured = make_run()
 
-    with pytest.raises(ValidationError) as error:
-        captured.start_parsing(started_at=datetime(2026, 2, 20, 12))
-    assert error.value.errors()[0]["type"] == "timezone_aware"
+    with pytest.raises(ValueError, match="claimed_at must be timezone-aware"):
+        captured.claim_for_processing(
+            lease_id=LEASE_ID,
+            claimed_at=datetime(2026, 2, 20, 12),
+            lease_expires_at=LEASE_EXPIRES_AT,
+            maximum_attempts=3,
+        )
 
-    parsing = captured.start_parsing(started_at=CREATED_AT + timedelta(seconds=1))
+    parsing = captured.claim_for_processing(
+        lease_id=LEASE_ID,
+        claimed_at=CLAIMED_AT,
+        lease_expires_at=LEASE_EXPIRES_AT,
+        maximum_attempts=3,
+    )
     with pytest.raises(ValidationError, match="error_summary"):
         parsing.mark_failed(
+            lease_id=LEASE_ID,
             completed_at=CREATED_AT + timedelta(seconds=2),
             error_summary="   ",
         )
+
+
+def test_processing_run_rejects_active_duplicate_and_allows_expired_reclaim() -> None:
+    parsing = make_run(ProcessingState.PARSING)
+
+    with pytest.raises(ProcessingLeaseActiveError, match="active lease"):
+        parsing.claim_for_processing(
+            lease_id=OTHER_LEASE_ID,
+            claimed_at=LEASE_EXPIRES_AT - timedelta(seconds=1),
+            lease_expires_at=LEASE_EXPIRES_AT + timedelta(seconds=44),
+            maximum_attempts=3,
+        )
+
+    reclaimed = parsing.claim_for_processing(
+        lease_id=OTHER_LEASE_ID,
+        claimed_at=LEASE_EXPIRES_AT,
+        lease_expires_at=LEASE_EXPIRES_AT + timedelta(seconds=45),
+        maximum_attempts=3,
+    )
+
+    assert reclaimed.attempt_count == 2
+    assert reclaimed.started_at == parsing.started_at
+    assert reclaimed.lease_id == OTHER_LEASE_ID
+    assert reclaimed.lease_expires_at == LEASE_EXPIRES_AT + timedelta(seconds=45)
+
+
+def test_processing_run_requires_current_lease_owner_for_terminal_transition() -> None:
+    parsing = make_run(ProcessingState.PARSING)
+
+    with pytest.raises(ProcessingLeaseOwnershipError, match="not owned"):
+        parsing.mark_lexical_ready(
+            lease_id=OTHER_LEASE_ID,
+            completed_at=CREATED_AT + timedelta(seconds=2),
+        )
+    with pytest.raises(ProcessingLeaseOwnershipError, match="not owned"):
+        parsing.mark_failed(
+            lease_id=OTHER_LEASE_ID,
+            completed_at=CREATED_AT + timedelta(seconds=2),
+            error_summary="Processing failed safely",
+        )
+
+
+def test_processing_run_expires_owned_lease_and_fails_after_attempt_limit() -> None:
+    parsing = make_run(ProcessingState.PARSING)
+    expired_at = CREATED_AT + timedelta(seconds=2)
+    expired = parsing.expire_lease_for_retry(
+        lease_id=LEASE_ID,
+        expired_at=expired_at,
+    )
+
+    assert expired.state is ProcessingState.PARSING
+    assert expired.lease_id == LEASE_ID
+    assert expired.lease_expires_at == expired_at
+
+    with pytest.raises(ProcessingAttemptLimitError, match="attempt limit"):
+        expired.claim_for_processing(
+            lease_id=OTHER_LEASE_ID,
+            claimed_at=expired_at,
+            lease_expires_at=expired_at + timedelta(seconds=45),
+            maximum_attempts=1,
+        )
+
+    failed = expired.mark_attempts_exhausted(
+        completed_at=expired_at,
+        error_summary="Processing attempt limit exceeded",
+    )
+    assert failed.state is ProcessingState.FAILED
+    assert failed.attempt_count == 1
+    assert failed.lease_id is None
+    assert failed.lease_expires_at is None
 
 
 def test_structure_block_preserves_exact_text_and_rejects_whitespace_only() -> None:

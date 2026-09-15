@@ -3,6 +3,8 @@
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event, Thread
+from typing import BinaryIO
 from uuid import uuid4
 
 import pytest
@@ -35,10 +37,13 @@ from investment_research.modules.identity.domain import (
 )
 from investment_research.modules.identity.persistence import SqlAlchemyWorkspaceRepository
 from investment_research.modules.processing.application import (
+    M0_0_PROCESSING_PROFILE,
     ProcessDocumentService,
+    ProcessingRunAlreadyActiveError,
+    ProcessingRunConflictError,
     ProcessingRunUnavailableError,
 )
-from investment_research.modules.processing.contracts import ParserLimits
+from investment_research.modules.processing.contracts import ParsedDocument, ParserLimits
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import (
     ChunkRow,
@@ -47,7 +52,10 @@ from investment_research.modules.processing.persistence import (
     SqlAlchemyProcessingRepository,
     StructureBlockRow,
 )
-from investment_research.modules.processing.ports import ParserLimitExceededError
+from investment_research.modules.processing.ports import (
+    DocumentParser,
+    ParserLimitExceededError,
+)
 from tests.fakes import RecordingProcessingDispatcher
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -115,21 +123,46 @@ def make_processing_service(
     storage: LocalObjectStorage,
     *,
     limits: ParserLimits,
+    parser: DocumentParser | None = None,
+    timestamps: Iterator[datetime] | None = None,
 ) -> ProcessDocumentService:
     """Wire real M0.0 adapters around the processing application service."""
 
     session_factory = create_session_factory(engine)
-    timestamps = processing_clock()
+    resolved_timestamps = timestamps or processing_clock()
     return ProcessDocumentService(
-        parser=PypdfDocumentParser(),
+        parser=parser or PypdfDocumentParser(),
         original_provider=OpenOriginalService(
             object_storage=storage,
             unit_of_work_factory=create_document_read_unit_of_work_factory(session_factory),
         ),
         unit_of_work_factory=create_processing_unit_of_work_factory(session_factory),
         parser_limits=limits,
-        clock=lambda: next(timestamps),
+        clock=lambda: next(resolved_timestamps),
     )
+
+
+class BlockingParser:
+    """Pause a real parser so another delivery can exercise lease behavior."""
+
+    def __init__(self) -> None:
+        self._delegate = PypdfDocumentParser()
+        self.entered = Event()
+        self.release = Event()
+
+    @property
+    def parser_version(self) -> str:
+        """Expose the delegate version recorded by the captured processing run."""
+
+        return self._delegate.parser_version
+
+    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+        """Wait for the test before parsing the caller-owned original stream."""
+
+        self.entered.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("blocking parser was not released by the test")
+        return self._delegate.parse(content, limits=limits)
 
 
 def test_process_fixture_commits_searchable_output_and_ready_state(
@@ -271,3 +304,111 @@ def test_processing_service_does_not_disclose_cross_workspace_run(
         row = session.get(ProcessingRunRow, capture.processing_run_id)
         row_state = None if row is None else row.state
     assert row_state is ProcessingState.CAPTURED
+
+
+def test_concurrent_delivery_cannot_steal_an_active_lease(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(integration_database_engine, context, storage)
+    limits = ParserLimits(max_pages=10, max_extracted_characters=100_000)
+    blocking_parser = BlockingParser()
+    first_service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=limits,
+        parser=blocking_parser,
+    )
+    duplicate_at = STARTED_AT + timedelta(seconds=1)
+    second_service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=limits,
+        timestamps=iter((duplicate_at,)),
+    )
+    first_results: list[ProcessingState] = []
+    first_errors: list[Exception] = []
+
+    def execute_first_delivery() -> None:
+        try:
+            result = first_service.process(context, capture.processing_run_id)
+            first_results.append(result.state)
+        except Exception as error:
+            first_errors.append(error)
+
+    first_thread = Thread(target=execute_first_delivery)
+    first_thread.start()
+    assert blocking_parser.entered.wait(timeout=5)
+    try:
+        with pytest.raises(ProcessingRunAlreadyActiveError, match="active attempt"):
+            second_service.process(context, capture.processing_run_id)
+    finally:
+        blocking_parser.release.set()
+        first_thread.join(timeout=5)
+
+    assert not first_thread.is_alive()
+    assert first_errors == []
+    assert first_results == [ProcessingState.LEXICAL_READY]
+
+
+def test_expired_lease_is_reclaimed_and_stale_worker_cannot_commit(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(integration_database_engine, context, storage)
+    limits = ParserLimits(max_pages=10, max_extracted_characters=100_000)
+    blocking_parser = BlockingParser()
+    first_service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=limits,
+        parser=blocking_parser,
+    )
+    reclaim_at = STARTED_AT + M0_0_PROCESSING_PROFILE.lease_duration
+    reclaimed_service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=limits,
+        timestamps=iter((reclaim_at, reclaim_at + timedelta(seconds=1))),
+    )
+    stale_errors: list[Exception] = []
+
+    def execute_stale_delivery() -> None:
+        try:
+            first_service.process(context, capture.processing_run_id)
+        except Exception as error:
+            stale_errors.append(error)
+
+    stale_thread = Thread(target=execute_stale_delivery)
+    stale_thread.start()
+    assert blocking_parser.entered.wait(timeout=5)
+    try:
+        reclaimed_result = reclaimed_service.process(context, capture.processing_run_id)
+    finally:
+        blocking_parser.release.set()
+        stale_thread.join(timeout=5)
+
+    assert not stale_thread.is_alive()
+    assert reclaimed_result.state is ProcessingState.LEXICAL_READY
+    assert reclaimed_result.attempt_count == 2
+    assert len(stale_errors) == 1
+    assert isinstance(stale_errors[0], ProcessingRunConflictError)
+
+    session_factory = create_session_factory(integration_database_engine)
+    with transactional_session(session_factory) as session:
+        persisted_run = SqlAlchemyProcessingRepository(session).get_run_by_id(
+            context,
+            capture.processing_run_id,
+        )
+        chunk_set_count = session.scalar(
+            select(func.count())
+            .select_from(ChunkSetRow)
+            .where(ChunkSetRow.processing_run_id == capture.processing_run_id)
+        )
+
+    assert persisted_run == reclaimed_result
+    assert chunk_set_count == 1

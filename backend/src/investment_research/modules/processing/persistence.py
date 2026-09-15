@@ -69,14 +69,24 @@ class ProcessingRunRow(Base):
             name="ordered_completion_time",
         ),
         CheckConstraint(
+            "lease_expires_at IS NULL OR "
+            "(started_at IS NOT NULL AND lease_expires_at > started_at)",
+            name="ordered_lease_expiry",
+        ),
+        CheckConstraint("attempt_count >= 0", name="non_negative_attempt_count"),
+        CheckConstraint(
             "(state = 'CAPTURED' AND started_at IS NULL AND completed_at IS NULL "
-            "AND error_summary IS NULL) OR "
+            "AND error_summary IS NULL AND attempt_count = 0 "
+            "AND lease_id IS NULL AND lease_expires_at IS NULL) OR "
             "(state = 'PARSING' AND started_at IS NOT NULL AND completed_at IS NULL "
-            "AND error_summary IS NULL) OR "
+            "AND error_summary IS NULL AND attempt_count > 0 "
+            "AND lease_id IS NOT NULL AND lease_expires_at IS NOT NULL) OR "
             "(state = 'LEXICAL_READY' AND started_at IS NOT NULL AND completed_at IS NOT NULL "
-            "AND error_summary IS NULL) OR "
+            "AND error_summary IS NULL AND attempt_count > 0 "
+            "AND lease_id IS NULL AND lease_expires_at IS NULL) OR "
             "(state = 'FAILED' AND started_at IS NOT NULL AND completed_at IS NOT NULL "
-            "AND char_length(btrim(error_summary)) > 0)",
+            "AND char_length(btrim(error_summary)) > 0 AND attempt_count > 0 "
+            "AND lease_id IS NULL AND lease_expires_at IS NULL)",
             name="consistent_state",
         ),
         CheckConstraint(
@@ -110,6 +120,13 @@ class ProcessingRunRow(Base):
         nullable=False,
         server_default=func.now(),
     )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    lease_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_summary: Mapped[str | None] = mapped_column(String(500))
@@ -129,6 +146,9 @@ class ProcessingRunRow(Base):
             chunking_config_version=run.chunking_config_version,
             lexical_config_version=run.lexical_config_version,
             created_at=run.created_at,
+            attempt_count=run.attempt_count,
+            lease_id=run.lease_id,
+            lease_expires_at=run.lease_expires_at,
             started_at=run.started_at,
             completed_at=run.completed_at,
             error_summary=run.error_summary,
@@ -138,6 +158,9 @@ class ProcessingRunRow(Base):
         """Apply mutable lifecycle fields after immutable identity checks."""
 
         self.state = run.state
+        self.attempt_count = run.attempt_count
+        self.lease_id = run.lease_id
+        self.lease_expires_at = run.lease_expires_at
         self.started_at = run.started_at
         self.completed_at = run.completed_at
         self.error_summary = run.error_summary
@@ -156,6 +179,9 @@ class ProcessingRunRow(Base):
             chunking_config_version=self.chunking_config_version,
             lexical_config_version=self.lexical_config_version,
             created_at=self.created_at,
+            attempt_count=self.attempt_count,
+            lease_id=self.lease_id,
+            lease_expires_at=self.lease_expires_at,
             started_at=self.started_at,
             completed_at=self.completed_at,
             error_summary=self.error_summary,
