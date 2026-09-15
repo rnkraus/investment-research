@@ -139,8 +139,10 @@ to the active execution adapter after the canonical `FAILED` state is committed.
 untrusted and is therefore mapped to bounded application-owned summaries instead of being stored
 verbatim. Missing and foreign run identifiers both produce `ProcessingRunUnavailableError`. An
 active duplicate raises `ProcessingRunAlreadyActiveError` without opening the original; the Celery
-task acknowledges that expected concurrent redelivery as a no-op. A stale worker whose lease was
-replaced receives `ProcessingRunConflictError` before derived output is written.
+task acknowledges an ordinary concurrent duplicate as a no-op. When the broker marks the delivery
+as a redelivery after worker loss, the same exception carries the canonical lease expiry so the
+task can defer itself until that run is reclaimable. A stale worker whose lease was replaced
+receives `ProcessingRunConflictError` before derived output is written.
 
 ## Processing status
 
