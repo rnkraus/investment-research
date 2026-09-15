@@ -478,6 +478,21 @@ isolated parser; duplicate delivery produces one active output; all ADR-0004 neg
 **Suggested commits:** processing contracts; queue adapter; Celery worker; parser boundary; security
 tests; frontend state/copy; CI and docs.
 
+**Local implementation record (2026-09-15):** The Redis/Celery contracts, task delivery, processing
+lease, worker entry point, bounded private parser protocol, and final parser Compose boundary are
+implemented. The Docker Desktop isolation gate passed with the repository-owned worker and parser
+images: the parser had no canonical credentials or secret mount, joined only the internal parser
+network, could not reach Redis or an external address, ran non-root with a read-only root filesystem,
+dropped capabilities, `no-new-privileges`, and exact CPU, memory, process, and temporary-storage
+limits, and parsed the frozen PDF while rejecting request and extracted-text limit violations.
+Disposable Compose checks now deliver generated credentials through temporary mode-`0600` secret
+files rather than raw Compose environment values. The Step 3 backend bridge remains non-internal
+only while host processes require the loopback PostgreSQL port; Step 4 removes that port after the
+API joins Compose and then makes the backend network internal. The parser network is already
+internal and unaffected by this transition. The step is not complete: canonical timeout, crash,
+malformed-response, retry, and duplicate-delivery outcomes, Linux CI, the automatic complete fixture
+path, frontend removal of the manual command, and the full Step 3 gate remain outstanding.
+
 ### Step 4 — Complete local container stack
 
 **Suggested branch:** `feat/m0-container-stack`

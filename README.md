@@ -5,9 +5,10 @@ Investment Research Archive is an evidence-grounded research application. It wil
 The completed M0.0 milestone is a local-only proof of the smallest end-to-end path. M0 is the active
 engineering-foundation milestone and replaces the development storage, processing delivery, and
 parser boundary without rebuilding the proven application contracts. Until its isolation gate
-passes, use only the included synthetic fixture for accepted processing and research, as recorded in
-[ADR-0004](docs/adr/0004-m0-0-parser-isolation-boundary.md). This is not yet a production deployment,
-trading system, or investment-advice application.
+is accepted, use only the included synthetic fixture for accepted processing and research, as
+recorded in [ADR-0004](docs/adr/0004-m0-0-parser-isolation-boundary.md) and
+[ADR-0006](docs/adr/0006-credential-free-parser-runtime.md). This is not yet a production
+deployment, trading system, or investment-advice application.
 
 ## Prerequisites
 
@@ -41,7 +42,13 @@ Create the local Docker Compose configuration:
 
 ```shell
 cp .env.example .env
-cp storage.env.example storage.env
+install -d -m 700 .secrets
+install -m 600 /dev/null .secrets/postgres_password
+install -m 600 /dev/null .secrets/redis_password
+install -m 600 /dev/null .secrets/seaweedfs_admin_access_key
+install -m 600 /dev/null .secrets/seaweedfs_admin_secret_access_key
+install -m 600 /dev/null .secrets/seaweedfs_application_access_key
+install -m 600 /dev/null .secrets/seaweedfs_application_secret_access_key
 ```
 
 Keep the host-runtime and all four PostgreSQL entries, and replace the password placeholder in
@@ -49,23 +56,31 @@ Keep the host-runtime and all four PostgreSQL entries, and replace the password 
 Compose and local database-capable backend processes require the complete PostgreSQL configuration;
 an explicitly configured process environment variable takes precedence over the file.
 
-Replace every credential placeholder in `storage.env` with distinct local-only random values. This
-ignored file is read only by Docker Compose and separates SeaweedFS bootstrap and application
-credentials from the current host processes. Do not reuse either file outside local development.
+Use a local editor or password manager to put exactly one non-empty value in each ignored secret
+file. Do not include a variable name or surrounding quotes. Use distinct, random values with at
+least 16 characters; never commit or reuse them outside local development. During the Step 3-to-4
+transition, `.env` and `.secrets/postgres_password` must contain the same PostgreSQL password so the
+host API and the container refer to the same account. The same rule applies to Redis only when a
+host process is intentionally connected to the Compose broker. All other application and
+administrator storage credentials remain only in their secret files.
+
+The non-secret `*_SECRET_FILE` entries in `.env` select these source paths for Docker Compose.
+Inside a container, Compose mounts the selected file under `/run/secrets`; the settings layer reads
+the value there without placing it in the container environment or process arguments.
 
 `INVESTMENT_RESEARCH_RUNTIME_LOCATION=host` keeps local API binds and database targets on loopback.
-Until API and worker join Compose in M0 Step 4, host processes use the private local object-storage
-adapter. Step 2 verifies the unchanged application contract against internal SeaweedFS in a
-disposable container. Compose later supplies container-specific S3 settings without changing the
-host development file.
+Until the API joins Compose in M0 Step 4, the host API uses the private local object-storage adapter
+for the browser journey. The Celery worker and isolated parser are already defined as container
+services in Step 3. Compose supplies their container-specific database, broker, S3, and parser
+settings without exposing credential values in the host development file.
 
 ## Run locally
 
 Start PostgreSQL from the repository root:
 
 ```shell
-docker compose --env-file .env --env-file storage.env up -d postgres
-docker compose --env-file .env --env-file storage.env ps
+docker compose --env-file .env up -d postgres
+docker compose --env-file .env ps
 ```
 
 Before starting the API for the first time, migrate the database and create the deterministic local
@@ -143,7 +158,7 @@ connects directly to PostgreSQL.
 Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
 
 ```shell
-docker compose --env-file .env --env-file storage.env down
+docker compose --env-file .env down
 ```
 
 ## Verify changes
@@ -197,6 +212,15 @@ resources it created:
 
 ```shell
 uv run --locked python -m scripts.verify_backend_images
+```
+
+Verify the parser's final runtime boundary from `backend/`. This command starts an isolated parser
+and Redis, inspects container restrictions, actively checks denied secret, filesystem, backend, and
+external-network access, parses the frozen PDF through the worker-to-parser protocol, verifies safe
+limit failures, and removes its disposable resources:
+
+```shell
+uv run --locked python -m scripts.verify_parser_isolation
 ```
 
 ## Run database migrations and seed data
@@ -259,13 +283,16 @@ uv audit --locked
 ## Current architecture
 
 - `frontend/` contains the Next.js, TypeScript, and Tailwind CSS web application.
-- `backend/` contains the shared FastAPI and single-job processing application package and its tests.
-- `backend/Dockerfile` currently provides a runnable API target plus the worker and parser image
-  foundations that M0 Step 3 replaces with their final process entry points.
-- `compose.yaml` provides loopback-only PostgreSQL plus internally isolated SeaweedFS master,
-  volume, filer, S3 gateway, and one-shot bucket bootstrap services. API and worker join this
-  topology in M0 Step 4; object-storage verification already exercises their S3 contract inside
-  the private data network.
+- `backend/` contains the shared FastAPI, Celery worker, parser, and application package and tests.
+- `backend/Dockerfile` provides reproducible non-root API, Celery worker, and private parser targets.
+- `compose.yaml` provides PostgreSQL, authenticated Redis, the Celery worker, the credential-free
+  parser, and internally isolated SeaweedFS master, volume, filer, S3 gateway, and one-shot bucket
+  bootstrap services. During M0 Step 3, the backend bridge remains host-connected so the host API
+  and verification commands can reach PostgreSQL only through its loopback-bound port. Only the
+  worker bridges the backend, storage-data, and parser networks. Step 4 moves the API into Compose,
+  removes the PostgreSQL host port, and makes the backend network internal.
+- `.secrets/` is an ignored local source directory for Compose secret mounts; it is not application
+  configuration, a production secret manager, or a place for shared credentials.
 - The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
   reviewed Alembic-managed PostgreSQL schema and caller-owned transaction boundaries.
 

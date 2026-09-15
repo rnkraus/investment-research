@@ -70,10 +70,21 @@ bytes and non-secret versioned parser limits required for one operation, validat
 response as untrusted input, and then persists it through the existing processing application
 service.
 
-The worker-to-parser protocol must be private, bounded, and application-owned. It is transport for
-the existing `DocumentParser` port, not a public product API. The final transport and message schema
-must define strict content type, request and response size, parser/configuration version, timeout,
-ordering, page and text bounds, and safe error categories before this ADR can be accepted.
+The worker-to-parser protocol is private, bounded, and application-owned. It is transport for the
+existing `DocumentParser` port, not a public product API. M0 defines one
+`POST /internal/v1/parse` operation. Its body is `application/pdf`; one size-bounded ASCII JSON
+header carries `ParserRequestV1`, containing only the protocol version, parser version, parser
+configuration version, and page and extracted-character limits. It contains no workspace,
+document, storage, database, queue, provider, or credential value.
+
+A successful `application/json` response is `ParserResponseV1`; a failure is
+`ParserFailureV1` with one fixed safe category and no exception details or document text. The
+worker bounds the original before sending it, uses a fixed endpoint and timeout, follows no
+redirects, bounds response bytes before decoding, and validates schema, versions, page order, page
+count, and extracted-character count. The parser independently validates request bytes and
+metadata before parsing and output bounds before serialization. Response size is derived
+deterministically from the requested page and character ceilings, including conservative JSON
+escaping overhead, so independent free-form response limits cannot drift.
 
 The parser runtime must:
 
@@ -95,18 +106,25 @@ outcome using the lease rules in ADR-0005.
 
 ## Current validation evidence
 
-The Docker Desktop feasibility probe passed these local checks:
+The preliminary shell-image feasibility probe passed on Docker Desktop on 2026-09-14. The final
+repository-owned parser image, private protocol, Compose topology, and automated isolation gate then
+passed on Docker Desktop on 2026-09-15. The final gate verified that:
 
-- the worker received the expected parser response over the isolated parser network;
-- the parser ran as UID `65532`;
-- the parser reported zero effective Linux capabilities and `NoNewPrivs: 1`;
-- a root-filesystem write failed while a write inside the bounded `/tmp` succeeded;
-- synthetic application-secret markers injected only into the worker were absent from the parser;
-- connections from the parser to the separate backend network and external network failed;
-- the temporary containers and networks were removed after the probe.
+- a worker-image client parsed the frozen PDF successfully through the isolated parser network;
+- request-size and extracted-text violations produced bounded typed failures;
+- the parser ran as UID `65532`, with zero effective Linux capabilities and `NoNewPrivs: 1`;
+- the root filesystem was read-only while only the bounded `/tmp` mount remained writable;
+- the declared memory, CPU, and process-count limits matched the inspected runtime;
+- database, Redis, object-storage, and provider credential names and secret mounts were absent;
+- no Docker socket, repository path, broad bind mount, or published host port was present;
+- connections from the parser to Redis on the separate backend network and to an external address
+  failed, while the sole worker-to-parser channel succeeded;
+- temporary Compose resources, verification images, and mode-`0600` secret files were removed after
+  the gate.
 
-This is preliminary evidence only. Acceptance still requires the final parser image and application
-protocol to pass equivalent automated negative tests on Docker Desktop and Linux CI.
+This satisfies the final-runtime Docker Desktop part of the acceptance trigger. The ADR remains
+`Proposed` until the same boundary passes in Linux CI and timeout, crash, and malformed-response
+tests prove the required canonical `ProcessingRun` outcomes.
 
 ## Consequences
 
