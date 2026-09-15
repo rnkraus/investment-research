@@ -151,7 +151,7 @@ class ApiContainer:
 
 @dataclass(frozen=True, slots=True)
 class WorkerContainer:
-    """Dependencies owned by the M0.0 runner and later Celery worker."""
+    """Process-owned dependencies used by a Celery worker child."""
 
     settings: WorkerSettings
     identity_context_provider: IdentityContextProvider

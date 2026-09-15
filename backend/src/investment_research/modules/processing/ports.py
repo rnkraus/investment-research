@@ -36,10 +36,6 @@ class ParserProtocolError(DocumentParserError):
     """Raised when the isolated parser violates its versioned response contract."""
 
 
-class ProcessingExecutionLimitError(Exception):
-    """Raised when the outer runner reaches a process-level execution limit."""
-
-
 class ProcessingDispatchError(Exception):
     """Report that a canonical processing job could not be published."""
 
@@ -130,13 +126,6 @@ type ProcessingReadUnitOfWorkFactory = Callable[
     [],
     AbstractContextManager[ProcessingReadUnitOfWork],
 ]
-
-
-class ProcessingExecutor(Protocol):
-    """Execute one canonical processing run outside the API process."""
-
-    def execute(self, processing_run_id: UUID) -> ProcessingRun:
-        """Resolve trusted scope and process exactly one run identifier."""
 
 
 class ProcessingJobExecutor(Protocol):

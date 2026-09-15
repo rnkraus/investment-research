@@ -102,7 +102,7 @@ uv run uvicorn investment_research.main:create_app --factory --reload --host 127
 
 The API loads `ApiSettings`, derives a validated loopback database URL from the root `.env`, creates
 only its process-owned database and application resources during startup, and releases them during
-shutdown. The separate processing runner loads `WorkerSettings`. An explicit
+shutdown. The Celery worker loads `WorkerSettings`. An explicit
 `INVESTMENT_RESEARCH_DATABASE_URL` remains available for CI and isolated tooling and overrides the
 local file. Database URL query parameters are rejected so driver options cannot redirect a
 validated target. Application startup does not create or migrate tables automatically.

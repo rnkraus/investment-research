@@ -33,8 +33,8 @@ Client-supplied identifiers are untrusted. In particular, `workspace_id` is not 
 
 The processing-status route accepts only a processing-run UUID and delegates to
 `GetProcessingRunService`. That service opens a fresh read session and applies the same trusted
-workspace boundary as the runner's repository operations. The API never starts parsing, shares a
-runner session, or exposes processing configuration and exception details. Unknown and foreign run
+workspace boundary as the worker's repository operations. The API never starts parsing, shares a
+worker session, or exposes processing configuration and exception details. Unknown and foreign run
 identifiers are intentionally indistinguishable.
 
 The transport-wide body limit includes a small allowance for multipart framing and rejects excessive

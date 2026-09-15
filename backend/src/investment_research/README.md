@@ -4,15 +4,16 @@
 
 ## Contents
 
-| Path              | Responsibility                                                                                                         |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `main.py`         | Creates FastAPI, installs transport safeguards and error handlers, attaches the container, and registers routes.       |
-| `runner.py`       | Executes exactly one processing run with process-level time and memory bounds outside FastAPI.                         |
-| `bootstrap.py`    | Separate API and worker composition roots that select concrete implementations for application-owned contracts.          |
-| `settings.py`     | Loads least-privilege API, worker, parser, and database-maintenance configuration.                                       |
-| `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                                   |
-| `infrastructure/` | Technical database, logging, queue, lexical-search, parsing, and secure local object-storage adapters.                   |
-| `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                               |
+| Path              | Responsibility                                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `main.py`         | Creates FastAPI, installs transport safeguards and error handlers, attaches the container, and registers routes. |
+| `worker.py`       | Creates the Celery worker application and executes validated processing jobs with process-owned resources.       |
+| `parser_app.py`   | Hosts the credential-free PDF parser on the private parser network.                                              |
+| `bootstrap.py`    | Separate API and worker composition roots that select concrete implementations for application-owned contracts.  |
+| `settings.py`     | Loads least-privilege API, worker, parser, and database-maintenance configuration.                               |
+| `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                             |
+| `infrastructure/` | Technical database, logging, queue, lexical-search, parsing, and secure local object-storage adapters.           |
+| `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                         |
 
 ## Startup flow
 
@@ -64,27 +65,32 @@ flowchart TD
 
 `main.py` and `bootstrap.py` are the outer composition layer. Module domain and application files must remain independent of this layer. Application startup must never create or mutate database schemas.
 
-The runner is a second process entry point with its own composition root:
+The Celery worker is a second trusted process entry point with its own composition root:
 
 ```mermaid
-flowchart LR
-    SETTINGS[WorkerSettings] --> CLI[runner.py<br/>run ID only]
-    CLI --> BOOT[build_worker_container]
-    BOOT --> ID[Server-owned identity context]
+flowchart TD
+    SETTINGS[WorkerSettings] --> ENTRY[worker.py]
+    ENTRY --> CELERY[Celery application]
+    ENTRY --> EXECUTOR[WorkerProcessingJobExecutor]
+    CELERY --> TASK[Validated ProcessingJobV1 task]
+    TASK --> EXECUTOR
+    EXECUTOR -->|lazy per worker child| BOOT[build_worker_container]
     BOOT --> DB[(PostgreSQL resources)]
     BOOT --> STORAGE[ObjectStorage adapter]
-    BOOT --> SERVICE[ProcessDocumentService]
+    BOOT --> PARSER[HttpDocumentParser]
+    BOOT --> SERVICE[ExecuteProcessingJobService]
+    DB --> SERVICE
     STORAGE --> SERVICE
-    ID --> EXECUTE[SingleJobProcessingExecutor]
-    SERVICE --> EXECUTE
-    EXECUTE --> LIMITS[Apply process time and memory limits]
-    LIMITS --> TERMINAL[LEXICAL_READY or FAILED]
-    TERMINAL --> CLOSE[Dispose engine pool and exit]
+    PARSER --> SERVICE
+    SERVICE --> TERMINAL[LEXICAL_READY, safe retry, or FAILED]
+    TERMINAL --> CLOSE[Dispose resources on worker-child shutdown]
 ```
 
-The command-line caller never supplies workspace scope or a database session. `runner.py` resolves
-the fixed local identity, invokes one run, prints only a safe outcome, closes process-owned resources,
-and exits. It is a development delivery adapter rather than a durable queue or retry system.
+The queue payload uses the versioned `ProcessingJobV1` contract rather than accepting arbitrary
+database or session objects. `WorkerProcessingJobExecutor` creates the worker container only when a
+child handles its first task, reuses process-owned resources safely, and disposes them when that
+child shuts down. The application service revalidates canonical workspace and run state before it
+opens the original or commits derived output.
 
 `ApiSettings` and `WorkerSettings` may load the ignored root development file. The API requires an
 authenticated Redis broker URL when its container is built; host development may derive it from
@@ -111,7 +117,7 @@ without changing the route contract.
 
 Importing `create_app` or exporting OpenAPI does not allocate database resources. The FastAPI
 lifespan creates them only when the server starts and releases them during shutdown. Sessions are
-still created per unit of work; they are never shared across requests or runner executions.
+still created per unit of work; they are never shared across requests or worker executions.
 
 For document capture, the request-body middleware rejects excessive transport payloads before
 multipart parsing. The route then resolves the server-owned workspace and capture service from the

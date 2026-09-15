@@ -13,9 +13,7 @@ from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_PDF_PAGES,
 )
 from investment_research.settings import (
-    MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES,
     MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
-    MIN_PROCESSING_MEMORY_LIMIT_BYTES,
     PARSER_FORBIDDEN_ENVIRONMENT_NAMES,
     PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES,
     PROJECT_ROOT,
@@ -141,6 +139,32 @@ def test_api_settings_load_only_supported_environment_values(
     assert "test-password" not in repr(settings)
 
 
+def test_local_api_ignores_compose_only_s3_region_and_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Allow one shared development file without activating S3 for the host API."""
+
+    env_file = tmp_path / "development.env"
+    env_file.write_text(
+        "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER=local\n"
+        "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT=output/object-storage\n"
+        "INVESTMENT_RESEARCH_S3_REGION_NAME=us-east-1\n"
+        "INVESTMENT_RESEARCH_S3_BUCKET=investment-research-local\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_REDIS_URL",
+        "redis://:synthetic-redis-secret@127.0.0.1:6379/0",
+    )
+
+    settings = load_api_settings(env_file=env_file)
+
+    assert settings.object_storage_provider == "local"
+    assert settings.s3 is None
+
+
 def test_worker_settings_load_only_supported_environment_values(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -160,7 +184,6 @@ def test_worker_settings_load_only_supported_environment_values(
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "1500000")
     monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS", "45")
-    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES", "268435456")
 
     settings = load_worker_settings(env_file=None)
 
@@ -175,7 +198,6 @@ def test_worker_settings_load_only_supported_environment_values(
     assert settings.max_pdf_pages == 100
     assert settings.max_extracted_characters == 1_500_000
     assert settings.processing_timeout_seconds == 45
-    assert settings.processing_memory_limit_bytes == 256 * 1024 * 1024
     assert "test-password" not in repr(settings)
     assert "synthetic-redis-secret" not in repr(settings)
 
@@ -601,16 +623,6 @@ def test_processing_settings_reject_unsafe_parser_limit(
             "processing_timeout_seconds",
             MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS + 1,
             id="excessive-seconds",
-        ),
-        pytest.param(
-            "processing_memory_limit_bytes",
-            MIN_PROCESSING_MEMORY_LIMIT_BYTES - 1,
-            id="insufficient-memory",
-        ),
-        pytest.param(
-            "processing_memory_limit_bytes",
-            MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES + 1,
-            id="excessive-memory",
         ),
     ],
 )

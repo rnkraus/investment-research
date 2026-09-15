@@ -32,9 +32,6 @@ DEFAULT_MAX_PDF_PAGES = 250
 DEFAULT_MAX_EXTRACTED_CHARACTERS = 2_000_000
 DEFAULT_PROCESSING_TIMEOUT_SECONDS = 30
 MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS = 300
-DEFAULT_PROCESSING_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
-MIN_PROCESSING_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
-MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES = 4 * 1024 * 1024 * 1024
 DEFAULT_PARSER_PORT = 8100
 DOCKER_SECRETS_ROOT = Path("/run/secrets")
 POSTGRES_SETTING_NAMES = (
@@ -342,7 +339,7 @@ class ApiSettings(ObjectStorageSettings):
 
 
 class WorkerSettings(ObjectStorageSettings):
-    """Configuration available to the M0.0 runner and later Celery worker."""
+    """Least-privilege configuration available to the Celery worker."""
 
     parser_endpoint_url: str | None = None
     max_parser_request_bytes: int = Field(
@@ -364,11 +361,6 @@ class WorkerSettings(ObjectStorageSettings):
         default=DEFAULT_PROCESSING_TIMEOUT_SECONDS,
         ge=1,
         le=MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
-    )
-    processing_memory_limit_bytes: int = Field(
-        default=DEFAULT_PROCESSING_MEMORY_LIMIT_BYTES,
-        ge=MIN_PROCESSING_MEMORY_LIMIT_BYTES,
-        le=MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES,
     )
 
     @model_validator(mode="after")
@@ -623,18 +615,37 @@ def _queue_runtime_values(
 def _object_storage_runtime_values(file_values: dict[str, str | None]) -> dict[str, object]:
     """Load provider selection and one optional complete S3 configuration."""
 
+    provider = _configuration_value(
+        "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER",
+        file_values,
+        "local",
+    )
     values: dict[str, object] = {
-        "object_storage_provider": _configuration_value(
-            "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER",
-            file_values,
-            "local",
-        ),
+        "object_storage_provider": provider,
         "object_storage_root": _configuration_value(
             "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
             file_values,
             str(DEFAULT_OBJECT_STORAGE_ROOT),
         ),
     }
+
+    if provider != "s3":
+        endpoint_url = _configuration_value(
+            "INVESTMENT_RESEARCH_S3_ENDPOINT_URL",
+            file_values,
+        )
+        access_key_id = _secret_configuration_value(
+            "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
+            file_values,
+        )
+        secret_access_key = _secret_configuration_value(
+            "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
+            file_values,
+        )
+        if any(value is not None for value in (endpoint_url, access_key_id, secret_access_key)):
+            raise ValueError("S3 endpoint and credentials require the s3 object-storage provider")
+        return values
+
     s3_values = {
         "endpoint_url": _configuration_value(
             "INVESTMENT_RESEARCH_S3_ENDPOINT_URL",
@@ -699,7 +710,7 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
 
 
 def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSettings:
-    """Load only values required by the M0.0 runner and later Celery worker."""
+    """Load only values required by the Celery worker."""
 
     file_values = _read_local_values(env_file)
     database_values = _database_runtime_values(file_values)
@@ -730,11 +741,6 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
             "INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS",
             file_values,
             str(DEFAULT_PROCESSING_TIMEOUT_SECONDS),
-        ),
-        "processing_memory_limit_bytes": _configuration_value(
-            "INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES",
-            file_values,
-            str(DEFAULT_PROCESSING_MEMORY_LIMIT_BYTES),
         ),
     }
     return WorkerSettings.model_validate(values)

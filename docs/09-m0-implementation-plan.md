@@ -512,9 +512,13 @@ byte-identical original, and insufficient-evidence response remain intact. The L
 now runs this complete journey after the parser-isolation and worker-loss recovery gates. The
 frontend no longer exposes the temporary M0.0 runner command: it presents automatic queued and
 processing states while polling the unchanged canonical status endpoint. Its formatting, linting,
-type checking, contract check, 15 deterministic tests, and production build pass. The step is not
-complete: the superseded backend runner must be removed, successful hosted CI must be confirmed,
-and the full Step 3 gate remains outstanding.
+type checking, contract check, 15 deterministic tests, and production build pass. The superseded
+backend runner and its exclusive tests have been removed after the replacement acceptance gate
+passed; the oversized-upload storage assertion was retained in the focused document-capture API
+integration suite. The complete local Step 3 gate passes: the locked backend checks, PostgreSQL
+integration and migration cycle, parser-isolation checks, live queue-recovery test, automatic M0
+fixture journey, and frontend checks are green. Successful hosted CI remains the final remote
+confirmation before Step 3 is marked fully complete.
 
 ### Step 4 — Complete local container stack
 

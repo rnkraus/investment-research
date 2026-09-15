@@ -135,3 +135,35 @@ def test_upload_and_open_original_enforce_canonical_workspace(
     storage = LocalObjectStorage(storage_root)
     with storage.open(context, original.storage_key) as stored_file:
         assert stored_file.read() == FIXTURE_PDF.read_bytes()
+
+
+def test_upload_above_configured_limit_does_not_publish_an_object(
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+) -> None:
+    """Reject an oversized PDF before publishing canonical object bytes."""
+
+    storage_root = tmp_path / "objects"
+    settings = integration_api_settings.model_copy(
+        update={
+            "object_storage_root": storage_root,
+            "max_upload_bytes": FIXTURE_PDF.stat().st_size - 1,
+        }
+    )
+    application = create_app(settings)
+
+    with TestClient(application) as client, FIXTURE_PDF.open("rb") as fixture_file:
+        response = client.post(
+            "/api/v1/documents",
+            data={
+                "title": "Oversized document fixture",
+                "language": "en",
+                "published_at": "2026-02-19T00:00:00Z",
+            },
+            files={"file": (FIXTURE_PDF.name, fixture_file, "application/pdf")},
+        )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert response.json()["error"]["message"] == ("uploaded PDF exceeds the configured size limit")
+    assert not storage_root.exists()
