@@ -5,6 +5,7 @@ import os
 import secrets
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -27,6 +28,24 @@ CONTROL_SERVICES = STORAGE_SERVICES[:-1]
 HEALTH_TIMEOUT_SECONDS = 120.0
 POLL_INTERVAL_SECONDS = 0.5
 PROBE_IMAGE = "investment-research-backend-storage-bootstrap:local"
+POSTGRES_DATABASE = "investment_research"
+POSTGRES_USER = "investment_research"
+S3_VERIFICATION_ENVIRONMENT_NAMES = (
+    "INVESTMENT_RESEARCH_OBJECT_STORAGE_INTEGRATION",
+    "INVESTMENT_RESEARCH_OBJECT_STORAGE_PERSISTENCE_PHASE",
+    "INVESTMENT_RESEARCH_S3_ENDPOINT_URL",
+    "INVESTMENT_RESEARCH_S3_REGION_NAME",
+    "INVESTMENT_RESEARCH_S3_BUCKET",
+    "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
+    "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
+)
+API_CONTRACT_ENVIRONMENT_NAMES = (
+    *S3_VERIFICATION_ENVIRONMENT_NAMES,
+    "INVESTMENT_RESEARCH_ENVIRONMENT",
+    "INVESTMENT_RESEARCH_RUNTIME_LOCATION",
+    "INVESTMENT_RESEARCH_DATABASE_URL",
+    "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER",
+)
 
 
 class ObjectStorageVerificationError(RuntimeError):
@@ -43,6 +62,14 @@ def generate_disposable_credential() -> str:
     """Return a shell-, JSON-, and URL-safe credential used by one test project."""
 
     return secrets.token_hex(24)
+
+
+def find_available_loopback_port() -> int:
+    """Reserve an available loopback port long enough to choose a disposable mapping."""
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return int(listener.getsockname()[1])
 
 
 def run_command(
@@ -294,16 +321,9 @@ def verification_container_command(
 ) -> list[str]:
     """Build one confined test-container command without credential values."""
 
-    environment_names = (
-        "INVESTMENT_RESEARCH_OBJECT_STORAGE_INTEGRATION",
-        "INVESTMENT_RESEARCH_OBJECT_STORAGE_PERSISTENCE_PHASE",
-        "INVESTMENT_RESEARCH_S3_ENDPOINT_URL",
-        "INVESTMENT_RESEARCH_S3_REGION_NAME",
-        "INVESTMENT_RESEARCH_S3_BUCKET",
-        "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
-        "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
-    )
-    environment_arguments = [argument for name in environment_names for argument in ("--env", name)]
+    environment_arguments = [
+        argument for name in S3_VERIFICATION_ENVIRONMENT_NAMES for argument in ("--env", name)
+    ]
     return [
         "docker",
         "run",
@@ -326,6 +346,81 @@ def verification_container_command(
     ]
 
 
+def run_api_contract_test(
+    *,
+    image: str,
+    project_name: str,
+    environment: Mapping[str, str],
+) -> None:
+    """Run the API contract in one container connected only to its two data planes."""
+
+    container_name = f"{project_name}-api-contract"
+    environment_arguments = [
+        argument for name in API_CONTRACT_ENVIRONMENT_NAMES for argument in ("--env", name)
+    ]
+    test_exit_code = 0
+    try:
+        run_command(
+            "Create isolated API object-storage contract container",
+            [
+                "docker",
+                "create",
+                "--name",
+                container_name,
+                "--network",
+                f"{project_name}_storage-data",
+                "--read-only",
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges:true",
+                "--pids-limit=128",
+                "--memory=512m",
+                "--cpus=1",
+                *environment_arguments,
+                image,
+                "-p",
+                "no:cacheprovider",
+                "-q",
+                f"{INTEGRATION_TEST}::test_api_capture_and_authorized_original_open_use_seaweedfs",
+            ],
+            working_directory=REPOSITORY_ROOT,
+            environment=environment,
+        )
+        run_command(
+            "Connect API contract container to isolated PostgreSQL",
+            [
+                "docker",
+                "network",
+                "connect",
+                f"{project_name}_default",
+                container_name,
+            ],
+            working_directory=REPOSITORY_ROOT,
+            environment=environment,
+        )
+        run_command(
+            "Run API capture and authorized original-open contract",
+            ["docker", "start", "--attach", container_name],
+            working_directory=REPOSITORY_ROOT,
+            environment=environment,
+        )
+    except subprocess.CalledProcessError as error:
+        test_exit_code = error.returncode or 1
+    finally:
+        cleanup = run_command(
+            "Remove isolated API object-storage contract container",
+            ["docker", "container", "rm", "--force", container_name],
+            working_directory=REPOSITORY_ROOT,
+            environment=environment,
+            check=False,
+        )
+        if cleanup.returncode != 0 and test_exit_code == 0:
+            test_exit_code = cleanup.returncode
+    if test_exit_code != 0:
+        raise subprocess.CalledProcessError(test_exit_code, ["docker", "start", container_name])
+
+
 def verify_object_storage() -> int:
     """Create, verify, restart, and always remove one isolated SeaweedFS environment."""
 
@@ -337,6 +432,8 @@ def verify_object_storage() -> int:
     project_name = f"investment-research-storage-check-{run_id}"
     verification_image = f"investment-research-object-storage-verification:{run_id}"
     bucket = f"investment-research-check-{run_id}"
+    postgres_port = find_available_loopback_port()
+    postgres_password = generate_disposable_credential()
     admin_access_key = generate_disposable_credential()
     admin_secret_access_key = generate_disposable_credential()
     application_access_key = generate_disposable_credential()
@@ -351,10 +448,10 @@ def verify_object_storage() -> int:
     compose_environment.update(
         {
             "COMPOSE_DISABLE_ENV_FILE": "1",
-            "POSTGRES_DB": "unused_storage_check",
-            "POSTGRES_USER": "unused_storage_check",
-            "POSTGRES_PASSWORD": generate_disposable_credential(),
-            "POSTGRES_PORT": "55432",
+            "POSTGRES_DB": POSTGRES_DATABASE,
+            "POSTGRES_USER": POSTGRES_USER,
+            "POSTGRES_PASSWORD": postgres_password,
+            "POSTGRES_PORT": str(postgres_port),
             "SEAWEEDFS_ADMIN_ACCESS_KEY": admin_access_key,
             "SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY": admin_secret_access_key,
             "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID": application_access_key,
@@ -366,8 +463,22 @@ def verify_object_storage() -> int:
     verification_environment = compose_environment | {
         "INVESTMENT_RESEARCH_OBJECT_STORAGE_INTEGRATION": "1",
         "INVESTMENT_RESEARCH_OBJECT_STORAGE_PERSISTENCE_PHASE": "unused",
+        "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
+        "INVESTMENT_RESEARCH_RUNTIME_LOCATION": "container",
+        "INVESTMENT_RESEARCH_DATABASE_URL": (
+            f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
+            f"@postgres:5432/{POSTGRES_DATABASE}"
+        ),
+        "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER": "s3",
         "INVESTMENT_RESEARCH_S3_ENDPOINT_URL": "http://seaweedfs-s3:8333",
     }
+    migration_environment = compose_environment | {
+        "INVESTMENT_RESEARCH_DATABASE_URL": (
+            f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
+            f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
+        )
+    }
+    python_command = [sys.executable, "-m"]
     compose_command = [
         "docker",
         "compose",
@@ -396,14 +507,34 @@ def verify_object_storage() -> int:
             environment=compose_environment,
         )
         run_command(
-            "Build and start isolated SeaweedFS",
-            [*compose_command, "up", "--build", "--detach", "seaweedfs-bootstrap"],
+            "Build and start isolated PostgreSQL and SeaweedFS",
+            [
+                *compose_command,
+                "up",
+                "--build",
+                "--detach",
+                "postgres",
+                "seaweedfs-bootstrap",
+            ],
             working_directory=REPOSITORY_ROOT,
             environment=compose_environment,
         )
+        wait_for_healthy_service(compose_command, "postgres", environment=compose_environment)
         for service in STORAGE_SERVICES:
             wait_for_healthy_service(compose_command, service, environment=compose_environment)
         wait_for_successful_bootstrap(compose_command, environment=compose_environment)
+        run_command(
+            "Migrate isolated PostgreSQL database",
+            [*python_command, "alembic", "-c", "alembic.ini", "upgrade", "head"],
+            working_directory=BACKEND_ROOT,
+            environment=migration_environment,
+        )
+        run_command(
+            "Seed isolated PostgreSQL workspaces",
+            [*python_command, "scripts.seed_m0_0"],
+            working_directory=BACKEND_ROOT,
+            environment=migration_environment,
+        )
         verify_runtime_metadata(
             compose_command,
             environment=compose_environment,
@@ -425,10 +556,18 @@ def verify_object_storage() -> int:
                     "-q",
                     INTEGRATION_TEST,
                     "-k",
-                    "not test_object_survives_storage_restart",
+                    (
+                        "not test_object_survives_storage_restart and "
+                        "not test_api_capture_and_authorized_original_open_use_seaweedfs"
+                    ),
                 ),
             ),
             working_directory=REPOSITORY_ROOT,
+            environment=verification_environment,
+        )
+        run_api_contract_test(
+            image=verification_image,
+            project_name=project_name,
             environment=verification_environment,
         )
         run_command(
