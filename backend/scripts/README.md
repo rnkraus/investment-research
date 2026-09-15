@@ -4,16 +4,18 @@ This directory contains small, reviewable development utilities. Scripts support
 
 ## Contents
 
-| File                       | Responsibility                                                                           |
-| -------------------------- | ---------------------------------------------------------------------------------------- |
-| `__init__.py`              | Makes development commands importable for tests and `python -m` execution.               |
-| `export_openapi.py`        | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
-| `seed_m0_0.py`             | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
-| `verify_backend.py`        | Runs all deterministic backend static checks and unit tests.                             |
-| `verify_backend_images.py` | Builds and exercises every backend image target in an isolated runtime.                  |
-| `verify_object_storage.py` | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
-| `verify_paths.py`          | Runs deterministic checks for explicitly selected backend Python files.                  |
-| `verify_postgres.py`       | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
+| File                         | Responsibility                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `__init__.py`                | Makes development commands importable for tests and `python -m` execution.               |
+| `docker_secrets.py`          | Creates temporary mode-`0600` files for disposable Compose secrets.                      |
+| `export_openapi.py`          | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
+| `seed_m0_0.py`               | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
+| `verify_backend.py`          | Runs all deterministic backend static checks and unit tests.                             |
+| `verify_backend_images.py`   | Builds and exercises every backend image target in an isolated runtime.                  |
+| `verify_object_storage.py`   | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
+| `verify_parser_isolation.py` | Exercises the final parser image, protocol, resources, and network isolation.            |
+| `verify_paths.py`            | Runs deterministic checks for explicitly selected backend Python files.                  |
+| `verify_postgres.py`         | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 
 ## Contract flow
 
@@ -97,16 +99,17 @@ flowchart LR
 ```
 
 The verification command selects an available loopback port, generates a random disposable
-password, and uses a unique Compose project name. Cleanup runs after success, command failure, or
-test failure. It removes only resources owned by that invocation and never targets the normal M0.0
-development database or its volume.
+password, writes it to a temporary mode-`0600` Compose secret file, and uses a unique Compose
+project name. Cleanup runs after success, command failure, or test failure. It removes only
+resources owned by that invocation and never targets the normal M0.0 development database or its
+volume. The temporary secret directory is removed when the command exits.
 
 ## Isolated object-storage verification
 
 ```mermaid
 flowchart LR
     COMMAND[verify_object_storage.py] --> IMAGE[Locked non-root verification image]
-    IMAGE --> COMPOSE[Unique PostgreSQL and SeaweedFS Compose project]
+    IMAGE --> COMPOSE[Unique PostgreSQL, Redis, and SeaweedFS Compose project]
     COMPOSE --> MIGRATE[Alembic migration and workspace seed]
     COMPOSE --> BOOTSTRAP[Private bucket bootstrap]
     BOOTSTRAP --> CONTRACTS[Direct S3 and isolation contracts]
@@ -124,11 +127,12 @@ Run the complete SeaweedFS gate from `backend/` with Docker running:
 uv run --locked python -m scripts.verify_object_storage
 ```
 
-The command generates a disposable PostgreSQL password, administrator and application credentials,
-a private bucket, a unique Compose project, and a unique verification image. Direct S3 tests reach
-only the gateway through the internal `storage-data` network. A separately confined API contract
-container joins that network and the project's PostgreSQL network, captures a synthetic PDF through
-`POST /api/v1/documents`, and reopens the immutable bytes through the authorized original endpoint.
+The command generates disposable PostgreSQL and Redis passwords, administrator and application
+storage credentials, a private bucket, a unique Compose project, and a unique verification image.
+Direct S3 tests reach only the gateway through the internal `storage-data` network. A separately
+confined API contract container joins that network and the project's backend network, captures a
+synthetic PDF through `POST /api/v1/documents`, publishes its processing task to Redis, and reopens
+the immutable bytes through the authorized original endpoint.
 SeaweedFS publishes no host port. Tests cover immutable conditional creation under concurrency,
 checksum and byte integrity, open and cleanup, missing/foreign non-disclosure, workspace key scope,
 least-privilege application credentials, and restart persistence. Runtime inspection also verifies
@@ -136,9 +140,39 @@ non-root users, dropped capabilities, `no-new-privileges`, read-only control-ser
 unpublished storage ports, secret-file delivery, and control-plane network isolation.
 
 The command does not load repository `.env` values. It migrates and seeds its own PostgreSQL volume;
-generated secrets are passed without values in displayed command arguments. Cleanup always targets
-only that invocation's unique project, networks, volumes, contract container, and verification
-image, including after a failed build or test.
+generated secrets are mounted from temporary mode-`0600` files and their values never appear in
+displayed command arguments. Cleanup always targets only that invocation's unique project,
+networks, volumes, contract container, verification image, and temporary secret directory,
+including after a failed build or test.
+
+## Parser-isolation verification
+
+```mermaid
+flowchart LR
+    COMMAND[verify_parser_isolation.py] --> IMAGES[Build worker and parser images]
+    IMAGES --> COMPOSE[Start Redis and parser on separate internal networks]
+    COMPOSE --> INSPECT[Inspect user, mounts, capabilities, and resource limits]
+    INSPECT --> NEGATIVE[Probe secret, filesystem, backend, and internet denial]
+    NEGATIVE --> VALID[Parse the frozen PDF through the private protocol]
+    VALID --> LIMITS[Reject request and extracted-text limit violations]
+    LIMITS --> CLEANUP[Remove project, volumes, images, and secret files]
+```
+
+Run the parser boundary gate from `backend/` with Docker running:
+
+```shell
+uv run --locked python -m scripts.verify_parser_isolation
+```
+
+The parser joins only the internal `parser` network; the worker is the sole bridge to the separate
+backend and storage-data networks. Runtime inspection requires the declared non-root identity,
+read-only root filesystem, dropped capabilities, `no-new-privileges`, exact CPU, memory, and process
+limits, bounded temporary storage, no published ports, no application secrets, and no Docker socket
+or repository mount. Active probes verify that `/app` is not writable, `/tmp` remains usable, and
+connections to Redis and the external network fail. A worker-image probe must still parse the
+repository-owned PDF through `POST /internal/v1/parse`, while request-size and extracted-text limits
+fail with typed, safe outcomes. The unique Compose project and temporary secrets are removed even
+when a check fails.
 
 ## Backend image verification
 
@@ -167,7 +201,8 @@ credential names from image configuration and build history.
 
 It then creates a uniquely named PostgreSQL Compose project with a random disposable password,
 migrates the empty database to Alembic `head`, and supplies the API database URL only through the
-container's runtime environment. The API must become healthy and return the exact public liveness
-and readiness responses. Displayed commands contain environment-variable names but never their
-values. Cleanup removes only the resources and temporary image tags owned by that invocation,
+container's runtime environment. PostgreSQL receives its password through a temporary mode-`0600`
+secret file. The API must become healthy and return the exact public liveness and readiness
+responses. Displayed commands contain environment-variable names but never their values. Cleanup
+removes only the resources, temporary image tags, and secret directory owned by that invocation,
 including after a failed build or runtime check.
