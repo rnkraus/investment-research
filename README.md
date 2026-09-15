@@ -223,6 +223,15 @@ limit failures, and removes its disposable resources:
 uv run --locked python -m scripts.verify_parser_isolation
 ```
 
+Verify the complete automatic M0 fixture journey from `backend/`. The command creates a fresh
+disposable runtime, captures the synthetic PDF through the API application, waits for Celery and the
+isolated parser to reach `LEXICAL_READY`, verifies the validated answer, exact citation, original
+bytes, and insufficient-evidence response, and removes every resource it created:
+
+```shell
+uv run --locked python -m scripts.verify_m0_runtime
+```
+
 ## Run database migrations and seed data
 
 With PostgreSQL running and the root `.env` configured, migrate the schema and create the two

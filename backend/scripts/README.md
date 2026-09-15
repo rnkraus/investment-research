@@ -12,6 +12,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `seed_m0_0.py`               | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
 | `verify_backend.py`          | Runs all deterministic backend static checks and unit tests.                             |
 | `verify_backend_images.py`   | Builds and exercises every backend image target in an isolated runtime.                  |
+| `verify_m0_runtime.py`       | Proves the complete fixture journey through the production-shaped M0 runtime.            |
 | `verify_object_storage.py`   | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
 | `verify_parser_isolation.py` | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`            | Runs deterministic checks for explicitly selected backend Python files.                  |
@@ -205,6 +206,37 @@ is resumed after the deliberately shortened disposable lease expires.
 Success requires the redelivered task to reach `LEXICAL_READY` on its second canonical attempt with
 exactly one expected set of structure blocks, chunks, and chunk-set output. Cleanup removes the
 unique project and its volumes after both success and failure.
+
+## Complete M0 runtime verification
+
+```mermaid
+flowchart LR
+    COMMAND[verify_m0_runtime.py] --> STACK[Fresh PostgreSQL, Redis, SeaweedFS, parser, and worker]
+    STACK --> MIGRATE[Alembic migration and seed]
+    MIGRATE --> CAPTURE[API capture publishes Celery job]
+    CAPTURE --> READY[Worker reaches LEXICAL_READY]
+    READY --> ANSWER[Validated answer and exact citation]
+    ANSWER --> REFUSE[Insufficient-evidence control case]
+    REFUSE --> CLEANUP[Remove project, volumes, and test image]
+```
+
+Run the complete automatic fixture journey from `backend/` with Docker running:
+
+```shell
+uv run --locked python -m scripts.verify_m0_runtime
+```
+
+The command combines `compose.yaml` with the test-only `compose.test.yaml`, creates a unique project,
+generates disposable file-backed credentials, migrates and seeds a fresh database, and runs the
+frozen public fixture through the real API application, Celery worker, isolated parser, SeaweedFS,
+and PostgreSQL. The acceptance container runs non-root with a read-only root filesystem and receives
+only the backend and object-storage data networks. It never starts the M0.0 manual runner.
+
+Success requires the answerable fixture question to return its validated statement and exact
+page-two evidence, the original endpoint to return byte-identical PDF content, and the unanswerable
+control question to return only the insufficient-evidence event. The unique Compose project, its
+volumes, generated secrets, and the uniquely tagged verification image are removed after success or
+failure.
 
 ## Backend image verification
 
