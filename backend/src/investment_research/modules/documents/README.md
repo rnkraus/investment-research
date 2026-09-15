@@ -37,13 +37,26 @@ flowchart TD
     UOW --> PROCESSING[ProcessingRepository]
     DOCS --> PG[(PostgreSQL transaction)]
     PROCESSING --> PG
-    PG -->|commit succeeds| RESULT[Return stable capture identifiers]
+    PG -->|commit succeeds| JOB[Build versioned ProcessingJobV1]
+    JOB --> DISPATCH[ProcessingDispatcher]
+    DISPATCH -->|publish succeeds| RESULT[Return stable capture identifiers]
+    DISPATCH -->|broker failure| LOG[Record safe operational event]
+    LOG --> CAPTURED[Return identifiers; run remains CAPTURED]
     PG -->|commit fails| DISCARD[Discard only the uncommitted stored object]
 ```
 
 The service accepts only a declared `application/pdf` with a `.pdf` filename and a supported `%PDF-…` signature. It enforces the configured byte limit before publishing an object, keeps at most 1 MiB of the validation spool in memory, calculates SHA-256 while copying, and verifies the storage adapter's returned key, size, and checksum.
 
 `add_capture` rejects mismatched workspace or entity relationships before staging rows. It never commits. The capture unit of work binds both module repositories to one caller-owned SQLAlchemy session, so document metadata and the processing intent commit or roll back together. Because object storage cannot participate in the PostgreSQL transaction, a failed canonical transaction invokes the narrowly scoped `discard_uncommitted` compensation. It is not a general deletion path for committed originals.
+
+After the canonical transaction closes successfully, the service creates the strict versioned
+`ProcessingJobV1` and calls the application-owned `ProcessingDispatcher`. An expected broker
+publication failure records only the safe workspace and processing-run identifiers, returns the
+committed capture result, and leaves the run visibly `CAPTURED` for recovery. Dispatch is outside the
+compensation block, so neither a broker failure nor an unexpected post-commit error can delete an
+already canonical original. The Celery adapter exists; API-container wiring is the next M0 Step 3
+work block. Until that wiring replaces the temporary optional dispatcher, the retained M0.0 runner
+path can still construct the capture service without queue publication.
 
 ## Original access
 

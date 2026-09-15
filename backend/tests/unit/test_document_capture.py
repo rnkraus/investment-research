@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
+from logging import Logger
 from pathlib import Path
 from typing import cast
 from unittest.mock import create_autospec
@@ -28,8 +29,13 @@ from investment_research.modules.documents.ports import (
     ObjectNotFoundError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.domain import ProcessingState
-from investment_research.modules.processing.ports import ProcessingRepository
+from investment_research.modules.processing.ports import (
+    ProcessingDispatcher,
+    ProcessingDispatchError,
+    ProcessingRepository,
+)
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -51,13 +57,41 @@ class RecordingUnitOfWork:
         self.documents = cast(DocumentRepository, self.document_mock)
         self.processing = cast(ProcessingRepository, self.processing_mock)
         self.enter_count = 0
+        self.is_open = False
 
     @contextmanager
     def open(self) -> Iterator[CaptureUnitOfWork]:
         """Record transaction entry while yielding the shared repository pair."""
 
         self.enter_count += 1
-        yield self
+        self.is_open = True
+        try:
+            yield self
+        finally:
+            self.is_open = False
+
+
+class RecordingProcessingDispatcher:
+    """Record publication order and optionally simulate one provider failure."""
+
+    def __init__(
+        self,
+        unit_of_work: RecordingUnitOfWork,
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self._unit_of_work = unit_of_work
+        self._error = error
+        self.jobs: list[ProcessingJobV1] = []
+        self.transaction_states: list[bool] = []
+
+    def dispatch(self, job: ProcessingJobV1) -> None:
+        """Record the job and whether capture still owns an open transaction."""
+
+        self.jobs.append(job)
+        self.transaction_states.append(self._unit_of_work.is_open)
+        if self._error is not None:
+            raise self._error
 
 
 def make_context() -> WorkspaceContext:
@@ -88,6 +122,7 @@ def make_service(
     unit_of_work: RecordingUnitOfWork,
     *,
     max_upload_bytes: int = 1024,
+    processing_dispatcher: ProcessingDispatcher | None = None,
 ) -> CaptureDocumentService:
     """Build a deterministic service with real local storage and fake persistence."""
 
@@ -97,6 +132,7 @@ def make_service(
         object_storage=LocalObjectStorage(tmp_path / "objects"),
         unit_of_work_factory=unit_of_work_factory,
         max_upload_bytes=max_upload_bytes,
+        processing_dispatcher=processing_dispatcher,
         clock=lambda: CAPTURED_AT,
         identifier_factory=identifiers.__next__,
     )
@@ -104,7 +140,12 @@ def make_service(
 
 def test_capture_preserves_pdf_and_stages_consistent_canonical_records(tmp_path: Path) -> None:
     unit_of_work = RecordingUnitOfWork()
-    service = make_service(tmp_path, unit_of_work)
+    dispatcher = RecordingProcessingDispatcher(unit_of_work)
+    service = make_service(
+        tmp_path,
+        unit_of_work,
+        processing_dispatcher=dispatcher,
+    )
 
     result = service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
@@ -132,6 +173,13 @@ def test_capture_preserves_pdf_and_stages_consistent_canonical_records(tmp_path:
     assert processing_run.document_version_id == VERSION_ID
     assert processing_run.state is ProcessingState.CAPTURED
     assert processing_run.created_at == CAPTURED_AT
+    assert dispatcher.jobs == [
+        ProcessingJobV1.create(
+            workspace_id=WORKSPACE_ID,
+            processing_run_id=PROCESSING_RUN_ID,
+        )
+    ]
+    assert dispatcher.transaction_states == [False]
 
     storage = LocalObjectStorage(tmp_path / "objects")
     with storage.open(make_context(), original.storage_key) as stored_file:
@@ -145,13 +193,19 @@ def test_capture_discards_stored_object_when_canonical_transaction_fails(
     unit_of_work.processing_mock.add_run.side_effect = RuntimeError(
         "simulated canonical transaction failure"
     )
-    service = make_service(tmp_path, unit_of_work)
+    dispatcher = RecordingProcessingDispatcher(unit_of_work)
+    service = make_service(
+        tmp_path,
+        unit_of_work,
+        processing_dispatcher=dispatcher,
+    )
 
     with pytest.raises(RuntimeError, match="canonical transaction failure"):
         service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
     unit_of_work.document_mock.add_capture.assert_called_once()
     unit_of_work.processing_mock.add_run.assert_called_once()
+    assert dispatcher.jobs == []
     storage = LocalObjectStorage(tmp_path / "objects")
     storage_key = f"workspaces/{WORKSPACE_ID}/originals/{ORIGINAL_ID}.pdf"
     with (
@@ -159,6 +213,63 @@ def test_capture_discards_stored_object_when_canonical_transaction_fails(
         storage.open(make_context(), storage_key),
     ):
         pytest.fail("a failed capture must not leave a published object")
+
+
+def test_capture_preserves_committed_state_when_dispatch_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    dispatcher = RecordingProcessingDispatcher(
+        unit_of_work,
+        error=ProcessingDispatchError("synthetic private broker failure"),
+    )
+    logger = create_autospec(Logger, instance=True)
+    monkeypatch.setattr(
+        "investment_research.modules.documents.application.LOGGER",
+        logger,
+    )
+    service = make_service(
+        tmp_path,
+        unit_of_work,
+        processing_dispatcher=dispatcher,
+    )
+
+    result = service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+
+    assert result.state is ProcessingState.CAPTURED
+    assert dispatcher.transaction_states == [False]
+    logger.warning.assert_called_once_with(
+        "processing.dispatch.failed",
+        extra={"workspace_id": WORKSPACE_ID, "job_id": PROCESSING_RUN_ID},
+    )
+    assert "broker failure" not in str(logger.warning.call_args)
+    storage_key = f"workspaces/{WORKSPACE_ID}/originals/{ORIGINAL_ID}.pdf"
+    with LocalObjectStorage(tmp_path / "objects").open(make_context(), storage_key) as stored_file:
+        assert stored_file.read() == PDF_CONTENT
+
+
+def test_capture_does_not_delete_committed_original_after_programming_error(
+    tmp_path: Path,
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    dispatcher = RecordingProcessingDispatcher(
+        unit_of_work,
+        error=TypeError("synthetic programming error"),
+    )
+    service = make_service(
+        tmp_path,
+        unit_of_work,
+        processing_dispatcher=dispatcher,
+    )
+
+    with pytest.raises(TypeError, match="synthetic programming error"):
+        service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+
+    assert dispatcher.transaction_states == [False]
+    storage_key = f"workspaces/{WORKSPACE_ID}/originals/{ORIGINAL_ID}.pdf"
+    with LocalObjectStorage(tmp_path / "objects").open(make_context(), storage_key) as stored_file:
+        assert stored_file.read() == PDF_CONTENT
 
 
 @pytest.mark.parametrize(
