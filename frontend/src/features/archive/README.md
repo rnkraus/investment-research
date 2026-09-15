@@ -9,7 +9,7 @@ PostgreSQL, or process PDF content.
 | File                    | Responsibility                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------- |
 | `copy.ts`               | Centralizes feature text and synthetic fixture defaults for later localization. |
-| `document-workflow.tsx` | Captures one PDF, presents the runner command, and polls canonical status.      |
+| `document-workflow.tsx` | Captures one PDF and polls its canonical background-processing status.          |
 | `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.           |
 | `research-workflow.tsx` | Asks a bounded question and opens resolved evidence in the original PDF.        |
 
@@ -21,8 +21,9 @@ flowchart LR
     FORM --> CLIENT[Typed API client]
     CLIENT --> CAPTURE[FastAPI capture endpoint]
     CAPTURE --> ACCEPTED[DocumentAccepted]
-    ACCEPTED --> COMMAND[Local runner command]
-    COMMAND --> RUNNER[Separate bounded runner]
+    CAPTURE --> QUEUE[Processing task dispatch]
+    QUEUE --> WORKER[Celery worker]
+    WORKER --> RUNNER[Isolated parser runner]
     FORM --> POLL[Poll processing status]
     RUNNER --> STATUS[Canonical ProcessingRun state]
     STATUS --> POLL
@@ -30,10 +31,10 @@ flowchart LR
 ```
 
 The upload response supplies the processing status URL and canonical identifiers. The browser never
-starts PDF parsing inside the API process. During M0.0, the user runs the displayed single-job
-command in a separate terminal while the component polls the workspace-scoped status endpoint. M0
-will replace that manual delivery step with Celery while preserving the same processing service and
-status contract.
+starts PDF parsing inside the API process. The capture endpoint commits the canonical `CAPTURED`
+run and publishes its task to Celery, and the component polls the workspace-scoped status endpoint
+until the run reaches `LEXICAL_READY` or `FAILED`. The worker invokes the isolated parser runner
+while preserving the processing service and status contract established in M0.0.
 
 All network access goes through `src/lib/api/client.ts`. Raw exceptions are not rendered. The
 component displays only safe API messages or a generic local failure message, and active requests
