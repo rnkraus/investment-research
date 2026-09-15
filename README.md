@@ -258,7 +258,9 @@ the reviewed migration can downgrade to base and upgrade back to head. A separat
 the Dockerfile and Compose configuration, then builds and exercises every backend target through the
 same disposable API-readiness gate used locally. The processing-runtime job exercises the
 credential-free parser boundary and real Celery/Redis recovery after forced pool-worker loss in
-separate disposable Compose projects with generated credentials and automatic cleanup.
+separate disposable Compose projects with generated credentials and automatic cleanup. It then
+runs the complete automatic fixture journey through capture, processing, research, exact evidence,
+original access, and the insufficient-evidence control case.
 
 ## Update API contracts
 
