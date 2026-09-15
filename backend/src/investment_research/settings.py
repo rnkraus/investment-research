@@ -343,6 +343,12 @@ class ApiSettings(ObjectStorageSettings):
 class WorkerSettings(ObjectStorageSettings):
     """Configuration available to the M0.0 runner and later Celery worker."""
 
+    parser_endpoint_url: str | None = None
+    max_parser_request_bytes: int = Field(
+        default=DEFAULT_MAX_UPLOAD_BYTES,
+        ge=1024,
+        le=MAX_CONFIGURABLE_UPLOAD_BYTES,
+    )
     max_pdf_pages: int = Field(
         default=DEFAULT_MAX_PDF_PAGES,
         ge=1,
@@ -364,12 +370,54 @@ class WorkerSettings(ObjectStorageSettings):
         le=MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES,
     )
 
+    @model_validator(mode="after")
+    def require_supported_parser_endpoint(self) -> WorkerSettings:
+        """Restrict parser traffic to the isolated local runtime endpoint."""
+
+        if self.parser_endpoint_url is None:
+            return self
+        try:
+            endpoint = urlsplit(self.parser_endpoint_url)
+            port = endpoint.port
+        except ValueError as error:
+            raise ValueError("parser_endpoint_url must be a valid HTTP URL") from error
+        if endpoint.scheme != "http":
+            raise ValueError("parser_endpoint_url must use HTTP")
+        if endpoint.username or endpoint.password:
+            raise ValueError("parser_endpoint_url must not contain credentials")
+        if endpoint.path not in {"", "/"} or endpoint.query or endpoint.fragment:
+            raise ValueError("parser_endpoint_url must not contain a path, query, or fragment")
+        if port is not None and port < 1:
+            raise ValueError("parser_endpoint_url port must be between 1 and 65535")
+
+        if self.runtime_location == "container":
+            valid_host = endpoint.hostname == "parser"
+            target = "the Compose parser service"
+        else:
+            valid_host = endpoint.hostname is not None and _is_loopback_host(endpoint.hostname)
+            target = "localhost or a loopback IP address"
+        if not valid_host:
+            raise ValueError(f"parser_endpoint_url must target {target}")
+        return self
+
+    def require_parser_endpoint_url(self) -> str:
+        """Return the internal endpoint only for workers using isolated parsing."""
+
+        if self.parser_endpoint_url is None:
+            raise RuntimeError("parser endpoint configuration is required")
+        return self.parser_endpoint_url
+
 
 class ParserSettings(RuntimeSettings):
     """Non-secret configuration available to the isolated parser process."""
 
     parser_host: str = "127.0.0.1"
     parser_port: int = Field(default=DEFAULT_PARSER_PORT, ge=1024, le=65535)
+    max_request_bytes: int = Field(
+        default=DEFAULT_MAX_UPLOAD_BYTES,
+        ge=1024,
+        le=MAX_CONFIGURABLE_UPLOAD_BYTES,
+    )
     max_pdf_pages: int = Field(
         default=DEFAULT_MAX_PDF_PAGES,
         ge=1,
@@ -625,6 +673,15 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
             file_values,
             str(DEFAULT_MAX_PDF_PAGES),
         ),
+        "parser_endpoint_url": _configuration_value(
+            "INVESTMENT_RESEARCH_PARSER_ENDPOINT_URL",
+            file_values,
+        ),
+        "max_parser_request_bytes": _configuration_value(
+            "INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES",
+            file_values,
+            str(DEFAULT_MAX_UPLOAD_BYTES),
+        ),
         "max_extracted_characters": _configuration_value(
             "INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS",
             file_values,
@@ -676,6 +733,11 @@ def load_parser_settings() -> ParserSettings:
             "INVESTMENT_RESEARCH_PARSER_PORT",
             file_values,
             str(DEFAULT_PARSER_PORT),
+        ),
+        "max_request_bytes": _configuration_value(
+            "INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES",
+            file_values,
+            str(DEFAULT_MAX_UPLOAD_BYTES),
         ),
         "max_pdf_pages": _configuration_value(
             "INVESTMENT_RESEARCH_MAX_PDF_PAGES",

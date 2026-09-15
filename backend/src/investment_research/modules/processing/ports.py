@@ -28,6 +28,14 @@ class ParserLimitExceededError(DocumentParserError):
     """Raised when parsing would exceed an application-owned safety limit."""
 
 
+class ParserTransportError(DocumentParserError):
+    """Raised when the isolated parser cannot complete its private transport."""
+
+
+class ParserProtocolError(DocumentParserError):
+    """Raised when the isolated parser violates its versioned response contract."""
+
+
 class ProcessingExecutionLimitError(Exception):
     """Raised when the outer runner reaches a process-level execution limit."""
 

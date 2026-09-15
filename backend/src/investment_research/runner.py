@@ -13,6 +13,7 @@ from types import FrameType
 from uuid import UUID
 
 from investment_research.bootstrap import build_worker_container
+from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.processing.application import ProcessDocumentService
 from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
@@ -151,7 +152,7 @@ def execute_single_job(
 ) -> ProcessingRun:
     """Build runner-owned resources, execute one run, and always release them."""
 
-    container = build_worker_container(settings)
+    container = build_worker_container(settings, parser=PypdfDocumentParser())
     try:
         executor = SingleJobProcessingExecutor(
             processing_service=container.process_document_service,

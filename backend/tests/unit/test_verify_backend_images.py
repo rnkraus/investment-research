@@ -179,7 +179,18 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     )
     assert "disposable-password" not in api_command
     assert not any("postgresql+psycopg" in argument for argument in api_command)
-    assert api_command.count("--env") == 5
+    assert api_command.count("--env") == 6
+    assert "INVESTMENT_RESEARCH_REDIS_URL" in api_command
+
+    api_environment = next(
+        environment
+        for label, _, environment in calls
+        if label == "Start the API image with runtime-only configuration"
+    )
+    assert api_environment is not None
+    assert api_environment["INVESTMENT_RESEARCH_REDIS_URL"] == (
+        "redis://:synthetic-unused-password@redis:6379/0"
+    )
 
     migration_environment = next(
         environment

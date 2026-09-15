@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import (
+    PDF_PARSER_CONFIG_VERSION_V1,
     ParsedDocument,
     ParserLimits,
     ProcessingJobV1,
@@ -60,7 +61,7 @@ class ProcessingProfile:
 
 M0_0_PROCESSING_PROFILE = ProcessingProfile(
     parser_version="pypdf-6.16.2",
-    parser_config_version="m0.0-pdf-bounds-v1",
+    parser_config_version=PDF_PARSER_CONFIG_VERSION_V1,
     chunker_version="m0.0-structure-block-v1",
     chunking_config_version="m0.0-structure-block-config-v1",
     lexical_config_version="m0.0-english-lexical-v1",

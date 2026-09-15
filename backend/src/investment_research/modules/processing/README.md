@@ -162,12 +162,33 @@ The API maps a visible snapshot to `ProcessingRunResult`, which contains no work
 processing configuration. `error_summary` is present only for `FAILED` and was sanitized by the
 processing service before persistence.
 
+## Isolated parser adapter
+
+The Celery worker receives `HttpDocumentParser` through the existing `DocumentParser` port. The
+adapter sends bounded PDF bytes and `ParserRequestV1` metadata to the fixed private parser endpoint,
+then validates `ParserResponseV1` before returning a `ParsedDocument`. The application service does
+not know whether parsing occurred locally or across the isolated transport.
+
+```mermaid
+flowchart LR
+    SERVICE[ProcessDocumentService] --> PORT[DocumentParser port]
+    PORT --> HTTP[HttpDocumentParser]
+    HTTP -->|private bounded protocol| APP[Credential-free parser app]
+    APP --> PYPDF[PypdfDocumentParser]
+```
+
+Transport, protocol, document, and limit failures use application-owned exception types. This lets
+the processing service persist a safe canonical failure without storing HTTP, pypdf, or untrusted
+exception details. See the [parsing infrastructure README](../../infrastructure/parsing/README.md)
+for the complete protocol boundary.
+
 ## Single-job runner
 
 `investment_research.runner` is the development-only `ProcessingExecutor` adapter. It accepts one
 processing-run UUID, resolves the fixed local `WorkspaceContext`, applies the configured process
-bounds, calls `ProcessDocumentService`, and exits. It cannot accept an API session or client-chosen
-workspace identifier.
+bounds, explicitly injects the in-process `PypdfDocumentParser`, calls `ProcessDocumentService`, and
+exits. This remains only as the documented M0.0 fixture exception until the isolated Celery path
+passes its acceptance gate. It cannot accept an API session or client-chosen workspace identifier.
 
 ```mermaid
 flowchart LR

@@ -71,6 +71,7 @@ def make_worker_settings(object_storage_root: Path) -> WorkerSettings:
             "environment": "test",
             "database_url": LOCAL_DATABASE_URL,
             "object_storage_root": object_storage_root,
+            "parser_endpoint_url": "http://127.0.0.1:8100",
         }
     )
 
@@ -174,7 +175,14 @@ def test_s3_provider_wires_same_adapter_into_api_and_worker(
 
     monkeypatch.setattr(bootstrap_module, "create_s3_client", record_client_configuration)
     api_container = build_api_container(ApiSettings.model_validate(s3_provider_values()))
-    worker_container = build_worker_container(WorkerSettings.model_validate(s3_provider_values()))
+    worker_container = build_worker_container(
+        WorkerSettings.model_validate(
+            {
+                **s3_provider_values(),
+                "parser_endpoint_url": "http://127.0.0.1:8100",
+            }
+        )
+    )
 
     try:
         assert isinstance(api_container.object_storage, S3ObjectStorage)
