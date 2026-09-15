@@ -39,7 +39,7 @@ from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorage,
     create_s3_client,
 )
-from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
+from investment_research.infrastructure.parsing.client import HttpDocumentParser
 from investment_research.infrastructure.queue.celery import (
     CeleryProcessingDispatcher,
     create_celery_app,
@@ -62,7 +62,7 @@ from investment_research.modules.processing.application import (
     ProcessDocumentService,
 )
 from investment_research.modules.processing.contracts import ParserLimits
-from investment_research.modules.processing.ports import ProcessingDispatcher
+from investment_research.modules.processing.ports import DocumentParser, ProcessingDispatcher
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
@@ -241,7 +241,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     )
 
 
-def build_worker_container(settings: WorkerSettings) -> WorkerContainer:
+def build_worker_container(
+    settings: WorkerSettings,
+    *,
+    parser: DocumentParser | None = None,
+) -> WorkerContainer:
     """Wire document processing without constructing API-only services."""
 
     database = _build_database_resources(settings)
@@ -251,8 +255,15 @@ def build_worker_container(settings: WorkerSettings) -> WorkerContainer:
         unit_of_work_factory=create_document_read_unit_of_work_factory(database.session_factory),
     )
     identity_context_provider = FixedLocalIdentityContextProvider()
+    active_parser = parser or HttpDocumentParser(
+        endpoint_url=settings.require_parser_endpoint_url(),
+        parser_version=M0_0_PROCESSING_PROFILE.parser_version,
+        parser_config_version=M0_0_PROCESSING_PROFILE.parser_config_version,
+        timeout_seconds=settings.processing_timeout_seconds,
+        max_request_bytes=settings.max_parser_request_bytes,
+    )
     process_document_service = ProcessDocumentService(
-        parser=PypdfDocumentParser(),
+        parser=active_parser,
         original_provider=open_original_service,
         unit_of_work_factory=create_processing_unit_of_work_factory(database.session_factory),
         parser_limits=ParserLimits(

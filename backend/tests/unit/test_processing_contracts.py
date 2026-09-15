@@ -12,8 +12,12 @@ from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_PDF_PAGES,
     ParsedDocument,
     ParsedPage,
+    ParserFailureV1,
     ParserLimits,
+    ParserRequestV1,
+    ParserResponseV1,
     ProcessingJobV1,
+    parser_response_byte_limit,
     processing_job_idempotency_key,
 )
 from investment_research.modules.processing.ports import (
@@ -240,3 +244,48 @@ def test_document_parser_port_accepts_an_application_owned_implementation() -> N
     assert parser.parser_version == "fake-parser-1"
     assert result.pages == (ParsedPage(page_number=1, text="Revenue grew."),)
     assert content.closed is False
+
+
+def test_parser_protocol_round_trips_bounded_metadata_and_document() -> None:
+    limits = ParserLimits(max_pages=10, max_extracted_characters=1_000)
+    request = ParserRequestV1(
+        parser_version="fake-parser-1",
+        parser_config_version="fake-parser-config-1",
+        limits=limits,
+    )
+    response = ParserResponseV1(
+        parser_version=request.parser_version,
+        parser_config_version=request.parser_config_version,
+        document=ParsedDocument(pages=(ParsedPage(page_number=1, text="Revenue grew."),)),
+    )
+
+    assert ParserRequestV1.model_validate_json(request.model_dump_json()) == request
+    assert ParserResponseV1.model_validate_json(response.model_dump_json()) == response
+    assert request.model_dump(mode="json")["schema_version"] == "parser-protocol.v1"
+    assert response.model_dump(mode="json")["schema_version"] == "parser-protocol.v1"
+
+
+def test_parser_protocol_rejects_unknown_version_and_fields() -> None:
+    with pytest.raises(ValidationError):
+        ParserRequestV1.model_validate(
+            {
+                "schema_version": "parser-protocol.v2",
+                "parser_version": "fake-parser-1",
+                "parser_config_version": "fake-parser-config-1",
+                "limits": {"max_pages": 10, "max_extracted_characters": 1_000},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        ParserFailureV1.model_validate(
+            {
+                "code": "parse_failed",
+                "implementation_details": "must not cross the boundary",
+            }
+        )
+
+
+def test_parser_response_limit_accounts_for_json_expansion_and_pages() -> None:
+    limits = ParserLimits(max_pages=10, max_extracted_characters=1_000)
+
+    assert parser_response_byte_limit(limits) == 64 * 1024 + 6_000 + 1_280

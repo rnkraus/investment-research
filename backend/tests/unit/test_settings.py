@@ -146,6 +146,8 @@ def test_worker_settings_load_only_supported_environment_values(
         "redis://:synthetic-redis-secret@localhost:6379/0",
     )
     monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT", str(object_storage_root))
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_ENDPOINT_URL", "http://localhost:8100")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "100")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "1500000")
     monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS", "45")
@@ -159,6 +161,8 @@ def test_worker_settings_load_only_supported_environment_values(
     assert settings.require_database_url() == LOCAL_DATABASE_URL
     assert settings.require_redis_url() == ("redis://:synthetic-redis-secret@localhost:6379/0")
     assert settings.object_storage_root == object_storage_root
+    assert settings.require_parser_endpoint_url() == "http://localhost:8100"
+    assert settings.max_parser_request_bytes == 1_048_576
     assert settings.max_pdf_pages == 100
     assert settings.max_extracted_characters == 1_500_000
     assert settings.processing_timeout_seconds == 45
@@ -737,6 +741,9 @@ def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "api_host" not in ParserSettings.model_fields
     assert "processing_timeout_seconds" not in ApiSettings.model_fields
     assert "processing_timeout_seconds" not in ParserSettings.model_fields
+    assert "parser_endpoint_url" in WorkerSettings.model_fields
+    assert "parser_endpoint_url" not in ApiSettings.model_fields
+    assert "parser_endpoint_url" not in ParserSettings.model_fields
 
 
 @pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings, ParserSettings])
@@ -756,6 +763,7 @@ def test_parser_settings_load_non_secret_process_values(
     monkeypatch.setenv("INVESTMENT_RESEARCH_LOG_LEVEL", "ERROR")
     monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_HOST", "0.0.0.0")
     monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_PORT", "8124")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "80")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "500000")
 
@@ -766,8 +774,59 @@ def test_parser_settings_load_non_secret_process_values(
     assert settings.log_level == "ERROR"
     assert settings.parser_host == "0.0.0.0"
     assert settings.parser_port == 8124
+    assert settings.max_request_bytes == 1_048_576
     assert settings.max_pdf_pages == 80
     assert settings.max_extracted_characters == 500_000
+
+
+@pytest.mark.parametrize(
+    "endpoint_url",
+    [
+        "http://localhost:8100",
+        "http://127.0.0.1:8100",
+        "http://[::1]:8100",
+    ],
+)
+def test_worker_parser_endpoint_allows_only_loopback_on_host(endpoint_url: str) -> None:
+    settings = WorkerSettings(parser_endpoint_url=endpoint_url)
+
+    assert settings.require_parser_endpoint_url() == endpoint_url
+
+
+@pytest.mark.parametrize(
+    "endpoint_url",
+    [
+        "https://127.0.0.1:8100",
+        "http://parser:8100",
+        "http://example.invalid:8100",
+        "http://user:password@127.0.0.1:8100",
+        "http://127.0.0.1:8100/internal/v1/parse",
+        "http://127.0.0.1:8100?target=other",
+    ],
+)
+def test_worker_parser_endpoint_rejects_unsafe_host_target(endpoint_url: str) -> None:
+    with pytest.raises(ValidationError, match="parser_endpoint_url"):
+        WorkerSettings(parser_endpoint_url=endpoint_url)
+
+
+def test_worker_parser_endpoint_allows_only_parser_service_in_container() -> None:
+    settings = WorkerSettings(
+        runtime_location="container",
+        parser_endpoint_url="http://parser:8100",
+    )
+
+    assert settings.require_parser_endpoint_url() == "http://parser:8100"
+
+    with pytest.raises(ValidationError, match="Compose parser service"):
+        WorkerSettings(
+            runtime_location="container",
+            parser_endpoint_url="http://127.0.0.1:8100",
+        )
+
+
+def test_worker_requires_parser_endpoint_only_for_isolated_execution() -> None:
+    with pytest.raises(RuntimeError, match="parser endpoint configuration"):
+        WorkerSettings().require_parser_endpoint_url()
 
 
 @pytest.mark.parametrize(

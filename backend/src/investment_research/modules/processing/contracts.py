@@ -5,9 +5,25 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from investment_research.modules.processing.domain import ConfigurationVersion
+
 MAX_CONFIGURABLE_PDF_PAGES = 1_000
 MAX_CONFIGURABLE_EXTRACTED_CHARACTERS = 10_000_000
 PROCESSING_JOB_SCHEMA_VERSION: Literal["processing-job.v1"] = "processing-job.v1"
+PARSER_PROTOCOL_SCHEMA_VERSION: Literal["parser-protocol.v1"] = "parser-protocol.v1"
+PDF_PARSER_CONFIG_VERSION_V1 = "m0.0-pdf-bounds-v1"
+PARSER_RESPONSE_JSON_OVERHEAD_BYTES = 64 * 1024
+MAX_JSON_BYTES_PER_EXTRACTED_CHARACTER = 6
+MAX_JSON_BYTES_PER_PAGE = 128
+
+type ParserFailureCode = Literal[
+    "invalid_request",
+    "request_too_large",
+    "parse_failed",
+    "limit_exceeded",
+    "response_too_large",
+    "internal_error",
+]
 
 
 class ImmutableProcessingContract(BaseModel):
@@ -74,6 +90,25 @@ class ParserLimits(ImmutableProcessingContract):
     )
 
 
+def parser_response_byte_limit(limits: ParserLimits) -> int:
+    """Bound JSON output for the requested text and page ceilings."""
+
+    return (
+        PARSER_RESPONSE_JSON_OVERHEAD_BYTES
+        + limits.max_extracted_characters * MAX_JSON_BYTES_PER_EXTRACTED_CHARACTER
+        + limits.max_pages * MAX_JSON_BYTES_PER_PAGE
+    )
+
+
+class ParserRequestV1(ImmutableProcessingContract):
+    """Non-secret metadata accompanying one bounded raw PDF request."""
+
+    schema_version: Literal["parser-protocol.v1"] = PARSER_PROTOCOL_SCHEMA_VERSION
+    parser_version: ConfigurationVersion
+    parser_config_version: ConfigurationVersion
+    limits: ParserLimits
+
+
 class ParsedPage(ImmutableProcessingContract):
     """Exact text extracted from one physical PDF page."""
 
@@ -107,3 +142,19 @@ class ParsedDocument(ImmutableProcessingContract):
         """Return the total number of extracted Unicode characters."""
 
         return sum(len(page.text) for page in self.pages)
+
+
+class ParserResponseV1(ImmutableProcessingContract):
+    """Successful bounded parser response returned to the trusted worker."""
+
+    schema_version: Literal["parser-protocol.v1"] = PARSER_PROTOCOL_SCHEMA_VERSION
+    parser_version: ConfigurationVersion
+    parser_config_version: ConfigurationVersion
+    document: ParsedDocument
+
+
+class ParserFailureV1(ImmutableProcessingContract):
+    """Safe parser failure without document text or implementation details."""
+
+    schema_version: Literal["parser-protocol.v1"] = PARSER_PROTOCOL_SCHEMA_VERSION
+    code: ParserFailureCode

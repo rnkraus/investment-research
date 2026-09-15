@@ -57,14 +57,14 @@ CMD ["investment_research.main:create_app", "--factory", "--host", "0.0.0.0", "-
 
 FROM runtime AS worker
 
-ENTRYPOINT ["/app/.venv/bin/python", "-m", "investment_research.runner"]
-CMD []
+ENTRYPOINT ["/app/.venv/bin/celery", "--app", "investment_research.worker:app", "worker"]
+CMD ["--loglevel=INFO", "--concurrency=1", "--without-gossip", "--without-mingle"]
 
 FROM runtime AS parser
 
 LABEL org.opencontainers.image.description="Build foundation for the M0 credential-free parser runtime"
-ENTRYPOINT ["/app/.venv/bin/python"]
-CMD ["--version"]
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "investment_research.parser_app"]
+CMD []
 
 FROM runtime AS verification
 

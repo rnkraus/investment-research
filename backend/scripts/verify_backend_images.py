@@ -98,13 +98,27 @@ TARGETS: dict[str, TargetExpectation] = {
         has_healthcheck=True,
     ),
     "worker": TargetExpectation(
-        entrypoint=("/app/.venv/bin/python", "-m", "investment_research.runner"),
-        command=(),
+        entrypoint=(
+            "/app/.venv/bin/celery",
+            "--app",
+            "investment_research.worker:app",
+            "worker",
+        ),
+        command=(
+            "--loglevel=INFO",
+            "--concurrency=1",
+            "--without-gossip",
+            "--without-mingle",
+        ),
         has_healthcheck=False,
     ),
     "parser": TargetExpectation(
-        entrypoint=("/app/.venv/bin/python",),
-        command=("--version",),
+        entrypoint=(
+            "/app/.venv/bin/python",
+            "-m",
+            "investment_research.parser_app",
+        ),
+        command=(),
         has_healthcheck=False,
     ),
 }
@@ -298,6 +312,7 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
                 f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
                 f"@postgres:5432/{POSTGRES_DATABASE}"
             ),
+            "INVESTMENT_RESEARCH_REDIS_URL": ("redis://:synthetic-unused-password@redis:6379/0"),
             "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT": "/tmp/object-storage",
         }
     )
@@ -342,6 +357,8 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
                 "INVESTMENT_RESEARCH_API_HOST",
                 "--env",
                 "INVESTMENT_RESEARCH_DATABASE_URL",
+                "--env",
+                "INVESTMENT_RESEARCH_REDIS_URL",
                 "--env",
                 "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
                 "--tmpfs",

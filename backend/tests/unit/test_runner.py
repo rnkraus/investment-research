@@ -13,6 +13,7 @@ import pytest
 
 from investment_research import runner
 from investment_research.bootstrap import WorkerContainer
+from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import ProcessDocumentService
@@ -176,7 +177,18 @@ def test_execute_single_job_always_closes_its_container(
     container = create_autospec(WorkerContainer, instance=True)
     executor = create_autospec(runner.SingleJobProcessingExecutor, instance=True)
     executor.execute.side_effect = RuntimeError("synthetic execution failure")
-    monkeypatch.setattr(runner, "build_worker_container", lambda settings: container)
+    injected_parsers: list[object] = []
+
+    def build_legacy_container(
+        settings: WorkerSettings,
+        *,
+        parser: object,
+    ) -> WorkerContainer:
+        del settings
+        injected_parsers.append(parser)
+        return cast(WorkerContainer, container)
+
+    monkeypatch.setattr(runner, "build_worker_container", build_legacy_container)
     monkeypatch.setattr(
         runner,
         "SingleJobProcessingExecutor",
@@ -186,6 +198,8 @@ def test_execute_single_job_always_closes_its_container(
     with pytest.raises(RuntimeError, match="execution failure"):
         runner.execute_single_job(make_settings(), PROCESSING_RUN_ID)
 
+    assert len(injected_parsers) == 1
+    assert isinstance(injected_parsers[0], PypdfDocumentParser)
     container.close.assert_called_once_with()
 
 
