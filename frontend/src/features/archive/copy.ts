@@ -11,7 +11,7 @@ export const archiveCopy = {
     eyebrow: "Step 1",
     heading: "Import the research document",
     description:
-      "The original PDF is preserved before a separate local runner creates searchable text.",
+      "The original PDF is preserved before automatic background processing creates searchable text.",
     fileLabel: "PDF document",
     fileHint:
       "Use the included synthetic PDF fixture for the accepted M0.0 workflow.",
@@ -27,15 +27,12 @@ export const archiveCopy = {
     heading: "Process the captured document",
     idle: "Import a document to create a processing run.",
     waiting:
-      "After import, run the bounded local processor in a separate terminal. This keeps PDF parsing outside the API process.",
-    commandLabel: "Local processing command",
-    copyCommand: "Copy command",
-    copiedCommand: "Copied",
+      "Processing continues automatically in the background. This status updates while the worker handles the document.",
     refresh: "Check status",
     checking: "Checking…",
     runLabel: "Processing run",
-    captured: "Captured and waiting for the local processor.",
-    parsing: "The local processor is extracting searchable text.",
+    captured: "Captured and queued for automatic processing.",
+    parsing: "The isolated parser is extracting searchable text.",
     ready: "Searchable evidence is ready.",
     failed: "Processing stopped safely.",
   },

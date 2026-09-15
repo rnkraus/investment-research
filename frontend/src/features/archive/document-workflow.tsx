@@ -58,13 +58,6 @@ function safeErrorMessage(error: unknown): string {
   return archiveCopy.errors.unexpected;
 }
 
-function runnerCommand(processingRunId: string): string {
-  return (
-    "cd backend && uv run --locked python -m investment_research.runner " +
-    processingRunId
-  );
-}
-
 export function DocumentWorkflow() {
   const fileInputId = useId();
   const titleInputId = useId();
@@ -77,7 +70,6 @@ export function DocumentWorkflow() {
   const [processing, setProcessing] = useState<ProcessingRunResult>();
   const [isUploading, setIsUploading] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
-  const [commandCopied, setCommandCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
 
   useEffect(() => {
@@ -158,7 +150,6 @@ export function DocumentWorkflow() {
     setIsUploading(true);
     setAccepted(undefined);
     setProcessing(undefined);
-    setCommandCopied(false);
     setErrorMessage(undefined);
 
     try {
@@ -189,22 +180,6 @@ export function DocumentWorkflow() {
         uploadController.current = null;
         setIsUploading(false);
       }
-    }
-  }
-
-  async function copyRunnerCommand() {
-    if (accepted === undefined) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(
-        runnerCommand(accepted.processing_run_id),
-      );
-      setCommandCopied(true);
-      setErrorMessage(undefined);
-    } catch {
-      setErrorMessage(archiveCopy.errors.unexpected);
     }
   }
 
@@ -356,24 +331,9 @@ export function DocumentWorkflow() {
                 <p className="text-sm leading-6 text-slate-300">
                   {archiveCopy.processing.waiting}
                 </p>
-                <p className="mt-4 text-xs font-semibold tracking-wide text-slate-400 uppercase">
-                  {archiveCopy.processing.commandLabel}
-                </p>
-                <code className="mt-2 block overflow-x-auto rounded-xl border border-slate-700 bg-slate-900 p-4 text-xs leading-5 text-teal-200">
-                  {runnerCommand(accepted.processing_run_id)}
-                </code>
-                <div className="mt-4 flex flex-wrap gap-3">
+                <div className="mt-4">
                   <button
-                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-teal-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
-                    onClick={copyRunnerCommand}
-                    type="button"
-                  >
-                    {commandCopied
-                      ? archiveCopy.processing.copiedCommand
-                      : archiveCopy.processing.copyCommand}
-                  </button>
-                  <button
-                    className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-white transition hover:border-slate-500 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 disabled:cursor-wait disabled:text-slate-500"
+                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-teal-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 disabled:cursor-wait disabled:bg-slate-400"
                     disabled={isChecking}
                     onClick={() => void refreshStatus()}
                     type="button"

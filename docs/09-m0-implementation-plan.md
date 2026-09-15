@@ -51,18 +51,18 @@ M0 is complete only when:
 
 ## 3. Retained contracts and replaced adapters
 
-| M0.0 component | M0 action | Contract or invariant retained |
-| --- | --- | --- |
-| FastAPI modular monolith | Containerize and add readiness/structured logs | Pydantic/OpenAPI contract and module direction |
-| Next.js local process | Containerize after backend runtime is stable | Typed API client and same-origin API boundary |
-| PostgreSQL Compose service | Retain and make migration readiness explicit | Alembic history and canonical relational state |
-| Local filesystem object storage | Replace with a provider-neutral S3 adapter backed by SeaweedFS locally | `ObjectStorage`, immutable keys, checksum, workspace scope |
-| Manual single-job runner | Replace with Redis/Celery delivery | `ProcessingRun`, processing service, independent unit of work |
-| Parser inside runner permissions | Replace with a credential-free parser service boundary | `DocumentParser`, limits, typed parsed result, safe failure |
-| Deterministic generator | Retain unchanged | `AnswerGenerator` and server-side validation |
-| PostgreSQL lexical retrieval | Retain unchanged | eligibility filtering and reproducible ranking |
-| Fixed local identity | Retain for M0 only | server-resolved `WorkspaceContext` and non-disclosure |
-| Existing verification scripts | Extend with complete-stack verification | locked, deterministic, self-cleaning gates |
+| M0.0 component                   | M0 action                                                              | Contract or invariant retained                                |
+| -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| FastAPI modular monolith         | Containerize and add readiness/structured logs                         | Pydantic/OpenAPI contract and module direction                |
+| Next.js local process            | Containerize after backend runtime is stable                           | Typed API client and same-origin API boundary                 |
+| PostgreSQL Compose service       | Retain and make migration readiness explicit                           | Alembic history and canonical relational state                |
+| Local filesystem object storage  | Replace with a provider-neutral S3 adapter backed by SeaweedFS locally | `ObjectStorage`, immutable keys, checksum, workspace scope    |
+| Manual single-job runner         | Replace with Redis/Celery delivery                                     | `ProcessingRun`, processing service, independent unit of work |
+| Parser inside runner permissions | Replace with a credential-free parser service boundary                 | `DocumentParser`, limits, typed parsed result, safe failure   |
+| Deterministic generator          | Retain unchanged                                                       | `AnswerGenerator` and server-side validation                  |
+| PostgreSQL lexical retrieval     | Retain unchanged                                                       | eligibility filtering and reproducible ranking                |
+| Fixed local identity             | Retain for M0 only                                                     | server-resolved `WorkspaceContext` and non-disclosure         |
+| Existing verification scripts    | Extend with complete-stack verification                                | locked, deterministic, self-cleaning gates                    |
 
 M0 changes infrastructure behind ports. It must not rename domain states or bypass the evidence,
 workspace, transaction, or immutable-original rules just to simplify container wiring.
@@ -509,9 +509,12 @@ confirmation. A separate disposable runtime gate now passes the complete frozen 
 without the M0.0 runner: API capture publishes to Redis, Celery and the isolated parser reach
 `LEXICAL_READY` using SeaweedFS originals, and the same validated answer, exact citation,
 byte-identical original, and insufficient-evidence response remain intact. The Linux processing job
-now runs this complete journey after the parser-isolation and worker-loss recovery gates. The step
-is not complete: successful hosted CI confirmation, frontend removal of the manual command, and the
-full Step 3 gate remain outstanding.
+now runs this complete journey after the parser-isolation and worker-loss recovery gates. The
+frontend no longer exposes the temporary M0.0 runner command: it presents automatic queued and
+processing states while polling the unchanged canonical status endpoint. Its formatting, linting,
+type checking, contract check, 15 deterministic tests, and production build pass. The step is not
+complete: the superseded backend runner must be removed, successful hosted CI must be confirmed,
+and the full Step 3 gate remains outstanding.
 
 ### Step 4 — Complete local container stack
 
@@ -607,20 +610,20 @@ Documentation:
 
 ## 8. Verification matrix
 
-| Risk | Deterministic proof |
-| --- | --- |
-| Configuration leakage or wrong target | per-process settings tests and secret-marker scan |
-| Container privilege | non-root, capabilities, read-only filesystem, mount, and network assertions |
-| Schema drift | Alembic upgrade/check/downgrade/upgrade cycle |
-| S3 overwrite or workspace leak | conditional-create and cross-workspace integration tests |
-| Lost or duplicate queue delivery | canonical `CAPTURED` state, execution lease, and idempotent redelivery tests |
-| Unsafe retry | transient/permanent classification and bounded exhaustion tests |
-| Parser compromise path | secret, filesystem, network, process, memory, and timeout negative tests |
-| Untrusted parser output | schema, size, page, ordering, offset, and version validation tests |
-| API contract drift | checked OpenAPI snapshot and generated TypeScript declarations |
-| Evidence regression | answerable, insufficient, tampered, repeated-answer, and citation cases |
-| Developer cleanup error | unique project naming, target validation, confirmation, and cleanup tests |
-| Container-only failure | complete-stack CI from an empty state plus health-based startup |
+| Risk                                  | Deterministic proof                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| Configuration leakage or wrong target | per-process settings tests and secret-marker scan                            |
+| Container privilege                   | non-root, capabilities, read-only filesystem, mount, and network assertions  |
+| Schema drift                          | Alembic upgrade/check/downgrade/upgrade cycle                                |
+| S3 overwrite or workspace leak        | conditional-create and cross-workspace integration tests                     |
+| Lost or duplicate queue delivery      | canonical `CAPTURED` state, execution lease, and idempotent redelivery tests |
+| Unsafe retry                          | transient/permanent classification and bounded exhaustion tests              |
+| Parser compromise path                | secret, filesystem, network, process, memory, and timeout negative tests     |
+| Untrusted parser output               | schema, size, page, ordering, offset, and version validation tests           |
+| API contract drift                    | checked OpenAPI snapshot and generated TypeScript declarations               |
+| Evidence regression                   | answerable, insufficient, tampered, repeated-answer, and citation cases      |
+| Developer cleanup error               | unique project naming, target validation, confirmation, and cleanup tests    |
+| Container-only failure                | complete-stack CI from an empty state plus health-based startup              |
 
 ## 9. Branch and review strategy
 

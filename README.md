@@ -125,30 +125,16 @@ endpoint at <http://127.0.0.1:8000/ready> returns `200` only when PostgreSQL is 
 Alembic revision exactly matches the schema required by this API version. A failed readiness check
 returns only `503 {"status":"not_ready"}` and never exposes dependency or error details.
 
-Complete the M0.0 browser journey with the synthetic fixture:
+The web application now presents the automatic M0 processing states and no longer exposes the
+temporary M0.0 runner command. During the Step 3-to-4 transition, this host-started view is useful
+for frontend development, but it is not the complete runtime: the host API still uses private local
+storage while the container worker uses SeaweedFS. Do not expose the internal SeaweedFS data plane
+to bridge that temporary topology.
 
-1. In the import form, choose
-   `fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf`. The synthetic title,
-   publication date, and English language metadata are already selected.
-2. Import the document. The API preserves the verified immutable original, creates a canonical
-   processing run, and returns without parsing the PDF in the request process.
-3. Copy the displayed local processing command and run it in a separate repository-root terminal.
-   The page polls the canonical run status and enables research after it reaches `LEXICAL_READY`.
-4. Submit the prefilled revenue question. The expected validated answer reports FY2025 revenue of
-   $184.2 million, up 22.0% from $151.0 million in FY2024.
-5. Open the supporting citation. Its exact passage is displayed in the answer, and the protected
-   original opens on page 2 in a new browser tab.
-6. Select the insufficient-evidence example and submit it. The result must explicitly report missing
-   evidence and contain no answer statements or citations.
-
-The displayed runner processes exactly one captured run and then exits. It resolves the local
-workspace on the server, uses its own database sessions, limits wall-clock processing time and
-virtual memory, and never executes PDF parsing in FastAPI. A successful command reports
-`LEXICAL_READY`; a failed command returns a non-zero exit code without printing parser or database
-internals. The default bounds are 30 seconds and 512 MiB of additional virtual memory above the
-loaded runner runtime. Override them only within the validated safety ceilings with
-`INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS` and
-`INVESTMENT_RESEARCH_PROCESSING_MEMORY_LIMIT_BYTES`.
+Use the documented complete automatic M0 fixture verification below to exercise API capture,
+Redis/Celery delivery, SeaweedFS, isolated parsing, research, citation resolution, original access,
+and the insufficient-evidence case together. Step 4 moves the API and web application into the
+Compose topology and restores this same complete journey as an interactive browser workflow.
 
 All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
 recheck the server-owned workspace, active document version, validation state, byte count, and
