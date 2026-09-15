@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from investment_research import settings as settings_module
 from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
     MAX_CONFIGURABLE_PDF_PAGES,
@@ -36,17 +37,25 @@ POSTGRES_SETTING_NAMES = (
     "POSTGRES_PASSWORD",
     "POSTGRES_PORT",
 )
+POSTGRES_FILE_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_DATABASE_URL_FILE",
+    "POSTGRES_PASSWORD_FILE",
+)
 S3_SETTING_NAMES = (
     "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER",
     "INVESTMENT_RESEARCH_S3_ENDPOINT_URL",
     "INVESTMENT_RESEARCH_S3_REGION_NAME",
     "INVESTMENT_RESEARCH_S3_BUCKET",
     "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
+    "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID_FILE",
     "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
+    "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY_FILE",
 )
 QUEUE_SETTING_NAMES = (
     "INVESTMENT_RESEARCH_REDIS_URL",
+    "INVESTMENT_RESEARCH_REDIS_URL_FILE",
     "REDIS_PASSWORD",
+    "REDIS_PASSWORD_FILE",
     "REDIS_PORT",
 )
 type ObjectStorageSettingsFactory = type[ApiSettings] | type[WorkerSettings]
@@ -69,7 +78,7 @@ def clear_parser_forbidden_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def clear_external_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep settings tests independent of host queue and S3 configuration."""
 
-    for name in (*S3_SETTING_NAMES, *QUEUE_SETTING_NAMES):
+    for name in (*POSTGRES_FILE_SETTING_NAMES, *S3_SETTING_NAMES, *QUEUE_SETTING_NAMES):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -268,17 +277,102 @@ def test_queue_settings_reject_incomplete_local_environment(
         loader(env_file=None)
 
 
-@pytest.mark.parametrize("loader", [load_api_settings, load_worker_settings])
-def test_queue_settings_require_explicit_url_in_container(
-    loader: ObjectStorageSettingsLoader,
+def test_worker_settings_build_container_connections_from_mounted_secrets(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(settings_module, "DOCKER_SECRETS_ROOT", tmp_path)
+    postgres_password = tmp_path / "postgres_password"
+    redis_password = tmp_path / "redis_password"
+    s3_access_key = tmp_path / "s3_access_key"
+    s3_secret_key = tmp_path / "s3_secret_key"
+    postgres_password.write_text("postgres@secret/one", encoding="utf-8")
+    redis_password.write_text("redis@secret/two", encoding="utf-8")
+    s3_access_key.write_text("synthetic-application-key", encoding="utf-8")
+    s3_secret_key.write_text("synthetic-application-secret", encoding="utf-8")
+
     monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "container")
-    monkeypatch.setenv("REDIS_PASSWORD", "synthetic-secret")
+    monkeypatch.setenv("POSTGRES_DB", "test database")
+    monkeypatch.setenv("POSTGRES_USER", "test user")
+    monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(postgres_password))
+    monkeypatch.setenv("POSTGRES_PORT", "5432")
+    monkeypatch.setenv("REDIS_PASSWORD_FILE", str(redis_password))
+    monkeypatch.setenv("REDIS_PORT", "6379")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER", "s3")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_ENDPOINT_URL", "http://seaweedfs-s3:8333")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_REGION_NAME", "us-east-1")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_BUCKET", "investment-research-originals")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID_FILE", str(s3_access_key))
+    monkeypatch.setenv("INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY_FILE", str(s3_secret_key))
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_ENDPOINT_URL", "http://parser:8100")
+
+    settings = load_worker_settings(env_file=None)
+
+    assert settings.require_database_url() == (
+        "postgresql+psycopg://test%20user:postgres%40secret%2Fone@postgres:5432/test%20database"
+    )
+    assert settings.require_redis_url() == "redis://:redis%40secret%2Ftwo@redis:6379/0"
+    assert settings.require_s3_settings().access_key_id.get_secret_value() == (
+        "synthetic-application-key"
+    )
+    assert settings.require_s3_settings().secret_access_key.get_secret_value() == (
+        "synthetic-application-secret"
+    )
+
+
+def test_secret_file_rejects_direct_value_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(settings_module, "DOCKER_SECRETS_ROOT", tmp_path)
+    secret = tmp_path / "redis_password"
+    secret.write_text("file-secret", encoding="utf-8")
+    monkeypatch.setenv("REDIS_PASSWORD", "direct-secret")
+    monkeypatch.setenv("REDIS_PASSWORD_FILE", str(secret))
     monkeypatch.setenv("REDIS_PORT", "6379")
 
-    with pytest.raises(ValueError, match="require INVESTMENT_RESEARCH_REDIS_URL"):
-        loader(env_file=None)
+    with pytest.raises(ValueError, match="cannot both be configured") as error:
+        load_worker_settings(env_file=None)
+
+    assert "direct-secret" not in str(error.value)
+    assert "file-secret" not in str(error.value)
+
+
+def test_secret_file_rejects_path_outside_secret_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret_root = tmp_path / "secrets"
+    secret_root.mkdir()
+    outside = tmp_path / "outside-secret"
+    outside.write_text("synthetic-secret", encoding="utf-8")
+    monkeypatch.setattr(settings_module, "DOCKER_SECRETS_ROOT", secret_root)
+    monkeypatch.setenv("REDIS_PASSWORD_FILE", str(outside))
+    monkeypatch.setenv("REDIS_PORT", "6379")
+
+    with pytest.raises(ValueError, match="directly under /run/secrets"):
+        load_worker_settings(env_file=None)
+
+
+@pytest.mark.parametrize("failure", ["missing", "empty", "symlink"])
+def test_secret_file_fails_closed_for_unusable_file(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(settings_module, "DOCKER_SECRETS_ROOT", tmp_path)
+    secret = tmp_path / "redis_password"
+    if failure == "empty":
+        secret.write_text("", encoding="utf-8")
+    elif failure == "symlink":
+        target = tmp_path / "target"
+        target.write_text("synthetic-secret", encoding="utf-8")
+        secret.symlink_to(target)
+    monkeypatch.setenv("REDIS_PASSWORD_FILE", str(secret))
+    monkeypatch.setenv("REDIS_PORT", "6379")
+
+    with pytest.raises(ValueError, match=r"unavailable|empty|symbolic link"):
+        load_worker_settings(env_file=None)
 
 
 @pytest.mark.parametrize("loader", [load_api_settings, load_worker_settings])
@@ -706,7 +800,7 @@ def test_database_settings_reject_other_targets_in_container(database_url: str) 
         )
 
 
-def test_container_loader_rejects_postgres_bootstrap_values(
+def test_container_loader_builds_postgres_url_from_bootstrap_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("INVESTMENT_RESEARCH_DATABASE_URL", raising=False)
@@ -717,8 +811,9 @@ def test_container_loader_rejects_postgres_bootstrap_values(
     monkeypatch.setenv("POSTGRES_PASSWORD", "test-password")
     monkeypatch.setenv("POSTGRES_PORT", "5432")
 
-    with pytest.raises(ValueError, match="require INVESTMENT_RESEARCH_DATABASE_URL"):
-        load_api_settings(env_file=None)
+    settings = load_api_settings(env_file=None)
+
+    assert settings.require_database_url() == CONTAINER_DATABASE_URL
 
 
 def test_database_settings_require_url_for_database_access() -> None:

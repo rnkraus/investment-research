@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from scripts.docker_secrets import (
+    COMPOSE_SECRET_FILES,
+    disposable_compose_secret_environment,
+)
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
 DOCKERFILE = BACKEND_ROOT / "Dockerfile"
@@ -119,7 +124,7 @@ TARGETS: dict[str, TargetExpectation] = {
             "investment_research.parser_app",
         ),
         command=(),
-        has_healthcheck=False,
+        has_healthcheck=True,
     ),
 }
 
@@ -280,28 +285,8 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
     api_container = f"{project_name}-api"
     postgres_port = find_available_loopback_port()
     postgres_password = generate_disposable_password()
-    compose_environment = os.environ.copy()
-    compose_environment.update(
-        {
-            "COMPOSE_DISABLE_ENV_FILE": "1",
-            "POSTGRES_DB": POSTGRES_DATABASE,
-            "POSTGRES_USER": POSTGRES_USER,
-            "POSTGRES_PASSWORD": postgres_password,
-            "POSTGRES_PORT": str(postgres_port),
-            "SEAWEEDFS_ADMIN_ACCESS_KEY": "unused-admin-access",
-            "SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY": "unused-admin-secret",
-            "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID": "unused-application-access",
-            "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY": "unused-application-secret",
-            "INVESTMENT_RESEARCH_S3_BUCKET": "unused-storage-check",
-        }
-    )
-    migration_environment = compose_environment | {
-        "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
-        "INVESTMENT_RESEARCH_DATABASE_URL": (
-            f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
-            f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
-        ),
-    }
+    secret_values = {name: generate_disposable_password() for name in COMPOSE_SECRET_FILES}
+    secret_values["POSTGRES_PASSWORD"] = postgres_password
     api_environment = os.environ.copy()
     api_environment.update(
         {
@@ -324,81 +309,99 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
         "--file",
         str(COMPOSE_FILE),
     ]
-    api_created = False
-    cleanup_failed = False
+    with disposable_compose_secret_environment(secret_values) as secret_sources:
+        compose_environment = os.environ.copy() | secret_sources
+        compose_environment.update(
+            {
+                "COMPOSE_DISABLE_ENV_FILE": "1",
+                "POSTGRES_DB": POSTGRES_DATABASE,
+                "POSTGRES_USER": POSTGRES_USER,
+                "POSTGRES_PORT": str(postgres_port),
+                "INVESTMENT_RESEARCH_S3_BUCKET": "unused-storage-check",
+            }
+        )
+        migration_environment = compose_environment | {
+            "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
+            "INVESTMENT_RESEARCH_DATABASE_URL": (
+                f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
+                f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
+            ),
+        }
+        api_created = False
+        cleanup_failed = False
 
-    try:
-        run_command(
-            "Start isolated PostgreSQL for the API image",
-            [*compose_command, "up", "--detach", "--wait", "postgres"],
-            environment=compose_environment,
-        )
-        run_command(
-            "Migrate the isolated database to Alembic head",
-            [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
-            environment=migration_environment,
-            working_directory=BACKEND_ROOT,
-        )
-        run_command(
-            "Start the API image with runtime-only configuration",
-            [
-                "docker",
-                "run",
-                "--detach",
-                "--name",
-                api_container,
-                "--network",
-                f"{project_name}_default",
-                "--env",
-                "INVESTMENT_RESEARCH_ENVIRONMENT",
-                "--env",
-                "INVESTMENT_RESEARCH_RUNTIME_LOCATION",
-                "--env",
-                "INVESTMENT_RESEARCH_API_HOST",
-                "--env",
-                "INVESTMENT_RESEARCH_DATABASE_URL",
-                "--env",
-                "INVESTMENT_RESEARCH_REDIS_URL",
-                "--env",
-                "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
-                "--tmpfs",
-                "/tmp:rw,nosuid,nodev,noexec,size=16m",
-                image,
-            ],
-            capture_output=True,
-            environment=api_environment,
-        )
-        api_created = True
-        wait_for_healthy_container(api_container)
-        run_command(
-            "Verify layered API health endpoints",
-            [
-                "docker",
-                "exec",
-                api_container,
-                "/app/.venv/bin/python",
-                "-c",
-                API_ENDPOINT_SMOKE_CODE,
-            ],
-        )
-    finally:
-        if api_created:
+        try:
+            run_command(
+                "Start isolated PostgreSQL for the API image",
+                [*compose_command, "up", "--detach", "--wait", "postgres"],
+                environment=compose_environment,
+            )
+            run_command(
+                "Migrate the isolated database to Alembic head",
+                [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
+                environment=migration_environment,
+                working_directory=BACKEND_ROOT,
+            )
+            run_command(
+                "Start the API image with runtime-only configuration",
+                [
+                    "docker",
+                    "run",
+                    "--detach",
+                    "--name",
+                    api_container,
+                    "--network",
+                    f"{project_name}_backend",
+                    "--env",
+                    "INVESTMENT_RESEARCH_ENVIRONMENT",
+                    "--env",
+                    "INVESTMENT_RESEARCH_RUNTIME_LOCATION",
+                    "--env",
+                    "INVESTMENT_RESEARCH_API_HOST",
+                    "--env",
+                    "INVESTMENT_RESEARCH_DATABASE_URL",
+                    "--env",
+                    "INVESTMENT_RESEARCH_REDIS_URL",
+                    "--env",
+                    "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
+                    "--tmpfs",
+                    "/tmp:rw,nosuid,nodev,noexec,size=16m",
+                    image,
+                ],
+                capture_output=True,
+                environment=api_environment,
+            )
+            api_created = True
+            wait_for_healthy_container(api_container)
+            run_command(
+                "Verify layered API health endpoints",
+                [
+                    "docker",
+                    "exec",
+                    api_container,
+                    "/app/.venv/bin/python",
+                    "-c",
+                    API_ENDPOINT_SMOKE_CODE,
+                ],
+            )
+        finally:
+            if api_created:
+                cleanup = run_command(
+                    "Remove the API verification container",
+                    ["docker", "container", "rm", "--force", api_container],
+                    check=False,
+                )
+                cleanup_failed = cleanup.returncode != 0
             cleanup = run_command(
-                "Remove the API verification container",
-                ["docker", "container", "rm", "--force", api_container],
+                "Remove isolated PostgreSQL, network, and volume",
+                [*compose_command, "down", "--volumes", "--remove-orphans"],
+                environment=compose_environment,
                 check=False,
             )
-            cleanup_failed = cleanup.returncode != 0
-        cleanup = run_command(
-            "Remove isolated PostgreSQL, network, and volume",
-            [*compose_command, "down", "--volumes", "--remove-orphans"],
-            environment=compose_environment,
-            check=False,
-        )
-        cleanup_failed = cleanup.returncode != 0 or cleanup_failed
+            cleanup_failed = cleanup.returncode != 0 or cleanup_failed
 
-    if cleanup_failed:
-        raise ImageVerificationError("API runtime verification cleanup failed.")
+        if cleanup_failed:
+            raise ImageVerificationError("API runtime verification cleanup failed.")
 
 
 def verify_backend_images() -> int:

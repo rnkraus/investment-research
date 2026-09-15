@@ -11,13 +11,14 @@ from scripts import verify_object_storage
 
 PROJECT_UUID = UUID("12345678-1234-4000-8000-123456789abc")
 TEST_POSTGRES_PASSWORD = "disposable-postgres-password"
+TEST_REDIS_PASSWORD = "disposable-redis-password"
 TEST_STORAGE_CREDENTIALS = tuple(f"disposable-storage-credential-{index}" for index in range(4))
 
 
 def prepare_deterministic_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace discovery and random values without executing external commands."""
 
-    credentials = iter((TEST_POSTGRES_PASSWORD, *TEST_STORAGE_CREDENTIALS))
+    credentials = iter((TEST_POSTGRES_PASSWORD, TEST_REDIS_PASSWORD, *TEST_STORAGE_CREDENTIALS))
     monkeypatch.setattr(
         verify_object_storage,
         "find_docker_executable",
@@ -49,6 +50,7 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
     metadata_credentials: list[tuple[str, ...]] = []
     isolated_projects: list[str] = []
     api_contracts: list[tuple[str, str, Mapping[str, str]]] = []
+    secret_paths: list[Path] = []
 
     def record_command(
         label: str,
@@ -60,6 +62,10 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
     ) -> subprocess.CompletedProcess[str]:
         del working_directory, check
         calls.append((label, tuple(command), environment))
+        if label == "Build object-storage verification image":
+            path = Path(environment["POSTGRES_PASSWORD_SECRET_FILE"])
+            assert path.read_text(encoding="utf-8") == TEST_POSTGRES_PASSWORD
+            secret_paths.append(path)
         return successful_command(command)
 
     def record_healthy_service(
@@ -125,7 +131,7 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
     assert result == 0
     assert [label for label, _, _ in calls] == [
         "Build object-storage verification image",
-        "Build and start isolated PostgreSQL and SeaweedFS",
+        "Build and start isolated PostgreSQL, Redis, and SeaweedFS",
         "Migrate isolated PostgreSQL database",
         "Seed isolated PostgreSQL workspaces",
         "Verify idempotent bucket bootstrap",
@@ -142,16 +148,22 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
     ]
     assert healthy_services == [
         "postgres",
+        "redis",
         *verify_object_storage.STORAGE_SERVICES,
         *verify_object_storage.STORAGE_SERVICES,
     ]
-    assert metadata_credentials == [TEST_STORAGE_CREDENTIALS]
+    assert metadata_credentials == [
+        (TEST_POSTGRES_PASSWORD, TEST_REDIS_PASSWORD, *TEST_STORAGE_CREDENTIALS)
+    ]
     assert isolated_projects == ["investment-research-storage-check-12345678"]
     assert len(api_contracts) == 1
     assert api_contracts[0][0] == "investment-research-object-storage-verification:12345678"
     assert api_contracts[0][1] == "investment-research-storage-check-12345678"
     assert api_contracts[0][2]["INVESTMENT_RESEARCH_RUNTIME_LOCATION"] == "container"
     assert api_contracts[0][2]["INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER"] == "s3"
+    assert api_contracts[0][2]["INVESTMENT_RESEARCH_REDIS_URL"] == (
+        f"redis://:{TEST_REDIS_PASSWORD}@redis:6379/0"
+    )
     assert calls[-2][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert calls[-1][1][-2:] == (
         "--force",
@@ -161,9 +173,15 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         credential not in argument
         for _, command, _ in calls
         for argument in command
-        for credential in (TEST_POSTGRES_PASSWORD, *TEST_STORAGE_CREDENTIALS)
+        for credential in (
+            TEST_POSTGRES_PASSWORD,
+            TEST_REDIS_PASSWORD,
+            *TEST_STORAGE_CREDENTIALS,
+        )
     )
     assert calls[0][2]["COMPOSE_DISABLE_ENV_FILE"] == "1"
+    assert "POSTGRES_PASSWORD" not in calls[0][2]
+    assert "REDIS_PASSWORD" not in calls[0][2]
     assert calls[0][2]["POSTGRES_PORT"] == "55432"
     assert calls[2][2]["INVESTMENT_RESEARCH_DATABASE_URL"].endswith(
         "@127.0.0.1:55432/investment_research"
@@ -172,6 +190,7 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         command for label, command, _ in calls if label == "Run SeaweedFS S3 contract tests"
     )
     assert "INVESTMENT_RESEARCH_DATABASE_URL" not in direct_s3_command
+    assert secret_paths and all(not path.exists() for path in secret_paths)
 
 
 def test_verification_cleans_up_and_preserves_failure_code(
@@ -278,8 +297,9 @@ def test_api_contract_container_uses_both_data_networks_and_is_removed(
     ]
     assert "isolated-project_storage-data" in calls[0][1]
     assert "INVESTMENT_RESEARCH_DATABASE_URL" in calls[0][1]
+    assert "INVESTMENT_RESEARCH_REDIS_URL" in calls[0][1]
     assert calls[1][1][-2:] == (
-        "isolated-project_default",
+        "isolated-project_backend",
         "isolated-project-api-contract",
     )
     assert calls[2][1][-2:] == ("--attach", "isolated-project-api-contract")

@@ -8,6 +8,7 @@ from uvicorn import run
 
 from investment_research.infrastructure.parsing.http_protocol import (
     MAX_PARSER_REQUEST_METADATA_BYTES,
+    PARSER_HEALTH_PATH,
     PARSER_HTTP_PATH,
     PARSER_REQUEST_CONTENT_TYPE,
     PARSER_REQUEST_METADATA_HEADER,
@@ -104,6 +105,12 @@ def create_parser_app(
         redoc_url=None,
         openapi_url=None,
     )
+
+    @application.get(PARSER_HEALTH_PATH, include_in_schema=False)
+    async def parser_health() -> Response:
+        """Confirm only that the private parser listener can accept requests."""
+
+        return Response(content="ok", media_type="text/plain")
 
     @application.post(PARSER_HTTP_PATH, include_in_schema=False)
     async def parse_document(request: Request) -> Response:

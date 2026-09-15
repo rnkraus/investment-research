@@ -133,6 +133,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, tuple[str, ...], Mapping[str, str] | None]] = []
+    secret_paths: list[Path] = []
     monkeypatch.setattr(verify_backend_images, "find_available_loopback_port", lambda: 55432)
     monkeypatch.setattr(
         verify_backend_images,
@@ -152,6 +153,11 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     ) -> subprocess.CompletedProcess[str]:
         del capture_output, check, working_directory, visible
         calls.append((label, tuple(command), environment))
+        if label == "Start isolated PostgreSQL for the API image":
+            assert environment is not None
+            secret_path = Path(environment["POSTGRES_PASSWORD_SECRET_FILE"])
+            assert secret_path.read_text(encoding="utf-8") == "disposable-password"
+            secret_paths.append(secret_path)
         stdout = "healthy\n" if label == "Inspect API container health" else ""
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
@@ -181,6 +187,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     assert not any("postgresql+psycopg" in argument for argument in api_command)
     assert api_command.count("--env") == 6
     assert "INVESTMENT_RESEARCH_REDIS_URL" in api_command
+    assert any(argument.endswith("12345678_backend") for argument in api_command)
 
     api_environment = next(
         environment
@@ -202,9 +209,11 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
         "@127.0.0.1:55432/investment_research"
     )
     assert migration_environment["COMPOSE_DISABLE_ENV_FILE"] == "1"
+    assert "POSTGRES_PASSWORD" not in migration_environment
     assert migration_environment["INVESTMENT_RESEARCH_S3_BUCKET"] == "unused-storage-check"
     assert "unused-application-access" not in api_command
     assert "unused-application-secret" not in api_command
+    assert secret_paths and all(not path.exists() for path in secret_paths)
 
 
 def test_api_runtime_verification_removes_postgres_after_start_failure(

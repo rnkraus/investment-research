@@ -10,9 +10,12 @@ import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
+
+from scripts.docker_secrets import disposable_compose_secret_environment
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
@@ -44,6 +47,7 @@ API_CONTRACT_ENVIRONMENT_NAMES = (
     "INVESTMENT_RESEARCH_ENVIRONMENT",
     "INVESTMENT_RESEARCH_RUNTIME_LOCATION",
     "INVESTMENT_RESEARCH_DATABASE_URL",
+    "INVESTMENT_RESEARCH_REDIS_URL",
     "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER",
 )
 
@@ -393,7 +397,7 @@ def run_api_contract_test(
                 "docker",
                 "network",
                 "connect",
-                f"{project_name}_default",
+                f"{project_name}_backend",
                 container_name,
             ],
             working_directory=REPOSITORY_ROOT,
@@ -434,50 +438,22 @@ def verify_object_storage() -> int:
     bucket = f"investment-research-check-{run_id}"
     postgres_port = find_available_loopback_port()
     postgres_password = generate_disposable_credential()
+    redis_password = generate_disposable_credential()
     admin_access_key = generate_disposable_credential()
     admin_secret_access_key = generate_disposable_credential()
     application_access_key = generate_disposable_credential()
     application_secret_access_key = generate_disposable_credential()
-    credentials = (
-        admin_access_key,
-        admin_secret_access_key,
-        application_access_key,
-        application_secret_access_key,
-    )
+    secret_values = {
+        "POSTGRES_PASSWORD": postgres_password,
+        "REDIS_PASSWORD": redis_password,
+        "SEAWEEDFS_ADMIN_ACCESS_KEY": admin_access_key,
+        "SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY": admin_secret_access_key,
+        "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID": application_access_key,
+        "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY": application_secret_access_key,
+    }
+    credentials = tuple(secret_values.values())
     compose_environment = os.environ.copy()
-    compose_environment.update(
-        {
-            "COMPOSE_DISABLE_ENV_FILE": "1",
-            "POSTGRES_DB": POSTGRES_DATABASE,
-            "POSTGRES_USER": POSTGRES_USER,
-            "POSTGRES_PASSWORD": postgres_password,
-            "POSTGRES_PORT": str(postgres_port),
-            "SEAWEEDFS_ADMIN_ACCESS_KEY": admin_access_key,
-            "SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY": admin_secret_access_key,
-            "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID": application_access_key,
-            "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY": application_secret_access_key,
-            "INVESTMENT_RESEARCH_S3_BUCKET": bucket,
-            "INVESTMENT_RESEARCH_S3_REGION_NAME": "us-east-1",
-        }
-    )
-    verification_environment = compose_environment | {
-        "INVESTMENT_RESEARCH_OBJECT_STORAGE_INTEGRATION": "1",
-        "INVESTMENT_RESEARCH_OBJECT_STORAGE_PERSISTENCE_PHASE": "unused",
-        "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
-        "INVESTMENT_RESEARCH_RUNTIME_LOCATION": "container",
-        "INVESTMENT_RESEARCH_DATABASE_URL": (
-            f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
-            f"@postgres:5432/{POSTGRES_DATABASE}"
-        ),
-        "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER": "s3",
-        "INVESTMENT_RESEARCH_S3_ENDPOINT_URL": "http://seaweedfs-s3:8333",
-    }
-    migration_environment = compose_environment | {
-        "INVESTMENT_RESEARCH_DATABASE_URL": (
-            f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
-            f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
-        )
-    }
+    secret_resources = ExitStack()
     python_command = [sys.executable, "-m"]
     compose_command = [
         "docker",
@@ -490,6 +466,41 @@ def verify_object_storage() -> int:
     exit_code = 0
 
     try:
+        secret_sources = secret_resources.enter_context(
+            disposable_compose_secret_environment(secret_values)
+        )
+        compose_environment.update(
+            {
+                **secret_sources,
+                "COMPOSE_DISABLE_ENV_FILE": "1",
+                "POSTGRES_DB": POSTGRES_DATABASE,
+                "POSTGRES_USER": POSTGRES_USER,
+                "POSTGRES_PORT": str(postgres_port),
+                "INVESTMENT_RESEARCH_S3_BUCKET": bucket,
+                "INVESTMENT_RESEARCH_S3_REGION_NAME": "us-east-1",
+            }
+        )
+        verification_environment = compose_environment | {
+            "INVESTMENT_RESEARCH_OBJECT_STORAGE_INTEGRATION": "1",
+            "INVESTMENT_RESEARCH_OBJECT_STORAGE_PERSISTENCE_PHASE": "unused",
+            "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
+            "INVESTMENT_RESEARCH_RUNTIME_LOCATION": "container",
+            "INVESTMENT_RESEARCH_DATABASE_URL": (
+                f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
+                f"@postgres:5432/{POSTGRES_DATABASE}"
+            ),
+            "INVESTMENT_RESEARCH_REDIS_URL": f"redis://:{redis_password}@redis:6379/0",
+            "INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER": "s3",
+            "INVESTMENT_RESEARCH_S3_ENDPOINT_URL": "http://seaweedfs-s3:8333",
+            "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID": application_access_key,
+            "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY": application_secret_access_key,
+        }
+        migration_environment = compose_environment | {
+            "INVESTMENT_RESEARCH_DATABASE_URL": (
+                f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
+                f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
+            )
+        }
         run_command(
             "Build object-storage verification image",
             [
@@ -507,19 +518,21 @@ def verify_object_storage() -> int:
             environment=compose_environment,
         )
         run_command(
-            "Build and start isolated PostgreSQL and SeaweedFS",
+            "Build and start isolated PostgreSQL, Redis, and SeaweedFS",
             [
                 *compose_command,
                 "up",
                 "--build",
                 "--detach",
                 "postgres",
+                "redis",
                 "seaweedfs-bootstrap",
             ],
             working_directory=REPOSITORY_ROOT,
             environment=compose_environment,
         )
         wait_for_healthy_service(compose_command, "postgres", environment=compose_environment)
+        wait_for_healthy_service(compose_command, "redis", environment=compose_environment)
         for service in STORAGE_SERVICES:
             wait_for_healthy_service(compose_command, service, environment=compose_environment)
         wait_for_successful_bootstrap(compose_command, environment=compose_environment)
@@ -637,6 +650,7 @@ def verify_object_storage() -> int:
         )
         if image_cleanup.returncode != 0 and exit_code == 0:
             exit_code = image_cleanup.returncode
+        secret_resources.close()
 
     return exit_code
 
