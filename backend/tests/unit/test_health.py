@@ -9,6 +9,7 @@ from investment_research.main import create_app
 from investment_research.settings import ApiSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 
 
 @dataclass(slots=True)
@@ -30,6 +31,7 @@ def test_health_reports_process_liveness_without_private_details() -> None:
                 "app_name": "Injected Test Research Archive",
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,
+                "redis_url": LOCAL_REDIS_URL,
             }
         )
     )
@@ -58,6 +60,7 @@ def test_ready_reports_only_the_aggregate_dependency_state() -> None:
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,
+                "redis_url": LOCAL_REDIS_URL,
             }
         )
     )

@@ -14,6 +14,7 @@ from investment_research.bootstrap import (
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.infrastructure.object_storage.s3 import S3ObjectStorage
+from investment_research.infrastructure.queue.celery import CeleryProcessingDispatcher
 from investment_research.main import create_app
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -32,6 +33,7 @@ from investment_research.modules.research.application import (
 from investment_research.settings import ApiSettings, WorkerSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 
 
 class UnusedS3Client:
@@ -54,6 +56,7 @@ def make_api_settings(object_storage_root: Path) -> ApiSettings:
         {
             "environment": "test",
             "database_url": LOCAL_DATABASE_URL,
+            "redis_url": LOCAL_REDIS_URL,
             "object_storage_root": object_storage_root,
         }
     )
@@ -77,6 +80,7 @@ def s3_provider_values() -> dict[str, object]:
     return {
         "environment": "test",
         "database_url": LOCAL_DATABASE_URL,
+        "redis_url": LOCAL_REDIS_URL,
         "object_storage_provider": "s3",
         "s3": {
             "endpoint_url": "http://127.0.0.1:8333",
@@ -100,6 +104,12 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
             assert container.database_engine.dialect.name == "postgresql"
             assert session.bind is container.database_engine
             assert isinstance(container.object_storage, LocalObjectStorage)
+            assert isinstance(
+                container.processing_dispatcher,
+                CeleryProcessingDispatcher,
+            )
+            assert container.queue_application.conf.broker_url == LOCAL_REDIS_URL
+            assert container.queue_application.conf.result_backend is None
             assert isinstance(container.capture_document_service, CaptureDocumentService)
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.get_processing_run_service, GetProcessingRunService)

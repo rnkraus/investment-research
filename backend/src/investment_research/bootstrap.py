@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from celery import Celery  # type: ignore[import-untyped]
 from sqlalchemy import Engine
 
 from investment_research.infrastructure.database.metadata import get_model_metadata
@@ -39,6 +40,10 @@ from investment_research.infrastructure.object_storage.s3 import (
     create_s3_client,
 )
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
+from investment_research.infrastructure.queue.celery import (
+    CeleryProcessingDispatcher,
+    create_celery_app,
+)
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
@@ -56,6 +61,7 @@ from investment_research.modules.processing.application import (
     ProcessDocumentService,
 )
 from investment_research.modules.processing.contracts import ParserLimits
+from investment_research.modules.processing.ports import ProcessingDispatcher
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
@@ -125,6 +131,8 @@ class ApiContainer:
     session_factory: SessionFactory
     readiness_probe: ReadinessProbe
     object_storage: ObjectStorage
+    queue_application: Celery
+    processing_dispatcher: ProcessingDispatcher
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
     get_processing_run_service: GetProcessingRunService
@@ -136,6 +144,7 @@ class ApiContainer:
     def close(self) -> None:
         """Release process-wide resources owned by the API container."""
 
+        self.queue_application.close()
         self.database_engine.dispose()
 
 
@@ -160,6 +169,8 @@ class WorkerContainer:
 def build_api_container(settings: ApiSettings) -> ApiContainer:
     """Wire API application services without constructing parser execution."""
 
+    queue_application = create_celery_app(settings)
+    processing_dispatcher = CeleryProcessingDispatcher(queue_application)
     database = _build_database_resources(settings)
     object_storage = _build_object_storage(settings)
     retrieve_research_service = RetrieveResearchService(
@@ -202,10 +213,13 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         session_factory=database.session_factory,
         readiness_probe=CompositeReadinessProbe((PostgreSQLReadinessProbe(database.engine),)),
         object_storage=object_storage,
+        queue_application=queue_application,
+        processing_dispatcher=processing_dispatcher,
         capture_document_service=CaptureDocumentService(
             object_storage=object_storage,
             unit_of_work_factory=create_capture_unit_of_work_factory(database.session_factory),
             max_upload_bytes=settings.max_upload_bytes,
+            processing_dispatcher=processing_dispatcher,
         ),
         open_original_service=open_original_service,
         get_processing_run_service=GetProcessingRunService(

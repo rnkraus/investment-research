@@ -54,9 +54,9 @@ After the canonical transaction closes successfully, the service creates the str
 publication failure records only the safe workspace and processing-run identifiers, returns the
 committed capture result, and leaves the run visibly `CAPTURED` for recovery. Dispatch is outside the
 compensation block, so neither a broker failure nor an unexpected post-commit error can delete an
-already canonical original. The Celery adapter exists; API-container wiring is the next M0 Step 3
-work block. Until that wiring replaces the temporary optional dispatcher, the retained M0.0 runner
-path can still construct the capture service without queue publication.
+already canonical original. The API container constructs the Celery adapter and provides its
+`ProcessingDispatcher` to the capture service explicitly. Focused service and retained M0.0 runner
+tests use typed recording dispatchers so they remain independent of a live broker.
 
 ## Original access
 

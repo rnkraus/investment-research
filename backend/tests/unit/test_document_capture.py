@@ -128,11 +128,12 @@ def make_service(
 
     identifiers = iter((DOCUMENT_ID, VERSION_ID, ORIGINAL_ID, PROCESSING_RUN_ID))
     unit_of_work_factory: CaptureUnitOfWorkFactory = unit_of_work.open
+    resolved_dispatcher = processing_dispatcher or RecordingProcessingDispatcher(unit_of_work)
     return CaptureDocumentService(
         object_storage=LocalObjectStorage(tmp_path / "objects"),
         unit_of_work_factory=unit_of_work_factory,
         max_upload_bytes=max_upload_bytes,
-        processing_dispatcher=processing_dispatcher,
+        processing_dispatcher=resolved_dispatcher,
         clock=lambda: CAPTURED_AT,
         identifier_factory=identifiers.__next__,
     )
@@ -352,4 +353,5 @@ def test_service_rejects_impossibly_small_limit() -> None:
             object_storage=LocalObjectStorage(Path("unused")),
             unit_of_work_factory=unit_of_work_factory,
             max_upload_bytes=7,
+            processing_dispatcher=RecordingProcessingDispatcher(unit_of_work),
         )

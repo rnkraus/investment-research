@@ -34,6 +34,7 @@ BLOCK_ID = UUID("10000000-0000-4000-8000-000000000004")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 EVIDENCE_TEXT = "FY2025 revenue was $184.2 million."
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
+LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 
 
 class FakeResolveEvidenceSpanService:
@@ -94,6 +95,7 @@ def evidence_client(
             {
                 "environment": "test",
                 "database_url": LOCAL_DATABASE_URL,
+                "redis_url": LOCAL_REDIS_URL,
                 "object_storage_root": tmp_path / "objects",
             }
         )

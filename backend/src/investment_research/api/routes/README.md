@@ -15,13 +15,15 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 | `evidence.py`   | `GET /api/v1/evidence-spans/{evidence_span_id}`                      | Resolves one authorized streamed citation to its exact active source.               |
 
 ```mermaid
-flowchart LR
+flowchart TD
     REQUEST[Multipart request] --> VALIDATE[FastAPI field validation]
     VALIDATE --> CONTEXT[Resolve trusted context]
     CONTEXT --> CAPTURE[CaptureDocumentService]
-    CAPTURE --> DATABASE[Canonical records and processing intent]
-    CAPTURE --> STORAGE[Immutable original]
-    CAPTURE --> RESPONSE[DocumentAccepted]
+    CAPTURE --> STORAGE[Store immutable original]
+    STORAGE --> DATABASE[Commit canonical records and CAPTURED run]
+    DATABASE --> DISPATCH[Publish ProcessingJobV1 through Celery]
+    DISPATCH -->|published| RESPONSE[DocumentAccepted]
+    DISPATCH -->|broker unavailable; safe event| RESPONSE
 ```
 
 Routes must not open another module's tables directly, choose infrastructure adapters, perform long-running parsing, or accept a client-provided workspace as authorization.
@@ -42,6 +44,8 @@ connection targets, migration revisions, credentials, exception messages, or tra
 The capture route accepts `file`, `title`, `language`, `published_at`, and `available_at` as multipart
 fields. `workspace_id` is intentionally absent. It returns document, document-version, and
 processing-run identifiers plus the implemented processing-status URL; it does not parse the PDF.
+Publication occurs only after the canonical transaction commits. An expected broker failure leaves
+the returned run visibly `CAPTURED` for the bounded recovery path.
 
 ```mermaid
 flowchart LR
