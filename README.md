@@ -247,7 +247,9 @@ CI runs the deterministic frontend and backend checks, migrates an empty Postgre
 applies the synthetic seed, runs all PostgreSQL integration tests, checks metadata drift, and proves
 the reviewed migration can downgrade to base and upgrade back to head. A separate image job validates
 the Dockerfile and Compose configuration, then builds and exercises every backend target through the
-same disposable API-readiness gate used locally.
+same disposable API-readiness gate used locally. The processing-runtime job exercises the
+credential-free parser boundary and real Celery/Redis recovery after forced pool-worker loss in
+separate disposable Compose projects with generated credentials and automatic cleanup.
 
 ## Update API contracts
 

@@ -503,8 +503,10 @@ Real HTTP-adapter and PostgreSQL integration tests now prove the canonical outco
 timeout, abrupt connection loss, and malformed responses. Transient transport failures exhaust the
 three-attempt profile before a safe terminal state; a protocol violation fails after one claim. In
 every case the original remains intact, the terminal lease is cleared, and no partial lexical
-output exists. The step is not complete: Linux CI, the automatic complete fixture path, frontend
-removal of the manual command, and the full Step 3 gate remain outstanding.
+output exists. A dedicated Linux CI job now runs the parser-isolation and live queue-recovery gates
+from the locked backend environment; its first successful hosted GitHub run remains the remote
+confirmation. The step is not complete: that hosted CI confirmation, the automatic complete fixture
+path, frontend removal of the manual command, and the full Step 3 gate remain outstanding.
 
 ### Step 4 — Complete local container stack
 
