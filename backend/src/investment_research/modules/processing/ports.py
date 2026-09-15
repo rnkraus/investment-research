@@ -6,7 +6,11 @@ from typing import BinaryIO, Protocol
 from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.processing.contracts import ParsedDocument, ParserLimits
+from investment_research.modules.processing.contracts import (
+    ParsedDocument,
+    ParserLimits,
+    ProcessingJobV1,
+)
 from investment_research.modules.processing.domain import (
     Chunk,
     ChunkSet,
@@ -26,6 +30,17 @@ class ParserLimitExceededError(DocumentParserError):
 
 class ProcessingExecutionLimitError(Exception):
     """Raised when the outer runner reaches a process-level execution limit."""
+
+
+class ProcessingDispatchError(Exception):
+    """Report that a canonical processing job could not be published."""
+
+
+class ProcessingDispatcher(Protocol):
+    """Publish application-owned processing jobs through an interchangeable adapter."""
+
+    def dispatch(self, job: ProcessingJobV1) -> None:
+        """Publish one validated job or raise a provider-neutral dispatch error."""
 
 
 class DocumentParser(Protocol):
