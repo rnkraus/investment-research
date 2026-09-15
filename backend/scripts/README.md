@@ -16,6 +16,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_parser_isolation.py` | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`            | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`         | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
+| `verify_queue_recovery.py`   | Proves live Celery redelivery and lease-based recovery after worker loss.                 |
 
 ## Contract flow
 
@@ -173,6 +174,37 @@ connections to Redis and the external network fail. A worker-image probe must st
 repository-owned PDF through `POST /internal/v1/parse`, while request-size and extracted-text limits
 fail with typed, safe outcomes. The unique Compose project and temporary secrets are removed even
 when a check fails.
+
+## Queue-recovery verification
+
+```mermaid
+flowchart LR
+    COMMAND[verify_queue_recovery.py] --> STACK[Start isolated worker runtime]
+    STACK --> CAPTURE[Capture fixture and publish task]
+    CAPTURE --> CLAIM[Wait for PARSING claim]
+    CLAIM --> KILL[Kill Celery pool worker]
+    KILL --> REDELIVER[Broker redelivery]
+    REDELIVER --> RECLAIM[Reclaim after lease expiry]
+    RECLAIM --> READY[Require one LEXICAL_READY output]
+    READY --> CLEANUP[Remove project and volumes]
+```
+
+Run the live worker-loss gate from `backend/` with Docker running:
+
+```shell
+uv run --locked python -m scripts.verify_queue_recovery
+```
+
+The command creates a unique Compose project with generated disposable credentials and does not
+load repository `.env` values. It pauses the isolated parser, captures the frozen PDF through the
+real application container, and waits until the Celery pool worker owns the canonical processing
+lease. It then asks Celery for the exact pool-process identifier and kills only that child process,
+leaving the Celery main process alive to reject and redeliver the unacknowledged message. The parser
+is resumed after the deliberately shortened disposable lease expires.
+
+Success requires the redelivered task to reach `LEXICAL_READY` on its second canonical attempt with
+exactly one expected set of structure blocks, chunks, and chunk-set output. Cleanup removes the
+unique project and its volumes after both success and failure.
 
 ## Backend image verification
 

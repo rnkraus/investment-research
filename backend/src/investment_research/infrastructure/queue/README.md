@@ -10,7 +10,7 @@ canonical source of `ProcessingRun` state and derived output.
 | --- | --- |
 | `__init__.py` | Declares the infrastructure package without import-time side effects. |
 | `celery.py` | Builds the broker-only Celery application and publishes `ProcessingJobV1`. |
-| `tasks.py` | Validates broker payloads, acknowledges active duplicates, and invokes the application-owned job executor. |
+| `tasks.py` | Validates broker payloads, defers active redeliveries, and invokes the application-owned job executor. |
 | `../../worker.py` | Composes the Celery entry point and owns lazy process-local worker resources. |
 
 ## Publication flow
@@ -35,9 +35,12 @@ credentials, ORM objects, or client-supplied authorization claims.
 Celery accepts JSON only, does not store task results, and may deliver the same task more than once.
 The task validates untrusted broker input before application execution. The job's `workspace_id`
 must match the context reconstructed by the worker's server-controlled identity provider; the
-message is not authorization proof. An active duplicate lease is acknowledged as a harmless no-op,
-while unexpected errors remain visible. The processing application service and its canonical
-execution lease provide idempotency; a Celery task identifier alone is not a correctness boundary.
+message is not authorization proof. An ordinary duplicate with an active lease is acknowledged as
+a harmless no-op. A broker-marked redelivery with an active lease is deferred until the canonical
+lease can be reclaimed, because acknowledging it would lose the only remaining delivery after a
+worker failure. Unexpected errors remain visible. The processing application service and its
+canonical execution lease provide idempotency; a Celery task identifier alone is not a correctness
+boundary.
 
 ## Acknowledgement and retry policy
 
@@ -45,7 +48,9 @@ The worker reserves one message at a time and acknowledges it only after task ex
 redeliver an unacknowledged message after 420 seconds. This exceeds the 360-second canonical
 processing lease, so a replacement worker can reclaim the `ProcessingRun` before a broker
 redelivery tries to execute it. A worker process lost after claiming work causes Celery to reject
-the delivery for redelivery; PostgreSQL still decides whether the new delivery may run.
+the delivery for redelivery; PostgreSQL still decides whether the new delivery may run. If that
+redelivery arrives before the old lease expires, the task schedules itself for the remaining lease
+duration instead of acknowledging the message or repeatedly polling PostgreSQL.
 
 ```mermaid
 flowchart LR
@@ -55,6 +60,8 @@ flowchart LR
     PARSE -->|transient transport failure| EXPIRE[Expire lease immediately]
     EXPIRE --> RETRY[Celery retry with backoff and jitter]
     RETRY --> CLAIM
+    CLAIM -->|broker redelivery and active lease| DEFER[Retry at lease expiry]
+    DEFER --> CLAIM
     PARSE -->|permanent failure or final attempt| FAILED[Commit FAILED state]
 ```
 

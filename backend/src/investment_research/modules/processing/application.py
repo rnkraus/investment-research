@@ -92,7 +92,11 @@ class ProcessingParserVersionError(Exception):
 
 
 class ProcessingRunAlreadyActiveError(Exception):
-    """Report a harmless duplicate delivery while another lease is active."""
+    """Report when another attempt owns the run until a known UTC time."""
+
+    def __init__(self, retry_at: datetime) -> None:
+        super().__init__("processing run already has an active attempt")
+        self.retry_at = retry_at
 
 
 class ProcessingRetryableError(Exception):
@@ -348,9 +352,10 @@ class ProcessDocumentService:
                     maximum_attempts=self._profile.maximum_attempts,
                 )
             except ProcessingLeaseActiveError as error:
-                raise ProcessingRunAlreadyActiveError(
-                    "processing run already has an active attempt"
-                ) from error
+                lease_expires_at = current_run.lease_expires_at
+                if lease_expires_at is None:
+                    raise RuntimeError("active processing run has no lease expiry") from error
+                raise ProcessingRunAlreadyActiveError(lease_expires_at) from error
             except ProcessingAttemptLimitError as error:
                 exhausted_run = current_run.mark_attempts_exhausted(
                     completed_at=claimed_at,

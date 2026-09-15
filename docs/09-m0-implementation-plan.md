@@ -478,7 +478,7 @@ isolated parser; duplicate delivery produces one active output; all ADR-0004 neg
 **Suggested commits:** processing contracts; queue adapter; Celery worker; parser boundary; security
 tests; frontend state/copy; CI and docs.
 
-**Local implementation record (2026-09-15):** The Redis/Celery contracts, task delivery, processing
+**Local implementation record (2026-09-16):** The Redis/Celery contracts, task delivery, processing
 lease, worker entry point, bounded private parser protocol, and final parser Compose boundary are
 implemented. The Docker Desktop isolation gate passed with the repository-owned worker and parser
 images: the parser had no canonical credentials or secret mount, joined only the internal parser
@@ -496,9 +496,12 @@ ceiling. Permanent failures and exhausted attempts become terminal without retry
 acknowledgement, one-message prefetch, worker-loss rejection, and a 420-second Redis visibility
 timeout are configured. Unit and PostgreSQL integration tests cover retry classification, bounded
 exhaustion, active duplicate rejection, expired-lease reclaim, stale-worker protection, and a
-single canonical output after retry. The step is not complete: live broker redelivery and worker-loss
-verification, canonical timeout/crash/malformed-response outcomes, Linux CI, the automatic complete
-fixture path, frontend removal of the manual command, and the full Step 3 gate remain outstanding.
+single canonical output after retry. A disposable full-runtime verification now proves live Redis
+redelivery after forced Celery pool-worker loss: an early redelivery is deferred until the canonical
+lease expires, the second claim reaches `LEXICAL_READY`, and only one derived output set remains.
+The step is not complete: canonical timeout/crash/malformed-response outcomes, Linux CI, the
+automatic complete fixture path, frontend removal of the manual command, and the full Step 3 gate
+remain outstanding.
 
 ### Step 4 — Complete local container stack
 

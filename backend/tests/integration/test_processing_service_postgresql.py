@@ -462,8 +462,9 @@ def test_concurrent_delivery_cannot_steal_an_active_lease(
     first_thread.start()
     assert blocking_parser.entered.wait(timeout=5)
     try:
-        with pytest.raises(ProcessingRunAlreadyActiveError, match="active attempt"):
+        with pytest.raises(ProcessingRunAlreadyActiveError, match="active attempt") as error:
             second_service.process(context, capture.processing_run_id)
+        assert error.value.retry_at == STARTED_AT + M0_0_PROCESSING_PROFILE.lease_duration
     finally:
         blocking_parser.release.set()
         first_thread.join(timeout=5)

@@ -473,9 +473,10 @@ def test_active_duplicate_is_refused_without_parser_or_state_change() -> None:
         clock_values=(duplicate_at,),
     )
 
-    with pytest.raises(ProcessingRunAlreadyActiveError, match="active attempt"):
+    with pytest.raises(ProcessingRunAlreadyActiveError, match="active attempt") as error:
         service.process(make_context(), PROCESSING_RUN_ID)
 
+    assert error.value.retry_at == LEASE_EXPIRES_AT
     assert repository.run == parsing
     assert repository.updates == []
     assert parser.calls == []
