@@ -41,6 +41,7 @@ Create the local Docker Compose configuration:
 
 ```shell
 cp .env.example .env
+cp storage.env.example storage.env
 ```
 
 Keep the host-runtime and all four PostgreSQL entries, and replace the password placeholder in
@@ -48,17 +49,23 @@ Keep the host-runtime and all four PostgreSQL entries, and replace the password 
 Compose and local database-capable backend processes require the complete PostgreSQL configuration;
 an explicitly configured process environment variable takes precedence over the file.
 
+Replace every credential placeholder in `storage.env` with distinct local-only random values. This
+ignored file is read only by Docker Compose and separates SeaweedFS bootstrap and application
+credentials from the current host processes. Do not reuse either file outside local development.
+
 `INVESTMENT_RESEARCH_RUNTIME_LOCATION=host` keeps local API binds and database targets on loopback.
-Compose later overrides this value separately inside each container rather than changing the host
-development file.
+Until API and worker join Compose in M0 Step 4, host processes use the private local object-storage
+adapter. Step 2 verifies the unchanged application contract against internal SeaweedFS in a
+disposable container. Compose later supplies container-specific S3 settings without changing the
+host development file.
 
 ## Run locally
 
 Start PostgreSQL from the repository root:
 
 ```shell
-docker compose up -d postgres
-docker compose ps
+docker compose --env-file .env --env-file storage.env up -d postgres
+docker compose --env-file .env --env-file storage.env ps
 ```
 
 Before starting the API for the first time, migrate the database and create the deterministic local
@@ -136,7 +143,7 @@ connects directly to PostgreSQL.
 Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
 
 ```shell
-docker compose down
+docker compose --env-file .env --env-file storage.env down
 ```
 
 ## Verify changes
@@ -174,9 +181,10 @@ cd backend
 uv run --locked python -m scripts.verify_postgres
 ```
 
-Verify the SeaweedFS S3 contracts in a separate internal Docker network. The command generates
-disposable credentials, checks concurrency, isolation, permissions, and restart persistence, and
-removes its unique containers, volumes, and verification image:
+Verify the SeaweedFS S3 contracts in a separate internal Docker environment. The command creates a
+migrated disposable PostgreSQL database, generates disposable credentials, captures and reopens an
+original through the real API contract, checks concurrency, isolation, permissions, and restart
+persistence, and removes its unique containers, networks, volumes, and verification image:
 
 ```shell
 uv run --locked python -m scripts.verify_object_storage
@@ -254,7 +262,10 @@ uv audit --locked
 - `backend/` contains the shared FastAPI and single-job processing application package and its tests.
 - `backend/Dockerfile` currently provides a runnable API target plus the worker and parser image
   foundations that M0 Step 3 replaces with their final process entry points.
-- `compose.yaml` provides a loopback-only PostgreSQL service for local development.
+- `compose.yaml` provides loopback-only PostgreSQL plus internally isolated SeaweedFS master,
+  volume, filer, S3 gateway, and one-shot bucket bootstrap services. API and worker join this
+  topology in M0 Step 4; object-storage verification already exercises their S3 contract inside
+  the private data network.
 - The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
   reviewed Alembic-managed PostgreSQL schema and caller-owned transaction boundaries.
 

@@ -141,6 +141,15 @@ Before Step 2 is complete, Docker Desktop and Linux CI must verify:
 8. the pinned image and Python SDK pass the repository's security and release-age checks or one
    explicit, documented, and bounded exception.
 
+**Local validation record (2026-09-15):** The isolated Docker Desktop gate passed conditional
+create, streaming checksum and byte integrity, uniform unavailable-object behavior, separate
+least-privilege credentials, restart persistence, scoped cleanup, control-plane isolation, and the
+real API capture-and-authorized-original-open contract. Direct S3 tests received only the private
+storage data network; the confined API contract container received only that network and its
+disposable PostgreSQL network. The current Compose topology has no web or parser service to receive
+storage credentials. Credential absence must be verified again when those processes join Compose.
+The dedicated Linux CI job is implemented but its first successful hosted run remains pending.
+
 Reconsider SeaweedFS if these checks fail, upstream maintenance stops, applicable vulnerabilities
 cannot be mitigated promptly, required S3 semantics diverge, or local operation becomes too complex.
 Select the managed public provider in a separate ADR when public deployment begins.
