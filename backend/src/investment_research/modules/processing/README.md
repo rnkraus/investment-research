@@ -184,6 +184,15 @@ the processing service persist a safe canonical failure without storing HTTP, py
 exception details. See the [parsing infrastructure README](../../infrastructure/parsing/README.md)
 for the complete protocol boundary.
 
+| Observed parser failure | Application category | Canonical outcome |
+| --- | --- | --- |
+| Timeout or abrupt connection loss | `ParserTransportError` | Expire the lease and retry; after the third claim, store `FAILED` with `Processing attempt limit exceeded`. |
+| Malformed or contract-breaking response | `ParserProtocolError` | Store `FAILED` after the first claim with `Document parsing failed safely`. |
+
+PostgreSQL integration tests exercise these categories through the real HTTP adapter. They require
+the original bytes to remain unchanged, the terminal lease to be cleared, and no structure block,
+chunk set, or chunk to be committed for a failed parse.
+
 ## Single-job runner
 
 `investment_research.runner` is the development-only `ProcessingExecutor` adapter. It accepts one

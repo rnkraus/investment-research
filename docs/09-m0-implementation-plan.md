@@ -499,9 +499,12 @@ exhaustion, active duplicate rejection, expired-lease reclaim, stale-worker prot
 single canonical output after retry. A disposable full-runtime verification now proves live Redis
 redelivery after forced Celery pool-worker loss: an early redelivery is deferred until the canonical
 lease expires, the second claim reaches `LEXICAL_READY`, and only one derived output set remains.
-The step is not complete: canonical timeout/crash/malformed-response outcomes, Linux CI, the
-automatic complete fixture path, frontend removal of the manual command, and the full Step 3 gate
-remain outstanding.
+Real HTTP-adapter and PostgreSQL integration tests now prove the canonical outcomes for parser
+timeout, abrupt connection loss, and malformed responses. Transient transport failures exhaust the
+three-attempt profile before a safe terminal state; a protocol violation fails after one claim. In
+every case the original remains intact, the terminal lease is cleared, and no partial lexical
+output exists. The step is not complete: Linux CI, the automatic complete fixture path, frontend
+removal of the manual command, and the full Step 3 gate remain outstanding.
 
 ### Step 4 — Complete local container stack
 
