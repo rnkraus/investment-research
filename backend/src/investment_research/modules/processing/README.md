@@ -30,15 +30,29 @@ flowchart LR
 ## Lifecycle
 
 ```text
-CAPTURED → PARSING → LEXICAL_READY
-               ↘ FAILED
+CAPTURED ──claim──► PARSING + active lease ──owner completes──► LEXICAL_READY
+                         │
+                         ├─ owner fails permanently ──────────► FAILED
+                         ├─ lease expires ──reclaim──► PARSING + new lease
+                         └─ lease expires at attempt limit ───► FAILED
 ```
 
-State, timestamps, and safe error summaries must agree. `start_parsing`, `mark_lexical_ready`, and
-`mark_failed` are the only domain operations that advance an existing run. Each operation returns a
-new fully validated immutable snapshot; it does not mutate the earlier state. Direct jumps such as
-`CAPTURED → LEXICAL_READY`, failure before parsing starts, and restarting a terminal run raise
-`InvalidProcessingTransitionError`.
+State, timestamps, attempt metadata, and safe error summaries must agree. `claim_for_processing`
+claims `CAPTURED` or reclaims an expired `PARSING` run. `mark_lexical_ready` and `mark_failed`
+require the current `lease_id` and clear the lease on the terminal snapshot.
+`expire_lease_for_retry` makes an owned lease immediately reclaimable, while
+`mark_attempts_exhausted` closes an abandoned run after the configured attempt ceiling. Each
+operation returns a new fully validated immutable snapshot; it does not mutate the earlier state.
+Direct jumps, active-lease theft, stale-lease completion, and restarting a terminal run raise typed
+processing transition errors.
+
+`attempt_count` records successful canonical claims, not broker deliveries. `lease_id` is the
+current attempt's ownership token, and `lease_expires_at` is the earliest UTC instant at which a new
+attempt may reclaim the run. M0 permits three attempts and uses a 360-second lease, which exceeds
+the maximum configurable 300-second processing timeout plus shutdown grace. The later Celery task
+will use `expire_lease_for_retry` only for classified transient infrastructure failures; this
+application-service block still maps its existing parser and execution failures to terminal
+`FAILED`.
 
 Parser, parser configuration, chunker, chunking configuration, and lexical configuration versions
 are immutable properties of a run. `update_run` changes only lifecycle fields. The processing
@@ -90,24 +104,30 @@ workers from claiming or completing the same snapshot concurrently.
 
 ```mermaid
 flowchart LR
-    INPUT[WorkspaceContext and run ID] --> START[Transaction 1<br/>lock CAPTURED run]
-    START --> PARSING[Commit PARSING]
+    INPUT[WorkspaceContext and run ID] --> START[Transaction 1<br/>lock scoped run]
+    START -->|CAPTURED or expired lease| PARSING[Commit PARSING<br/>attempt + 1 and new lease]
+    START -->|active lease| BUSY[Refuse concurrent duplicate]
+    START -->|terminal| NOOP[Return terminal no-op]
+    START -->|expired at limit| EXHAUSTED[Commit safe FAILED]
     PARSING --> ORIGINAL[Open and verify original<br/>separate read session]
     ORIGINAL --> PARSER[Bounded DocumentParser]
     PARSER --> BUILD[Build blocks and chunks]
-    BUILD --> SUCCESS[Transaction 2<br/>lock run]
-    SUCCESS --> READY[Commit output and LEXICAL_READY together]
+    BUILD --> SUCCESS[Transaction 2<br/>lock run and verify lease owner]
+    SUCCESS --> READY[Commit output and LEXICAL_READY<br/>clear lease]
     ORIGINAL -. failure .-> FAILURE[Fresh transaction<br/>lock run]
     PARSER -. failure .-> FAILURE
     BUILD -. failure .-> FAILURE
     SUCCESS -. rollback .-> FAILURE
-    FAILURE --> FAILED[Commit sanitized FAILED state]
+    FAILURE --> FAILED[Verify lease owner<br/>commit sanitized FAILED and clear lease]
 ```
 
 Only short database operations occur inside the write transactions. Parser errors are raised back
 to the command-line runner after the canonical `FAILED` state is committed. Exception text is
 untrusted and is therefore mapped to bounded application-owned summaries instead of being stored
-verbatim. Missing and foreign run identifiers both produce `ProcessingRunUnavailableError`.
+verbatim. Missing and foreign run identifiers both produce `ProcessingRunUnavailableError`. An
+active duplicate raises `ProcessingRunAlreadyActiveError` without opening the original. A stale
+worker whose lease was replaced receives `ProcessingRunConflictError` before derived output is
+written.
 
 ## Processing status
 

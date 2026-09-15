@@ -75,15 +75,20 @@ def verify_postgres() -> int:
             "POSTGRES_USER": POSTGRES_USER,
             "POSTGRES_PASSWORD": postgres_password,
             "POSTGRES_PORT": str(postgres_port),
+            "INVESTMENT_RESEARCH_S3_BUCKET": "investment-research-postgres-check",
         }
     )
-    verification_environment = compose_environment | {
-        "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
-        "INVESTMENT_RESEARCH_DATABASE_URL": (
-            f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
-            f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
-        ),
-    }
+    verification_environment = os.environ.copy()
+    verification_environment.update(
+        {
+            "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
+            "INVESTMENT_RESEARCH_DATABASE_URL": (
+                f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
+                f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
+            ),
+            "INVESTMENT_RESEARCH_REDIS_URL": ("redis://:integration-test-only@127.0.0.1:1/0"),
+        }
+    )
     compose_command = [
         "docker",
         "compose",

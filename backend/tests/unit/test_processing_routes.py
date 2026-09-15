@@ -69,6 +69,7 @@ def make_run(*, failed: bool = False) -> ProcessingRun:
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
         created_at=CREATED_AT,
+        attempt_count=1 if failed else 0,
         started_at=CREATED_AT + timedelta(seconds=1) if failed else None,
         completed_at=CREATED_AT + timedelta(seconds=2) if failed else None,
         error_summary="Document parsing failed safely" if failed else None,

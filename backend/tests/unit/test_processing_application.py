@@ -17,6 +17,7 @@ from investment_research.modules.processing.domain import ProcessingRun, Process
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000001")
 DOCUMENT_VERSION_ID = UUID("10000000-0000-4000-8000-000000000001")
 PROCESSING_RUN_ID = UUID("20000000-0000-4000-8000-000000000001")
+LEASE_ID = UUID("20000000-0000-4000-8000-000000000006")
 CHUNK_SET_ID = UUID("30000000-0000-4000-8000-000000000001")
 PAGE_ONE_BLOCK_ID = UUID("30000000-0000-4000-8000-000000000002")
 PAGE_ONE_CHUNK_ID = UUID("30000000-0000-4000-8000-000000000003")
@@ -35,6 +36,8 @@ def make_run(state: ProcessingState = ProcessingState.PARSING) -> ProcessingRun:
         if state in {ProcessingState.LEXICAL_READY, ProcessingState.FAILED}
         else None
     )
+    is_captured = state is ProcessingState.CAPTURED
+    is_parsing = state is ProcessingState.PARSING
     return ProcessingRun(
         id=PROCESSING_RUN_ID,
         workspace_id=WORKSPACE_ID,
@@ -46,6 +49,9 @@ def make_run(state: ProcessingState = ProcessingState.PARSING) -> ProcessingRun:
         chunking_config_version="m0.0-structure-block-config-v1",
         lexical_config_version="m0.0-english-lexical-v1",
         created_at=CREATED_AT,
+        attempt_count=0 if is_captured else 1,
+        lease_id=LEASE_ID if is_parsing else None,
+        lease_expires_at=CREATED_AT + timedelta(seconds=46) if is_parsing else None,
         started_at=started_at,
         completed_at=completed_at,
         error_summary="Synthetic failure" if state is ProcessingState.FAILED else None,

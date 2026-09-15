@@ -72,7 +72,7 @@ Automatic company assignments remain reviewable suggestions. A duplicate relatio
 
 | Entity | Meaning | Important properties |
 |---|---|---|
-| `ProcessingRun` | One versioned attempt to process a document version | Configuration versions, state, timestamps, error summary |
+| `ProcessingRun` | One versioned intent to process a document version | Configuration versions, state, attempt count, current execution lease, timestamps, error summary |
 | `ProcessingStage` | Independently retryable step within a run | Stage type, attempt, state, input/output references |
 | `StructureBlock` | Canonical parsed unit anchored to the source | Page, type, order, text, source offsets, optional geometry |
 | `ChunkSet` | Versioned chunking result for a document version | Chunker and configuration version; active flag |
@@ -82,6 +82,11 @@ Automatic company assignments remain reviewable suggestions. A duplicate relatio
 Structure blocks preserve source location independently of a particular chunking strategy. This allows chunks and embeddings to change without breaking historical citations.
 
 Only one chunk set per configured retrieval profile is active for new searches. Historical answers retain references to the versions they used.
+
+During M0, `ProcessingRun.attempt_count`, `lease_id`, and `lease_expires_at` provide the minimum
+canonical ownership needed for safe at-least-once Celery delivery. A terminal run has no lease. M2
+replaces this single-operation mechanism with the richer `ProcessingStage` retry and history model;
+the M0 lease does not prematurely create stage records.
 
 ### 3.5 Research requests and retrieval
 

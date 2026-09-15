@@ -117,6 +117,8 @@ def make_run(
         if state in {ProcessingState.LEXICAL_READY, ProcessingState.FAILED}
         else None
     )
+    is_captured = state is ProcessingState.CAPTURED
+    is_parsing = state is ProcessingState.PARSING
     return ProcessingRun(
         id=run_id or uuid4(),
         workspace_id=context.workspace_id,
@@ -128,6 +130,9 @@ def make_run(
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
         created_at=FIXTURE_TIME,
+        attempt_count=0 if is_captured else 1,
+        lease_id=uuid4() if is_parsing else None,
+        lease_expires_at=(FIXTURE_TIME + timedelta(seconds=46) if is_parsing else None),
         started_at=started_at,
         completed_at=completed_at,
     )

@@ -262,7 +262,10 @@ only when its owning step requires working behavior and tests.
    is enabled. A short canonical execution lease on `ProcessingRun` prevents concurrent execution
    and permits recovery after worker loss. Permanent validation/parser failures are not retried;
    transient infrastructure failures use bounded retry with backoff and jitter. ADR-0005 governs
-   the payload, claim, completion, failure, acknowledgement, and recovery rules.
+   the payload, claim, completion, failure, acknowledgement, and recovery rules. The M0 processing
+   profile permits three successfully claimed attempts and uses a 360-second lease, exceeding the
+   maximum configurable 300-second execution timeout plus shutdown grace. M2 replaces this fixed
+   lease with stage-specific retry history and heartbeats when measured workflows require them.
 5. **No cross-module persistence access:** queue and parser adapters call typed application services
    and ports. They do not query another module's tables directly.
 6. **S3 behind the retained port:** application modules do not import an S3 SDK. SeaweedFS is a

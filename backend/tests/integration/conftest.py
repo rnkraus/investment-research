@@ -13,6 +13,8 @@ from investment_research.settings import (
     load_database_settings,
 )
 
+INACTIVE_INTEGRATION_REDIS_URL = "redis://:integration-test-only@127.0.0.1:1/0"
+
 
 @pytest.fixture(scope="session")
 def integration_database_settings() -> DatabaseSettings:
@@ -32,7 +34,12 @@ def integration_api_settings(
 ) -> ApiSettings:
     """Provide API settings bound to the configured integration database."""
 
-    return ApiSettings.model_validate(integration_database_settings.model_dump())
+    return ApiSettings.model_validate(
+        {
+            **integration_database_settings.model_dump(),
+            "redis_url": INACTIVE_INTEGRATION_REDIS_URL,
+        }
+    )
 
 
 @pytest.fixture(scope="session")
@@ -41,7 +48,12 @@ def integration_worker_settings(
 ) -> WorkerSettings:
     """Provide worker settings bound to the configured integration database."""
 
-    return WorkerSettings.model_validate(integration_database_settings.model_dump())
+    return WorkerSettings.model_validate(
+        {
+            **integration_database_settings.model_dump(),
+            "redis_url": INACTIVE_INTEGRATION_REDIS_URL,
+        }
+    )
 
 
 @pytest.fixture(scope="session")

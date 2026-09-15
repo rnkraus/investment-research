@@ -45,6 +45,7 @@ def make_ready_run() -> ProcessingRun:
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
         created_at=CREATED_AT,
+        attempt_count=1,
         started_at=CREATED_AT + timedelta(seconds=1),
         completed_at=CREATED_AT + timedelta(seconds=2),
     )

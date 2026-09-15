@@ -61,6 +61,18 @@ class InvalidProcessingTransitionError(ValueError):
     """Raised when a processing run attempts a forbidden lifecycle transition."""
 
 
+class ProcessingLeaseActiveError(InvalidProcessingTransitionError):
+    """Raised when another processing attempt still owns an active lease."""
+
+
+class ProcessingLeaseOwnershipError(InvalidProcessingTransitionError):
+    """Raised when an attempt does not own the run's current lease."""
+
+
+class ProcessingAttemptLimitError(InvalidProcessingTransitionError):
+    """Raised when no additional execution attempt may claim a processing run."""
+
+
 class ImmutableProcessingModel(BaseModel):
     """Shared validation policy for immutable processing snapshots."""
 
@@ -80,11 +92,14 @@ class ProcessingRun(ImmutableProcessingModel):
     chunking_config_version: ConfigurationVersion
     lexical_config_version: ConfigurationVersion
     created_at: AwareDatetime
+    attempt_count: int = Field(default=0, ge=0)
+    lease_id: UUID | None = None
+    lease_expires_at: AwareDatetime | None = None
     started_at: AwareDatetime | None = None
     completed_at: AwareDatetime | None = None
     error_summary: SafeErrorSummary | None = None
 
-    @field_validator("created_at", "started_at", "completed_at")
+    @field_validator("created_at", "lease_expires_at", "started_at", "completed_at")
     @classmethod
     def normalize_run_times(cls, value: datetime | None) -> datetime | None:
         """Normalize known run times to UTC without inventing missing events."""
@@ -102,14 +117,27 @@ class ProcessingRun(ImmutableProcessingModel):
         ):
             raise ValueError("completed_at must not precede started_at")
 
+        has_complete_lease = self.lease_id is not None and self.lease_expires_at is not None
+        has_partial_lease = (self.lease_id is None) != (self.lease_expires_at is None)
+        if has_partial_lease:
+            raise ValueError("lease_id and lease_expires_at must be set together")
+
         if self.state is ProcessingState.CAPTURED:
             if self.started_at is not None or self.completed_at is not None:
                 raise ValueError("CAPTURED run must not have processing timestamps")
+            if self.attempt_count != 0 or has_complete_lease:
+                raise ValueError("CAPTURED run must not have execution-attempt metadata")
         elif self.state is ProcessingState.PARSING:
             if self.started_at is None or self.completed_at is not None:
                 raise ValueError("PARSING run requires only started_at")
+            if self.attempt_count < 1 or self.lease_id is None or self.lease_expires_at is None:
+                raise ValueError("PARSING run requires an attempt and complete lease")
+            if self.lease_expires_at <= self.started_at:
+                raise ValueError("lease_expires_at must be later than started_at")
         elif self.started_at is None or self.completed_at is None:
             raise ValueError("terminal processing state requires start and completion times")
+        elif self.attempt_count < 1 or has_complete_lease:
+            raise ValueError("terminal processing state requires attempts and no lease")
 
         if self.state is ProcessingState.FAILED:
             if self.error_summary is None:
@@ -118,38 +146,117 @@ class ProcessingRun(ImmutableProcessingModel):
             raise ValueError("only FAILED run may contain error_summary")
         return self
 
-    def start_parsing(self, *, started_at: datetime) -> Self:
-        """Advance one captured run to its active parsing state."""
+    def claim_for_processing(
+        self,
+        *,
+        lease_id: UUID,
+        claimed_at: datetime,
+        lease_expires_at: datetime,
+        maximum_attempts: int,
+    ) -> Self:
+        """Claim a captured run or reclaim one whose previous lease expired."""
 
-        self._require_state(ProcessingState.CAPTURED, ProcessingState.PARSING)
+        claimed_at = self._aware_utc(claimed_at, name="claimed_at")
+        lease_expires_at = self._aware_utc(
+            lease_expires_at,
+            name="lease_expires_at",
+        )
+        if maximum_attempts < 1:
+            raise ValueError("maximum_attempts must be positive")
+        if lease_expires_at <= claimed_at:
+            raise ValueError("lease_expires_at must be later than claimed_at")
+        if self.state not in {ProcessingState.CAPTURED, ProcessingState.PARSING}:
+            raise InvalidProcessingTransitionError(
+                f"cannot claim processing run in {self.state.value}"
+            )
+        if self.attempt_count >= maximum_attempts:
+            raise ProcessingAttemptLimitError("processing attempt limit reached")
+        if (
+            self.state is ProcessingState.PARSING
+            and self.lease_expires_at is not None
+            and self.lease_expires_at > claimed_at
+        ):
+            raise ProcessingLeaseActiveError("processing run already has an active lease")
+
         return type(self).model_validate(
             {
                 **self.model_dump(),
                 "state": ProcessingState.PARSING,
-                "started_at": started_at,
+                "attempt_count": self.attempt_count + 1,
+                "lease_id": lease_id,
+                "lease_expires_at": lease_expires_at,
+                "started_at": self.started_at or claimed_at,
             }
         )
 
-    def mark_lexical_ready(self, *, completed_at: datetime) -> Self:
+    def mark_lexical_ready(self, *, lease_id: UUID, completed_at: datetime) -> Self:
         """Complete parsing after canonical blocks and chunks are ready to commit."""
 
         self._require_state(ProcessingState.PARSING, ProcessingState.LEXICAL_READY)
+        self._require_lease_owner(lease_id)
         return type(self).model_validate(
             {
                 **self.model_dump(),
                 "state": ProcessingState.LEXICAL_READY,
+                "lease_id": None,
+                "lease_expires_at": None,
                 "completed_at": completed_at,
             }
         )
 
-    def mark_failed(self, *, completed_at: datetime, error_summary: str) -> Self:
+    def mark_failed(
+        self,
+        *,
+        lease_id: UUID,
+        completed_at: datetime,
+        error_summary: str,
+    ) -> Self:
         """Terminate active parsing with one bounded, caller-sanitized summary."""
 
         self._require_state(ProcessingState.PARSING, ProcessingState.FAILED)
+        self._require_lease_owner(lease_id)
         return type(self).model_validate(
             {
                 **self.model_dump(),
                 "state": ProcessingState.FAILED,
+                "lease_id": None,
+                "lease_expires_at": None,
+                "completed_at": completed_at,
+                "error_summary": error_summary,
+            }
+        )
+
+    def expire_lease_for_retry(self, *, lease_id: UUID, expired_at: datetime) -> Self:
+        """Make the owned lease immediately reclaimable after a transient failure."""
+
+        self._require_state(ProcessingState.PARSING, ProcessingState.PARSING)
+        self._require_lease_owner(lease_id)
+        expired_at = self._aware_utc(expired_at, name="expired_at")
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "lease_expires_at": expired_at,
+            }
+        )
+
+    def mark_attempts_exhausted(
+        self,
+        *,
+        completed_at: datetime,
+        error_summary: str,
+    ) -> Self:
+        """Fail an abandoned run when its expired lease used the last attempt."""
+
+        self._require_state(ProcessingState.PARSING, ProcessingState.FAILED)
+        completed_at = self._aware_utc(completed_at, name="completed_at")
+        if self.lease_expires_at is None or self.lease_expires_at > completed_at:
+            raise ProcessingLeaseActiveError("processing run still has an active lease")
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "state": ProcessingState.FAILED,
+                "lease_id": None,
+                "lease_expires_at": None,
                 "completed_at": completed_at,
                 "error_summary": error_summary,
             }
@@ -166,6 +273,20 @@ class ProcessingRun(ImmutableProcessingModel):
             raise InvalidProcessingTransitionError(
                 f"cannot transition processing run from {self.state.value} to {target.value}"
             )
+
+    def _require_lease_owner(self, lease_id: UUID) -> None:
+        """Require the caller to own the current attempt before changing its state."""
+
+        if self.lease_id != lease_id:
+            raise ProcessingLeaseOwnershipError("processing lease is not owned by this attempt")
+
+    @staticmethod
+    def _aware_utc(value: datetime, *, name: str) -> datetime:
+        """Validate and normalize a transition timestamp before comparing it."""
+
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(f"{name} must be timezone-aware")
+        return value.astimezone(UTC)
 
 
 class StructureBlock(ImmutableProcessingModel):

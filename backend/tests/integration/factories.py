@@ -156,6 +156,7 @@ def make_research_source(*, label: str = "Research Source") -> ResearchSource:
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
         created_at=FIXTURE_TIME,
+        attempt_count=1,
         started_at=FIXTURE_TIME + timedelta(seconds=1),
         completed_at=FIXTURE_TIME + timedelta(seconds=2),
     )

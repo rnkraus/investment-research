@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from investment_research.infrastructure.logging import application_logger
 
-REQUIRED_DATABASE_REVISIONS = frozenset({"0002_remove_original_page_count"})
+REQUIRED_DATABASE_REVISIONS = frozenset({"0003_processing_execution_lease"})
 
 _logger = application_logger("health")
 

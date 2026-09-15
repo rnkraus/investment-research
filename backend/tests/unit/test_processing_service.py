@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import BinaryIO
@@ -12,8 +12,10 @@ import pytest
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import (
+    M0_0_PROCESSING_PROFILE,
     ProcessDocumentService,
     ProcessingParserVersionError,
+    ProcessingRunAlreadyActiveError,
     ProcessingRunUnavailableError,
 )
 from investment_research.modules.processing.contracts import (
@@ -42,9 +44,12 @@ PROCESSING_RUN_ID = UUID("20000000-0000-4000-8000-000000000001")
 CHUNK_SET_ID = UUID("30000000-0000-4000-8000-000000000001")
 BLOCK_ID = UUID("30000000-0000-4000-8000-000000000002")
 CHUNK_ID = UUID("30000000-0000-4000-8000-000000000003")
+LEASE_ID = UUID("40000000-0000-4000-8000-000000000001")
+OTHER_LEASE_ID = UUID("40000000-0000-4000-8000-000000000002")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 STARTED_AT = CREATED_AT + timedelta(seconds=1)
 COMPLETED_AT = CREATED_AT + timedelta(seconds=2)
+LEASE_EXPIRES_AT = STARTED_AT + timedelta(seconds=45)
 PARSER_LIMITS = ParserLimits(max_pages=10, max_extracted_characters=10_000)
 
 
@@ -200,21 +205,18 @@ def deterministic_ids() -> Iterator[UUID]:
     yield from (CHUNK_SET_ID, BLOCK_ID, CHUNK_ID)
 
 
-def deterministic_clock() -> Iterator[datetime]:
-    """Yield the start and terminal timestamps used by one attempt."""
-
-    yield from (STARTED_AT, COMPLETED_AT)
-
-
 def make_service(
     repository: InMemoryProcessingRepository,
     parser: RecordingParser,
     original_provider: RecordingOriginalProvider,
+    *,
+    clock_values: tuple[datetime, ...] = (STARTED_AT, COMPLETED_AT),
+    maximum_attempts: int = 3,
 ) -> tuple[ProcessDocumentService, RecordingUnitOfWorkFactory]:
     """Build one deterministic service and expose its transaction recorder."""
 
     unit_of_work_factory = RecordingUnitOfWorkFactory(repository)
-    timestamps = deterministic_clock()
+    timestamps = iter(clock_values)
     identifiers = deterministic_ids()
     return (
         ProcessDocumentService(
@@ -222,8 +224,13 @@ def make_service(
             original_provider=original_provider,
             unit_of_work_factory=unit_of_work_factory.open,
             parser_limits=PARSER_LIMITS,
+            profile=replace(
+                M0_0_PROCESSING_PROFILE,
+                maximum_attempts=maximum_attempts,
+            ),
             clock=lambda: next(timestamps),
             identifier_factory=lambda: next(identifiers),
+            lease_identifier_factory=lambda: LEASE_ID,
         ),
         unit_of_work_factory,
     )
@@ -244,6 +251,9 @@ def test_process_commits_start_and_lexical_output_in_separate_transactions() -> 
     assert result.state is ProcessingState.LEXICAL_READY
     assert result.started_at == STARTED_AT
     assert result.completed_at == COMPLETED_AT
+    assert result.attempt_count == 1
+    assert result.lease_id is None
+    assert result.lease_expires_at is None
     assert repository.run == result
     assert [run.state for run in repository.updates] == [
         ProcessingState.PARSING,
@@ -355,3 +365,122 @@ def test_parser_version_mismatch_fails_before_original_access() -> None:
     assert parser.calls == []
     assert original_provider.calls == []
     assert unit_of_work_factory.transaction_count == 2
+
+
+def test_terminal_duplicate_is_a_no_op_without_parser_or_original_access() -> None:
+    parsing = make_run().claim_for_processing(
+        lease_id=OTHER_LEASE_ID,
+        claimed_at=STARTED_AT,
+        lease_expires_at=LEASE_EXPIRES_AT,
+        maximum_attempts=3,
+    )
+    ready = parsing.mark_lexical_ready(
+        lease_id=OTHER_LEASE_ID,
+        completed_at=COMPLETED_AT,
+    )
+    repository = InMemoryProcessingRepository(ready)
+    parser = RecordingParser(
+        parsed_document=ParsedDocument(pages=(ParsedPage(page_number=1, text="Text"),))
+    )
+    original_provider = RecordingOriginalProvider()
+    service, unit_of_work_factory = make_service(repository, parser, original_provider)
+
+    result = service.process(make_context(), PROCESSING_RUN_ID)
+
+    assert result == ready
+    assert repository.updates == []
+    assert parser.calls == []
+    assert original_provider.calls == []
+    assert unit_of_work_factory.transaction_count == 1
+
+
+def test_active_duplicate_is_refused_without_parser_or_state_change() -> None:
+    parsing = make_run().claim_for_processing(
+        lease_id=OTHER_LEASE_ID,
+        claimed_at=STARTED_AT,
+        lease_expires_at=LEASE_EXPIRES_AT,
+        maximum_attempts=3,
+    )
+    repository = InMemoryProcessingRepository(parsing)
+    parser = RecordingParser(
+        parsed_document=ParsedDocument(pages=(ParsedPage(page_number=1, text="Text"),))
+    )
+    original_provider = RecordingOriginalProvider()
+    duplicate_at = STARTED_AT + timedelta(seconds=1)
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        original_provider,
+        clock_values=(duplicate_at,),
+    )
+
+    with pytest.raises(ProcessingRunAlreadyActiveError, match="active attempt"):
+        service.process(make_context(), PROCESSING_RUN_ID)
+
+    assert repository.run == parsing
+    assert repository.updates == []
+    assert parser.calls == []
+    assert original_provider.calls == []
+    assert unit_of_work_factory.transaction_count == 1
+
+
+def test_expired_lease_is_reclaimed_before_processing() -> None:
+    expired_at = STARTED_AT + timedelta(seconds=1)
+    parsing = make_run().claim_for_processing(
+        lease_id=OTHER_LEASE_ID,
+        claimed_at=STARTED_AT,
+        lease_expires_at=expired_at,
+        maximum_attempts=3,
+    )
+    repository = InMemoryProcessingRepository(parsing)
+    parser = RecordingParser(
+        parsed_document=ParsedDocument(pages=(ParsedPage(page_number=1, text="Text"),))
+    )
+    original_provider = RecordingOriginalProvider()
+    completed_at = expired_at + timedelta(seconds=1)
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        original_provider,
+        clock_values=(expired_at, completed_at),
+    )
+
+    result = service.process(make_context(), PROCESSING_RUN_ID)
+
+    assert result.state is ProcessingState.LEXICAL_READY
+    assert result.attempt_count == 2
+    assert result.completed_at == completed_at
+    assert [run.attempt_count for run in repository.updates] == [2, 2]
+    assert unit_of_work_factory.transaction_count == 2
+
+
+def test_expired_lease_at_attempt_limit_becomes_terminal_failure() -> None:
+    expired_at = STARTED_AT + timedelta(seconds=1)
+    parsing = make_run().claim_for_processing(
+        lease_id=OTHER_LEASE_ID,
+        claimed_at=STARTED_AT,
+        lease_expires_at=expired_at,
+        maximum_attempts=1,
+    )
+    repository = InMemoryProcessingRepository(parsing)
+    parser = RecordingParser(
+        parsed_document=ParsedDocument(pages=(ParsedPage(page_number=1, text="Text"),))
+    )
+    original_provider = RecordingOriginalProvider()
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        original_provider,
+        clock_values=(expired_at,),
+        maximum_attempts=1,
+    )
+
+    result = service.process(make_context(), PROCESSING_RUN_ID)
+
+    assert result.state is ProcessingState.FAILED
+    assert result.error_summary == "Processing attempt limit exceeded"
+    assert result.attempt_count == 1
+    assert result.lease_id is None
+    assert parser.calls == []
+    assert original_provider.calls == []
+    assert unit_of_work_factory.transaction_count == 1
