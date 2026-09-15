@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from investment_research.infrastructure.parsing.http_protocol import (
+    PARSER_HEALTH_PATH,
     PARSER_HTTP_PATH,
     PARSER_REQUEST_CONTENT_TYPE,
     PARSER_REQUEST_METADATA_HEADER,
@@ -96,6 +97,17 @@ def post_pdf(
         HttpResponseView,
         client.post(PARSER_HTTP_PATH, content=content, headers=request_headers),
     )
+
+
+def test_health_reports_listener_readiness_without_parsing() -> None:
+    parser = ControllableParser()
+    client = TestClient(create_parser_app(make_settings(), parser))
+
+    response = client.get(PARSER_HEALTH_PATH)
+
+    assert response.status_code == 200
+    assert response.text == "ok"
+    assert parser.calls == []
 
 
 def test_success_returns_versioned_bounded_document() -> None:

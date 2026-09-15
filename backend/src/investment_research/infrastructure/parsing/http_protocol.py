@@ -2,6 +2,7 @@
 
 from typing import Final
 
+PARSER_HEALTH_PATH: Final = "/internal/health"
 PARSER_HTTP_PATH: Final = "/internal/v1/parse"
 PARSER_REQUEST_CONTENT_TYPE: Final = "application/pdf"
 PARSER_RESPONSE_CONTENT_TYPE: Final = "application/json"

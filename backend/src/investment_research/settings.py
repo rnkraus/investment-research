@@ -36,6 +36,7 @@ DEFAULT_PROCESSING_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
 MIN_PROCESSING_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
 MAX_CONFIGURABLE_PROCESSING_MEMORY_LIMIT_BYTES = 4 * 1024 * 1024 * 1024
 DEFAULT_PARSER_PORT = 8100
+DOCKER_SECRETS_ROOT = Path("/run/secrets")
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
     "POSTGRES_USER",
@@ -452,6 +453,34 @@ def _configuration_value(
     return environ.get(name, file_values.get(name, default))
 
 
+def _secret_configuration_value(
+    name: str,
+    file_values: dict[str, str | None],
+) -> str | None:
+    """Read a direct local value or one explicitly mounted Docker secret."""
+
+    direct_value = _configuration_value(name, file_values)
+    file_variable = f"{name}_FILE"
+    secret_path_value = environ.get(file_variable)
+    if secret_path_value is None:
+        return direct_value
+    if direct_value is not None:
+        raise ValueError(f"{name} and {file_variable} cannot both be configured")
+
+    secret_path = Path(secret_path_value)
+    if secret_path.parent != DOCKER_SECRETS_ROOT or secret_path.name in {"", ".", ".."}:
+        raise ValueError(f"{file_variable} must name one file directly under /run/secrets")
+    if secret_path.is_symlink():
+        raise ValueError(f"{file_variable} must not reference a symbolic link")
+    try:
+        value = secret_path.read_text(encoding="utf-8").rstrip("\n")
+    except OSError as error:
+        raise ValueError(f"{file_variable} is unavailable") from error
+    if not value:
+        raise ValueError(f"{file_variable} is empty")
+    return value
+
+
 def _read_local_values(env_file: Path | None) -> dict[str, str | None]:
     """Read an explicitly allowed local development file when it exists."""
 
@@ -485,17 +514,20 @@ def _runtime_values(file_values: dict[str, str | None]) -> dict[str, str | None]
 def _database_url(file_values: dict[str, str | None], runtime_location: object) -> str | None:
     """Load an explicit URL or construct the host-development PostgreSQL URL."""
 
-    explicit_url = _configuration_value("INVESTMENT_RESEARCH_DATABASE_URL", file_values)
+    explicit_url = _secret_configuration_value("INVESTMENT_RESEARCH_DATABASE_URL", file_values)
     if explicit_url is not None:
         return explicit_url
 
     postgres_values = {
-        name: _configuration_value(name, file_values) for name in POSTGRES_SETTING_NAMES
+        name: (
+            _secret_configuration_value(name, file_values)
+            if name == "POSTGRES_PASSWORD"
+            else _configuration_value(name, file_values)
+        )
+        for name in POSTGRES_SETTING_NAMES
     }
     if all(value is None for value in postgres_values.values()):
         return None
-    if runtime_location == "container":
-        raise ValueError("container application processes require INVESTMENT_RESEARCH_DATABASE_URL")
 
     missing_names = [name for name, value in postgres_values.items() if not value]
     if missing_names:
@@ -522,9 +554,10 @@ def _database_url(file_values: dict[str, str | None], runtime_location: object) 
     encoded_user = quote(user, safe="")
     encoded_password = quote(password, safe="")
     encoded_database = quote(database, safe="")
+    database_host = "postgres" if runtime_location == "container" else "127.0.0.1"
     return (
         f"postgresql+psycopg://{encoded_user}:{encoded_password}"
-        f"@127.0.0.1:{port}/{encoded_database}"
+        f"@{database_host}:{port}/{encoded_database}"
     )
 
 
@@ -539,15 +572,20 @@ def _database_runtime_values(file_values: dict[str, str | None]) -> dict[str, ob
 def _redis_url(file_values: dict[str, str | None], runtime_location: object) -> str | None:
     """Load an explicit URL or construct the host-development Redis URL."""
 
-    explicit_url = _configuration_value("INVESTMENT_RESEARCH_REDIS_URL", file_values)
+    explicit_url = _secret_configuration_value("INVESTMENT_RESEARCH_REDIS_URL", file_values)
     if explicit_url is not None:
         return explicit_url
 
-    redis_values = {name: _configuration_value(name, file_values) for name in REDIS_SETTING_NAMES}
+    redis_values = {
+        name: (
+            _secret_configuration_value(name, file_values)
+            if name == "REDIS_PASSWORD"
+            else _configuration_value(name, file_values)
+        )
+        for name in REDIS_SETTING_NAMES
+    }
     if all(value is None for value in redis_values.values()):
         return None
-    if runtime_location == "container":
-        raise ValueError("container application processes require INVESTMENT_RESEARCH_REDIS_URL")
 
     missing_names = [name for name, value in redis_values.items() if not value]
     if missing_names:
@@ -567,7 +605,8 @@ def _redis_url(file_values: dict[str, str | None], runtime_location: object) -> 
     if not 1 <= port <= 65535:
         raise ValueError("REDIS_PORT must be between 1 and 65535")
 
-    return f"redis://:{quote(password, safe='')}@127.0.0.1:{port}/0"
+    redis_host = "redis" if runtime_location == "container" else "127.0.0.1"
+    return f"redis://:{quote(password, safe='')}@{redis_host}:{port}/0"
 
 
 def _queue_runtime_values(
@@ -609,11 +648,11 @@ def _object_storage_runtime_values(file_values: dict[str, str | None]) -> dict[s
             "INVESTMENT_RESEARCH_S3_BUCKET",
             file_values,
         ),
-        "access_key_id": _configuration_value(
+        "access_key_id": _secret_configuration_value(
             "INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID",
             file_values,
         ),
-        "secret_access_key": _configuration_value(
+        "secret_access_key": _secret_configuration_value(
             "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
             file_values,
         ),

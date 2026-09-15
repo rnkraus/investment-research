@@ -6,6 +6,7 @@ storage.env
 !*.env.example
 .envrc
 .direnv/
+.secrets/
 *.pem
 *.key
 *.p12

@@ -35,6 +35,7 @@ def test_verification_runs_complete_sequence_without_exposing_password(
 ) -> None:
     prepare_deterministic_runtime(monkeypatch)
     calls: list[tuple[str, tuple[str, ...], Mapping[str, str]]] = []
+    secret_paths: list[Path] = []
 
     def record_command(
         label: str,
@@ -46,6 +47,10 @@ def test_verification_runs_complete_sequence_without_exposing_password(
     ) -> subprocess.CompletedProcess[bytes]:
         del working_directory, check
         calls.append((label, tuple(command), environment))
+        if label == "Start isolated PostgreSQL":
+            secret_path = Path(environment["POSTGRES_PASSWORD_SECRET_FILE"])
+            assert secret_path.read_text(encoding="utf-8") == TEST_PASSWORD
+            secret_paths.append(secret_path)
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(verify_postgres, "run_command", record_command)
@@ -66,7 +71,9 @@ def test_verification_runs_complete_sequence_without_exposing_password(
     ]
     assert all(TEST_PASSWORD not in argument for _, command, _ in calls for argument in command)
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
-    assert calls[0][2]["POSTGRES_PASSWORD"] == TEST_PASSWORD
+    assert "POSTGRES_PASSWORD" not in calls[0][2]
+    assert calls[0][2]["COMPOSE_DISABLE_ENV_FILE"] == "1"
+    assert secret_paths and all(not path.exists() for path in secret_paths)
 
 
 def test_verification_cleans_up_and_preserves_failure_code(

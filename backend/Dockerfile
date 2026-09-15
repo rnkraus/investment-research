@@ -63,6 +63,10 @@ CMD ["--loglevel=INFO", "--concurrency=1", "--without-gossip", "--without-mingle
 FROM runtime AS parser
 
 LABEL org.opencontainers.image.description="Build foundation for the M0 credential-free parser runtime"
+EXPOSE 8100
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=10 \
+    CMD ["/app/.venv/bin/python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8100/internal/health', timeout=2).close()"]
+
 ENTRYPOINT ["/app/.venv/bin/python", "-m", "investment_research.parser_app"]
 CMD []
 
