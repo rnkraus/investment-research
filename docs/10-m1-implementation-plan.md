@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Draft v0.1 — implementation sequence defined; Step 0 decisions remain open \
+**Status:** Draft v0.2 — local single-user sequence defined; Step 0 decisions remain open \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0007 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -12,41 +12,42 @@
 
 ## 1. Purpose and scope
 
-M1 turns the completed M0 engineering foundation into the first production-shaped product slice.
-It preserves the M0 module boundaries, canonical stores, Celery delivery, isolated parser, evidence
-validator, and same-origin web/API path. It replaces only the remaining local proof adapters needed
-for one authenticated document-to-answer journey.
+M1 turns the completed M0 engineering foundation into the first complete local RAG slice. It
+preserves the M0 module boundaries, canonical stores, Celery delivery, isolated parser, evidence
+validator, same-origin web/API path, and fixed server-owned local identity. It replaces only the
+remaining proof adapters needed for one local document-to-answer journey.
 
 The accepted M1 path is deliberately narrow:
 
-1. authenticate one private owner through OIDC;
-2. maintain one private workspace and one isolated sanitized-demo workspace;
-3. capture either one English text PDF or one English pasted-text original;
-4. parse, chunk, embed, and index the active content;
-5. run both PostgreSQL lexical retrieval and Pinecone dense retrieval;
-6. generate a typed answer through one approved AI provider;
-7. validate every statement and evidence reference against canonical PostgreSQL state;
-8. stream only validated statements and citations;
-9. open the immutable PDF page or pasted-text passage used as evidence;
-10. retain safe version, latency, usage, cost, and trace identifiers.
+1. resolve one fixed local owner and workspace from server-controlled state;
+2. capture either one English text PDF or one English pasted-text original;
+3. parse, chunk, embed, and index the active content;
+4. run both PostgreSQL lexical retrieval and Pinecone dense retrieval;
+5. generate a typed answer through one approved AI provider;
+6. validate every statement and evidence reference against canonical PostgreSQL state;
+7. stream only validated statements and citations;
+8. open the immutable PDF page or pasted-text passage used as evidence;
+9. retain safe version, latency, usage, cost, and trace identifiers.
 
-M1 is not the complete V1 RAG system. It does not add multiple-document ingestion, companies,
-watchlists, broad archive browsing, reprocessing controls, deletion, transactional outbox delivery,
-index reconciliation, RRF, reranking, conversation memory, advanced temporal UX, LangSmith, public
-hosting, private-provider data approval, or agent workflows. Those remain assigned to M2–M9.
+M1 is not the complete V1 RAG system or an authenticated release. It does not add OIDC, users,
+memberships, browser sessions, multiple-document ingestion, companies, watchlists, broad archive
+browsing, reprocessing controls, deletion, transactional outbox delivery, index reconciliation,
+RRF, reranking, conversation memory, advanced temporal UX, LangSmith, public hosting,
+private-provider data approval, or agent workflows. Those remain assigned to M2–M9.
 
 Only synthetic, openly licensed, redistributable, or otherwise public non-sensitive fixtures may
-cross an external identity, embedding, vector, generation, or tracing boundary during M1.
+cross an external embedding, vector, generation, or tracing boundary during M1.
 
 ## 2. M1 outcomes
 
 M1 is complete only when:
 
-1. a browser session derives its user identity from a validated OIDC flow rather than a fixed local
-   UUID or client-supplied workspace identifier;
-2. the owner can access only the private workspace and the demo path is read-only and isolated;
+1. every request resolves the existing fixed local `WorkspaceContext` from server-controlled state,
+   never from a client-supplied workspace identifier;
+2. Compose publishes the browser entry point only on host loopback and the runtime remains
+   explicitly unsuitable for shared, staging, or public deployment;
 3. PDF and pasted-text originals are immutable, checksummed, workspace-scoped, and retrievable only
-   through authorized API routes;
+   through scoped API routes;
 4. both media types reach `SEARCHABLE` through Celery and the credential-free parser boundary;
 5. active chunks receive versioned embeddings and deterministic vector identifiers in a
    workspace-scoped Pinecone namespace;
@@ -68,8 +69,7 @@ M1 is complete only when:
 
 | M0 component | M1 action | Contract or invariant retained |
 |---|---|---|
-| Fixed local identity | Replace for API requests with validated OIDC identity and canonical membership lookup | Server-owned `WorkspaceContext`, non-disclosure, explicit workspace scope |
-| Worker fixed identity helper | Replace with canonical job-context reconstruction from the versioned job and processing run | Queue identifiers are not authorization proof |
+| Fixed local identity | Retain for the loopback-only M1 API and worker; replace during M5 | Server-owned `WorkspaceContext`, non-disclosure, explicit workspace scope |
 | PDF-only capture | Extend with immutable UTF-8 pasted-text capture | `ObjectStorage`, checksum, version, compensation, workspace prefix |
 | PDF-only parser protocol | Extend the same isolated protocol with one allowlisted `text/plain` request | Credential-free parser, strict bounded typed output |
 | `LEXICAL_READY` terminal state | Extend to `LEXICAL_READY → INDEXING → SEARCHABLE` | Canonical processing state, execution lease, idempotent redelivery |
@@ -93,7 +93,7 @@ contracts.
 flowchart LR
     B[Browser] --> W[Next.js Web]
     W -->|same-origin /api| A[FastAPI API]
-    A -->|OIDC authorization code + PKCE| IDP[Approved OIDC provider]
+    A --> I[Fixed local identity provider]
 
     A --> PG[(PostgreSQL)]
     A --> R[(Redis)]
@@ -117,41 +117,30 @@ credential. The parser receives none of those credentials and remains connected 
 internal parser network. API and worker receive only the provider credentials required by their
 own operations.
 
-OIDC sessions are request authentication, not canonical authorization. PostgreSQL membership and
-workspace records decide which `WorkspaceContext` may be created. Worker jobs do not carry browser
-tokens; they reconstruct and validate execution scope from the versioned job and canonical run.
+The fixed provider creates exactly one server-owned `WorkspaceContext`. It accepts no user or
+workspace identifier from the browser or queue payload. Repository, object-storage, vector,
+evidence, usage, and trace boundaries remain workspace-scoped and retain negative isolation tests.
 
-### 4.2 Authentication flow
-
-Step 0 must decide the precise library and provider, but the boundary is fixed:
+### 4.2 Local single-user identity flow
 
 ```mermaid
-sequenceDiagram
-    participant Browser
-    participant API
-    participant OIDC as OIDC Provider
-    participant Redis
-    participant PostgreSQL
-
-    Browser->>API: Start login
-    API->>OIDC: Authorization Code + PKCE, state, nonce
-    OIDC-->>API: Callback with authorization code
-    API->>OIDC: Server-side code exchange
-    API->>API: Validate issuer, audience, signature, nonce, time
-    API->>PostgreSQL: Resolve external subject to User + Membership
-    API->>Redis: Store bounded server-side session
-    API-->>Browser: Opaque HttpOnly session cookie
-    Browser->>API: Product request with cookie
-    API->>Redis: Resolve session
-    API->>PostgreSQL: Recheck active membership
-    API-->>Browser: Authorized workspace-scoped result
+flowchart LR
+    B[Loopback browser] --> W[Next.js Web]
+    W -->|same-origin /api| A[FastAPI API]
+    A --> I[FixedLocalIdentityContextProvider]
+    I --> C[WorkspaceContext]
+    C --> S[Application service]
+    S --> PG[(Workspace-scoped PostgreSQL access)]
 ```
 
-The cookie contains only an opaque session identifier. It is `HttpOnly`, `SameSite=Lax` or stricter,
-path-scoped, rotated after login, and `Secure` outside the loopback-only development environment.
-Login uses exact allowlisted redirects, state, nonce, PKCE, short expirations, and fail-closed issuer
-and audience validation. Logout invalidates the server-side session. CI uses a local deterministic
-issuer/JWKS test adapter; it never calls the real OIDC provider.
+M1 adds no login, logout, OIDC token, browser session, `User`, or `WorkspaceMembership` behavior.
+The host publishes the web entry point only on loopback. API and worker containers may bind their
+container interfaces but remain on private Compose networks without direct host publication. Tests
+and runtime verification must fail if host exposure broadens while the fixed identity is active.
+Tests may inject other server-created contexts to prove cross-workspace isolation, but no product
+route accepts a context or workspace identifier as authorization proof. M5 replaces only this
+provider boundary before staging or public deployment; the RAG application services continue to
+receive the same `WorkspaceContext` contract.
 
 ### 4.3 Capture and source anchors
 
@@ -255,21 +244,10 @@ demonstrates that M1 cannot satisfy its trace-ID requirement without one.
 
 ## 5. Decisions required before implementation
 
-Step 0 must resolve and document these decisions. No provider SDK or authentication implementation
-may be added before the relevant decision is accepted.
+Step 0 must resolve and document these decisions. No provider SDK may be added before the relevant
+decision is accepted.
 
-### 5.1 ADR-0008 — OIDC and server-side session boundary
-
-Decide:
-
-- the standards-compliant OIDC provider used for the private owner and sanitized demo identities;
-- backend OIDC discovery, JWKS, code exchange, token validation, and session libraries;
-- Redis session format, lifetime, rotation, logout, and failure behavior;
-- local loopback and later public cookie/redirect rules;
-- owner and demo-viewer membership provisioning;
-- how deterministic CI supplies a local issuer and signing keys without real provider access.
-
-### 5.2 ADR-0009 — Application-owned AI and vector adapters
+### 5.1 ADR-0008 — Application-owned AI and vector adapters
 
 Confirm:
 
@@ -283,7 +261,7 @@ Confirm:
 The direct RAG orchestration remains application-owned. LangChain, LlamaIndex, LangGraph, and
 provider-native agent frameworks are not admitted by this decision.
 
-### 5.3 ADR-0010 — Stable PDF and pasted-text evidence anchors
+### 5.2 ADR-0009 — Stable PDF and pasted-text evidence anchors
 
 Fix:
 
@@ -294,7 +272,7 @@ Fix:
 - compatibility of historical M0 PDF evidence;
 - versioning rules for parser, chunks, embeddings, and cited source text.
 
-### 5.4 Dependency and provider approval gate
+### 5.3 Dependency and provider approval gate
 
 For every proposed production package, SDK, image, model, and hosted provider:
 
@@ -306,7 +284,7 @@ For every proposed production package, SDK, image, model, and hosted provider:
 6. obtain explicit user approval before changing dependencies or creating provider resources;
 7. lock exact resolved packages and pin reviewed container images by digest where applicable.
 
-### 5.5 Fixture freeze
+### 5.4 Fixture freeze
 
 Create one `fixtures/m1/manifest.yaml` that references:
 
@@ -338,14 +316,12 @@ investment-research/
 │   ├── 05-delivery-plan.md
 │   ├── 10-m1-implementation-plan.md
 │   └── adr/
-│       ├── 0008-oidc-and-server-side-sessions.md
-│       ├── 0009-application-owned-ai-and-vector-adapters.md
-│       └── 0010-stable-source-anchors.md
+│       ├── 0008-application-owned-ai-and-vector-adapters.md
+│       └── 0009-stable-source-anchors.md
 ├── backend/
 │   ├── migrations/versions/
-│   │   ├── 0004_m1_identity_and_memberships.py
-│   │   ├── 0005_m1_text_sources_and_anchors.py
-│   │   └── 0006_m1_indexing_retrieval_and_usage.py
+│   │   ├── 0004_m1_text_sources_and_anchors.py
+│   │   └── 0005_m1_indexing_retrieval_and_usage.py
 │   ├── scripts/
 │   │   ├── seed_m1.py
 │   │   ├── verify_m1_runtime.py
@@ -355,12 +331,8 @@ investment-research/
 │   │   │   ├── contracts.py
 │   │   │   ├── dependencies.py
 │   │   │   └── routes/
-│   │   │       ├── auth.py
 │   │   │       └── documents.py
 │   │   ├── infrastructure/
-│   │   │   ├── identity/
-│   │   │   │   ├── oidc.py
-│   │   │   │   └── sessions.py
 │   │   │   ├── generation/provider.py
 │   │   │   ├── evidence/provider.py
 │   │   │   ├── operations/opentelemetry.py
@@ -369,12 +341,6 @@ investment-research/
 │   │   │       ├── embedding.py
 │   │   │       └── pinecone.py
 │   │   ├── modules/
-│   │   │   ├── identity/
-│   │   │   │   ├── contracts.py
-│   │   │   │   ├── domain.py
-│   │   │   │   ├── application.py
-│   │   │   │   ├── ports.py
-│   │   │   │   └── persistence.py
 │   │   │   ├── documents/{domain,contracts,application,ports,persistence}.py
 │   │   │   ├── processing/{domain,contracts,application,ports,persistence}.py
 │   │   │   ├── search/{domain,contracts,application,ports,persistence}.py
@@ -391,13 +357,10 @@ investment-research/
 │   └── tests/
 │       ├── acceptance/test_m1_runtime_journey.py
 │       ├── integration/
-│       │   ├── test_identity_api_postgresql.py
 │       │   ├── test_text_capture_postgresql.py
 │       │   ├── test_dense_retrieval_postgresql.py
 │       │   └── test_m1_research_api_postgresql.py
 │       └── unit/
-│           ├── test_oidc_identity.py
-│           ├── test_server_sessions.py
 │           ├── test_plain_text_parser.py
 │           ├── test_embedding_provider.py
 │           ├── test_pinecone_retriever.py
@@ -406,16 +369,12 @@ investment-research/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/page.tsx
-│   │   ├── features/auth/
-│   │   │   ├── auth-status.tsx
-│   │   │   └── sign-in-control.tsx
 │   │   ├── features/archive/
 │   │   │   ├── document-workflow.tsx
 │   │   │   ├── research-workflow.tsx
 │   │   │   └── source-viewer.tsx
 │   │   └── lib/api/client.ts
 │   └── tests/
-│       ├── auth-session.test.mjs
 │       ├── document-input.test.mjs
 │       └── source-viewer.test.mjs
 └── .github/workflows/ci.yml
@@ -426,13 +385,14 @@ when the selected SDK has distinct concerns that cannot remain clear in one smal
 
 ## 7. Fixed implementation rules
 
-1. **Request identity is server-resolved.** No API accepts `workspace_id` as authorization proof.
-2. **Worker identity is canonical.** Queue payload scope is verified against PostgreSQL and never
-   derived from a browser session or OIDC token.
-3. **Demo is read-only.** Every mutating application service enforces capability or membership,
-   even when the web interface hides the control.
-4. **Sessions are transient.** Redis may lose sessions without losing users, memberships, archive
-   state, processing intent, answers, evidence, audit, or usage records.
+1. **Fixed identity is local-only.** M1 keeps the existing provider only while the host publishes
+   the web entry point on loopback and backend containers remain private; it is never a staging,
+   shared-network, public, or production fallback.
+2. **Request scope is server-resolved.** No API accepts `workspace_id` as authorization proof.
+3. **Worker scope is server-owned.** Queue identifiers are verified against the fixed context and
+   canonical run relationships rather than treated as authorization proof.
+4. **Redis is transient.** Redis may lose queue, lock, or cache state without losing archive state,
+   processing intent, answers, evidence, audit, or usage records.
 5. **Provider data is allowlisted.** M1 sends only public/synthetic fixture content and the minimum
    required fields to approved external providers.
 6. **No provider types cross a port.** Domain and application modules use immutable application-owned
@@ -472,60 +432,23 @@ without creating artificial UI work.
 
 Documentation and contracts:
 
-- research and approve OIDC, session, embedding, Pinecone, generation, support-evaluation, and
-  tracing choices under the dependency policy;
-- create and accept ADR-0008, ADR-0009, and ADR-0010;
+- research and approve embedding, Pinecone, generation, support-evaluation, and tracing choices
+  under the dependency policy;
+- create and accept ADR-0008 and ADR-0009;
 - freeze the M1 fixture manifest, exact expected anchors, provider budget, and data classification;
-- specify auth endpoints, session cookie behavior, text-capture payload, source locator union,
-  processing states, indexing job behavior, dual-lane selection, provider usage, and trace fields;
+- specify the text-capture payload, source locator union, processing states, indexing job behavior,
+  dual-lane selection, provider usage, and trace fields;
 - update OpenAPI examples without changing runtime behavior yet;
 - define deterministic fake-provider and opt-in live-provider test boundaries.
 
 **Gate:** every provider and dependency is explicitly approved; every new external data flow is
 documented; the API/domain contracts are internally consistent; no unresolved decision would change
-a migration, public API, source anchor, session boundary, or provider port.
+a migration, public API, source anchor, or provider port.
 
-**Suggested commits:** identity/session ADR; RAG-provider ADR; source-anchor ADR; M1 fixture freeze;
-contract documentation.
+**Suggested commits:** RAG-provider ADR; source-anchor ADR; M1 fixture freeze; contract
+documentation.
 
-### Step 1 — Authenticated identity and workspace capabilities
-
-**Suggested branch:** `feat/m1-identity`
-
-Backend:
-
-- add `User` and `WorkspaceMembership` domain models, scoped repositories, and migration `0004`;
-- retain `WorkspaceContext`, but create it only after validated principal and active membership
-  resolution for HTTP requests;
-- add owner and demo-viewer capabilities; enforce demo read-only in application services;
-- implement OIDC login, callback, session, and logout through application-owned contracts;
-- keep session records in Redis and canonical users/memberships in PostgreSQL;
-- replace API fixed identity with request-scoped resolution;
-- replace worker fixed identity with processing-run/job-context verification;
-- seed deterministic private owner and sanitized-demo fixtures without storing credentials.
-
-CI:
-
-- test local issuer/JWKS validation, key rotation, wrong issuer/audience, expiry, nonce/state/PKCE,
-  session rotation, logout, Redis loss, inactive membership, and uniform unauthorized results;
-- test API, storage, queue, search, evidence, and cache workspace boundaries under real membership;
-- add architecture checks preventing auth SDK imports outside infrastructure and API entry points.
-
-Frontend:
-
-- add sign-in, sign-out, loading, unauthorized, owner, and demo-read-only states;
-- obtain session status only through same-origin API calls;
-- keep tokens and provider details out of client JavaScript and browser storage;
-- disable demo mutation controls for usability while retaining backend enforcement.
-
-**Gate:** owner authentication produces the correct private `WorkspaceContext`; demo access is
-read-only; unknown, expired, foreign, or inactive identities disclose no workspace data; workers
-execute without browser credentials; existing M0 processing and research regression tests pass.
-
-**Suggested commits:** identity domain and migration; OIDC/session adapters; API auth routes and
-context resolution; worker context hardening; identity CI; frontend auth states; docs.
-
-### Step 2 — Pasted-text originals and stable source locators
+### Step 1 — Pasted-text originals and stable source locators
 
 **Suggested branch:** `feat/m1-document-inputs`
 
@@ -535,7 +458,7 @@ Backend:
 - add a bounded JSON pasted-text capture endpoint alongside multipart PDF upload;
 - store text through the same immutable S3 and canonical metadata flow;
 - extend parser protocol dispatch and isolated parser handling for plain text;
-- implement the ADR-0010 locator union and migration `0005` without changing historical PDF meaning;
+- implement the ADR-0009 locator union and migration `0004` without changing historical PDF meaning;
 - return media-aware citation viewer data and immutable text passage responses;
 - keep capture compensation, checksums, byte limits, workspace scoping, and non-disclosure intact.
 
@@ -560,7 +483,7 @@ foreign and unknown sources remain indistinguishable.
 **Suggested commits:** text/source domain and migration; text capture; isolated text parsing; source
 viewer API; document CI; frontend input and viewer; docs.
 
-### Step 3 — Versioned embeddings and Pinecone indexing
+### Step 2 — Versioned embeddings and Pinecone indexing
 
 **Suggested branch:** `feat/m1-dense-indexing`
 
@@ -574,7 +497,7 @@ Backend:
 - store only bounded identifier/version metadata in Pinecone;
 - add versioned embedding and dense-index configuration to settings and canonical processing state;
 - wire API query embedding separately from worker document embedding with least-privilege credentials;
-- add migration `0006` fields required by indexing and configuration history.
+- add migration `0005` fields required by indexing and configuration history.
 
 CI:
 
@@ -597,7 +520,7 @@ evidence merely because it exists in Pinecone.
 **Suggested commits:** indexing states and migration; embedding adapter; Pinecone adapter; worker
 index orchestration; indexing CI; frontend status; docs.
 
-### Step 4 — Canonically qualified dual retrieval
+### Step 3 — Canonically qualified dual retrieval
 
 **Suggested branch:** `feat/m1-dual-retrieval`
 
@@ -633,7 +556,7 @@ runs with the same versions have the same selected order.
 **Suggested commits:** generic retrieval contracts; canonical dense qualification; M1 selector and
 persistence; retrieval CI; compatible frontend copy; docs.
 
-### Step 5 — Provider-backed generation and evidence support
+### Step 4 — Provider-backed generation and evidence support
 
 **Suggested branch:** `feat/m1-generation`
 
@@ -668,7 +591,7 @@ provider output emits no answer content.
 **Suggested commits:** provider generator; support evaluator; generation policy and error mapping;
 generation CI; frontend terminal behavior; docs.
 
-### Step 6 — Canonical usage and trace correlation
+### Step 5 — Canonical usage and trace correlation
 
 **Suggested branch:** `feat/m1-observability`
 
@@ -699,19 +622,20 @@ raw fixture text appears in operational output.
 **Suggested commits:** operations domain and migration; trace adapter; usage integration; operations
 CI; docs.
 
-### Step 7 — M1 acceptance and handoff
+### Step 6 — M1 acceptance and handoff
 
 **Suggested branch:** `test/m1-acceptance`
 
 Backend and runtime:
 
-- seed isolated private-owner and sanitized-demo fixture workspaces idempotently;
+- seed the local owner fixture workspace plus an isolated foreign-workspace test fixture
+  idempotently;
 - run PDF and pasted-text capture through the complete container stack;
 - prove lexical wording and semantic paraphrase retrieval;
 - prove answerable, unanswerable, malformed-provider, prompt-injection, cross-workspace, repeated
   delivery, worker-loss, parser-isolation, citation-open, and provider-outage cases;
-- run bounded opt-in real OIDC, Pinecone, embedding, generation, and support-evaluation smoke tests
-  using only the approved public fixtures;
+- run bounded opt-in Pinecone, embedding, generation, and support-evaluation smoke tests using only
+  the approved public fixtures;
 - record measured startup, processing, retrieval, generation, validation, latency, and cost as
   observations rather than guarantees;
 - clean only uniquely named M1 test resources and verify cleanup independently.
@@ -727,7 +651,6 @@ CI:
 Frontend:
 
 - complete the browser journey for owner PDF and pasted text;
-- confirm demo workspace mutation is denied by both UI and API;
 - open the exact PDF page and pasted-text passage from validated citations;
 - confirm insufficient and safe failure states contain no unvalidated prose.
 
@@ -747,9 +670,9 @@ measured results and M2 handoff.
 
 | Risk | Required deterministic proof |
 |---|---|
-| Forged or stale identity | issuer/audience/signature/time/nonce/state/PKCE/session/membership tests |
+| Accidental unauthenticated exposure | Compose and runtime gates reject non-loopback host publication |
+| Client-selected scope | route and dependency tests prove context remains server-owned |
 | Cross-workspace access | API, repository, storage, queue, vector, evidence, usage, and trace negatives |
-| Demo mutation | backend capability denial plus frontend read-only behavior |
 | Text-original ambiguity | byte/checksum/newline/Unicode and media-aware locator tests |
 | Parser expansion | PDF and text secret/filesystem/network/resource negative tests |
 | Lost or duplicate indexing | execution lease, resume, deterministic vector-ID, duplicate-upsert tests |
@@ -775,7 +698,6 @@ that step before merge:
 ```text
 docs/m1-implementation-plan
   → docs/m1-runtime-decisions
-  → feat/m1-identity
   → feat/m1-document-inputs
   → feat/m1-dense-indexing
   → feat/m1-dual-retrieval
@@ -794,8 +716,7 @@ exports.
 
 Stop the active work block and review before continuing when:
 
-- an OIDC option requires browser-accessible long-lived tokens, wildcard redirects, disabled state,
-  nonce, PKCE, CSRF, issuer, audience, or signature validation;
+- the fixed local identity would become reachable beyond loopback or be treated as release-ready;
 - the chosen provider cannot meet public/non-sensitive data, retention, deletion, region, training,
   budget, or least-privilege requirements;
 - a required package is unmaintained, vulnerable, too new under policy, license-incompatible, or
@@ -809,16 +730,14 @@ Stop the active work block and review before continuing when:
 - a provider SDK would cross into domain/application code or raw content would enter telemetry.
 
 An unresolved stop condition requires an explicit scope, ADR, provider, or milestone decision. It
-must not be bypassed by weakening authentication, isolation, canonical qualification, validation,
-testing, or redaction.
+must not be bypassed by weakening the loopback boundary, isolation, canonical qualification,
+validation, testing, or redaction.
 
 ## 12. Authoritative implementation references
 
 Step 0 must replace generic references with the selected providers' official documentation. The
 implementation must use primary sources for:
 
-- OpenID Connect Core, OAuth 2.0 Authorization Code with PKCE, and the selected provider's discovery,
-  token-validation, logout, and key-rotation behavior;
 - Pinecone index, namespace, metadata-filtering, upsert, query, quota, and deletion semantics;
 - the selected embedding and generation providers' structured output, versioning, usage, retention,
   timeout, rate-limit, and safety behavior;

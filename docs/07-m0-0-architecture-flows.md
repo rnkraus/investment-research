@@ -25,7 +25,7 @@ flowchart LR
     WEB --> API[FastAPI Modular Monolith]
 
     API --> PG[(PostgreSQL)]
-    API --> S3[(Object Storage<br/>MinIO locally)]
+    API --> S3[(Object Storage<br/>SeaweedFS locally)]
     API --> REDIS[(Redis)]
     API --> PINE[(Pinecone)]
     API --> AI[AI Provider APIs]
@@ -60,7 +60,10 @@ flowchart LR
 
 M0.0 source: [docs/05-delivery-plan.md — §4 M0.0](./05-delivery-plan.md#4-m00--lean-proof-of-value) and [docs/02-system-design.md — Pre-foundation proof of value](./02-system-design.md#pre-foundation-proof-of-value)
 
-The fixed identity is resolved by the server and is not client-supplied authorization proof. M0 adds Redis and Celery workers, replaces the development object-storage implementation with MinIO through the same `Object Storage` boundary, and keeps the application-owned generation port. M1 adds Pinecone; M4 adds LangSmith tracing. PostgreSQL remains canonical throughout.
+The fixed identity is resolved by the server and is not client-supplied authorization proof. M0
+adds Redis and Celery workers, replaces the development object-storage implementation with
+SeaweedFS through the same `Object Storage` boundary, and keeps the application-owned generation
+port. M1 adds Pinecone; M4 adds LangSmith tracing. PostgreSQL remains canonical throughout.
 
 ## 3. Module relationships and extension seams
 
@@ -283,7 +286,11 @@ flowchart LR
 
 M0.0 source: [docs/05-delivery-plan.md — §4 M0.0](./05-delivery-plan.md#4-m00--lean-proof-of-value), constrained by [docs/03-domain-model.md — §9 Domain invariants](./03-domain-model.md#9-domain-invariants)
 
-M0.0 is the evidence-traceability subset of the production model. The fixed local identity is an execution constraint, not a replacement domain entity; M1 adds `User` and `Workspace Membership` with OIDC authentication. M1 also adds `Index Receipts`, M3 adds companies and watchlists, and M4 adds conversations. Existing shared entity names and relationships do not change.
+M0.0 is the evidence-traceability subset of the production model. The fixed local identity is an
+execution constraint, not a replacement domain entity; local single-user M1 retains it, and M5 adds
+`User` and `Workspace Membership` with OIDC authentication. M1 adds the first narrow dense-indexing
+path, M2 adds durable `Index Receipts`, M3 adds companies and watchlists, and M4 adds conversations.
+Existing shared entity names and relationships do not change.
 
 ## 8. End-to-end delivery flow
 
@@ -374,6 +381,6 @@ M0.0 is easy to extend only if M0 changes adapters and operational guarantees ra
 1. replace local artifact storage through the existing object-storage port;
 2. replace processing delivery with Redis and Celery while keeping the processing application service and `ProcessingRun` contract;
 3. keep document versions, structure blocks, chunks, evidence spans, statements, and validation results semantically compatible;
-4. rerun the same M0.0 acceptance fixtures through MinIO, Celery, Redis, and the production-shaped service boundaries;
+4. rerun the same M0.0 acceptance fixtures through SeaweedFS, Celery, Redis, and the production-shaped service boundaries;
 5. implement and test the parser-isolation gate from ADR-0004 before expanding document input;
 6. reject any M0.0 shortcut that would bypass authorization, immutable originals, canonical eligibility, or evidence validation.

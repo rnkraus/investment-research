@@ -1,6 +1,8 @@
 # Identity and Workspace
 
-This module owns the trusted identity and workspace scope used by every product operation. M0.0 uses one fixed local identity; later authentication replaces the provider behind the same application-owned boundary.
+This module owns the trusted identity and workspace scope used by every product operation. M0.0 and
+the loopback-only single-user M1 slice use one fixed local identity; M5 replaces the provider with
+authenticated users and memberships behind the same application-owned boundary.
 
 ## Contents
 
@@ -39,4 +41,6 @@ The protocol keeps application callers independent of SQLAlchemy. The concrete r
 
 `workspaces` is the root authorization boundary and therefore does not contain a `workspace_id` column pointing to itself. Every M0.0 product table beneath it carries `workspace_id` and enforces its relationships in PostgreSQL.
 
-The fixed provider has no production authentication guarantee. M1 replaces it with an authenticated server-side implementation without changing downstream consumers.
+The fixed provider has no production authentication guarantee. M1 retains it only behind the local
+loopback boundary so RAG behavior can be developed first. M5 replaces it with an authenticated
+server-side implementation without changing downstream consumers.

@@ -75,15 +75,15 @@ workspace, transaction, or immutable-original rules just to simplify container w
 | Local-filesystem original storage | Removed; SeaweedFS now implements the provider-neutral `ObjectStorage` contract locally | Documents and Platform | Completed in M0; choose managed public S3 in M6 |
 | Manual single-job processing runner | Removed; Redis and Celery now deliver versioned, idempotent processing work | Processing | Completed in M0; add durable indexing intent in M2 |
 | Parser sharing the runner's process and permissions | Removed; the worker calls a credential-free, isolated parser runtime | Processing and Platform | Completed in M0; ADR-0006 accepted after local and hosted Linux gates |
-| Fixed local identity | Intentionally retained for local M0 only | Identity | Replace with authenticated owner and private/demo workspaces in M1 |
+| Fixed local identity | Intentionally retained for local M0 and the loopback-only single-user M1 slice | Identity | Replace with authenticated users and memberships in M5 before shared or public use |
 | Deterministic fixture answer generator | Intentionally retained as the default correctness adapter | Research | Add an approved provider adapter in M1; retain deterministic tests |
 | PostgreSQL lexical-only retrieval | Intentionally retained as the deterministic baseline | Search | Add embeddings, Pinecone dense retrieval, and the first combined path in M1 |
 | One frozen synthetic PDF journey | Intentionally retained as the M0 acceptance boundary | Documents and Processing | Add the approved PDF and pasted-text fixture set in M1 |
 | No-op embedding, dense-retrieval, reranking, and tracing adapters | Intentionally retained to prove ports without external calls | Search and Operations | Implement only the M1 providers required by its thin slice; later capabilities follow their milestones |
 
 The intentionally retained items are explicit later-milestone scope, not evidence that M0 satisfies
-their M1 exit gates. M1 must replace them through the existing application-owned contracts rather
-than bypassing or duplicating the M0 boundaries.
+their eventual exit gates. M1 replaces only the adapters required by its own gate through the
+existing application-owned contracts; other retained items remain until their assigned milestone.
 
 ## 4. Target runtime and trust boundaries
 
@@ -803,13 +803,15 @@ not a runtime or test exception: the sole developer uses pull requests and verif
 before merging. Enforced branch protection is required before another developer receives write
 access or before public deployment work begins.
 
-M1 starts through the contracts already proven here: authenticated identity supplies
-`WorkspaceContext`; document input uses `ObjectStorage`; processing remains versioned Celery work;
-the worker alone crosses into the isolated `DocumentParser`; search adds dense candidates behind
-its existing ports; and generated statements still become product output only after server-side
-evidence validation. M1 must not weaken immutable originals, workspace isolation, safe parser
-failure, idempotent delivery, or exact-citation validation to add its PDF, pasted-text, embedding,
-indexing, and provider-backed path.
+M1 starts through the contracts already proven here: the fixed server-owned local identity supplies
+`WorkspaceContext` behind a loopback-only host boundary; document input uses `ObjectStorage`;
+processing remains versioned Celery work; the worker alone crosses into the isolated
+`DocumentParser`; search adds dense candidates behind its existing ports; and generated statements
+still become product output only after server-side evidence validation. M1 must not weaken
+immutable originals, workspace isolation, safe parser failure, idempotent delivery, or
+exact-citation validation to add its PDF, pasted-text, embedding, indexing, and provider-backed
+path. M5 replaces the fixed provider with authenticated users, memberships, and server-side
+sessions before shared or public use.
 
 ## 8. Verification matrix
 
@@ -864,7 +866,7 @@ Stop the active work block and review before continuing when:
 - a new dependency is unmaintained, vulnerable, too new for the release-age policy, or incompatible
   with Python 3.14 or the pinned Node runtime;
 - a Compose limitation would require weakening credential or network separation;
-- the implementation would require M1/M2 concepts such as authentication, live providers,
+- the implementation would require later-milestone concepts such as authentication, live providers,
   transactional outbox tables, or product retry/deletion workflows merely to make M0 pass.
 
 An unresolved stop condition requires a revised ADR or milestone decision, not a silent workaround.

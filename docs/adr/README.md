@@ -38,13 +38,13 @@ No ADR is currently proposed.
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
-| ADR-0008 | OIDC and server-side session boundary | Owner authentication and browser sessions are implemented | M1 |
-| ADR-0009 | Application-owned AI and vector adapters | First AI and vector adapters are implemented | M1 |
-| ADR-0010 | Stable PDF and pasted-text evidence anchors | Parser, structure-block, chunk, and citation contracts are finalized | M1 |
-| ADR-0011 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
-| ADR-0012 | Hybrid retrieval with RRF and multilingual reranking | Direct-RAG retrieval baseline is finalized | M4 |
-| ADR-0013 | Typed answers with server-side evidence validation | Answer contract becomes production behavior | M4 |
-| ADR-0014 | LangSmith for AI observability with canonical audit in PostgreSQL | Tracing and evaluation integration is finalized | M4 |
+| ADR-0008 | Application-owned AI and vector adapters | First AI and vector adapters are implemented | M1 |
+| ADR-0009 | Stable PDF and pasted-text evidence anchors | Parser, structure-block, chunk, and citation contracts are finalized | M1 |
+| ADR-0010 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
+| ADR-0011 | Hybrid retrieval with RRF and multilingual reranking | Direct-RAG retrieval baseline is finalized | M4 |
+| ADR-0012 | Typed answers with server-side evidence validation | Answer contract becomes production behavior | M4 |
+| ADR-0013 | LangSmith for AI observability with canonical audit in PostgreSQL | Tracing and evaluation integration is finalized | M4 |
+| ADR-0014 | OIDC and server-side session boundary | Fixed local identity is replaced before release | M5 |
 | ADR-0015 | Public hosting platform | Local release is stable and public deployment begins | M6 |
 | ADR-0016 | Representative-corpus retrieval changes | Evaluation justifies BM25, learned sparse, late interaction, or another major retrieval change | M7 |
 | ADR-0017 | Bounded LangGraph adoption | A measured multi-step use case passes the agent admission gate | M9 |

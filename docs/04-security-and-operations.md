@@ -99,6 +99,14 @@ Primary threat scenarios:
 
 [ADR-0003](./adr/0003-workspace-isolation-strategy.md) governs the current defense-in-depth boundary and records the production trigger for reconsidering PostgreSQL Row-Level Security.
 
+M1 has one temporary exception: its fixed server-owned owner context may remain while the complete
+RAG path is developed locally. The host may publish the web entry point only on loopback; backend
+containers may bind inside private Compose networks but must not be directly exposed. The context
+must remain behind `IdentityContextProvider`, and all workspace-scoped repositories and negative
+isolation tests still apply. M5 must replace this adapter with OIDC identity, canonical memberships,
+and server-side sessions before staging, shared-network, or public exposure. The exception must
+never be enabled as a production fallback.
+
 For a public deployment, use secure cookies or short-lived tokens, strict redirect and CORS rules, CSRF protection where applicable, security headers, and rate limits.
 
 ## 5. Safe document ingestion

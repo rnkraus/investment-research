@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v0.7 — M0 complete; M1 implementation planning active
+**Status:** Active v0.8 — M0 complete; local single-user M1 planning active
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md)
@@ -139,14 +139,18 @@ verification matrix are maintained in
 
 ## 6. M1 — Thin vertical slice
 
-The first production-shaped slice hardens the M0.0 product proof and intentionally supports one simple document path before broad feature coverage.
+The first complete RAG slice hardens the M0.0 product proof and intentionally supports one local
+single-user document path before broad feature coverage. M1 retains the server-owned fixed local
+identity and loopback-only boundary so implementation can focus on retrieval, generation, and
+evidence. It is not an authenticated or publicly deployable release.
 
 The exact M1 decisions, repository delta, backend-to-CI-to-frontend sequence, and verification
 matrix are maintained in [10-m1-implementation-plan.md](./10-m1-implementation-plan.md).
 
 ### Build
 
-1. Authenticate the owner and create private and demo workspace fixtures.
+1. Retain one fixed server-owned local owner context and publish the host entry point only on
+   loopback.
 2. Upload one text PDF or submit pasted text.
 3. Store the immutable original through the S3-compatible adapter and canonical metadata in
    PostgreSQL; SeaweedFS supplies the local object store.
@@ -239,6 +243,10 @@ The initial representative evaluation baseline is recorded against one versioned
 
 ### Build and exercise
 
+- Select and document the OIDC provider, client library, server-side session boundary, and local
+  test issuer before adding authentication dependencies.
+- Add canonical users and workspace memberships, authenticate the private owner, provision the
+  isolated read-only demo capability, and replace the fixed local identity outside tests.
 - Cross-workspace tests at API, repository, object, queue, vector, citation, and trace boundaries.
 - Malicious-file, prompt-injection, invalid-schema, and fabricated-citation fixtures.
 - Dependency, secret, and container scanning.
@@ -251,7 +259,9 @@ The initial representative evaluation baseline is recorded against one versioned
 
 ### Exit gate
 
-Every local release gate in `04-security-and-operations.md` passes. The complete product journey can be demonstrated from a clean environment without manual database repair.
+Every local release gate in `04-security-and-operations.md` passes. The complete authenticated
+product journey can be demonstrated from a clean environment without manual database repair, and
+the fixed local identity remains available only to explicit deterministic tests.
 
 ## 11. M6 — Public portfolio demo
 
@@ -266,7 +276,8 @@ Do not begin this milestone until the local product is stable.
 ### Build
 
 - Provision isolated application, worker, PostgreSQL, object-storage, queue, vector, and provider environments.
-- Add managed identity, HTTPS, secret storage, backups, monitoring, alerts, and spending limits.
+- Deploy the accepted managed-identity integration plus HTTPS, secret storage, backups, monitoring,
+  alerts, and spending limits.
 - Load only the sanitized demo corpus.
 - Enforce read-only demo behavior and rate limits.
 - Automate deployment, migrations, smoke tests, and rollback.
@@ -331,15 +342,13 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Convert the M1 scope and exit gate in section 6 into bounded implementation steps that reuse the
-   accepted M0 service boundaries.
+1. Approve the M1 AI, vector, source-anchor, and external-data-flow decisions before changing
+   dependencies or creating provider resources.
 2. Finalize the small redistributable M1 fixture set: one English PDF, one English pasted-text
    document, answerable and deliberately unanswerable questions, and exact expected citations.
-3. Define the authenticated owner and private/demo workspace path without treating a client-supplied
-   workspace identifier as authorization.
-4. Research and approve only the embedding, dense-retrieval, generation, and observability providers
-   required by the thin slice before adding their SDKs or credentials.
-5. Implement and evaluate M1 through the retained identity, storage, processing, search, research,
+3. Preserve the fixed local owner context and loopback-only boundary without treating a
+   client-supplied workspace identifier as authorization.
+4. Implement and evaluate M1 through the retained identity, storage, processing, search, research,
    evidence, and operations contracts.
-6. Continue sequentially through M9 and update this plan after each milestone using measured results
+5. Continue sequentially through M9 and update this plan after each milestone using measured results
    and newly available data.

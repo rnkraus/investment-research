@@ -16,7 +16,7 @@ The same path must return explicit insufficient coverage for a known unanswerabl
 local-only, uses the repository-owned frozen synthetic fixture, and does not claim production
 reliability.
 
-M0.0 establishes reusable application contracts and the evidence path. It does not implement OIDC, Redis, Celery, MinIO, Pinecone, dense retrieval, retries, deletion, conversations, full observability, or public deployment.
+M0.0 establishes reusable application contracts and the evidence path. It does not implement OIDC, Redis, Celery, SeaweedFS, Pinecone, dense retrieval, retries, deletion, conversations, full observability, or public deployment.
 
 ## 2. Fixed implementation decisions
 
@@ -168,7 +168,7 @@ execution boundary that can report genuine stage changes.
 
 | Port | M0.0 adapter | Later adapter or extension |
 |---|---|---|
-| `ObjectStorage` | Immutable local filesystem | MinIO in M0; managed S3-compatible storage after deployment |
+| `ObjectStorage` | Immutable local filesystem | SeaweedFS in M0; managed S3-compatible storage after deployment |
 | `DocumentParser` | Bounded text-PDF parser | Same port with hardened or additional parsers |
 | `AnswerGenerator` | Deterministic fixture generator | Approved AI provider adapter while deterministic tests remain |
 | `ProcessingExecutor` | Separate single-job development runner | Celery task invokes the same processing service in M0 |
@@ -348,8 +348,8 @@ Normal verification must not require a paid or live AI provider.
 
 | M0.0 implementation | Required next action | Target stage | Retained contract or behavior |
 |---|---|---|---|
-| PostgreSQL-only Compose service | Expand Compose with web, API, worker, Redis, and MinIO | M0 | Database schema history and application modules |
-| Immutable local `ObjectStorage` adapter | Replace with a MinIO adapter through the existing port | M0 | Object keys, checksums, immutable capture semantics, `ObjectStorage` port |
+| PostgreSQL-only Compose service | Expand Compose with web, API, worker, Redis, and SeaweedFS | M0 | Database schema history and application modules |
+| Immutable local `ObjectStorage` adapter | Replace with a SeaweedFS adapter through the existing port | M0 | Object keys, checksums, immutable capture semantics, `ObjectStorage` port |
 | Single-job development runner | Deliver run IDs through Redis and Celery | M0 | `ProcessingRun`, processing service, state contract, independent unit of work |
 | Parser in the runner's application process | Add and test a least-privilege parser boundary without application credentials or unnecessary network access | M0 | `DocumentParser` port, parser limits, versioned output, and failure states |
 | Minimal process-level checks and CI | Add pre-commit checks, container builds, and full container CI | M0 | Existing commands, PostgreSQL checks, and regression fixtures |
@@ -449,7 +449,7 @@ domain path. Retain:
 - Alembic history, caller-owned transaction boundaries, server-side evidence validation, and the
   deterministic acceptance fixture and regression tests.
 
-The M0 replacements listed in section 9 must run the same acceptance cases through MinIO,
+The M0 replacements listed in section 9 must run the same acceptance cases through SeaweedFS,
 Redis/Celery, the tested parser-isolation boundary, and the production-shaped container boundaries.
 Until that succeeds, M0.0 remains a validated product proof rather than a production-ready
 foundation. Their implementation order, repository delta, and verification gates are defined in
