@@ -559,9 +559,23 @@ read-only password secret, performs no seed, and prevents the worker from starti
 completed successfully. The backend image gate builds all four backend targets, runs the migration
 image twice against a fresh database to prove schema creation and idempotency, and starts the API
 only afterward; metadata, minimal-runtime, readiness, cleanup, formatting, lint, typing, and focused
-unit gates pass locally. Step 4 remains in progress: the Compose API service, final health topology,
+unit gates pass locally. At the end of that block, the Compose API service, final health topology,
 frontend image, complete-stack verification, CI wiring, and documented one-command browser journey
-are not yet complete.
+remained open.
+
+**Local implementation record (2026-09-16, backend health and API topology block):** Compose now
+builds and starts the non-root API after the one-shot migration, healthy PostgreSQL and Redis, and
+successful SeaweedFS bucket bootstrap. The API uses the internal S3 data plane and exposes only its
+documented loopback port. Its aggregate readiness requires the exact Alembic head, one bounded
+connection through the configured Celery broker, and application-credential access to the configured
+S3 bucket; responses disclose only the aggregate state. The worker image now has a bounded control
+ping addressed to its own Celery node rather than treating mere process survival as health. The
+isolated backend image gate starts disposable PostgreSQL and Redis, applies the migration twice,
+checks target metadata and non-root runtime contents, and verifies both API health endpoints without
+displaying generated credentials. The complete backend Compose dependency graph and both new health
+checks passed locally. Step 4 remains in progress: the PostgreSQL host-port test bridge still needs a
+dedicated test override before removal, and the frontend image, final internal network topology,
+complete-stack verification, CI wiring, and documented one-command browser journey remain open.
 
 ### Step 5 — Provider seams and developer safety
 

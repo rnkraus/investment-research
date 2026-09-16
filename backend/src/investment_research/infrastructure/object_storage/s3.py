@@ -3,6 +3,7 @@
 from base64 import b64encode
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePosixPath
 from tempfile import SpooledTemporaryFile
@@ -12,6 +13,7 @@ import boto3  # type: ignore[import-untyped]
 from botocore.config import Config  # type: ignore[import-untyped]
 from botocore.exceptions import BotoCoreError, ClientError  # type: ignore[import-untyped]
 
+from investment_research.infrastructure.logging import application_logger
 from investment_research.modules.documents.domain import StorageKey
 from investment_research.modules.documents.ports import (
     BinaryReadable,
@@ -28,9 +30,14 @@ DEFAULT_UPLOAD_SPOOL_MAX_BYTES = 8 * 1024 * 1024
 IMMUTABLE_CONFLICT_CODES = frozenset({"ConditionalRequestConflict", "PreconditionFailed"})
 UNAVAILABLE_OBJECT_CODES = frozenset({"AccessDenied", "NoSuchBucket", "NoSuchKey", "NotFound"})
 
+_logger = application_logger("object_storage")
+
 
 class S3Client(Protocol):
     """Small dynamic-client surface used by the application-owned adapter."""
+
+    def head_bucket(self, **kwargs: object) -> Mapping[str, object]:
+        """Verify access to one configured bucket."""
 
     def put_object(self, **kwargs: object) -> Mapping[str, object]:
         """Create one S3 object."""
@@ -67,6 +74,27 @@ def create_s3_client(
         ),
     )
     return cast(S3Client, client)
+
+
+@dataclass(frozen=True, slots=True)
+class S3ObjectStorageReadinessProbe:
+    """Check access to the configured canonical-original bucket."""
+
+    client: S3Client
+    bucket: str
+
+    def is_ready(self) -> bool:
+        """Return false without exposing endpoint, bucket, or credential details."""
+
+        try:
+            self.client.head_bucket(Bucket=self.bucket)
+        except (BotoCoreError, ClientError) as error:
+            _logger.warning(
+                "health.object_storage.unavailable",
+                extra={"exception_type": type(error).__name__},
+            )
+            return False
+        return True
 
 
 class S3ObjectStorage:

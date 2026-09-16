@@ -167,7 +167,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     ) -> subprocess.CompletedProcess[str]:
         del capture_output, check, working_directory, visible
         calls.append((label, tuple(command), environment))
-        if label == "Start isolated PostgreSQL for the API image":
+        if label == "Start isolated PostgreSQL and Redis for the API image":
             assert environment is not None
             secret_path = Path(environment["POSTGRES_PASSWORD_SECRET_FILE"])
             assert secret_path.read_text(encoding="utf-8") == "disposable-password"
@@ -185,15 +185,21 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
 
     labels = [label for label, _, _ in calls]
     assert labels == [
-        "Start isolated PostgreSQL for the API image",
+        "Start isolated PostgreSQL and Redis for the API image",
         "Migrate the isolated database to Alembic head",
         "Verify migration image idempotency",
         "Start the API image with runtime-only configuration",
         "Inspect API container health",
         "Verify layered API health endpoints",
         "Remove the API verification container",
-        "Remove isolated PostgreSQL, network, and volume",
+        "Remove isolated API dependencies, networks, and volumes",
     ]
+    dependency_command = next(
+        command
+        for label, command, _ in calls
+        if label == "Start isolated PostgreSQL and Redis for the API image"
+    )
+    assert dependency_command[-2:] == ("postgres", "redis")
     api_command = next(
         command
         for label, command, _ in calls
@@ -226,7 +232,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     )
     assert api_environment is not None
     assert api_environment["INVESTMENT_RESEARCH_REDIS_URL"] == (
-        "redis://:synthetic-unused-password@redis:6379/0"
+        "redis://:disposable-password@redis:6379/0"
     )
 
     migration_environment = next(
@@ -284,4 +290,4 @@ def test_api_runtime_verification_removes_postgres_after_start_failure(
         )
 
     assert "Remove the API verification container" not in labels
-    assert labels[-1] == "Remove isolated PostgreSQL, network, and volume"
+    assert labels[-1] == "Remove isolated API dependencies, networks, and volumes"

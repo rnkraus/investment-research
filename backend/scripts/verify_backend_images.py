@@ -120,7 +120,7 @@ TARGETS: dict[str, TargetExpectation] = {
             "--without-gossip",
             "--without-mingle",
         ),
-        has_healthcheck=False,
+        has_healthcheck=True,
     ),
     "parser": TargetExpectation(
         entrypoint=(
@@ -288,7 +288,7 @@ def verify_api_against_migrated_postgres(
     migration_image: str,
     run_identifier: str,
 ) -> None:
-    """Run the migration image twice before starting the API against PostgreSQL."""
+    """Migrate PostgreSQL and start the API against its required dependencies."""
 
     project_name = f"investment-research-api-check-{run_identifier}"
     api_container = f"{project_name}-api"
@@ -306,7 +306,9 @@ def verify_api_against_migrated_postgres(
                 f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
                 f"@postgres:5432/{POSTGRES_DATABASE}"
             ),
-            "INVESTMENT_RESEARCH_REDIS_URL": ("redis://:synthetic-unused-password@redis:6379/0"),
+            "INVESTMENT_RESEARCH_REDIS_URL": (
+                f"redis://:{secret_values['REDIS_PASSWORD']}@redis:6379/0"
+            ),
             "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT": "/tmp/object-storage",
         }
     )
@@ -368,8 +370,8 @@ def verify_api_against_migrated_postgres(
 
         try:
             run_command(
-                "Start isolated PostgreSQL for the API image",
-                [*compose_command, "up", "--detach", "--wait", "postgres"],
+                "Start isolated PostgreSQL and Redis for the API image",
+                [*compose_command, "up", "--detach", "--wait", "postgres", "redis"],
                 environment=compose_environment,
             )
             run_command(
@@ -433,7 +435,7 @@ def verify_api_against_migrated_postgres(
                 )
                 cleanup_failed = cleanup.returncode != 0
             cleanup = run_command(
-                "Remove isolated PostgreSQL, network, and volume",
+                "Remove isolated API dependencies, networks, and volumes",
                 [*compose_command, "down", "--volumes", "--remove-orphans"],
                 environment=compose_environment,
                 check=False,
