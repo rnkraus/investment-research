@@ -1,15 +1,15 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.10 — Steps 1–5 complete; Step 6 locally verified, hosted CI pending \
-**Active milestone:** M0 — Engineering foundation  
-**Depends on:** completed M0.0 acceptance and its retained contracts  
+**Status:** Complete v1.0 — all six steps and the M0 exit gate passed on 2026-09-16 \
+**Completed milestone:** M0 — Engineering foundation \
+**Depends on:** completed M0.0 acceptance and its retained contracts \
 **Related:** [02-system-design.md](./02-system-design.md),
 [04-security-and-operations.md](./04-security-and-operations.md),
 [05-delivery-plan.md](./05-delivery-plan.md),
 [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), and
 [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md),
 [ADR-0005](./adr/0005-at-least-once-processing-delivery.md), and
-[proposed ADR-0006](./adr/0006-credential-free-parser-runtime.md), and
+[ADR-0006](./adr/0006-credential-free-parser-runtime.md), and
 [ADR-0007](./adr/0007-local-s3-provider.md)
 
 ## 1. Purpose and scope
@@ -74,7 +74,7 @@ workspace, transaction, or immutable-original rules just to simplify container w
 | Host-started web and API processes | Removed; both are production-shaped containers with health checks | Platform | Completed in M0 |
 | Local-filesystem original storage | Removed; SeaweedFS now implements the provider-neutral `ObjectStorage` contract locally | Documents and Platform | Completed in M0; choose managed public S3 in M6 |
 | Manual single-job processing runner | Removed; Redis and Celery now deliver versioned, idempotent processing work | Processing | Completed in M0; add durable indexing intent in M2 |
-| Parser sharing the runner's process and permissions | Removed; the worker calls a credential-free, isolated parser runtime | Processing and Platform | Complete locally in M0; accept ADR-0006 after hosted Linux CI |
+| Parser sharing the runner's process and permissions | Removed; the worker calls a credential-free, isolated parser runtime | Processing and Platform | Completed in M0; ADR-0006 accepted after local and hosted Linux gates |
 | Fixed local identity | Intentionally retained for local M0 only | Identity | Replace with authenticated owner and private/demo workspaces in M1 |
 | Deterministic fixture answer generator | Intentionally retained as the default correctness adapter | Research | Add an approved provider adapter in M1; retain deterministic tests |
 | PostgreSQL lexical-only retrieval | Intentionally retained as the deterministic baseline | Search | Add embeddings, Pinecone dense retrieval, and the first combined path in M1 |
@@ -160,12 +160,10 @@ flowchart LR
   request-size, response-size, and wall-clock limits.
 - No Docker socket or broad host directory is mounted into an application container.
 
-A Docker Desktop feasibility probe has confirmed the intended isolated-network channel, non-root
-identity, dropped capabilities, `no-new-privileges`, read-only root filesystem, bounded writable
-temporary storage, absent synthetic worker-secret markers, and blocked backend and external
-network paths. This probe used an Alpine helper image and therefore validates only the Docker
-mechanics. Proposed ADR-0006 remains unaccepted until the final parser image and protocol pass the
-equivalent Docker Desktop and Linux CI negative tests.
+An initial Docker Desktop feasibility probe confirmed the intended isolated-network mechanics with
+an Alpine helper image. The final repository-owned parser image, private protocol, and negative
+isolation gates subsequently passed on Docker Desktop and in hosted Linux CI. ADR-0006 records the
+accepted runtime boundary and its reconsideration triggers.
 
 ### 4.3 Processing sequence
 
@@ -324,8 +322,8 @@ Backend and architecture:
 - specify the minimal `ProcessingRun` execution lease, attempt ceiling, expiry, and reclaim rules
   needed for at-least-once delivery without introducing the M2 `Job` and `ProcessingStage` model;
 - accept ADR-0005 for the complete publish, claim, acknowledgement, retry, and recovery behavior;
-- record the locally validated Docker Desktop mechanics in proposed ADR-0006, then keep final parser
-  image and protocol checks on Docker Desktop and Linux CI as its acceptance gate;
+- record the locally validated Docker Desktop mechanics in ADR-0006, then require final parser image
+  and protocol checks on Docker Desktop and Linux CI before accepting it;
 - record why the parser boundary is infrastructure isolation rather than a business microservice.
 - accept ADR-0007 for SeaweedFS in the local stack, a provider-neutral S3 adapter, and a managed
   S3-compatible service selected separately before public deployment.
@@ -797,10 +795,13 @@ times are observations from one local Docker Desktop run, not service-level guar
 
 ### 7.1 M0-to-M1 handoff
 
-The implementation is locally ready for M1, but M0 is not marked complete until the current
-revision's hosted `Complete M0 runtime` job passes and repository branch protection requires that
-stable check name. After that evidence is recorded, ADR-0006 can become `Accepted` and the delivery
-plan can advance its immediate action from M0 to M1.
+M0 is complete. The hosted `Complete M0 runtime` job passed for the final merged acceptance
+revision, satisfying the Linux CI gate and allowing ADR-0006 to become `Accepted`. The repository's
+`main` ruleset names the required CI checks, but GitHub does not enforce rulesets for this private
+repository on its current organization plan. This is an explicit temporary governance limitation,
+not a runtime or test exception: the sole developer uses pull requests and verifies green checks
+before merging. Enforced branch protection is required before another developer receives write
+access or before public deployment work begins.
 
 M1 starts through the contracts already proven here: authenticated identity supplies
 `WorkspaceContext`; document input uses `ObjectStorage`; processing remains versioned Celery work;

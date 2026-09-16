@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v0.5 — M0 implementation in progress
+**Status:** Active v0.6 — M0 complete; M1 implementation planning next
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md)
@@ -328,10 +328,15 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Review and accept the five compact design documents.
-2. Define the shared M0.0/M1 acceptance fixtures and exact expected citations.
-3. Implement and evaluate M0.0 within its explicit local-only constraints.
-4. Use the M0.0 findings to create only the ADRs needed before M0 implementation constraints are fixed.
-5. Complete M0 and replace every M0.0-only shortcut with the production-shaped local stack.
-6. Implement M1 through the M0 service boundaries, then continue sequentially through M9.
-7. Update this plan after each milestone based on measured results and newly available data.
+1. Convert the M1 scope and exit gate in section 6 into bounded implementation steps that reuse the
+   accepted M0 service boundaries.
+2. Finalize the small redistributable M1 fixture set: one English PDF, one English pasted-text
+   document, answerable and deliberately unanswerable questions, and exact expected citations.
+3. Define the authenticated owner and private/demo workspace path without treating a client-supplied
+   workspace identifier as authorization.
+4. Research and approve only the embedding, dense-retrieval, generation, and observability providers
+   required by the thin slice before adding their SDKs or credentials.
+5. Implement and evaluate M1 through the retained identity, storage, processing, search, research,
+   evidence, and operations contracts.
+6. Continue sequentially through M9 and update this plan after each milestone using measured results
+   and newly available data.

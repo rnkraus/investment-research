@@ -27,13 +27,12 @@ Write the ADR immediately before the decision becomes an implementation constrai
 | [ADR-0003](./0003-workspace-isolation-strategy.md) | Trusted application context, scoped repositories and storage, and workspace-aware relational constraints | Accepted |
 | [ADR-0004](./0004-m0-0-parser-isolation-boundary.md) | Narrow synthetic-fixture exception with a mandatory parser-isolation gate in M0 | Accepted |
 | [ADR-0005](./0005-at-least-once-processing-delivery.md) | Versioned jobs, canonical execution leases, and bounded at-least-once Celery delivery | Accepted |
+| [ADR-0006](./0006-credential-free-parser-runtime.md) | Dedicated parser container on a credential-free isolated network | Accepted |
 | [ADR-0007](./0007-local-s3-provider.md) | SeaweedFS for local S3-compatible storage and managed S3 for public deployment | Accepted |
 
 ## 3. Proposed ADRs
 
-| ADR | Decision | Remaining acceptance evidence |
-|---|---|---|
-| [ADR-0006](./0006-credential-free-parser-runtime.md) | Dedicated parser container on a credential-free isolated network | Hosted Linux CI confirmation for the final parser boundary and canonical failure gates |
+No ADR is currently proposed.
 
 ## 4. Planned ADR backlog
 
