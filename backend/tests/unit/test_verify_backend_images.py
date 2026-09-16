@@ -148,6 +148,12 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
 ) -> None:
     calls: list[tuple[str, tuple[str, ...], Mapping[str, str] | None]] = []
     secret_paths: list[Path] = []
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_DATABASE_URL",
+        "postgresql+psycopg://inherited:secret@ci-postgres:5432/inherited",
+    )
+    monkeypatch.setenv("POSTGRES_PASSWORD", "inherited-postgres-password")
+    monkeypatch.setenv("OPENAI_API_KEY", "inherited-provider-key")
     monkeypatch.setattr(
         verify_backend_images,
         "generate_disposable_password",
@@ -233,6 +239,9 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     assert api_environment["INVESTMENT_RESEARCH_REDIS_URL"] == (
         "redis://:disposable-password@redis:6379/0"
     )
+    assert "inherited" not in api_environment["INVESTMENT_RESEARCH_DATABASE_URL"]
+    assert "POSTGRES_PASSWORD" not in api_environment
+    assert "OPENAI_API_KEY" not in api_environment
 
     migration_environment = next(
         environment
@@ -247,6 +256,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     assert migration_environment["POSTGRES_PASSWORD_FILE"] == "/run/secrets/postgres_password"
     assert migration_environment["POSTGRES_PORT"] == "5432"
     assert "POSTGRES_PASSWORD" not in migration_environment
+    assert "OPENAI_API_KEY" not in migration_environment
     assert "unused-application-access" not in api_command
     assert "unused-application-secret" not in api_command
     assert secret_paths and all(not path.exists() for path in secret_paths)

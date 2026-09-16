@@ -254,6 +254,16 @@ def generate_disposable_password() -> str:
     return secrets.token_hex(24)
 
 
+def sanitized_process_environment() -> dict[str, str]:
+    """Copy the host environment without inherited secret-bearing configuration."""
+
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if name not in FORBIDDEN_CONFIGURATION_NAMES
+    }
+
+
 def wait_for_healthy_container(container: str) -> None:
     """Wait for Docker's bounded API readiness check to report healthy."""
 
@@ -286,7 +296,7 @@ def verify_api_against_migrated_postgres(
     postgres_password = generate_disposable_password()
     secret_values = {name: generate_disposable_password() for name in COMPOSE_SECRET_FILES}
     secret_values["POSTGRES_PASSWORD"] = postgres_password
-    api_environment = os.environ.copy()
+    api_environment = sanitized_process_environment()
     api_environment.update(
         {
             "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
@@ -311,7 +321,7 @@ def verify_api_against_migrated_postgres(
         str(COMPOSE_FILE),
     ]
     with disposable_compose_secret_environment(secret_values) as secret_sources:
-        compose_environment = os.environ.copy() | secret_sources
+        compose_environment = sanitized_process_environment() | secret_sources
         compose_environment.update(
             {
                 "COMPOSE_DISABLE_ENV_FILE": "1",
@@ -320,7 +330,7 @@ def verify_api_against_migrated_postgres(
                 "INVESTMENT_RESEARCH_S3_BUCKET": "unused-storage-check",
             }
         )
-        migration_environment = os.environ.copy() | {
+        migration_environment = sanitized_process_environment() | {
             "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
             "INVESTMENT_RESEARCH_RUNTIME_LOCATION": "container",
             "POSTGRES_DB": POSTGRES_DATABASE,
