@@ -1,15 +1,16 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Draft v0.3 — AI/vector decision accepted; source-anchor and fixture decisions remain open \
+**Status:** Draft v0.4 — runtime and source-anchor decisions accepted; fixture freeze remains open \
 **Active milestone:** M1 — Thin vertical slice \
-**Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0007 \
+**Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
 [02-system-design.md](./02-system-design.md),
 [03-domain-model.md](./03-domain-model.md),
 [04-security-and-operations.md](./04-security-and-operations.md),
 [05-delivery-plan.md](./05-delivery-plan.md),
-[09-m0-implementation-plan.md](./09-m0-implementation-plan.md), and
-[ADR-0008](./adr/0008-application-owned-ai-and-vector-adapters.md)
+[09-m0-implementation-plan.md](./09-m0-implementation-plan.md),
+[ADR-0008](./adr/0008-application-owned-ai-and-vector-adapters.md), and
+[ADR-0009](./adr/0009-stable-source-anchors.md)
 
 ## 1. Purpose and scope
 
@@ -435,7 +436,7 @@ Documentation and contracts:
 
 - research and approve embedding, Pinecone, generation, support-evaluation, and tracing choices
   under the dependency policy;
-- retain accepted ADR-0008 and create and accept ADR-0009;
+- retain accepted ADR-0008 and ADR-0009;
 - freeze the M1 fixture manifest, exact expected anchors, provider budget, and data classification;
 - specify the text-capture payload, source locator union, processing states, indexing job behavior,
   dual-lane selection, provider usage, and trace fields;
