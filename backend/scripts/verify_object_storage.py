@@ -20,6 +20,7 @@ from scripts.docker_secrets import disposable_compose_secret_environment
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
+COMPOSE_TEST_FILE = REPOSITORY_ROOT / "compose.test.yaml"
 INTEGRATION_TEST = "tests/integration/test_s3_object_storage_seaweedfs.py"
 STORAGE_SERVICES = (
     "seaweedfs-master",
@@ -462,6 +463,8 @@ def verify_object_storage() -> int:
         project_name,
         "--file",
         str(COMPOSE_FILE),
+        "--file",
+        str(COMPOSE_TEST_FILE),
     ]
     exit_code = 0
 

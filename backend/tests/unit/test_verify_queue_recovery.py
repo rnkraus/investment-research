@@ -113,6 +113,8 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     assert events == ["shorten-lease", "verify-output"]
     assert all(TEST_CREDENTIAL not in argument for _, command, _ in calls for argument in command)
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
+    assert str(verify_queue_recovery.COMPOSE_FILE) in calls[0][1]
+    assert str(verify_queue_recovery.COMPOSE_TEST_FILE) in calls[0][1]
     assert all("POSTGRES_PASSWORD" not in environment for _, _, environment in calls)
     assert secret_paths and all(not path.exists() for path in secret_paths)
     engine.dispose.assert_called_once_with()

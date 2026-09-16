@@ -5,7 +5,6 @@ import os
 import secrets
 import shlex
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -255,14 +254,6 @@ def generate_disposable_password() -> str:
     return secrets.token_hex(24)
 
 
-def find_available_loopback_port() -> int:
-    """Reserve and release one currently available local TCP port."""
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as candidate:
-        candidate.bind(("127.0.0.1", 0))
-        return int(candidate.getsockname()[1])
-
-
 def wait_for_healthy_container(container: str) -> None:
     """Wait for Docker's bounded API readiness check to report healthy."""
 
@@ -292,7 +283,6 @@ def verify_api_against_migrated_postgres(
 
     project_name = f"investment-research-api-check-{run_identifier}"
     api_container = f"{project_name}-api"
-    postgres_port = find_available_loopback_port()
     postgres_password = generate_disposable_password()
     secret_values = {name: generate_disposable_password() for name in COMPOSE_SECRET_FILES}
     secret_values["POSTGRES_PASSWORD"] = postgres_password
@@ -327,7 +317,6 @@ def verify_api_against_migrated_postgres(
                 "COMPOSE_DISABLE_ENV_FILE": "1",
                 "POSTGRES_DB": POSTGRES_DATABASE,
                 "POSTGRES_USER": POSTGRES_USER,
-                "POSTGRES_PORT": str(postgres_port),
                 "INVESTMENT_RESEARCH_S3_BUCKET": "unused-storage-check",
             }
         )

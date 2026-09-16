@@ -58,54 +58,35 @@ an explicitly configured process environment variable takes precedence over the 
 
 Use a local editor or password manager to put exactly one non-empty value in each ignored secret
 file. Do not include a variable name or surrounding quotes. Use distinct, random values with at
-least 16 characters; never commit or reuse them outside local development. During the Step 3-to-4
-transition, `.env` and `.secrets/postgres_password` must contain the same PostgreSQL password so the
-host API and the container refer to the same account. The same rule applies to Redis only when a
-host process is intentionally connected to the Compose broker. All other application and
-administrator storage credentials remain only in their secret files.
+least 16 characters; never commit or reuse them outside local development. Normal Compose services
+read PostgreSQL, Redis, and object-storage credentials only from their mounted secret files. Direct
+values in the ignored `.env` are retained only for explicit host-side development or verification
+tools and must match the corresponding secret file whenever they target the same disposable service.
 
 The non-secret `*_SECRET_FILE` entries in `.env` select these source paths for Docker Compose.
 Inside a container, Compose mounts the selected file under `/run/secrets`; the settings layer reads
 the value there without placing it in the container environment or process arguments.
 
-`INVESTMENT_RESEARCH_RUNTIME_LOCATION=host` keeps local API binds and database targets on loopback.
-Until the API joins Compose in M0 Step 4, the host API uses the private local object-storage adapter
-for the browser journey. The Celery worker and isolated parser are already defined as container
-services in Step 3. Compose supplies their container-specific database, broker, S3, and parser
-settings without exposing credential values in the host development file.
+`INVESTMENT_RESEARCH_RUNTIME_LOCATION=host` remains available for focused host-side tools and tests.
+The normal M0 API, Celery worker, and parser now run as Compose services. Compose supplies their
+container-specific database, broker, S3, and parser settings without exposing credential values in
+the host development file.
 
 ## Run locally
 
-Start PostgreSQL from the repository root:
+Start the current backend runtime from the repository root:
 
 ```shell
-docker compose --env-file .env up -d postgres
+docker compose --env-file .env up --detach --wait api worker
 docker compose --env-file .env ps
 ```
 
-Before starting the API for the first time, migrate the database and create the deterministic local
-workspace:
-
-```shell
-cd backend
-uv run alembic -c alembic.ini upgrade head
-uv run python -m scripts.seed_m0_0
-cd ..
-```
-
-Start the API in a second terminal:
-
-```shell
-cd backend
-uv run uvicorn investment_research.main:create_app --factory --reload --host 127.0.0.1 --port 8000
-```
-
-The API loads `ApiSettings`, derives a validated loopback database URL from the root `.env`, creates
-only its process-owned database and application resources during startup, and releases them during
-shutdown. The Celery worker loads `WorkerSettings`. An explicit
-`INVESTMENT_RESEARCH_DATABASE_URL` remains available for CI and isolated tooling and overrides the
-local file. Database URL query parameters are rejected so driver options cannot redirect a
-validated target. Application startup does not create or migrate tables automatically.
+Compose waits for PostgreSQL, runs the reviewed one-shot migration to Alembic `head`, initializes the
+SeaweedFS bucket, and starts the API and worker only after their required dependencies are ready. It
+does not seed or delete business data during restart. Until the final safe developer seed/reset
+workflow is added, use an already initialized local development volume for the interactive view and
+use `uv run --locked python -m scripts.verify_m0_runtime` for the deterministic proof from an empty
+state.
 
 The API writes one structured JSON completion or failure event per HTTP request at the configured
 `INVESTMENT_RESEARCH_LOG_LEVEL`. It generates the correlation identifier on the server and returns
@@ -122,26 +103,25 @@ pnpm dev
 Open the web application at <http://127.0.0.1:3000>. The API liveness endpoint is available at
 <http://127.0.0.1:8000/health>; it reports only whether the API process is running. The readiness
 endpoint at <http://127.0.0.1:8000/ready> returns `200` only when PostgreSQL is reachable and its
-Alembic revision exactly matches the schema required by this API version. A failed readiness check
-returns only `503 {"status":"not_ready"}` and never exposes dependency or error details.
+Alembic revision exactly matches the schema required by this API version, Redis accepts the Celery
+broker connection, and the configured S3 bucket is accessible. A failed readiness check returns only
+`503 {"status":"not_ready"}` and never exposes dependency or error details.
 
 The web application now presents the automatic M0 processing states and no longer exposes the
-temporary M0.0 runner command. During the Step 3-to-4 transition, this host-started view is useful
-for frontend development, but it is not the complete runtime: the host API still uses private local
-storage while the container worker uses SeaweedFS. Do not expose the internal SeaweedFS data plane
-to bridge that temporary topology.
+temporary M0.0 runner command. During the remaining Step 4 frontend work, Next.js still runs on the
+host while API, worker, parser, PostgreSQL, Redis, and SeaweedFS run in Compose.
 
 Use the documented complete automatic M0 fixture verification below to exercise API capture,
 Redis/Celery delivery, SeaweedFS, isolated parsing, research, citation resolution, original access,
-and the insufficient-evidence case together. Step 4 moves the API and web application into the
-Compose topology and restores this same complete journey as an interactive browser workflow.
+and the insufficient-evidence case together. The remaining Step 4 work moves the web application
+into the Compose topology and restores this same complete journey as a one-command browser workflow.
 
 All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
 recheck the server-owned workspace, active document version, validation state, byte count, and
 checksum before returning source content; the browser never receives workspace credentials or
 connects directly to PostgreSQL.
 
-Stop the foreground processes with `Ctrl+C`, then stop PostgreSQL without deleting its named volume:
+Stop the frontend with `Ctrl+C`, then stop the backend stack without deleting its named volumes:
 
 ```shell
 docker compose --env-file .env down
@@ -285,11 +265,11 @@ uv audit --locked
 - `backend/` contains the shared FastAPI, Celery worker, parser, and application package and tests.
 - `backend/Dockerfile` provides reproducible non-root API, Celery worker, and private parser targets.
 - `compose.yaml` provides PostgreSQL, authenticated Redis, the Celery worker, the credential-free
-  parser, and internally isolated SeaweedFS master, volume, filer, S3 gateway, and one-shot bucket
-  bootstrap services. During M0 Step 3, the backend bridge remains host-connected so the host API
-  and verification commands can reach PostgreSQL only through its loopback-bound port. Only the
-  worker bridges the backend, storage-data, and parser networks. Step 4 moves the API into Compose,
-  removes the PostgreSQL host port, and makes the backend network internal.
+  parser, the API, and internally isolated SeaweedFS master, volume, filer, S3 gateway, and one-shot
+  bucket bootstrap services. PostgreSQL has no normal host port and the backend network is internal.
+  The API alone bridges the loopback-facing frontend network to backend and storage-data; the worker
+  alone bridges backend, storage-data, and parser. `compose.test.yaml` adds a separate test-only
+  bridge and loopback database port for isolated host-driven verification.
 - `.secrets/` is an ignored local source directory for Compose secret mounts; it is not application
   configuration, a production secret manager, or a place for shared credentials.
 - The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
