@@ -1,0 +1,14 @@
+**
+
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+
+!frontend/
+frontend/**
+!frontend/package.json
+!frontend/next.config.ts
+!frontend/postcss.config.mjs
+!frontend/tsconfig.json
+!frontend/src/
+!frontend/src/**

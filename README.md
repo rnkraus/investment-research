@@ -68,37 +68,31 @@ Inside a container, Compose mounts the selected file under `/run/secrets`; the s
 the value there without placing it in the container environment or process arguments.
 
 `INVESTMENT_RESEARCH_RUNTIME_LOCATION=host` remains available for focused host-side tools and tests.
-The normal M0 API, Celery worker, and parser now run as Compose services. Compose supplies their
-container-specific database, broker, S3, and parser settings without exposing credential values in
-the host development file.
+The normal M0 web application, API, Celery worker, and parser run as Compose services. Compose
+supplies their container-specific database, broker, S3, and parser settings without exposing
+credential values in the host development file.
 
 ## Run locally
 
-Start the current backend runtime from the repository root:
+Start the complete local runtime from the repository root:
 
 ```shell
-docker compose --env-file .env up --detach --wait api worker
+docker compose --env-file .env up --build --detach --wait
 docker compose --env-file .env ps
 ```
 
 Compose waits for PostgreSQL, runs the reviewed one-shot migration to Alembic `head`, initializes the
-SeaweedFS bucket, and starts the API and worker only after their required dependencies are ready. It
-does not seed or delete business data during restart. Until the final safe developer seed/reset
-workflow is added, use an already initialized local development volume for the interactive view and
-use `uv run --locked python -m scripts.verify_m0_runtime` for the deterministic proof from an empty
-state.
+SeaweedFS bucket, and starts the API, worker, and web application only after their required
+dependencies are ready. It does not seed or delete business data during restart. Until the final
+safe developer seed/reset workflow is added, use an already initialized local development volume
+for the interactive view and use `uv run --locked python -m scripts.verify_m0_runtime` for the
+deterministic proof from an empty state.
 
 The API writes one structured JSON completion or failure event per HTTP request at the configured
 `INVESTMENT_RESEARCH_LOG_LEVEL`. It generates the correlation identifier on the server and returns
 it in the `x-request-id` response header and safe JSON error envelope. Request bodies, query strings,
 raw unmatched paths, headers, credentials, exception messages, and traceback text are excluded from
 these application events.
-
-Start the web application in a third terminal from the repository root:
-
-```shell
-pnpm dev
-```
 
 Open the web application at <http://127.0.0.1:3000>. The API liveness endpoint is available at
 <http://127.0.0.1:8000/health>; it reports only whether the API process is running. The readiness
@@ -107,21 +101,30 @@ Alembic revision exactly matches the schema required by this API version, Redis 
 broker connection, and the configured S3 bucket is accessible. A failed readiness check returns only
 `503 {"status":"not_ready"}` and never exposes dependency or error details.
 
-The web application now presents the automatic M0 processing states and no longer exposes the
-temporary M0.0 runner command. During the remaining Step 4 frontend work, Next.js still runs on the
-host while API, worker, parser, PostgreSQL, Redis, and SeaweedFS run in Compose.
+The web application presents the automatic M0 processing states and no longer exposes the temporary
+M0.0 runner command. Its non-root, read-only Distroless container reaches only the API through the
+frontend network. Browser API requests remain same-origin; PostgreSQL, Redis, object storage, and
+the parser are not reachable from the web container.
 
 Use the documented complete automatic M0 fixture verification below to exercise API capture,
 Redis/Celery delivery, SeaweedFS, isolated parsing, research, citation resolution, original access,
-and the insufficient-evidence case together. The remaining Step 4 work moves the web application
-into the Compose topology and restores this same complete journey as a one-command browser workflow.
+and the insufficient-evidence case together. The remaining Step 4 work adds the isolated
+browser-inclusive stack gate and final hosted CI confirmation.
 
 All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
 recheck the server-owned workspace, active document version, validation state, byte count, and
 checksum before returning source content; the browser never receives workspace credentials or
 connects directly to PostgreSQL.
 
-Stop the frontend with `Ctrl+C`, then stop the backend stack without deleting its named volumes:
+For focused frontend development, stop only the Compose web service, keep the backend services
+running, and start the local development server:
+
+```shell
+docker compose --env-file .env stop web
+pnpm dev
+```
+
+Stop the Compose stack without deleting its named volumes:
 
 ```shell
 docker compose --env-file .env down

@@ -591,6 +591,25 @@ fixture gates. Step 4 remains in progress: the frontend image, browser-inclusive
 verification, documented one-command browser journey, and successful hosted CI confirmation remain
 open.
 
+**Local implementation record (2026-09-16, frontend image block):** Next.js now emits its official
+standalone output and validates separate host and container API origins. Host development remains
+restricted to credential-free loopback origins; the container build accepts only
+`http://api:8000`. A locked multi-stage build uses the official digest-pinned Node 24.19.0
+glibc-based image and pnpm 11.24.0 with the frozen workspace lockfile. Its allowlisted context
+excludes local environment files, installed packages, build output, tests, and unrelated repository
+content. The final image contains only the standalone server and static assets in the signed,
+digest-pinned `gcr.io/distroless/nodejs24-debian13` runtime at
+`sha256:bb6b03d81066993293a10feda7250e8e1cc034035fe9b61cfceededa7c8bf04d`. The
+upstream keyless Cosign identity and transparency-log entry were verified. Docker Scout reported no
+known vulnerabilities for the base or final ARM64 image on 2026-09-16. The digest was approximately
+two days old at approval time and was accepted as a documented exception to the normal 72-hour age
+policy because it was immutable, signed, multi-architecture, clean in the approval-time scan, and a
+recent continuously rebuilt security-focused runtime. Compose now starts the non-root, read-only web
+service only after aggregate API readiness, publishes it on loopback, and connects it only to the
+frontend network. Real requests proved the web page, same-origin API proxy, UID/GID `65532`, dropped
+capabilities, read-only root filesystem, and network membership. Step 4 still requires the isolated
+browser-inclusive complete-stack verifier, its CI wiring, and hosted confirmation.
+
 ### Step 5 — Provider seams and developer safety
 
 **Suggested branch:** `chore/m0-developer-workflow`
