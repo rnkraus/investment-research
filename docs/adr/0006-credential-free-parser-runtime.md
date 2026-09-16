@@ -122,9 +122,15 @@ passed on Docker Desktop on 2026-09-15. The final gate verified that:
 - temporary Compose resources, verification images, and read-only mode-`0444` secret files inside
   private mode-`0700` temporary directories were removed after the gate.
 
-This satisfies the final-runtime Docker Desktop part of the acceptance trigger. The ADR remains
-`Proposed` until the same boundary passes in Linux CI and timeout, crash, and malformed-response
-tests prove the required canonical `ProcessingRun` outcomes.
+Application-level PostgreSQL integration tests additionally prove that real HTTP timeouts and
+disconnects request only bounded retries and then record a safe terminal `ProcessingRun`, while a
+malformed successful response fails without partial structure blocks or chunks. Unit and runtime
+isolation gates cover oversized requests, oversized extracted output, bounded typed failures, and
+the preservation of the immutable original outside the parser boundary.
+
+This satisfies the final-runtime Docker Desktop and canonical failure-state parts of the acceptance
+trigger. The ADR remains `Proposed` until the same final boundary and complete M0 runtime pass in
+hosted Linux CI on the revision proposed for merge.
 
 ## Consequences
 

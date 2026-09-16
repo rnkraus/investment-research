@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.9 — Steps 1–5 complete; Step 6 acceptance in progress \
+**Status:** Active v0.10 — Steps 1–5 complete; Step 6 locally verified, hosted CI pending \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -66,6 +66,24 @@ M0 is complete only when:
 
 M0 changes infrastructure behind ports. It must not rename domain states or bypass the evidence,
 workspace, transaction, or immutable-original rules just to simplify container wiring.
+
+### 3.1 M0.0 shortcut disposition at handoff
+
+| M0.0 shortcut | M0 disposition | Owner | Target milestone |
+|---|---|---|---|
+| Host-started web and API processes | Removed; both are production-shaped containers with health checks | Platform | Completed in M0 |
+| Local-filesystem original storage | Removed; SeaweedFS now implements the provider-neutral `ObjectStorage` contract locally | Documents and Platform | Completed in M0; choose managed public S3 in M6 |
+| Manual single-job processing runner | Removed; Redis and Celery now deliver versioned, idempotent processing work | Processing | Completed in M0; add durable indexing intent in M2 |
+| Parser sharing the runner's process and permissions | Removed; the worker calls a credential-free, isolated parser runtime | Processing and Platform | Complete locally in M0; accept ADR-0006 after hosted Linux CI |
+| Fixed local identity | Intentionally retained for local M0 only | Identity | Replace with authenticated owner and private/demo workspaces in M1 |
+| Deterministic fixture answer generator | Intentionally retained as the default correctness adapter | Research | Add an approved provider adapter in M1; retain deterministic tests |
+| PostgreSQL lexical-only retrieval | Intentionally retained as the deterministic baseline | Search | Add embeddings, Pinecone dense retrieval, and the first combined path in M1 |
+| One frozen synthetic PDF journey | Intentionally retained as the M0 acceptance boundary | Documents and Processing | Add the approved PDF and pasted-text fixture set in M1 |
+| No-op embedding, dense-retrieval, reranking, and tracing adapters | Intentionally retained to prove ports without external calls | Search and Operations | Implement only the M1 providers required by its thin slice; later capabilities follow their milestones |
+
+The intentionally retained items are explicit later-milestone scope, not evidence that M0 satisfies
+their M1 exit gates. M1 must replace them through the existing application-owned contracts rather
+than bypassing or duplicating the M0 boundaries.
 
 ## 4. Target runtime and trust boundaries
 
@@ -763,6 +781,34 @@ test proves that its scoped cleanup still runs after an intentionally failed jou
 protection must select the stable `Complete M0 runtime` check name as required because workflow YAML
 cannot enforce repository merge policy. Final hosted confirmation and the M0-to-M1 handoff remain
 open.
+
+**Local implementation record (2026-09-16, measured-results and handoff block):** The final local
+gate passed from an isolated runtime. Pre-commit verification, the checked OpenAPI contract, all 15
+frontend tests, and the Next.js production build passed. PostgreSQL verification migrated a fresh
+database, seeded it, passed 59 integration tests with 6 object-storage tests intentionally
+deselected, checked migration drift, and completed the downgrade/upgrade cycle. Backend image,
+SeaweedFS contract, parser-isolation, and worker-loss recovery gates passed. The complete M0
+runtime became healthy in 36.96 seconds; seed setup took 1.61 seconds; the acceptance image build
+took 0.72 seconds; upload to `LEXICAL_READY` took 0.26 seconds; the answerable,
+repeated-answer, original-open, and insufficient-evidence journey took 1.58 seconds; log inspection
+took 0.08 seconds; and scoped cleanup took 24.60 seconds. A separate read-only inventory check then
+confirmed that no verifier containers, networks, volumes, or acceptance images remained. These
+times are observations from one local Docker Desktop run, not service-level guarantees.
+
+### 7.1 M0-to-M1 handoff
+
+The implementation is locally ready for M1, but M0 is not marked complete until the current
+revision's hosted `Complete M0 runtime` job passes and repository branch protection requires that
+stable check name. After that evidence is recorded, ADR-0006 can become `Accepted` and the delivery
+plan can advance its immediate action from M0 to M1.
+
+M1 starts through the contracts already proven here: authenticated identity supplies
+`WorkspaceContext`; document input uses `ObjectStorage`; processing remains versioned Celery work;
+the worker alone crosses into the isolated `DocumentParser`; search adds dense candidates behind
+its existing ports; and generated statements still become product output only after server-side
+evidence validation. M1 must not weaken immutable originals, workspace isolation, safe parser
+failure, idempotent delivery, or exact-citation validation to add its PDF, pasted-text, embedding,
+indexing, and provider-backed path.
 
 ## 8. Verification matrix
 
