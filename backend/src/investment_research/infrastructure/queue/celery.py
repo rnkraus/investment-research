@@ -9,6 +9,7 @@ from kombu import Queue  # type: ignore[import-untyped]
 from kombu.exceptions import KombuError  # type: ignore[import-untyped]
 from redis.exceptions import RedisError
 
+from investment_research.infrastructure.logging import application_logger
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.ports import ProcessingDispatchError
 from investment_research.settings import QueueSettings
@@ -17,6 +18,9 @@ CELERY_APPLICATION_NAME: Final = "investment-research"
 PROCESSING_QUEUE_NAME: Final = "document-processing"
 PROCESS_DOCUMENT_TASK_NAME: Final = "investment_research.processing.process_document.v1"
 BROKER_VISIBILITY_TIMEOUT_SECONDS: Final = 420
+BROKER_READINESS_TIMEOUT_SECONDS: Final = 2
+
+_logger = application_logger("queue")
 
 
 def create_celery_app(settings: QueueSettings) -> Celery:
@@ -66,6 +70,30 @@ def create_celery_app(settings: QueueSettings) -> Celery:
         worker_redirect_stdouts=False,
     )
     return application
+
+
+@dataclass(frozen=True, slots=True)
+class CeleryBrokerReadinessProbe:
+    """Check that the configured broker accepts a bounded connection."""
+
+    application: Celery
+
+    def is_ready(self) -> bool:
+        """Return false without exposing broker connection details."""
+
+        try:
+            with self.application.connection_for_read() as connection:
+                connection.ensure_connection(
+                    max_retries=0,
+                    timeout=BROKER_READINESS_TIMEOUT_SECONDS,
+                )
+        except (CeleryError, KombuError, RedisError, OSError) as error:
+            _logger.warning(
+                "health.queue.unavailable",
+                extra={"exception_type": type(error).__name__},
+            )
+            return False
+        return True
 
 
 @dataclass(frozen=True, slots=True)

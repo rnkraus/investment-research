@@ -57,6 +57,11 @@ The migration target receives only PostgreSQL configuration, exits after Alembic
 and never seeds data. Repeated execution is safe because Alembic applies only revisions that the
 database has not recorded yet.
 
+The API image checks its aggregate `/ready` endpoint, which requires the exact database migration,
+the Celery broker, and the configured S3 bucket. The worker image instead runs a bounded Celery
+control ping addressed to its own node name. The parser checks only its credential-free internal
+HTTP endpoint. The one-shot migration target correctly declares no healthcheck.
+
 No application configuration or credential is accepted as a build argument. Required values are
 injected only when a container starts. The build context uses a positive allowlist, so environment
 files, virtual environments, tests, documentation, caches, and local outputs never reach Docker.

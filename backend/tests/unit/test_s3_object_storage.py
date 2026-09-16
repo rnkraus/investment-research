@@ -2,7 +2,7 @@
 
 from base64 import b64encode
 from collections.abc import Mapping
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import BinaryIO, cast
 from uuid import UUID
 
@@ -14,8 +14,10 @@ from botocore.exceptions import (  # type: ignore[import-untyped]
     EndpointConnectionError,
 )
 
+from investment_research.infrastructure.logging import configure_logging
 from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorage,
+    S3ObjectStorageReadinessProbe,
     create_s3_client,
 )
 from investment_research.modules.documents.ports import (
@@ -59,13 +61,20 @@ class FakeS3Client:
 
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
+        self.head_calls: list[dict[str, object]] = []
         self.put_calls: list[dict[str, object]] = []
         self.get_calls: list[dict[str, object]] = []
         self.delete_calls: list[dict[str, object]] = []
         self.next_put_error: BaseException | None = None
+        self.next_head_error: BaseException | None = None
         self.next_get_error: BaseException | None = None
         self.next_delete_error: BaseException | None = None
         self.last_response_body: TrackingBytesIO | None = None
+
+    def head_bucket(self, **kwargs: object) -> Mapping[str, object]:
+        self.head_calls.append(kwargs)
+        self._raise_once("next_head_error")
+        return {}
 
     def put_object(self, **kwargs: object) -> Mapping[str, object]:
         self.put_calls.append(kwargs)
@@ -131,6 +140,51 @@ def test_s3_adapter_matches_object_storage_protocol() -> None:
     storage: ObjectStorage = S3ObjectStorage(client=FakeS3Client(), bucket=BUCKET)
 
     assert isinstance(storage, S3ObjectStorage)
+
+
+def test_s3_readiness_checks_only_the_configured_bucket() -> None:
+    client = FakeS3Client()
+
+    assert S3ObjectStorageReadinessProbe(client=client, bucket=BUCKET).is_ready()
+    assert client.head_calls == [{"Bucket": BUCKET}]
+    assert client.put_calls == []
+    assert client.get_calls == []
+    assert client.delete_calls == []
+
+
+@pytest.mark.parametrize(
+    "provider_error",
+    [
+        pytest.param(
+            make_client_error("AccessDenied", 403, "HeadBucket"),
+            id="client",
+        ),
+        pytest.param(
+            EndpointConnectionError(endpoint_url="http://synthetic-secret.invalid"),
+            id="transport",
+        ),
+    ],
+)
+def test_s3_readiness_fails_closed_without_logging_details(
+    provider_error: BaseException,
+) -> None:
+    stream = StringIO()
+    configure_logging(process_name="api", level="INFO", stream=stream)
+    client = FakeS3Client()
+    client.next_head_error = provider_error
+
+    assert not S3ObjectStorageReadinessProbe(client=client, bucket=BUCKET).is_ready()
+    assert "health.object_storage.unavailable" in stream.getvalue()
+    assert type(provider_error).__name__ in stream.getvalue()
+    assert "synthetic-secret" not in stream.getvalue()
+
+
+def test_s3_readiness_does_not_hide_programming_errors() -> None:
+    client = FakeS3Client()
+    client.next_head_error = TypeError("synthetic programming error")
+
+    with pytest.raises(TypeError, match="synthetic programming error"):
+        S3ObjectStorageReadinessProbe(client=client, bucket=BUCKET).is_ready()
 
 
 def test_store_sends_conditional_checksum_request_and_returns_metadata() -> None:

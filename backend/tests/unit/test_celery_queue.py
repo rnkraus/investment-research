@@ -1,5 +1,6 @@
-"""Unit tests for broker-only Celery configuration and job publication."""
+"""Unit tests for broker-only Celery configuration, readiness, and publication."""
 
+from io import StringIO
 from typing import cast
 from unittest.mock import create_autospec
 from uuid import UUID
@@ -10,10 +11,13 @@ from celery.exceptions import CeleryError  # type: ignore[import-untyped]
 from kombu.exceptions import KombuError  # type: ignore[import-untyped]
 from redis.exceptions import RedisError
 
+from investment_research.infrastructure.logging import configure_logging
 from investment_research.infrastructure.queue.celery import (
+    BROKER_READINESS_TIMEOUT_SECONDS,
     BROKER_VISIBILITY_TIMEOUT_SECONDS,
     PROCESS_DOCUMENT_TASK_NAME,
     PROCESSING_QUEUE_NAME,
+    CeleryBrokerReadinessProbe,
     CeleryProcessingDispatcher,
     create_celery_app,
 )
@@ -71,6 +75,52 @@ def test_celery_app_is_json_only_broker_configuration() -> None:
     assert application.conf.task_routes == {
         PROCESS_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
     }
+
+
+def test_broker_readiness_opens_one_bounded_read_connection() -> None:
+    application = make_celery_mock()
+    connection = application.connection_for_read.return_value.__enter__.return_value
+
+    assert CeleryBrokerReadinessProbe(application).is_ready()
+
+    application.connection_for_read.assert_called_once_with()
+    connection.ensure_connection.assert_called_once_with(
+        max_retries=0,
+        timeout=BROKER_READINESS_TIMEOUT_SECONDS,
+    )
+
+
+@pytest.mark.parametrize(
+    "provider_error",
+    [
+        pytest.param(CeleryError("synthetic-secret"), id="celery"),
+        pytest.param(KombuError("synthetic-secret"), id="kombu"),
+        pytest.param(RedisError("synthetic-secret"), id="redis"),
+        pytest.param(OSError("synthetic-secret"), id="socket"),
+    ],
+)
+def test_broker_readiness_fails_closed_without_logging_details(
+    provider_error: Exception,
+) -> None:
+    stream = StringIO()
+    configure_logging(process_name="api", level="INFO", stream=stream)
+    application = make_celery_mock()
+    connection = application.connection_for_read.return_value.__enter__.return_value
+    connection.ensure_connection.side_effect = provider_error
+
+    assert not CeleryBrokerReadinessProbe(application).is_ready()
+    assert "health.queue.unavailable" in stream.getvalue()
+    assert type(provider_error).__name__ in stream.getvalue()
+    assert "synthetic-secret" not in stream.getvalue()
+
+
+def test_broker_readiness_does_not_hide_programming_errors() -> None:
+    application = make_celery_mock()
+    connection = application.connection_for_read.return_value.__enter__.return_value
+    connection.ensure_connection.side_effect = TypeError("synthetic programming error")
+
+    with pytest.raises(TypeError, match="synthetic programming error"):
+        CeleryBrokerReadinessProbe(application).is_ready()
 
 
 def test_dispatcher_publishes_only_the_validated_json_job() -> None:

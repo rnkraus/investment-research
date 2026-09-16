@@ -247,7 +247,7 @@ flowchart LR
     COMMAND[verify_backend_images.py] --> BUILD[Build API, migration, worker, parser]
     BUILD --> METADATA[Check target metadata and secret absence]
     METADATA --> RUNTIME[Run minimal non-root smoke tests]
-    RUNTIME --> POSTGRES[Create isolated PostgreSQL]
+    RUNTIME --> POSTGRES[Create isolated PostgreSQL and Redis]
     POSTGRES --> MIGRATE[Run migration image to head]
     MIGRATE --> REPEAT[Run migration image again]
     REPEAT --> API[Start API image]
@@ -266,11 +266,12 @@ For every target it verifies the declared non-root user, exact entry point, expe
 minimal runtime contents, read-only application source for the runtime user, and the absence of
 forbidden credential names from image configuration and build history.
 
-It then creates a uniquely named PostgreSQL Compose project with a random disposable password,
-runs the migration image twice to prove both schema creation and idempotency, and starts the API only
-after those runs succeed. PostgreSQL and the migration image receive the password through a read-only
-mode-`0444` secret file inside a private mode-`0700` temporary directory. The API must then become
-healthy and return the exact public liveness and readiness responses. Displayed commands contain
+It then creates a uniquely named PostgreSQL and Redis Compose project with random disposable
+passwords, runs the migration image twice to prove both schema creation and idempotency, and starts
+the API only after those runs succeed. PostgreSQL and Redis receive their values through read-only
+mode-`0444` secret files inside a private mode-`0700` temporary directory. The API receives its
+database and broker URLs only through the child process environment, must become healthy, and must
+return the exact public liveness and readiness responses. Displayed commands contain
 environment-variable names but never their values. Cleanup removes only the resources, temporary
 image tags, and secret directory owned by that invocation, including after a failed build or runtime
 check.

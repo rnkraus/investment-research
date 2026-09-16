@@ -34,7 +34,12 @@ flowchart LR
     READY[GET /ready] --> CONTAINER[ApiContainer]
     CONTAINER --> COMPOSITE[CompositeReadinessProbe]
     COMPOSITE --> POSTGRES[PostgreSQL connection and Alembic head]
-    POSTGRES --> RESULT[200 ready or 503 not_ready]
+    COMPOSITE --> REDIS[Celery broker connection through Redis]
+    COMPOSITE --> S3[S3 bucket access when configured]
+    POSTGRES --> RESULT[Aggregate result]
+    REDIS --> RESULT
+    S3 --> RESULT
+    RESULT --> RESPONSE[200 ready or 503 not_ready]
 ```
 
 Liveness deliberately avoids the application container's dependencies. Readiness delegates to the

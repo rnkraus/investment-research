@@ -37,10 +37,12 @@ from investment_research.infrastructure.health import (
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorage,
+    S3ObjectStorageReadinessProbe,
     create_s3_client,
 )
 from investment_research.infrastructure.parsing.client import HttpDocumentParser
 from investment_research.infrastructure.queue.celery import (
+    CeleryBrokerReadinessProbe,
     CeleryProcessingDispatcher,
     create_celery_app,
 )
@@ -95,6 +97,14 @@ class _DatabaseResources:
     session_factory: SessionFactory
 
 
+@dataclass(frozen=True, slots=True)
+class _ObjectStorageResources:
+    """One object-storage adapter and its optional provider readiness probe."""
+
+    adapter: ObjectStorage
+    readiness_probe: ReadinessProbe | None
+
+
 def _build_database_resources(settings: DatabaseSettings) -> _DatabaseResources:
     """Create database resources shared by one process's application services."""
 
@@ -106,11 +116,14 @@ def _build_database_resources(settings: DatabaseSettings) -> _DatabaseResources:
     )
 
 
-def _build_object_storage(settings: ObjectStorageSettings) -> ObjectStorage:
-    """Select one concrete adapter at the process composition boundary."""
+def _build_object_storage(settings: ObjectStorageSettings) -> _ObjectStorageResources:
+    """Select one adapter and provider probe at the process composition boundary."""
 
     if settings.object_storage_provider == "local":
-        return LocalObjectStorage(settings.object_storage_root)
+        return _ObjectStorageResources(
+            adapter=LocalObjectStorage(settings.object_storage_root),
+            readiness_probe=None,
+        )
 
     s3 = settings.require_s3_settings()
     client = create_s3_client(
@@ -119,7 +132,10 @@ def _build_object_storage(settings: ObjectStorageSettings) -> ObjectStorage:
         access_key_id=s3.access_key_id.get_secret_value(),
         secret_access_key=s3.secret_access_key.get_secret_value(),
     )
-    return S3ObjectStorage(client=client, bucket=s3.bucket)
+    return _ObjectStorageResources(
+        adapter=S3ObjectStorage(client=client, bucket=s3.bucket),
+        readiness_probe=S3ObjectStorageReadinessProbe(client=client, bucket=s3.bucket),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +191,12 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     processing_dispatcher = CeleryProcessingDispatcher(queue_application)
     database = _build_database_resources(settings)
     object_storage = _build_object_storage(settings)
+    readiness_probes: list[ReadinessProbe] = [
+        PostgreSQLReadinessProbe(database.engine),
+        CeleryBrokerReadinessProbe(queue_application),
+    ]
+    if object_storage.readiness_probe is not None:
+        readiness_probes.append(object_storage.readiness_probe)
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
             database.session_factory
@@ -205,7 +227,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
     )
     open_original_service = OpenOriginalService(
-        object_storage=object_storage,
+        object_storage=object_storage.adapter,
         unit_of_work_factory=create_document_read_unit_of_work_factory(database.session_factory),
     )
     return ApiContainer(
@@ -213,12 +235,12 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         identity_context_provider=FixedLocalIdentityContextProvider(),
         database_engine=database.engine,
         session_factory=database.session_factory,
-        readiness_probe=CompositeReadinessProbe((PostgreSQLReadinessProbe(database.engine),)),
-        object_storage=object_storage,
+        readiness_probe=CompositeReadinessProbe(tuple(readiness_probes)),
+        object_storage=object_storage.adapter,
         queue_application=queue_application,
         processing_dispatcher=processing_dispatcher,
         capture_document_service=CaptureDocumentService(
-            object_storage=object_storage,
+            object_storage=object_storage.adapter,
             unit_of_work_factory=create_capture_unit_of_work_factory(database.session_factory),
             max_upload_bytes=settings.max_upload_bytes,
             processing_dispatcher=processing_dispatcher,
@@ -251,7 +273,7 @@ def build_worker_container(
     database = _build_database_resources(settings)
     object_storage = _build_object_storage(settings)
     open_original_service = OpenOriginalService(
-        object_storage=object_storage,
+        object_storage=object_storage.adapter,
         unit_of_work_factory=create_document_read_unit_of_work_factory(database.session_factory),
     )
     identity_context_provider = FixedLocalIdentityContextProvider()
@@ -276,7 +298,7 @@ def build_worker_container(
         identity_context_provider=identity_context_provider,
         database_engine=database.engine,
         session_factory=database.session_factory,
-        object_storage=object_storage,
+        object_storage=object_storage.adapter,
         open_original_service=open_original_service,
         process_document_service=process_document_service,
         execute_processing_job_service=ExecuteProcessingJobService(

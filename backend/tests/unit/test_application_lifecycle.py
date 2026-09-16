@@ -12,9 +12,19 @@ from investment_research.bootstrap import (
     build_api_container,
     build_worker_container,
 )
+from investment_research.infrastructure.health import (
+    CompositeReadinessProbe,
+    PostgreSQLReadinessProbe,
+)
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
-from investment_research.infrastructure.object_storage.s3 import S3ObjectStorage
-from investment_research.infrastructure.queue.celery import CeleryProcessingDispatcher
+from investment_research.infrastructure.object_storage.s3 import (
+    S3ObjectStorage,
+    S3ObjectStorageReadinessProbe,
+)
+from investment_research.infrastructure.queue.celery import (
+    CeleryBrokerReadinessProbe,
+    CeleryProcessingDispatcher,
+)
 from investment_research.main import create_app
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -39,6 +49,9 @@ LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 
 class UnusedS3Client:
     """Satisfy the narrow client protocol without allowing accidental network-like calls."""
+
+    def head_bucket(self, **kwargs: object) -> Mapping[str, object]:
+        raise AssertionError("container construction must not probe S3")
 
     def put_object(self, **kwargs: object) -> Mapping[str, object]:
         raise AssertionError("container construction must not write to S3")
@@ -112,6 +125,11 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
             )
             assert container.queue_application.conf.broker_url == LOCAL_REDIS_URL
             assert container.queue_application.conf.result_backend is None
+            assert isinstance(container.readiness_probe, CompositeReadinessProbe)
+            assert tuple(type(probe) for probe in container.readiness_probe.probes) == (
+                PostgreSQLReadinessProbe,
+                CeleryBrokerReadinessProbe,
+            )
             assert isinstance(container.capture_document_service, CaptureDocumentService)
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.get_processing_run_service, GetProcessingRunService)
@@ -187,6 +205,12 @@ def test_s3_provider_wires_same_adapter_into_api_and_worker(
     try:
         assert isinstance(api_container.object_storage, S3ObjectStorage)
         assert isinstance(worker_container.object_storage, S3ObjectStorage)
+        assert isinstance(api_container.readiness_probe, CompositeReadinessProbe)
+        assert tuple(type(probe) for probe in api_container.readiness_probe.probes) == (
+            PostgreSQLReadinessProbe,
+            CeleryBrokerReadinessProbe,
+            S3ObjectStorageReadinessProbe,
+        )
         assert client_calls == [
             {
                 "endpoint_url": "http://127.0.0.1:8333",
