@@ -144,7 +144,21 @@ jobs:
       - name: Check backend Dockerfile
         run: docker buildx build --check --file Dockerfile .
 
-      - name: Validate Docker Compose configuration
+      - name: Validate normal Docker Compose configuration
+        working-directory: .
+        env:
+          COMPOSE_DISABLE_ENV_FILE: "1"
+          INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID: ci-validation-app-access
+          INVESTMENT_RESEARCH_S3_BUCKET: ci-validation-storage
+          INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY: ci-validation-app-secret
+          POSTGRES_DB: investment_research
+          POSTGRES_PASSWORD: ci-compose-validation-only
+          POSTGRES_USER: investment_research
+          SEAWEEDFS_ADMIN_ACCESS_KEY: ci-validation-admin-access
+          SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY: ci-validation-admin-secret
+        run: docker compose --file compose.yaml config --quiet
+
+      - name: Validate deterministic Docker Compose test override
         working-directory: .
         env:
           COMPOSE_DISABLE_ENV_FILE: "1"
@@ -157,7 +171,11 @@ jobs:
           POSTGRES_USER: investment_research
           SEAWEEDFS_ADMIN_ACCESS_KEY: ci-validation-admin-access
           SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY: ci-validation-admin-secret
-        run: docker compose --file compose.yaml config --quiet
+        run: >-
+          docker compose
+          --file compose.yaml
+          --file compose.test.yaml
+          config --quiet
 
       - name: Build and verify backend images
         run: uv run --locked python -m scripts.verify_backend_images

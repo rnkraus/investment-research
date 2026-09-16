@@ -583,9 +583,13 @@ Host-driven integration gates combine the base file with `compose.test.yaml`, wh
 to a separate non-internal `host-test` network and publishes one random loopback port. Container-only
 gates do not load that override. The resolved Compose configurations, an empty PostgreSQL migration
 and 59-test integration cycle, the rebuilt normal stack, aggregate API readiness, absent PostgreSQL
-host binding, and Docker's actual internal-network flag passed locally. Step 4 remains in progress:
-the frontend image, complete-stack verification, CI wiring, and documented one-command browser
-journey remain open.
+host binding, and Docker's actual internal-network flag passed locally. The backend image CI job now
+validates the normal Compose file without a PostgreSQL host port and validates the deterministic
+test override separately with its required loopback port. The existing Linux jobs continue to build
+the backend targets and execute the isolated object-storage, parser, queue-recovery, and complete M0
+fixture gates. Step 4 remains in progress: the frontend image, browser-inclusive complete-stack
+verification, documented one-command browser journey, and successful hosted CI confirmation remain
+open.
 
 ### Step 5 — Provider seams and developer safety
 
