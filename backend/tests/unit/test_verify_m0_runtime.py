@@ -63,8 +63,7 @@ def test_verification_runs_complete_journey_and_cleans_up(
     assert verify_m0_runtime.verify_m0_runtime() == 0
     assert [label for label, _, _ in calls] == [
         "Build and start isolated complete M0 runtime",
-        "Migrate isolated PostgreSQL database",
-        "Seed isolated PostgreSQL workspaces",
+        "Seed isolated PostgreSQL through the internal tool container",
         "Build isolated M0 acceptance image",
         "Run automatic M0 fixture journey",
         "Remove isolated M0 runtime and its volumes",
@@ -77,9 +76,18 @@ def test_verification_runs_complete_journey_and_cleans_up(
     assert calls[0][2]["POSTGRES_PORT"] == "55432"
     assert calls[0][2]["INVESTMENT_RESEARCH_API_PORT"] == "58000"
     assert calls[0][2]["INVESTMENT_RESEARCH_WEB_PORT"] == "53000"
+    assert calls[1][1][-7:] == (
+        "--profile",
+        "tools",
+        "run",
+        "--build",
+        "--rm",
+        "--no-deps",
+        "seed",
+    )
     assert calls[-2][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert calls[-1][1][-3:-1] == ("rm", "--force")
-    acceptance_command = calls[4][1]
+    acceptance_command = calls[3][1]
     assert str(verify_m0_runtime.COMPOSE_TEST_FILE) in acceptance_command
     assert verify_m0_runtime.ACCEPTANCE_TEST in acceptance_command
     assert secret_paths and all(not path.exists() for path in secret_paths)

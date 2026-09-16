@@ -74,10 +74,11 @@ def test_image_verification_builds_checks_and_cleans_every_target(
     assert [command[command.index("--target") + 1] for command in build_commands] == [
         "api",
         "migration",
+        "seed",
         "worker",
         "parser",
     ]
-    assert len([label for label, _ in calls if label == "Verify minimal non-root runtime"]) == 4
+    assert len([label for label, _ in calls if label == "Verify minimal non-root runtime"]) == 5
     assert api_checks == [
         (
             "investment-research-backend-check-api:12345678",
@@ -91,6 +92,7 @@ def test_image_verification_builds_checks_and_cleans_every_target(
     assert [target_from_image(image) for image in cleanup_images] == [
         "parser",
         "worker",
+        "seed",
         "migration",
         "api",
     ]
