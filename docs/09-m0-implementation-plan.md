@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.5 — Step 1 completed; Step 2 implemented locally with hosted CI pending \
+**Status:** Active v0.6 — Steps 1–3 completed; Step 4 implemented locally with hosted CI pending \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -609,6 +609,21 @@ service only after aggregate API readiness, publishes it on loopback, and connec
 frontend network. Real requests proved the web page, same-origin API proxy, UID/GID `65532`, dropped
 capabilities, read-only root filesystem, and network membership. Step 4 still requires the isolated
 browser-inclusive complete-stack verifier, its CI wiring, and hosted confirmation.
+
+**Local implementation record (2026-09-16, complete-stack verification block):** The canonical M0
+runtime verifier now starts the containerized web and API alongside worker, parser, PostgreSQL,
+Redis, and SeaweedFS with generated credentials, unique project naming, and random PostgreSQL, API,
+and web loopback ports. Its acceptance client no longer constructs an in-process FastAPI
+application. It joins only the frontend network, receives no PostgreSQL, Redis, or object-storage
+credentials, first loads the real Next.js page, and sends capture, status, research, evidence, and
+original-document requests through the same-origin Next.js proxy. Failure diagnostics include web,
+API, worker, and parser logs while cleanup remains scoped to the unique project and verification
+image. The fast frontend CI job checks the Dockerfile structure, and the existing bounded runtime
+job executes the browser-facing complete-stack gate. The canonical backend check passed with 582
+unit tests, the frontend format, lint, type, contract, and 15-test gates passed, and a clean local
+complete-stack run reached `LEXICAL_READY`, validated the answer and citation, reopened the immutable
+original, returned the explicit insufficient-evidence result, and removed all isolated resources.
+Successful hosted CI remains the final Step 4 confirmation.
 
 ### Step 5 — Provider seams and developer safety
 

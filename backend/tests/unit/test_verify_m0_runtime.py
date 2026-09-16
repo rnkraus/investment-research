@@ -22,7 +22,12 @@ def prepare_deterministic_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda: "/usr/local/bin/docker",
     )
     monkeypatch.setattr(verify_m0_runtime, "uuid4", lambda: RUN_UUID)
-    monkeypatch.setattr(verify_m0_runtime, "find_available_loopback_port", lambda: 55432)
+    available_ports = iter((55432, 58000, 53000))
+    monkeypatch.setattr(
+        verify_m0_runtime,
+        "find_available_loopback_port",
+        lambda: next(available_ports),
+    )
     monkeypatch.setattr(
         verify_m0_runtime,
         "generate_disposable_credential",
@@ -47,7 +52,7 @@ def test_verification_runs_complete_journey_and_cleans_up(
     ) -> subprocess.CompletedProcess[bytes]:
         del working_directory, check
         calls.append((label, tuple(command), environment))
-        if label == "Build and start isolated M0 processing runtime":
+        if label == "Build and start isolated complete M0 runtime":
             secret_path = Path(environment["POSTGRES_PASSWORD_SECRET_FILE"])
             assert secret_path.read_text(encoding="utf-8") == TEST_CREDENTIAL
             secret_paths.append(secret_path)
@@ -57,7 +62,7 @@ def test_verification_runs_complete_journey_and_cleans_up(
 
     assert verify_m0_runtime.verify_m0_runtime() == 0
     assert [label for label, _, _ in calls] == [
-        "Build and start isolated M0 processing runtime",
+        "Build and start isolated complete M0 runtime",
         "Migrate isolated PostgreSQL database",
         "Seed isolated PostgreSQL workspaces",
         "Build isolated M0 acceptance image",
@@ -67,6 +72,11 @@ def test_verification_runs_complete_journey_and_cleans_up(
     ]
     assert all(TEST_CREDENTIAL not in argument for _, command, _ in calls for argument in command)
     assert all("POSTGRES_PASSWORD" not in environment for _, _, environment in calls)
+    start_command = calls[0][1]
+    assert start_command[-2:] == ("web", "worker")
+    assert calls[0][2]["POSTGRES_PORT"] == "55432"
+    assert calls[0][2]["INVESTMENT_RESEARCH_API_PORT"] == "58000"
+    assert calls[0][2]["INVESTMENT_RESEARCH_WEB_PORT"] == "53000"
     assert calls[-2][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert calls[-1][1][-3:-1] == ("rm", "--force")
     acceptance_command = calls[4][1]
@@ -99,7 +109,7 @@ def test_verification_reports_failure_and_still_cleans_up(
 
     assert verify_m0_runtime.verify_m0_runtime() == 9
     assert labels[-3:] == [
-        "Show isolated worker logs after verification failure",
+        "Show isolated runtime logs after verification failure",
         "Remove isolated M0 runtime and its volumes",
         "Remove isolated M0 acceptance image",
     ]

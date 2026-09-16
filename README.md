@@ -106,10 +106,10 @@ M0.0 runner command. Its non-root, read-only Distroless container reaches only t
 frontend network. Browser API requests remain same-origin; PostgreSQL, Redis, object storage, and
 the parser are not reachable from the web container.
 
-Use the documented complete automatic M0 fixture verification below to exercise API capture,
-Redis/Celery delivery, SeaweedFS, isolated parsing, research, citation resolution, original access,
-and the insufficient-evidence case together. The remaining Step 4 work adds the isolated
-browser-inclusive stack gate and final hosted CI confirmation.
+Use the documented complete automatic M0 fixture verification below to exercise the containerized
+web application, its same-origin API proxy, API capture, Redis/Celery delivery, SeaweedFS, isolated
+parsing, research, citation resolution, original access, and the insufficient-evidence case
+together. Successful hosted CI remains the final Step 4 confirmation.
 
 All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
 recheck the server-owned workspace, active document version, validation state, byte count, and
@@ -193,9 +193,12 @@ uv run --locked python -m scripts.verify_parser_isolation
 ```
 
 Verify the complete automatic M0 fixture journey from `backend/`. The command creates a fresh
-disposable runtime, captures the synthetic PDF through the API application, waits for Celery and the
-isolated parser to reach `LEXICAL_READY`, verifies the validated answer, exact citation, original
-bytes, and insufficient-evidence response, and removes every resource it created:
+disposable runtime with random loopback ports and credentials, starts the containerized web, API,
+worker, parser, PostgreSQL, Redis, and SeaweedFS services, and runs a credential-free acceptance
+client attached only to the frontend network. That client loads the web page and sends every upload,
+status, research, evidence, and original request through the same-origin web proxy. It waits for
+Celery and the isolated parser to reach `LEXICAL_READY`, verifies the validated answer, exact
+citation, original bytes, and insufficient-evidence response, and removes every resource it created:
 
 ```shell
 uv run --locked python -m scripts.verify_m0_runtime

@@ -20,30 +20,8 @@ services:
       - no-new-privileges:true
     environment:
       INVESTMENT_RESEARCH_M0_RUNTIME_ACCEPTANCE: "1"
-      INVESTMENT_RESEARCH_ENVIRONMENT: test
-      INVESTMENT_RESEARCH_RUNTIME_LOCATION: container
-      INVESTMENT_RESEARCH_LOG_LEVEL: INFO
-      INVESTMENT_RESEARCH_API_HOST: 0.0.0.0
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB for isolated verification}
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER for isolated verification}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-      POSTGRES_PORT: 5432
-      REDIS_PASSWORD_FILE: /run/secrets/redis_password
-      REDIS_PORT: 6379
-      INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER: s3
-      INVESTMENT_RESEARCH_S3_ENDPOINT_URL: http://seaweedfs-s3:8333
-      INVESTMENT_RESEARCH_S3_REGION_NAME: ${INVESTMENT_RESEARCH_S3_REGION_NAME:-us-east-1}
-      INVESTMENT_RESEARCH_S3_BUCKET: ${INVESTMENT_RESEARCH_S3_BUCKET:?Set INVESTMENT_RESEARCH_S3_BUCKET for isolated verification}
-      INVESTMENT_RESEARCH_S3_ACCESS_KEY_ID_FILE: /run/secrets/seaweedfs_application_access_key
-      INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/seaweedfs_application_secret_access_key
-    secrets:
-      - postgres_password
-      - redis_password
-      - seaweedfs_application_access_key
-      - seaweedfs_application_secret_access_key
     networks:
-      - backend
-      - storage-data
+      - frontend
     volumes:
       - type: bind
         source: ${M0_ACCEPTANCE_FIXTURE_PATH:-./fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf}
