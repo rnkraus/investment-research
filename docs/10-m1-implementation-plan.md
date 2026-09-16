@@ -187,6 +187,11 @@ CAPTURED → PARSING → LEXICAL_READY → INDEXING → SEARCHABLE
 M1 extends the single canonical `ProcessingRun`; it does not introduce the M2 `ProcessingStage`,
 outbox, receipt, or reconciliation model early.
 
+Capture still publishes the processing job after the canonical database commit. If that publish
+fails, the durable run remains `CAPTURED` and the failure is observable, but M1 does not claim
+automatic redelivery of that lost publish. The transactional outbox, reconciliation, and visible
+repair controls remain M2 scope.
+
 One execution lease may span the narrow M1 task, but canonical commits remain short:
 
 1. claim the run in PostgreSQL and close the transaction;
@@ -474,6 +479,8 @@ Backend:
 - add a bounded JSON pasted-text capture endpoint alongside multipart PDF upload;
 - store text through the same immutable S3 and canonical metadata flow;
 - extend parser protocol dispatch and isolated parser handling for plain text;
+- execute each parse in a terminable child process with bounded concurrency and a server-enforced
+  hard wall-clock deadline shorter than the worker's HTTP deadline;
 - implement the ADR-0009 locator union and migration `0004` without changing historical PDF meaning;
 - return media-aware citation viewer data and immutable text passage responses;
 - keep capture compensation, checksums, byte limits, workspace scoping, and non-disclosure intact.
@@ -483,6 +490,8 @@ CI:
 - test malformed Unicode, blank text, excessive bytes/characters, content-type mismatch, newline
   normalization, checksum identity, duplicate immutable writes, cross-workspace access, and parser
   isolation for both media types;
+- prove that a deliberately hanging parse is terminated and reaped without preventing the next
+  request from succeeding;
 - migrate M0 PDF evidence forward and prove its citation still opens the same page and text;
 - add the frozen pasted-text fixture and exact expected passage anchor.
 
@@ -494,7 +503,8 @@ Frontend:
 
 **Gate:** one PDF and one pasted-text fixture independently reach the lexical-ready boundary; each
 original reopens byte-for-byte; each evidence span resolves to its exact media-appropriate location;
-foreign and unknown sources remain indistinguishable.
+foreign and unknown sources remain indistinguishable; a timed-out parse cannot keep consuming parser
+capacity or make the next valid parse fail.
 
 **Suggested commits:** text/source domain and migration; text capture; isolated text parsing; source
 viewer API; document CI; frontend input and viewer; docs.
@@ -690,7 +700,7 @@ measured results and M2 handoff.
 | Client-selected scope | route and dependency tests prove context remains server-owned |
 | Cross-workspace access | API, repository, storage, queue, vector, evidence, usage, and trace negatives |
 | Text-original ambiguity | byte/checksum/newline/Unicode and media-aware locator tests |
-| Parser expansion | PDF and text secret/filesystem/network/resource negative tests |
+| Parser expansion | PDF and text secret/filesystem/network/resource negatives plus hard-timeout termination and recovery |
 | Lost or duplicate indexing | execution lease, resume, deterministic vector-ID, duplicate-upsert tests |
 | Stale or poisoned vector | canonical workspace/version/state/configuration/temporal qualification |
 | Retrieval nondeterminism | fixed lane limits, origin ranks, deduplication, and selected-order tests |
@@ -705,6 +715,10 @@ measured results and M2 handoff.
 
 Deterministic correctness tests and live-provider compatibility tests remain separate. A live smoke
 pass cannot replace malformed-output, isolation, idempotency, evidence, or workspace tests.
+The three frozen M1 acceptance cases prove the thin slice's specified behavior; they are not a
+representative retrieval-quality baseline. M3 freezes the initial reviewed evaluation core, M4
+measures the first representative baseline, and M7 expands corpus coverage. Additional reviewed
+cases may be collected earlier without moving those milestone gates into M1.
 
 ## 10. Branch and review strategy
 

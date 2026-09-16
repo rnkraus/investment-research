@@ -535,8 +535,8 @@ backend runner and its exclusive tests have been removed after the replacement a
 passed; the oversized-upload storage assertion was retained in the focused document-capture API
 integration suite. The complete local Step 3 gate passes: the locked backend checks, PostgreSQL
 integration and migration cycle, parser-isolation checks, live queue-recovery test, automatic M0
-fixture journey, and frontend checks are green. Successful hosted CI remains the final remote
-confirmation before Step 3 is marked fully complete.
+fixture journey, and frontend checks are green. At that checkpoint, successful hosted CI remained
+the final remote confirmation before Step 3 could be marked fully complete.
 
 ### Step 4 — Complete local container stack
 
@@ -639,7 +639,7 @@ job executes the browser-facing complete-stack gate. The canonical backend check
 unit tests, the frontend format, lint, type, contract, and 15-test gates passed, and a clean local
 complete-stack run reached `LEXICAL_READY`, validated the answer and citation, reopened the immutable
 original, returned the explicit insufficient-evidence result, and removed all isolated resources.
-Successful hosted CI remains the final Step 4 confirmation.
+At that checkpoint, successful hosted CI remained the final Step 4 confirmation.
 
 ### Step 5 — Provider seams and developer safety
 
