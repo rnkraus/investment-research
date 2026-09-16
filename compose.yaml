@@ -186,6 +186,33 @@ services:
     cpus: 1.0
     pids_limit: 64
 
+  web:
+    image: investment-research-frontend:local
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    user: "65532:65532"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:${INVESTMENT_RESEARCH_WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    networks:
+      - frontend
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 64
+    restart: unless-stopped
+    stop_grace_period: 15s
+
   worker:
     <<: *backend-runtime
     image: investment-research-backend-worker:local
