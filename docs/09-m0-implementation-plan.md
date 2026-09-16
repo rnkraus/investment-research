@@ -573,9 +573,19 @@ ping addressed to its own Celery node rather than treating mere process survival
 isolated backend image gate starts disposable PostgreSQL and Redis, applies the migration twice,
 checks target metadata and non-root runtime contents, and verifies both API health endpoints without
 displaying generated credentials. The complete backend Compose dependency graph and both new health
-checks passed locally. Step 4 remains in progress: the PostgreSQL host-port test bridge still needs a
-dedicated test override before removal, and the frontend image, final internal network topology,
-complete-stack verification, CI wiring, and documented one-command browser journey remain open.
+checks passed locally.
+
+**Local implementation record (2026-09-16, final backend network block):** The normal Compose stack
+now publishes no PostgreSQL port and marks the backend, parser, storage-control, and storage-data
+networks internal. The API alone joins a separate loopback-facing frontend network in addition to
+the backend and storage data planes; the worker alone bridges backend, storage-data, and parser.
+Host-driven integration gates combine the base file with `compose.test.yaml`, which adds PostgreSQL
+to a separate non-internal `host-test` network and publishes one random loopback port. Container-only
+gates do not load that override. The resolved Compose configurations, an empty PostgreSQL migration
+and 59-test integration cycle, the rebuilt normal stack, aggregate API readiness, absent PostgreSQL
+host binding, and Docker's actual internal-network flag passed locally. Step 4 remains in progress:
+the frontend image, complete-stack verification, CI wiring, and documented one-command browser
+journey remain open.
 
 ### Step 5 — Provider seams and developer safety
 

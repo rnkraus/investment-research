@@ -146,6 +146,13 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         "Remove isolated SeaweedFS project and its volumes",
         "Remove isolated object-storage verification image",
     ]
+    runtime_command = next(
+        command
+        for label, command, _ in calls
+        if label == "Build and start isolated PostgreSQL, Redis, and SeaweedFS"
+    )
+    assert str(verify_object_storage.COMPOSE_FILE) in runtime_command
+    assert str(verify_object_storage.COMPOSE_TEST_FILE) in runtime_command
     assert healthy_services == [
         "postgres",
         "redis",

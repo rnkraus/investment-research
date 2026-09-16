@@ -38,8 +38,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env or the shell}
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env or the shell}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:?Set POSTGRES_PORT in .env or the shell}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -181,6 +179,7 @@ services:
       - seaweedfs_application_access_key
       - seaweedfs_application_secret_access_key
     networks:
+      - frontend
       - backend
       - storage-data
     mem_limit: 512m
@@ -389,9 +388,9 @@ volumes:
   seaweedfs-filer-data:
 
 networks:
+  frontend:
   backend:
-    # Transitional M0 Step 3 bridge: host processes still reach PostgreSQL over loopback.
-    # Step 4 moves the API into Compose, removes the database host port, and makes this internal.
+    internal: true
   parser:
     internal: true
   storage-control:

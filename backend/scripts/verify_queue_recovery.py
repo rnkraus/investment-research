@@ -32,6 +32,7 @@ from scripts.docker_secrets import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
+COMPOSE_TEST_FILE = REPOSITORY_ROOT / "compose.test.yaml"
 FIXTURE_PDF = (
     REPOSITORY_ROOT / "fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf"
 )
@@ -302,6 +303,8 @@ def verify_queue_recovery() -> int:
         project_name,
         "--file",
         str(COMPOSE_FILE),
+        "--file",
+        str(COMPOSE_TEST_FILE),
     ]
     python_command = [sys.executable, "-m"]
     parser_container_id: str | None = None

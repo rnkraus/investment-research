@@ -1,6 +1,13 @@
 services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:?Set POSTGRES_PORT for isolated verification}:5432"
+    networks:
+      - backend
+      - host-test
+
   acceptance:
-    image: ${M0_ACCEPTANCE_IMAGE:?Set M0_ACCEPTANCE_IMAGE for isolated verification}
+    image: ${M0_ACCEPTANCE_IMAGE:-investment-research-m0-acceptance:local}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -39,7 +46,7 @@ services:
       - storage-data
     volumes:
       - type: bind
-        source: ${M0_ACCEPTANCE_FIXTURE_PATH:?Set M0_ACCEPTANCE_FIXTURE_PATH for isolated verification}
+        source: ${M0_ACCEPTANCE_FIXTURE_PATH:-./fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf}
         target: /verification-fixture.pdf
         read_only: true
     tmpfs:
@@ -47,3 +54,6 @@ services:
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 128
+
+networks:
+  host-test:

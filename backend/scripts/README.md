@@ -91,7 +91,7 @@ work block and the PostgreSQL command after persistence or migration changes.
 
 ```mermaid
 flowchart LR
-    COMMAND[verify_postgres.py] --> DOCKER[Unique Docker Compose project]
+    COMMAND[verify_postgres.py] --> DOCKER[Base Compose plus test-only override]
     DOCKER --> MIGRATE[Alembic upgrade]
     MIGRATE --> SEED[M0.0 seed]
     SEED --> TESTS[PostgreSQL integration tests]
@@ -104,9 +104,13 @@ The verification command selects an available loopback port, generates a random 
 password, writes it to a read-only mode-`0444` Compose secret file inside a private mode-`0700`
 temporary directory, and uses a unique Compose project name. The directory blocks access by other
 host users while the file mode lets native-Linux Docker bind-mount the secret for non-root container
-users with different UIDs. Cleanup runs after success, command failure, or test failure. It removes
-only resources owned by that invocation and never targets the normal M0.0 development database or
-its volume. The temporary secret directory is removed when the command exits.
+users with different UIDs. Normal `compose.yaml` publishes no PostgreSQL port and keeps the backend
+network internal. `compose.test.yaml` adds a separate non-internal `host-test` network and one
+loopback-only database port for host-driven Alembic and SQLAlchemy checks. The PostgreSQL,
+object-storage, queue-recovery, and complete-runtime verifiers load this override; normal startup and
+container-only gates do not. Cleanup runs after success, command failure, or test failure. It removes
+only resources owned by that invocation and never targets the normal development database or its
+volume. The temporary secret directory is removed when the command exits.
 
 ## Isolated object-storage verification
 

@@ -71,6 +71,8 @@ def test_verification_runs_complete_sequence_without_exposing_password(
     ]
     assert all(TEST_PASSWORD not in argument for _, command, _ in calls for argument in command)
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
+    assert str(verify_postgres.COMPOSE_FILE) in calls[0][1]
+    assert str(verify_postgres.COMPOSE_TEST_FILE) in calls[0][1]
     assert "POSTGRES_PASSWORD" not in calls[0][2]
     assert calls[0][2]["COMPOSE_DISABLE_ENV_FILE"] == "1"
     assert secret_paths and all(not path.exists() for path in secret_paths)

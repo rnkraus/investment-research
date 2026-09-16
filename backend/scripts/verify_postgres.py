@@ -19,6 +19,7 @@ from scripts.docker_secrets import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
+COMPOSE_TEST_FILE = REPOSITORY_ROOT / "compose.test.yaml"
 POSTGRES_DATABASE = "investment_research"
 POSTGRES_USER = "investment_research"
 
@@ -81,6 +82,8 @@ def verify_postgres() -> int:
         project_name,
         "--file",
         str(COMPOSE_FILE),
+        "--file",
+        str(COMPOSE_TEST_FILE),
     ]
     python_command = [sys.executable, "-m"]
     with disposable_compose_secret_environment(secret_values) as secret_sources:

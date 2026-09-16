@@ -148,7 +148,6 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
 ) -> None:
     calls: list[tuple[str, tuple[str, ...], Mapping[str, str] | None]] = []
     secret_paths: list[Path] = []
-    monkeypatch.setattr(verify_backend_images, "find_available_loopback_port", lambda: 55432)
     monkeypatch.setattr(
         verify_backend_images,
         "generate_disposable_password",
@@ -257,7 +256,6 @@ def test_api_runtime_verification_removes_postgres_after_start_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     labels: list[str] = []
-    monkeypatch.setattr(verify_backend_images, "find_available_loopback_port", lambda: 55432)
     monkeypatch.setattr(
         verify_backend_images,
         "generate_disposable_password",
