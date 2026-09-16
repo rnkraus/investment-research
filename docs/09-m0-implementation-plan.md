@@ -683,6 +683,21 @@ includes the new target. The focused 12-test gate, the complete 593-test backend
 backend image targets, and the disposable automatic M0 fixture journey pass. Step 5 still requires
 canonical pre-commit/CI integration and the unchanged frontend compatibility gate.
 
+**Local implementation record (2026-09-16, pre-commit-and-CI block):** `pre-commit 4.6.2` is a
+locked development-only dependency selected after release-age, compatibility, and advisory review.
+The root configuration uses only local hooks and existing locked commands: the canonical backend
+gate, OpenAPI drift check, and frontend formatting, linting, and type checking. It does not download
+or trust separately versioned hook repositories and never rewrites files. A dedicated CI job
+validates the configuration and executes every hook on all tracked files after installing both
+locked toolchains, so local hook bypass does not bypass CI. The backend CI job now calls the same
+isolated `verify_postgres` wrapper used locally instead of duplicating migration, seed, integration,
+drift, downgrade, and upgrade commands. The dependency audit reports no known vulnerability or
+adverse package status, configuration validation plus all five hooks pass locally, and the canonical
+PostgreSQL run completes with 59 passing integration tests, six expected storage-specific skips,
+and no migration drift before or after its downgrade/upgrade cycle. Hosted CI remains the final
+workflow confirmation. Step 5 still requires the unchanged frontend test and production-build
+compatibility gate.
+
 ### Step 6 — M0 acceptance and handoff
 
 **Suggested branch:** `test/m0-acceptance`
