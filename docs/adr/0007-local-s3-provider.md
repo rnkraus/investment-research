@@ -148,7 +148,8 @@ real API capture-and-authorized-original-open contract. Direct S3 tests received
 storage data network; the confined API contract container received only that network and its
 disposable PostgreSQL network. The current Compose topology has no web or parser service to receive
 storage credentials. Credential absence must be verified again when those processes join Compose.
-The dedicated Linux CI job is implemented but its first successful hosted run remains pending.
+The dedicated Linux CI job subsequently passed as part of the completed M0 acceptance gate on
+2026-09-16.
 
 Reconsider SeaweedFS if these checks fail, upstream maintenance stops, applicable vulnerabilities
 cannot be mitigated promptly, required S3 semantics diverge, or local operation becomes too complex.

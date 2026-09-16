@@ -1,9 +1,9 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v0.6 — M0 complete; M1 implementation planning next
+**Status:** Active v0.7 — M0 complete; M1 implementation planning active
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
-**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md)
+**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md)
 
 ## 1. Delivery strategy
 
@@ -140,6 +140,9 @@ verification matrix are maintained in
 ## 6. M1 — Thin vertical slice
 
 The first production-shaped slice hardens the M0.0 product proof and intentionally supports one simple document path before broad feature coverage.
+
+The exact M1 decisions, repository delta, backend-to-CI-to-frontend sequence, and verification
+matrix are maintained in [10-m1-implementation-plan.md](./10-m1-implementation-plan.md).
 
 ### Build
 

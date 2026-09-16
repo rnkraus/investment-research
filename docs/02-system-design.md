@@ -2,7 +2,7 @@
 
 **Status:** Draft v0.3
 **Scope:** V1 production architecture with planned extension points  
-**Related:** [01-product-scope.md](./01-product-scope.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md)
+**Related:** [01-product-scope.md](./01-product-scope.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md)
 
 ## 1. Design goals
 
@@ -75,7 +75,7 @@ performs CPU-heavy parsing on the API event loop. This process and resource sepa
 operating-system sandbox: [ADR-0004](./adr/0004-m0-0-parser-isolation-boundary.md) limits accepted
 M0.0 processing to the frozen synthetic fixture and makes tested parser isolation an M0 gate.
 
-Application-owned contracts, Alembic migrations, module boundaries, and the real evidence validator are established in M0.0. Development-only artifact storage and processing delivery are replaced during M0. Passing M0.0 does not satisfy the M0 or M1 exit gates. The paired diagrams are maintained in [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), the completed proof sequence in [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), and the M0 replacement sequence in [09-m0-implementation-plan.md](./09-m0-implementation-plan.md).
+Application-owned contracts, Alembic migrations, module boundaries, and the real evidence validator are established in M0.0. Development-only artifact storage and processing delivery are replaced during M0. Passing M0.0 does not satisfy the M0 or M1 exit gates. The paired diagrams are maintained in [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), the completed proof sequence in [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), the M0 replacement sequence in [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), and the M1 thin-slice sequence in [10-m1-implementation-plan.md](./10-m1-implementation-plan.md).
 
 ## 4. Component boundaries
 
