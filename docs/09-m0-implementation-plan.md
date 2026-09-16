@@ -751,6 +751,19 @@ the complete answerable, repeated-answer, original-open, and insufficient-eviden
 These are observations from one local Docker Desktop run, not service-level guarantees. The
 container CI gate and final measured-results/M0-to-M1 handoff remain open.
 
+**Local implementation record (2026-09-16, container-CI block):** The existing stable
+`Complete M0 runtime` job remains an independent, non-optional workflow job bounded to 30 minutes;
+the faster pre-commit, frontend, backend, image, and object-storage jobs remain separate for early
+feedback. After parser isolation, worker-loss recovery, and the complete fixture journey, an
+`always()` step uses a standard-library-only inventory command to fail on any remaining scoped
+verifier container, network, volume, or temporary acceptance image. The inventory is read-only and
+cannot conceal cleanup regressions by deleting them. Unit coverage proves clean, leaking,
+unavailable-Docker, and failed-inventory outcomes; the M0 runtime verifier's existing forced-failure
+test proves that its scoped cleanup still runs after an intentionally failed journey. GitHub branch
+protection must select the stable `Complete M0 runtime` check name as required because workflow YAML
+cannot enforce repository merge policy. Final hosted confirmation and the M0-to-M1 handoff remain
+open.
+
 ## 8. Verification matrix
 
 | Risk                                  | Deterministic proof                                                          |

@@ -255,7 +255,11 @@ same disposable API-readiness gate used locally. The processing-runtime job exer
 credential-free parser boundary and real Celery/Redis recovery after forced pool-worker loss in
 separate disposable Compose projects with generated credentials and automatic cleanup. It then
 runs the complete automatic fixture journey through capture, processing, research, exact evidence,
-original access, and the insufficient-evidence control case.
+repeated-answer evidence reuse, original access, and the insufficient-evidence control case. The
+journey scans captured application logs for injected credentials and fixture evidence text. An
+`always()` final step fails the job if any scoped verifier container, network, volume, or temporary
+acceptance image remains. Configure the stable `Complete M0 runtime` check as required in branch
+protection; workflow YAML cannot enforce that repository setting.
 
 ## Update API contracts
 

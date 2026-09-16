@@ -246,3 +246,7 @@ jobs:
 
       - name: Verify complete automatic M0 fixture journey
         run: uv run --locked python -m scripts.verify_m0_runtime
+
+      - name: Confirm M0 verification resources were removed
+        if: ${{ always() }}
+        run: python3 -m scripts.verify_runtime_cleanup
