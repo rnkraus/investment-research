@@ -1,0 +1,174 @@
+schema_version: 1
+
+fixture_set:
+  id: fixture-set:m1:thin-vertical-slice:v1
+  purpose: Deterministic M1 correctness tests and explicitly opted-in provider smoke tests.
+  language: en
+  data_classification: public_synthetic
+  contains_personal_data: false
+  contains_secrets: false
+  approved_at: "2026-09-17"
+
+documents:
+  - id: fixture:northstar-grid-analytics:fy2025:earnings-brief:v1
+    role: pdf_regression
+    title: Northstar Grid Analytics Ltd. - FY2025 Earnings Brief
+    document_type: earnings_brief
+    language: en
+    published_at: "2026-02-19T00:00:00Z"
+    available_at: "2026-02-19T00:00:00Z"
+    file:
+      path_base: repository_root
+      path: fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf
+      media_type: application/pdf
+      byte_size: 10840
+      sha256: ecb709d40762dc85febc1f6be3a7d067fc8383788ceab072ac049b3e5cfaede1
+      expected_page_count: 4
+      text_layer_required: true
+    provenance:
+      origin: Generated specifically for this repository's acceptance fixtures.
+      third_party_source_material: false
+      real_issuer_or_security: false
+    rights:
+      license: CC0-1.0
+      redistribution: permitted
+      notice: All entities, figures, events, quotations, risks, and outlook statements are fictional.
+
+  - id: fixture:northstar-grid-analytics:fy2026:capacity-update:v1
+    role: pasted_text_semantic
+    title: Northstar Grid Analytics Ltd. - FY2026 Capacity Update
+    document_type: capacity_update
+    language: en
+    published_at: "2026-07-22T00:00:00Z"
+    available_at: "2026-07-22T00:00:00Z"
+    file:
+      path_base: repository_root
+      path: fixtures/m1/documents/northstar-grid-analytics-fy2026-capacity-update.txt
+      media_type: text/plain
+      encoding: utf-8
+      newline_policy: crlf_and_cr_to_lf
+      unicode_normalization: none
+      byte_order_mark: absent
+      trailing_newline: preserved
+      byte_size: 550
+      sha256: 45985d7e98d74a7690513624914b49c6d9180842097f837798ce3f42803639b5
+    provenance:
+      origin: Generated specifically for this repository's M1 fixture set.
+      third_party_source_material: false
+      real_issuer_or_security: false
+    rights:
+      license: CC0-1.0
+      redistribution: permitted
+      notice: All entities, figures, events, quotations, risks, and outlook statements are fictional.
+
+expected_passages:
+  - id: passage:fy2025-revenue-comparison
+    document_id: fixture:northstar-grid-analytics:fy2025:earnings-brief:v1
+    text: FY2025 revenue was $184.2 million, up 22.0% from $151.0 million in FY2024.
+    text_sha256: 7e06b28b3175327a5c3507e4e712943422364f623428d851f29d33eb29c1b00f
+    occurrence_count: 1
+    source_anchor:
+      kind: PDF_PAGE
+      page_number: 2
+      page_start_character: 297
+      page_end_character: 371
+
+  - id: passage:fy2026-transformer-constraint
+    document_id: fixture:northstar-grid-analytics:fy2026:capacity-update:v1
+    text: The primary constraint on new customer deployments is a shortage of high-voltage transformers.
+    text_sha256: 42e268188a9227904fb39c5e4f6b28edb55e71cbbfab2509d8cde798dd8de978
+    occurrence_count: 1
+    source_anchor:
+      kind: TEXT_PASSAGE
+      start_character: 185
+      end_character: 279
+
+acceptance_cases:
+  - id: question:fy2025-revenue
+    kind: answerable_lexical
+    question: What was Northstar Grid Analytics' FY2025 revenue, and how did it change from FY2024?
+    expected:
+      coverage: complete
+      answer_status: answered
+      required_retrieval_origins:
+        - LEXICAL
+      statements:
+        - text: Northstar Grid Analytics reported FY2025 revenue of $184.2 million, up 22.0% from $151.0 million in FY2024.
+          supported_by:
+            - passage:fy2025-revenue-comparison
+
+  - id: question:fy2026-rollout-constraint
+    kind: answerable_semantic
+    question: What is mainly holding back Northstar's rollout to new clients?
+    expected:
+      coverage: complete
+      answer_status: answered
+      required_retrieval_origins:
+        - DENSE
+      statements:
+        - text: Northstar identified a shortage of high-voltage transformers as the primary constraint on new customer deployments.
+          supported_by:
+            - passage:fy2026-transformer-constraint
+
+  - id: question:fy2026-dividend
+    kind: unanswerable
+    question: What dividend did Northstar Grid Analytics declare for FY2026?
+    expected:
+      coverage: insufficient
+      answer_status: insufficient_evidence
+      statements: []
+      citations: []
+      missing_information: The fixture set provides no dividend amount or declaration for FY2026.
+
+external_provider_policy:
+  allowed_data_classification: public_synthetic
+  explicit_opt_in_required: true
+  normal_ci_network_access: forbidden
+  normal_ci_provider_spend_usd: "0.00"
+  allowed_transfers:
+    openai:
+      - bounded question text
+      - bounded canonical candidate text
+      - strict answer and support-evaluation schemas
+    pinecone:
+      - deterministic vector identifiers
+      - numeric vectors
+      - safe identifiers and configuration-version metadata
+  forbidden_transfers:
+    - credentials
+    - private or user archive content
+    - filenames
+    - raw text in Pinecone metadata
+    - prompts, source text, or model output in logs and traces
+
+live_smoke_budget:
+  currency: USD
+  maximum_total_spend_per_run: "0.10"
+  maximum_runs_per_invocation: 1
+  maximum_embedding_input_tokens: 5000
+  maximum_generation_and_evaluation_input_tokens: 12000
+  maximum_generation_and_evaluation_output_tokens: 3000
+  maximum_embedding_requests: 4
+  maximum_generation_requests: 2
+  maximum_support_evaluation_requests: 2
+  maximum_pinecone_vectors: 64
+  maximum_pinecone_queries: 4
+  pinecone_required_plan: Starter
+  pinecone_maximum_incremental_spend_usd: "0.00"
+  cleanup_required: true
+  pricing_review:
+    reviewed_at: "2026-09-17"
+    openai_terra_input_usd_per_million_tokens: "2.00"
+    openai_terra_output_usd_per_million_tokens: "12.00"
+    openai_text_embedding_3_small_usd_per_million_tokens: "0.02"
+    openai_source: https://developers.openai.com/api/docs/models/gpt-5.6-terra
+    pinecone_source: https://www.pinecone.io/pricing/
+
+acceptance_rules:
+  - Every fixture file must match its declared byte size and SHA-256 checksum.
+  - Every expected passage must match its declared source range, hash, and occurrence count.
+  - The lexical case must select validated evidence from the PDF regression fixture.
+  - The semantic case must include dense-lane evidence from the pasted-text fixture.
+  - The unanswerable case must emit no archive-derived statement or general-knowledge completion.
+  - Deterministic CI must require no network, provider credentials, or provider spend.
+  - A live smoke run must reject non-allowlisted data, enforce all request and token limits, and clean up its derived Pinecone records.
