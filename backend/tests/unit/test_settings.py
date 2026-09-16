@@ -74,9 +74,15 @@ def clear_parser_forbidden_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def clear_external_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep settings tests independent of host queue and S3 configuration."""
+    """Keep settings tests independent of host database, queue, and S3 configuration."""
 
-    for name in (*POSTGRES_FILE_SETTING_NAMES, *S3_SETTING_NAMES, *QUEUE_SETTING_NAMES):
+    for name in (
+        "INVESTMENT_RESEARCH_DATABASE_URL",
+        *POSTGRES_SETTING_NAMES,
+        *POSTGRES_FILE_SETTING_NAMES,
+        *S3_SETTING_NAMES,
+        *QUEUE_SETTING_NAMES,
+    ):
         monkeypatch.delenv(name, raising=False)
 
 

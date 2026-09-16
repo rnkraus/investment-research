@@ -54,10 +54,11 @@ def disposable_compose_secret_environment(
 
     with TemporaryDirectory(prefix="investment-research-compose-secrets-") as directory:
         root = Path(directory)
+        root.chmod(0o700)
         environment: dict[str, str] = {}
         for value_name, (source_name, filename) in COMPOSE_SECRET_FILES.items():
             path = root / filename
             path.write_text(values[value_name], encoding="utf-8")
-            path.chmod(0o600)
+            path.chmod(0o444)
             environment[source_name] = str(path)
         yield environment

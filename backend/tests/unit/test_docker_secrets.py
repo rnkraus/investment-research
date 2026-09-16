@@ -23,10 +23,12 @@ def test_disposable_secrets_exist_only_inside_context_with_private_permissions()
     with disposable_compose_secret_environment(values) as environment:
         paths = tuple(Path(path) for path in environment.values())
         assert set(environment) == {source_name for source_name, _ in COMPOSE_SECRET_FILES.values()}
+        assert {path.parent for path in paths} == {paths[0].parent}
+        assert paths[0].parent.stat().st_mode & 0o777 == 0o700
         for value_name, (source_name, _) in COMPOSE_SECRET_FILES.items():
             path = Path(environment[source_name])
             assert path.read_text(encoding="utf-8") == values[value_name]
-            assert path.stat().st_mode & 0o777 == 0o600
+            assert path.stat().st_mode & 0o777 == 0o444
 
     assert all(not path.exists() for path in paths)
 

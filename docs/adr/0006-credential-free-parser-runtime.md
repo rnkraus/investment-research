@@ -119,8 +119,8 @@ passed on Docker Desktop on 2026-09-15. The final gate verified that:
 - no Docker socket, repository path, broad bind mount, or published host port was present;
 - connections from the parser to Redis on the separate backend network and to an external address
   failed, while the sole worker-to-parser channel succeeded;
-- temporary Compose resources, verification images, and mode-`0600` secret files were removed after
-  the gate.
+- temporary Compose resources, verification images, and read-only mode-`0444` secret files inside
+  private mode-`0700` temporary directories were removed after the gate.
 
 This satisfies the final-runtime Docker Desktop part of the acceptance trigger. The ADR remains
 `Proposed` until the same boundary passes in Linux CI and timeout, crash, and malformed-response
