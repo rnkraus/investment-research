@@ -7,7 +7,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | File                         | Responsibility                                                                           |
 | ---------------------------- | ---------------------------------------------------------------------------------------- |
 | `__init__.py`                | Makes development commands importable for tests and `python -m` execution.               |
-| `docker_secrets.py`          | Creates temporary mode-`0600` files for disposable Compose secrets.                      |
+| `docker_secrets.py`          | Creates portable read-only Compose secret files inside a private temporary directory.    |
 | `export_openapi.py`          | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
 | `seed_m0_0.py`               | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
 | `verify_backend.py`          | Runs all deterministic backend static checks and unit tests.                             |
@@ -17,7 +17,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_parser_isolation.py` | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`            | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`         | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
-| `verify_queue_recovery.py`   | Proves live Celery redelivery and lease-based recovery after worker loss.                 |
+| `verify_queue_recovery.py`   | Proves live Celery redelivery and lease-based recovery after worker loss.                |
 
 ## Contract flow
 
@@ -101,10 +101,12 @@ flowchart LR
 ```
 
 The verification command selects an available loopback port, generates a random disposable
-password, writes it to a temporary mode-`0600` Compose secret file, and uses a unique Compose
-project name. Cleanup runs after success, command failure, or test failure. It removes only
-resources owned by that invocation and never targets the normal M0.0 development database or its
-volume. The temporary secret directory is removed when the command exits.
+password, writes it to a read-only mode-`0444` Compose secret file inside a private mode-`0700`
+temporary directory, and uses a unique Compose project name. The directory blocks access by other
+host users while the file mode lets native-Linux Docker bind-mount the secret for non-root container
+users with different UIDs. Cleanup runs after success, command failure, or test failure. It removes
+only resources owned by that invocation and never targets the normal M0.0 development database or
+its volume. The temporary secret directory is removed when the command exits.
 
 ## Isolated object-storage verification
 
@@ -142,10 +144,10 @@ non-root users, dropped capabilities, `no-new-privileges`, read-only control-ser
 unpublished storage ports, secret-file delivery, and control-plane network isolation.
 
 The command does not load repository `.env` values. It migrates and seeds its own PostgreSQL volume;
-generated secrets are mounted from temporary mode-`0600` files and their values never appear in
-displayed command arguments. Cleanup always targets only that invocation's unique project,
-networks, volumes, contract container, verification image, and temporary secret directory,
-including after a failed build or test.
+generated secrets are mounted from read-only mode-`0444` files inside a private mode-`0700`
+temporary directory, and their values never appear in displayed command arguments. Cleanup always
+targets only that invocation's unique project, networks, volumes, contract container, verification
+image, and temporary secret directory, including after a failed build or test.
 
 ## Parser-isolation verification
 
@@ -265,8 +267,8 @@ credential names from image configuration and build history.
 
 It then creates a uniquely named PostgreSQL Compose project with a random disposable password,
 migrates the empty database to Alembic `head`, and supplies the API database URL only through the
-container's runtime environment. PostgreSQL receives its password through a temporary mode-`0600`
-secret file. The API must become healthy and return the exact public liveness and readiness
-responses. Displayed commands contain environment-variable names but never their values. Cleanup
-removes only the resources, temporary image tags, and secret directory owned by that invocation,
-including after a failed build or runtime check.
+container's runtime environment. PostgreSQL receives its password through a read-only mode-`0444`
+secret file inside a private mode-`0700` temporary directory. The API must become healthy and return
+the exact public liveness and readiness responses. Displayed commands contain environment-variable
+names but never their values. Cleanup removes only the resources, temporary image tags, and secret
+directory owned by that invocation, including after a failed build or runtime check.

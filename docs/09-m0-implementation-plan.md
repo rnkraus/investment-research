@@ -485,11 +485,13 @@ images: the parser had no canonical credentials or secret mount, joined only the
 network, could not reach Redis or an external address, ran non-root with a read-only root filesystem,
 dropped capabilities, `no-new-privileges`, and exact CPU, memory, process, and temporary-storage
 limits, and parsed the frozen PDF while rejecting request and extracted-text limit violations.
-Disposable Compose checks now deliver generated credentials through temporary mode-`0600` secret
-files rather than raw Compose environment values. The Step 3 backend bridge remains non-internal
-only while host processes require the loopback PostgreSQL port; Step 4 removes that port after the
-API joins Compose and then makes the backend network internal. The parser network is already
-internal and unaffected by this transition. Transient parser transport failures now expire their
+Disposable Compose checks now deliver generated credentials through read-only mode-`0444` secret
+files inside private mode-`0700` temporary directories rather than raw Compose environment values.
+This preserves host isolation while allowing native-Linux Docker bind mounts to serve non-root
+containers with different UIDs. The Step 3 backend bridge remains non-internal only while host
+processes require the loopback PostgreSQL port; Step 4 removes that port after the API joins Compose
+and then makes the backend network internal. The parser network is already internal and unaffected
+by this transition. Transient parser transport failures now expire their
 canonical lease before Celery applies at most two retries with exponential backoff, jitter, and a
 30-second cap; the initial delivery plus those retries match the processing profile's three-attempt
 ceiling. Permanent failures and exhausted attempts become terminal without retry. Late
