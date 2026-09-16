@@ -12,6 +12,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pre-commit:
+    name: Pre-commit hooks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm and Node.js
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          install: false
+          cache: false
+          require-lockfile: true
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: backend/pyproject.toml
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+
+      - name: Install backend development dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Validate pre-commit configuration
+        run: uv run --project backend --locked pre-commit validate-config
+
+      - name: Run pre-commit hooks on all files
+        run: uv run --project backend --locked pre-commit run --all-files --show-diff-on-failure
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -57,24 +97,6 @@ jobs:
     name: Backend
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      INVESTMENT_RESEARCH_DATABASE_URL: postgresql+psycopg://investment_research:ci-postgres-password@127.0.0.1:5432/investment_research
-      INVESTMENT_RESEARCH_ENVIRONMENT: test
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: investment_research
-          POSTGRES_PASSWORD: ci-postgres-password
-          POSTGRES_USER: investment_research
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U investment_research -d investment_research"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-          --health-start-period 5s
     defaults:
       run:
         working-directory: backend
@@ -100,26 +122,8 @@ jobs:
       - name: Check FastAPI OpenAPI contract
         run: uv run --locked python -m scripts.export_openapi --check
 
-      - name: Migrate empty database to Alembic head
-        run: uv run --locked alembic -c alembic.ini upgrade head
-
-      - name: Seed deterministic M0.0 workspaces
-        run: uv run --locked python -m scripts.seed_m0_0
-
-      - name: Run PostgreSQL integration tests
-        run: uv run --locked pytest -q tests/integration
-
-      - name: Check SQLAlchemy metadata against migration head
-        run: uv run --locked alembic -c alembic.ini check
-
-      - name: Downgrade database to base
-        run: uv run --locked alembic -c alembic.ini downgrade base
-
-      - name: Upgrade database back to head
-        run: uv run --locked alembic -c alembic.ini upgrade head
-
-      - name: Recheck metadata after migration cycle
-        run: uv run --locked alembic -c alembic.ini check
+      - name: Verify isolated PostgreSQL persistence and migrations
+        run: uv run --locked python -m scripts.verify_postgres
 
   backend-images:
     name: Backend images

@@ -27,6 +27,7 @@ dependencies = [
 dev = [
   "httpx2>=2,<3",
   "mypy>=2.3,<3",
+  "pre-commit>=4.6.2,<5",
   "pytest>=8.4,<10",
   "ruff>=0.12,<1",
 ]

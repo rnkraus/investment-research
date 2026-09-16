@@ -38,6 +38,16 @@ cd ..
 
 Backend dependency synchronization performs the configured fail-closed malware check against OSV and therefore requires the OSV service to be reachable.
 
+Install the repository-managed Git pre-commit hook from the repository root:
+
+```shell
+uv run --project backend --locked pre-commit install
+```
+
+The hook invokes only local commands backed by `uv.lock` and `pnpm-lock.yaml`. It checks affected
+backend, API-contract, and frontend files without rewriting them. CI executes the same hooks on all
+tracked files, so skipping the local hook never skips the authoritative checks.
+
 Create the local Docker Compose configuration:
 
 ```shell
@@ -140,6 +150,12 @@ pnpm test
 pnpm build
 ```
 
+Run every configured pre-commit hook manually from the repository root:
+
+```shell
+uv run --project backend --locked pre-commit run --all-files --show-diff-on-failure
+```
+
 Run the backend checks from `backend/`:
 
 ```shell
@@ -173,9 +189,9 @@ uv run --locked python -m scripts.verify_object_storage
 ```
 
 Verify the pinned non-root backend image targets from `backend/`. This command builds the API,
-worker, and parser targets, checks their runtime contents and image metadata, starts the API against
-a freshly migrated disposable PostgreSQL database, verifies `/health` and `/ready`, and removes all
-resources it created:
+migration, seed, worker, and parser targets, checks their runtime contents and image metadata,
+starts the API against a freshly migrated disposable PostgreSQL database, verifies `/health` and
+`/ready`, and removes all resources it created:
 
 ```shell
 uv run --locked python -m scripts.verify_backend_images
