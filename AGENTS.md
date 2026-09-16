@@ -53,6 +53,12 @@ Follow `docs/02-system-design.md`. The fixed baseline is:
 
 M0.0 is the only approved exception to this full runtime baseline. It is a local-only proof using the repository-owned frozen synthetic fixture and the minimum Next.js, FastAPI, and PostgreSQL path described in `docs/05-delivery-plan.md` and `docs/08-m0-0-implementation-plan.md`. Its parser boundary is governed by `docs/adr/0004-m0-0-parser-isolation-boundary.md`. It must not use private data, become publicly reachable, or be treated as satisfying M0 or M1. Model it as a subset of the target system and reuse production module, entity, state, and workflow names wherever their meaning is the same. Preserve reusable application contracts, then replace all M0.0-only storage and execution shortcuts during M0 before continuing to M1.
 
+M1 retains `FixedLocalIdentityContextProvider` only for the local single-user RAG slice described in
+`docs/10-m1-implementation-plan.md`. Keep the host entry point loopback-only, preserve all
+workspace-scoped contracts and isolation tests, and do not add OIDC, users, memberships, or browser
+sessions during M1. M5 must replace the fixed provider with accepted OIDC authentication,
+canonical memberships, and server-side sessions before any staging, shared-network, or public use.
+
 Use `pnpm` for frontend dependencies and scripts. Keep `pnpm-lock.yaml` under version control once the frontend is scaffolded; do not use npm, Yarn, Bun, or competing frontend lockfiles.
 
 Use `uv` for Python dependency management, environments, locking, and backend commands. Keep `uv.lock` under version control once the backend is scaffolded; do not manage project dependencies with direct `pip install` commands.

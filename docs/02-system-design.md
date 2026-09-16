@@ -77,6 +77,13 @@ M0.0 processing to the frozen synthetic fixture and makes tested parser isolatio
 
 Application-owned contracts, Alembic migrations, module boundaries, and the real evidence validator are established in M0.0. Development-only artifact storage and processing delivery are replaced during M0. Passing M0.0 does not satisfy the M0 or M1 exit gates. The paired diagrams are maintained in [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), the completed proof sequence in [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), the M0 replacement sequence in [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), and the M1 thin-slice sequence in [10-m1-implementation-plan.md](./10-m1-implementation-plan.md).
 
+M1 retains the server-owned fixed local identity solely to focus the first complete RAG slice on
+document inputs, dense indexing, retrieval, generation, and evidence. This exception is limited to
+a local runtime whose host entry point is published only on loopback; backend containers may bind
+inside private Compose networks. It does not weaken workspace scoping or permit client-selected
+authorization context. M5 replaces the fixed provider with OIDC users, canonical memberships, and
+server-side sessions before any public deployment begins.
+
 ## 4. Component boundaries
 
 The backend remains one deployable application but is divided into explicit modules:
