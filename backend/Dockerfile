@@ -55,6 +55,14 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
 ENTRYPOINT ["/app/.venv/bin/uvicorn"]
 CMD ["investment_research.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers"]
 
+FROM runtime AS migration
+
+COPY --chown=65532:65532 alembic.ini ./alembic.ini
+COPY --chown=65532:65532 migrations ./migrations
+
+ENTRYPOINT ["/app/.venv/bin/alembic"]
+CMD ["-c", "alembic.ini", "upgrade", "head"]
+
 FROM runtime AS worker
 
 ENTRYPOINT ["/app/.venv/bin/celery", "--app", "investment_research.worker:app", "worker"]

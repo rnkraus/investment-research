@@ -552,6 +552,17 @@ journey works without separately starting Python, pnpm, migrations, or the proce
 **Suggested commits:** migration/startup ordering; frontend image; complete Compose topology; stack
 smoke test; CI and docs.
 
+**Local implementation record (2026-09-16, migration/startup block):** The backend image now has a
+dedicated non-root `migration` target containing the reviewed Alembic configuration and revisions.
+Compose runs it only after PostgreSQL is healthy, gives it only PostgreSQL configuration and a
+read-only password secret, performs no seed, and prevents the worker from starting unless migration
+completed successfully. The backend image gate builds all four backend targets, runs the migration
+image twice against a fresh database to prove schema creation and idempotency, and starts the API
+only afterward; metadata, minimal-runtime, readiness, cleanup, formatting, lint, typing, and focused
+unit gates pass locally. Step 4 remains in progress: the Compose API service, final health topology,
+frontend image, complete-stack verification, CI wiring, and documented one-command browser journey
+are not yet complete.
+
 ### Step 5 — Provider seams and developer safety
 
 **Suggested branch:** `chore/m0-developer-workflow`
