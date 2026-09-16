@@ -1,8 +1,10 @@
 # ADR-0006 — Credential-free parser runtime boundary
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 2026-09-14
+
+**Accepted:** 2026-09-16
 
 **Scope:** M0 isolation topology for untrusted PDF parsing
 
@@ -129,8 +131,8 @@ isolation gates cover oversized requests, oversized extracted output, bounded ty
 the preservation of the immutable original outside the parser boundary.
 
 This satisfies the final-runtime Docker Desktop and canonical failure-state parts of the acceptance
-trigger. The ADR remains `Proposed` until the same final boundary and complete M0 runtime pass in
-hosted Linux CI on the revision proposed for merge.
+trigger. The same final boundary and complete M0 runtime subsequently passed in hosted Linux CI on
+the merged acceptance revision, so this decision was accepted on 2026-09-16.
 
 ## Consequences
 
@@ -147,7 +149,7 @@ later threat review changes them.
 
 ## Acceptance and reconsideration triggers
 
-Change this ADR to `Accepted` only after all of the following pass with the final runtime:
+This ADR was accepted after all of the following passed with the final runtime:
 
 1. the parser image contains only the required runtime and parser dependencies and runs non-root;
 2. Docker Desktop tests prove the required channel and all prohibited secret, filesystem, network,

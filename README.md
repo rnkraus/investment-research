@@ -2,13 +2,14 @@
 
 Investment Research Archive is an evidence-grounded research application. It will import research documents, preserve their originals, make them searchable, and answer questions with exact, verifiable citations.
 
-The completed M0.0 milestone is a local-only proof of the smallest end-to-end path. M0 is the active
-engineering-foundation milestone and replaces the development storage, processing delivery, and
-parser boundary without rebuilding the proven application contracts. Until its isolation gate
-is accepted, use only the included synthetic fixture for accepted processing and research, as
-recorded in [ADR-0004](docs/adr/0004-m0-0-parser-isolation-boundary.md) and
-[ADR-0006](docs/adr/0006-credential-free-parser-runtime.md). This is not yet a production
-deployment, trading system, or investment-advice application.
+The completed M0.0 milestone proves the smallest end-to-end path. The completed M0 engineering
+foundation replaces its development storage, processing delivery, and parser shortcuts with a
+production-shaped local runtime while preserving the proven application contracts. M1 is the next
+delivery milestone and will expand the accepted input and provider-backed path through those
+boundaries. Until then, the frozen synthetic fixture remains the acceptance scope recorded in
+[ADR-0004](docs/adr/0004-m0-0-parser-isolation-boundary.md) and
+[ADR-0006](docs/adr/0006-credential-free-parser-runtime.md). This is still a local development
+system, not a production deployment, trading system, or investment-advice application.
 
 ## Prerequisites
 
