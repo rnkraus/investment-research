@@ -118,7 +118,8 @@ the parser are not reachable from the web container.
 Use the documented complete automatic M0 fixture verification below to exercise the containerized
 web application, its same-origin API proxy, API capture, Redis/Celery delivery, SeaweedFS, isolated
 parsing, research, citation resolution, original access, and the insufficient-evidence case
-together. Successful hosted CI remains the final Step 4 confirmation.
+together. The final local verification and hosted `Complete M0 runtime` CI gate passed; M0 is
+complete and the current implementation work has moved to M1.
 
 All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
 recheck the server-owned workspace, active document version, validation state, byte count, and

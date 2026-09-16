@@ -143,6 +143,14 @@ by ADR-0009. The parser rejects an empty visible result, invalid UTF-8, non-cano
 unsupported media, malformed PDFs, invalid ranges, non-contiguous ordinals, and all configured
 limit violations.
 
+Each parse executes in a terminable child process rather than an in-process thread. The parser
+enforces bounded concurrent children and a hard wall-clock deadline below the worker HTTP deadline,
+leaving a fixed response and cleanup margin. At the deadline it terminates and reaps the child,
+returns only a safe timeout failure, and remains able to serve the next valid request. Client
+disconnect or cancellation does not allow parsing to continue without that same server-owned bound.
+Tests use a deliberately blocking parser implementation to prove termination, reaping, capacity
+recovery, and successful handling of the following request.
+
 ### 4.2 Deterministic M1 block policy
 
 For a new M1 processing run:
