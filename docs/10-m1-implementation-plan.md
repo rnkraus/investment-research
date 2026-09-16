@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Draft v0.4 — runtime and source-anchor decisions accepted; fixture freeze remains open \
+**Status:** Draft v0.5 — runtime, source-anchor, and fixture decisions accepted; contract freeze remains open \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -288,16 +288,22 @@ For every proposed production package, SDK, image, model, and hosted provider:
 
 ### 5.4 Fixture freeze
 
-Create one `fixtures/m1/manifest.yaml` that references:
+The frozen [`fixtures/m1/manifest.yaml`](../fixtures/m1/manifest.yaml) references:
 
-- the existing frozen English PDF or a reviewed redistributable replacement;
-- one English UTF-8 pasted-text original;
-- an exact-wording question that the lexical lane can answer;
-- a semantic-paraphrase question that proves the dense lane contributes;
-- one deliberately unanswerable question;
-- exact expected PDF and text evidence anchors;
-- fixture checksums, licenses/provenance, language, publication/availability metadata, and maximum
-  acceptable provider spend for the opt-in smoke run.
+- the existing frozen synthetic English PDF as an M0 regression source;
+- one repository-owned synthetic English UTF-8 pasted-text original;
+- one exact-wording lexical question, one semantic-paraphrase question that requires dense-lane
+  contribution, and one deliberately unanswerable question;
+- exact PDF-page and text-passage ranges, passage hashes, and occurrence counts;
+- fixture checksums, CC0 provenance, language, and publication/availability metadata;
+- a zero-network, zero-spend normal-CI policy;
+- an explicit opt-in live-smoke ceiling of USD 0.10, bounded provider requests and tokens, Pinecone
+  Starter limits, and mandatory cleanup.
+
+The frozen files, parser output, hashes, anchors, and budget arithmetic were verified together on
+2026-09-17. At the recorded provider rates, the declared maximum OpenAI token use costs USD 0.0601,
+leaving headroom below the hard per-run ceiling. A live run must still enforce the manifest before
+making any provider request.
 
 ## 6. Planned repository delta
 
@@ -437,7 +443,8 @@ Documentation and contracts:
 - research and approve embedding, Pinecone, generation, support-evaluation, and tracing choices
   under the dependency policy;
 - retain accepted ADR-0008 and ADR-0009;
-- freeze the M1 fixture manifest, exact expected anchors, provider budget, and data classification;
+- retain the frozen M1 fixture manifest, exact expected anchors, provider budget, and data
+  classification;
 - specify the text-capture payload, source locator union, processing states, indexing job behavior,
   dual-lane selection, provider usage, and trace fields;
 - update OpenAPI examples without changing runtime behavior yet;

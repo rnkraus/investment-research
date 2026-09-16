@@ -342,10 +342,10 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Approve the M1 AI, vector, source-anchor, and external-data-flow decisions before changing
-   dependencies or creating provider resources.
-2. Finalize the small redistributable M1 fixture set: one English PDF, one English pasted-text
-   document, answerable and deliberately unanswerable questions, and exact expected citations.
+1. Complete the remaining M1 API, processing, indexing, retrieval, usage, and trace contract freeze
+   before changing dependencies or creating provider resources.
+2. Implement pasted-text capture and the accepted stable source locators against the frozen
+   synthetic PDF and pasted-text fixture set.
 3. Preserve the fixed local owner context and loopback-only boundary without treating a
    client-supplied workspace identifier as authorization.
 4. Implement and evaluate M1 through the retained identity, storage, processing, search, research,
