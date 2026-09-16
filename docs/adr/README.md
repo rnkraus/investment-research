@@ -33,7 +33,7 @@ Write the ADR immediately before the decision becomes an implementation constrai
 
 | ADR | Decision | Remaining acceptance evidence |
 |---|---|---|
-| [ADR-0006](./0006-credential-free-parser-runtime.md) | Dedicated parser container on a credential-free isolated network | Final parser image and protocol on Docker Desktop and Linux CI |
+| [ADR-0006](./0006-credential-free-parser-runtime.md) | Dedicated parser container on a credential-free isolated network | Hosted Linux CI confirmation for the final parser boundary and canonical failure gates |
 
 ## 4. Planned ADR backlog
 
