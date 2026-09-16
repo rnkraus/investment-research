@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.6 — Steps 1–3 completed; Step 4 implemented locally with hosted CI pending \
+**Status:** Active v0.7 — Steps 1–4 completed; Step 5 in progress \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -651,6 +651,21 @@ Frontend:
 focused/full verification commands are documented, narrow, repeatable, and tested.
 
 **Suggested commits:** provider ports; safe developer commands; pre-commit/CI; docs.
+
+**Local implementation record (2026-09-16, provider-seams block):** Search now owns immutable,
+bounded contracts and typed ports for correlated query/document embeddings, workspace-scoped dense
+retrieval, and bounded reranking. The contracts reject duplicate correlation identifiers,
+whitespace-only provider text, and non-finite vectors or scores while retaining explicit
+configuration versions. M0 infrastructure implements these three ports only as unavailable
+adapters: an accidental call raises `SearchProviderUnavailableError` and cannot masquerade as a
+valid empty result or contact a provider. A new provider-neutral Operations module defines safe
+scalar tracing attributes, categorical errors without exception text, and optional spans. Its M0
+no-op adapter exports nothing, requires no credential or SDK, and preserves normal application
+exception behavior. None of these adapters is wired into the active lexical research path, so M0
+makes no embedding, vector, reranking, or observability-provider call. Focused contract and adapter
+tests and the complete 588-test backend unit gate pass. Step 5 still requires the safe local
+reset/seed workflow, canonical verification wrappers, pre-commit/CI integration, documentation, and
+the unchanged frontend compatibility gate.
 
 ### Step 6 — M0 acceptance and handoff
 
