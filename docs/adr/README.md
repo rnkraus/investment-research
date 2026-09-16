@@ -29,6 +29,7 @@ Write the ADR immediately before the decision becomes an implementation constrai
 | [ADR-0005](./0005-at-least-once-processing-delivery.md) | Versioned jobs, canonical execution leases, and bounded at-least-once Celery delivery | Accepted |
 | [ADR-0006](./0006-credential-free-parser-runtime.md) | Dedicated parser container on a credential-free isolated network | Accepted |
 | [ADR-0007](./0007-local-s3-provider.md) | SeaweedFS for local S3-compatible storage and managed S3 for public deployment | Accepted |
+| [ADR-0008](./0008-application-owned-ai-and-vector-adapters.md) | Application-owned OpenAI, Pinecone, and OpenTelemetry adapters for the first dense RAG slice | Accepted |
 
 ## 3. Proposed ADRs
 
@@ -38,7 +39,6 @@ No ADR is currently proposed.
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
-| ADR-0008 | Application-owned AI and vector adapters | First AI and vector adapters are implemented | M1 |
 | ADR-0009 | Stable PDF and pasted-text evidence anchors | Parser, structure-block, chunk, and citation contracts are finalized | M1 |
 | ADR-0010 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
 | ADR-0011 | Hybrid retrieval with RRF and multilingual reranking | Direct-RAG retrieval baseline is finalized | M4 |
