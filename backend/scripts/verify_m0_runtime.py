@@ -85,6 +85,8 @@ def verify_m0_runtime() -> int:
     project_name = f"investment-research-m0-check-{run_id}"
     acceptance_image = f"investment-research-m0-acceptance:{run_id}"
     postgres_port = find_available_loopback_port()
+    api_port = find_available_loopback_port()
+    web_port = find_available_loopback_port()
     secret_values = {name: generate_disposable_credential() for name in COMPOSE_SECRET_FILES}
     postgres_password = secret_values["POSTGRES_PASSWORD"]
     compose_command = [
@@ -108,6 +110,8 @@ def verify_m0_runtime() -> int:
                 "POSTGRES_DB": POSTGRES_DATABASE,
                 "POSTGRES_USER": POSTGRES_USER,
                 "POSTGRES_PORT": str(postgres_port),
+                "INVESTMENT_RESEARCH_API_PORT": str(api_port),
+                "INVESTMENT_RESEARCH_WEB_PORT": str(web_port),
                 "INVESTMENT_RESEARCH_S3_BUCKET": f"m0-acceptance-{run_id}",
                 "INVESTMENT_RESEARCH_S3_REGION_NAME": "us-east-1",
                 "M0_ACCEPTANCE_IMAGE": acceptance_image,
@@ -127,8 +131,16 @@ def verify_m0_runtime() -> int:
 
         try:
             run_command(
-                "Build and start isolated M0 processing runtime",
-                [*compose_command, "up", "--build", "--detach", "--wait", "worker"],
+                "Build and start isolated complete M0 runtime",
+                [
+                    *compose_command,
+                    "up",
+                    "--build",
+                    "--detach",
+                    "--wait",
+                    "web",
+                    "worker",
+                ],
                 environment=compose_environment,
             )
             run_command(
@@ -167,8 +179,8 @@ def verify_m0_runtime() -> int:
         except subprocess.CalledProcessError as error:
             exit_code = error.returncode or 1
             run_command(
-                "Show isolated worker logs after verification failure",
-                [*compose_command, "logs", "--no-color", "worker", "parser"],
+                "Show isolated runtime logs after verification failure",
+                [*compose_command, "logs", "--no-color", "web", "api", "worker", "parser"],
                 environment=compose_environment,
                 check=False,
             )

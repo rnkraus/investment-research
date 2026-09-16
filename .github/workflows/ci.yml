@@ -50,6 +50,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Check frontend Dockerfile
+        run: docker buildx build --check --file frontend/Dockerfile .
+
   backend:
     name: Backend
     runs-on: ubuntu-latest
@@ -207,7 +210,7 @@ jobs:
         run: uv run --locked python -m scripts.verify_object_storage
 
   processing-runtime:
-    name: Processing runtime
+    name: Complete M0 runtime
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

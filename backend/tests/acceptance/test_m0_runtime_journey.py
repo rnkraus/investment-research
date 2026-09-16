@@ -7,8 +7,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import pytest
-from fastapi.testclient import TestClient
 
 from investment_research.api.contracts import (
     DocumentAccepted,
@@ -19,11 +19,10 @@ from investment_research.infrastructure.generation.deterministic import (
     M0_0_FIXTURE_ANSWER_CASE,
     M0_0_INSUFFICIENT_MESSAGE,
 )
-from investment_research.main import create_app
-from investment_research.settings import load_api_settings
 
 FIXTURE_PDF = Path("/verification-fixture.pdf")
 RUNTIME_ACCEPTANCE_ENVIRONMENT = "INVESTMENT_RESEARCH_M0_RUNTIME_ACCEPTANCE"
+RUNTIME_WEB_ORIGIN = "http://web:3000"
 EXPECTED_PUBLICATION_TIME = "2026-02-19T00:00:00Z"
 EXPECTED_CITATION_PAGE = 2
 UNANSWERABLE_QUESTION = "What dividend did Northstar Grid Analytics declare for FY2025?"
@@ -52,7 +51,7 @@ def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
 
 
 def wait_for_terminal_processing(
-    client: TestClient,
+    client: httpx2.Client,
     status_url: str,
 ) -> ProcessingRunResult:
     """Poll the public status contract until processing reaches a terminal state."""
@@ -73,12 +72,18 @@ def wait_for_terminal_processing(
 
 
 def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
-    """Prove automatic capture, processing, research, citation, and refusal."""
+    """Prove the complete browser-facing journey through the live container stack."""
 
     assert FIXTURE_PDF.is_file()
-    application = create_app(load_api_settings(env_file=None))
 
-    with TestClient(application) as client, FIXTURE_PDF.open("rb") as fixture_file:
+    with (
+        httpx2.Client(base_url=RUNTIME_WEB_ORIGIN, timeout=10.0) as client,
+        FIXTURE_PDF.open("rb") as fixture_file,
+    ):
+        page_response = client.get("/")
+        assert page_response.status_code == 200
+        assert "Investment Research Archive" in page_response.text
+
         capture_response = client.post(
             "/api/v1/documents",
             data={
