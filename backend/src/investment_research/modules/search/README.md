@@ -7,9 +7,9 @@ This module owns reproducible retrieval records and the ordered candidates selec
 | File             | Responsibility                                                                 |
 | ---------------- | ------------------------------------------------------------------------------ |
 | `application.py` | Normalizes raw questions and builds bounded lexical-search queries.            |
-| `contracts.py`   | Defines immutable lexical query and eligible-hit boundary values.              |
+| `contracts.py`   | Defines immutable lexical and provider-neutral retrieval boundary values.      |
 | `domain.py`      | Defines retrieval runs, filter snapshots, candidates, origins, and invariants. |
-| `ports.py`       | Defines application-owned lexical-search and retrieval-repository contracts.   |
+| `ports.py`       | Defines lexical, embedding, dense, reranking, and repository contracts.        |
 | `persistence.py` | Maps retrieval records and implements workspace-scoped repository behavior.    |
 
 ## Ownership and relationships
@@ -80,3 +80,27 @@ document, and temporal filters before `ts_rank_cd` ranking, then uses `chunk_id`
 tie-breaker before applying the candidate limit. The adapter only returns hits. Research's
 `RetrieveResearchService` invokes it through the port and maps those ordered hits to an atomically
 persisted retrieval run and `LEXICAL` candidates without importing Search persistence.
+
+## Later-provider seams
+
+The application owns `EmbeddingProvider`, `DenseRetriever`, and `Reranker`; no provider SDK appears
+in this module. Their immutable contracts preserve input correlation, configuration versions,
+bounded batch and candidate sizes, canonical filters, and finite vectors and scores.
+
+```mermaid
+flowchart LR
+    TEXT[Query or canonical chunk text] --> EMBED[EmbeddingProvider]
+    EMBED --> VECTOR[Correlated EmbeddingVector]
+    VECTOR --> DENSE[DenseRetriever]
+    FILTERS[Canonical RetrievalFilters] --> DENSE
+    DENSE --> HITS[Untrusted dense hits]
+    HITS --> ELIGIBLE[Later canonical eligibility check]
+    ELIGIBLE --> RERANK[Reranker]
+    RERANK --> ORDERED[Versioned ranked results]
+```
+
+M0 does not invoke these ports. Its infrastructure adapters fail explicitly with
+`SearchProviderUnavailableError`, so an accidentally enabled later path cannot masquerade as a
+valid empty result. Dense retrieval and embedding begin only in their assigned milestone; reranking
+is activated only after its evaluation gate. Provider results remain candidates, never citation
+evidence, until canonical eligibility and evidence validation succeed.

@@ -4,14 +4,15 @@ This directory contains business capabilities with explicit ownership boundaries
 
 ## Current modules
 
-| Module        | Responsibility                                                                  |
-| ------------- | ------------------------------------------------------------------------------- |
-| `identity/`   | Resolves the trusted user and workspace boundary for each operation.            |
+| Module        | Responsibility                                                                 |
+| ------------- | ------------------------------------------------------------------------------ |
+| `identity/`   | Resolves the trusted user and workspace boundary for each operation.           |
 | `documents/`  | Owns logical documents, immutable versions, originals, and eligible retrieval. |
-| `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.       |
+| `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.      |
 | `search/`     | Owns reproducible retrieval runs and their ordered candidate records.          |
 | `research/`   | Owns research requests, versioned answers, and validated statements.           |
-| `evidence/`   | Owns exact source spans, evidence links, and validation records.                |
+| `evidence/`   | Owns exact source spans, evidence links, and validation records.               |
+| `operations/` | Owns provider-neutral optional tracing contracts, not canonical state.         |
 
 ## Target dependency direction
 
@@ -24,6 +25,7 @@ flowchart LR
     RESEARCH -->|Typed retrieval request| SEARCH[Search]
     RESEARCH -->|Typed generation request| GENERATION[Answer Generation port]
     RESEARCH -->|Typed validation request| EVIDENCE[Evidence]
+    API -. optional safe spans .-> OPERATIONS[Operations tracing port]
 ```
 
 Arrows show allowed code dependency direction. Return values travel through typed contracts and do not create reverse imports.
