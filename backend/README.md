@@ -7,22 +7,23 @@ points.
 
 ## Structure
 
-| Path                       | Responsibility                                                                     |
-| -------------------------- | ---------------------------------------------------------------------------------- |
-| `.dockerignore`            | Positive allowlist for the minimal, secret-free backend build context.             |
-| `Dockerfile`               | Reproducible non-root API, worker, and parser image targets.                       |
-| `alembic.ini`              | Secret-free Alembic paths and logging configuration.                               |
-| `migrations/`              | Reviewed, ordered PostgreSQL schema history and migration environment.             |
-| `pyproject.toml`           | Python package metadata, dependencies, and Ruff, Mypy, and Pytest configuration.   |
-| `uv.lock`                  | Reproducible Python dependency resolution.                                         |
-| `scripts/`                 | Seed, contract, image, service, and isolation verification utilities.              |
-| `src/investment_research/` | Shared application package, process entry points, composition, and modules.        |
-| `tests/`                   | Deterministic unit tests and opt-in PostgreSQL integration tests.                  |
+| Path                       | Responsibility                                                                   |
+| -------------------------- | -------------------------------------------------------------------------------- |
+| `.dockerignore`            | Positive allowlist for the minimal, secret-free backend build context.           |
+| `Dockerfile`               | Reproducible non-root API, migration, worker, and parser image targets.          |
+| `alembic.ini`              | Secret-free Alembic paths and logging configuration.                             |
+| `migrations/`              | Reviewed, ordered PostgreSQL schema history and migration environment.           |
+| `pyproject.toml`           | Python package metadata, dependencies, and Ruff, Mypy, and Pytest configuration. |
+| `uv.lock`                  | Reproducible Python dependency resolution.                                       |
+| `scripts/`                 | Seed, contract, image, service, and isolation verification utilities.            |
+| `src/investment_research/` | Shared application package, process entry points, composition, and modules.      |
+| `tests/`                   | Deterministic unit tests and opt-in PostgreSQL integration tests.                |
 
 ## Runtime relationship
 
 ```mermaid
 flowchart LR
+    MIGRATION[Alembic migration] --> DATABASE[(PostgreSQL schema)]
     API[FastAPI] --> BOOT[Composition root]
     WORKER[Celery worker] --> BOOT
     BOOT --> MODULES[Application modules]
@@ -45,11 +46,16 @@ contains only the virtual environment and application source. It runs as UID/GID
 user cannot modify the copied source tree. Dependencies, source, and runtime configuration remain
 separate layers so ordinary source edits do not reinstall dependencies.
 
-| Target   | Current entry point                          | M0 role                                                        |
-| -------- | -------------------------------------------- | -------------------------------------------------------------- |
-| `api`    | Uvicorn with the FastAPI application factory | Public application API with liveness and readiness checks.     |
-| `worker` | Celery processing worker                     | Claims queued runs and owns canonical storage and persistence. |
-| `parser` | Private Uvicorn parser application           | Parses bounded PDF bytes without canonical-service secrets.    |
+| Target      | Current entry point                          | M0 role                                                        |
+| ----------- | -------------------------------------------- | -------------------------------------------------------------- |
+| `api`       | Uvicorn with the FastAPI application factory | Public application API with liveness and readiness checks.     |
+| `migration` | Alembic `upgrade head`                       | Applies reviewed schema history before application startup.    |
+| `worker`    | Celery processing worker                     | Claims queued runs and owns canonical storage and persistence. |
+| `parser`    | Private Uvicorn parser application           | Parses bounded PDF bytes without canonical-service secrets.    |
+
+The migration target receives only PostgreSQL configuration, exits after Alembic reaches `head`,
+and never seeds data. Repeated execution is safe because Alembic applies only revisions that the
+database has not recorded yet.
 
 No application configuration or credential is accepted as a build argument. Required values are
 injected only when a container starts. The build context uses a positive allowlist, so environment

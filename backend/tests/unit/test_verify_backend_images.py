@@ -40,7 +40,7 @@ def test_image_verification_builds_checks_and_cleans_every_target(
     monkeypatch.setattr(verify_backend_images, "find_docker_executable", lambda: "/usr/bin/docker")
     monkeypatch.setattr(verify_backend_images, "uuid4", lambda: RUN_UUID)
     calls: list[tuple[str, tuple[str, ...]]] = []
-    api_checks: list[tuple[str, str]] = []
+    api_checks: list[tuple[str, str, str]] = []
 
     def record_command(
         label: str,
@@ -64,22 +64,36 @@ def test_image_verification_builds_checks_and_cleans_every_target(
     monkeypatch.setattr(
         verify_backend_images,
         "verify_api_against_migrated_postgres",
-        lambda image, run_identifier: api_checks.append((image, run_identifier)),
+        lambda api_image, migration_image, run_identifier: api_checks.append(
+            (api_image, migration_image, run_identifier)
+        ),
     )
 
     assert verify_backend_images.verify_backend_images() == 0
     build_commands = [command for label, command in calls if label.startswith("Build backend")]
     assert [command[command.index("--target") + 1] for command in build_commands] == [
         "api",
+        "migration",
         "worker",
         "parser",
     ]
-    assert len([label for label, _ in calls if label == "Verify minimal non-root runtime"]) == 3
-    assert api_checks == [("investment-research-backend-check-api:12345678", "12345678")]
+    assert len([label for label, _ in calls if label == "Verify minimal non-root runtime"]) == 4
+    assert api_checks == [
+        (
+            "investment-research-backend-check-api:12345678",
+            "investment-research-backend-check-migration:12345678",
+            "12345678",
+        )
+    ]
     cleanup_images = [
         command[-1] for label, command in calls if label == "Remove verification image"
     ]
-    assert [target_from_image(image) for image in cleanup_images] == ["parser", "worker", "api"]
+    assert [target_from_image(image) for image in cleanup_images] == [
+        "parser",
+        "worker",
+        "migration",
+        "api",
+    ]
 
 
 def test_image_verification_cleans_up_after_an_invariant_failure(
@@ -165,6 +179,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
 
     verify_backend_images.verify_api_against_migrated_postgres(
         "investment-research-backend-check-api:test",
+        "investment-research-backend-check-migration:test",
         "12345678",
     )
 
@@ -172,6 +187,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     assert labels == [
         "Start isolated PostgreSQL for the API image",
         "Migrate the isolated database to Alembic head",
+        "Verify migration image idempotency",
         "Start the API image with runtime-only configuration",
         "Inspect API container health",
         "Verify layered API health endpoints",
@@ -189,6 +205,20 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     assert "INVESTMENT_RESEARCH_REDIS_URL" in api_command
     assert any(argument.endswith("12345678_backend") for argument in api_command)
 
+    migration_command = next(
+        command
+        for label, command, _ in calls
+        if label == "Migrate the isolated database to Alembic head"
+    )
+    assert migration_command[-1] == "investment-research-backend-check-migration:test"
+    assert "disposable-password" not in migration_command
+    assert not any("postgresql+psycopg" in argument for argument in migration_command)
+    assert migration_command.count("--env") == 6
+    assert any(
+        argument.endswith("target=/run/secrets/postgres_password,readonly")
+        for argument in migration_command
+    )
+
     api_environment = next(
         environment
         for label, _, environment in calls
@@ -205,12 +235,13 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
         if label == "Migrate the isolated database to Alembic head"
     )
     assert migration_environment is not None
-    assert migration_environment["INVESTMENT_RESEARCH_DATABASE_URL"].endswith(
-        "@127.0.0.1:55432/investment_research"
-    )
-    assert migration_environment["COMPOSE_DISABLE_ENV_FILE"] == "1"
+    assert "INVESTMENT_RESEARCH_DATABASE_URL" not in migration_environment
+    assert migration_environment["INVESTMENT_RESEARCH_RUNTIME_LOCATION"] == "container"
+    assert migration_environment["POSTGRES_DB"] == "investment_research"
+    assert migration_environment["POSTGRES_USER"] == "investment_research"
+    assert migration_environment["POSTGRES_PASSWORD_FILE"] == "/run/secrets/postgres_password"
+    assert migration_environment["POSTGRES_PORT"] == "5432"
     assert "POSTGRES_PASSWORD" not in migration_environment
-    assert migration_environment["INVESTMENT_RESEARCH_S3_BUCKET"] == "unused-storage-check"
     assert "unused-application-access" not in api_command
     assert "unused-application-secret" not in api_command
     assert secret_paths and all(not path.exists() for path in secret_paths)
@@ -248,6 +279,7 @@ def test_api_runtime_verification_removes_postgres_after_start_failure(
     with pytest.raises(subprocess.CalledProcessError):
         verify_backend_images.verify_api_against_migrated_postgres(
             "investment-research-backend-check-api:test",
+            "investment-research-backend-check-migration:test",
             "12345678",
         )
 

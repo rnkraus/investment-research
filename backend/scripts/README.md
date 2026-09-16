@@ -244,12 +244,13 @@ failure.
 
 ```mermaid
 flowchart LR
-    COMMAND[verify_backend_images.py] --> BUILD[Build API, worker, parser]
+    COMMAND[verify_backend_images.py] --> BUILD[Build API, migration, worker, parser]
     BUILD --> METADATA[Check target metadata and secret absence]
     METADATA --> RUNTIME[Run minimal non-root smoke tests]
     RUNTIME --> POSTGRES[Create isolated PostgreSQL]
-    POSTGRES --> MIGRATE[Alembic upgrade to head]
-    MIGRATE --> API[Start API image]
+    POSTGRES --> MIGRATE[Run migration image to head]
+    MIGRATE --> REPEAT[Run migration image again]
+    REPEAT --> API[Start API image]
     API --> HEALTH[Check Docker health, /health, and /ready]
     HEALTH --> CLEANUP[Remove images, container, network, and volume]
 ```
@@ -260,15 +261,16 @@ Run the complete image gate from `backend/` with Docker running:
 uv run --locked python -m scripts.verify_backend_images
 ```
 
-The command builds the `api`, `worker`, and `parser` targets from the committed lockfile. For every
-target it verifies the declared non-root user, exact entry point, expected healthcheck, minimal
-runtime contents, read-only application source for the runtime user, and the absence of forbidden
-credential names from image configuration and build history.
+The command builds the `api`, `migration`, `worker`, and `parser` targets from the committed lockfile.
+For every target it verifies the declared non-root user, exact entry point, expected healthcheck,
+minimal runtime contents, read-only application source for the runtime user, and the absence of
+forbidden credential names from image configuration and build history.
 
 It then creates a uniquely named PostgreSQL Compose project with a random disposable password,
-migrates the empty database to Alembic `head`, and supplies the API database URL only through the
-container's runtime environment. PostgreSQL receives its password through a read-only mode-`0444`
-secret file inside a private mode-`0700` temporary directory. The API must become healthy and return
-the exact public liveness and readiness responses. Displayed commands contain environment-variable
-names but never their values. Cleanup removes only the resources, temporary image tags, and secret
-directory owned by that invocation, including after a failed build or runtime check.
+runs the migration image twice to prove both schema creation and idempotency, and starts the API only
+after those runs succeed. PostgreSQL and the migration image receive the password through a read-only
+mode-`0444` secret file inside a private mode-`0700` temporary directory. The API must then become
+healthy and return the exact public liveness and readiness responses. Displayed commands contain
+environment-variable names but never their values. Cleanup removes only the resources, temporary
+image tags, and secret directory owned by that invocation, including after a failed build or runtime
+check.

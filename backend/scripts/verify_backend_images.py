@@ -102,6 +102,11 @@ TARGETS: dict[str, TargetExpectation] = {
         ),
         has_healthcheck=True,
     ),
+    "migration": TargetExpectation(
+        entrypoint=("/app/.venv/bin/alembic",),
+        command=("-c", "alembic.ini", "upgrade", "head"),
+        has_healthcheck=False,
+    ),
     "worker": TargetExpectation(
         entrypoint=(
             "/app/.venv/bin/celery",
@@ -278,8 +283,12 @@ def wait_for_healthy_container(container: str) -> None:
     raise ImageVerificationError("API container readiness check timed out.")
 
 
-def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> None:
-    """Start the API image against one migrated disposable PostgreSQL database."""
+def verify_api_against_migrated_postgres(
+    api_image: str,
+    migration_image: str,
+    run_identifier: str,
+) -> None:
+    """Run the migration image twice before starting the API against PostgreSQL."""
 
     project_name = f"investment-research-api-check-{run_identifier}"
     api_container = f"{project_name}-api"
@@ -320,13 +329,40 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
                 "INVESTMENT_RESEARCH_S3_BUCKET": "unused-storage-check",
             }
         )
-        migration_environment = compose_environment | {
+        migration_environment = os.environ.copy() | {
             "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
-            "INVESTMENT_RESEARCH_DATABASE_URL": (
-                f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
-                f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
-            ),
+            "INVESTMENT_RESEARCH_RUNTIME_LOCATION": "container",
+            "POSTGRES_DB": POSTGRES_DATABASE,
+            "POSTGRES_USER": POSTGRES_USER,
+            "POSTGRES_PASSWORD_FILE": "/run/secrets/postgres_password",
+            "POSTGRES_PORT": "5432",
         }
+        migration_command = [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            f"{project_name}_backend",
+            "--env",
+            "INVESTMENT_RESEARCH_ENVIRONMENT",
+            "--env",
+            "INVESTMENT_RESEARCH_RUNTIME_LOCATION",
+            "--env",
+            "POSTGRES_DB",
+            "--env",
+            "POSTGRES_USER",
+            "--env",
+            "POSTGRES_PASSWORD_FILE",
+            "--env",
+            "POSTGRES_PORT",
+            "--mount",
+            (
+                "type=bind,"
+                f"source={secret_sources['POSTGRES_PASSWORD_SECRET_FILE']},"
+                "target=/run/secrets/postgres_password,readonly"
+            ),
+            migration_image,
+        ]
         api_created = False
         cleanup_failed = False
 
@@ -338,9 +374,13 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
             )
             run_command(
                 "Migrate the isolated database to Alembic head",
-                [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
+                migration_command,
                 environment=migration_environment,
-                working_directory=BACKEND_ROOT,
+            )
+            run_command(
+                "Verify migration image idempotency",
+                migration_command,
+                environment=migration_environment,
             )
             run_command(
                 "Start the API image with runtime-only configuration",
@@ -366,7 +406,7 @@ def verify_api_against_migrated_postgres(image: str, run_identifier: str) -> Non
                     "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
                     "--tmpfs",
                     "/tmp:rw,nosuid,nodev,noexec,size=16m",
-                    image,
+                    api_image,
                 ],
                 capture_output=True,
                 environment=api_environment,
@@ -414,6 +454,7 @@ def verify_backend_images() -> int:
     run_identifier = uuid4().hex[:8]
     built_images: list[str] = []
     api_image: str | None = None
+    migration_image: str | None = None
     exit_code = 0
     try:
         for target, expectation in TARGETS.items():
@@ -438,13 +479,17 @@ def verify_backend_images() -> int:
             built_images.append(image)
             if target == "api":
                 api_image = image
+            elif target == "migration":
+                migration_image = image
             configuration = load_image_configuration(image)
             history = load_image_history(image)
             verify_configuration(configuration, history, expectation)
             verify_runtime(image)
         if api_image is None:
             raise ImageVerificationError("API image was not built.")
-        verify_api_against_migrated_postgres(api_image, run_identifier)
+        if migration_image is None:
+            raise ImageVerificationError("Migration image was not built.")
+        verify_api_against_migrated_postgres(api_image, migration_image, run_identifier)
     except subprocess.CalledProcessError as error:
         exit_code = error.returncode or 1
     except (ImageVerificationError, json.JSONDecodeError) as error:
