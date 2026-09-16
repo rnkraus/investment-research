@@ -102,19 +102,23 @@ def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
         assert capture_response.status_code == 202
         capture = DocumentAccepted.model_validate(capture_response.json())
 
+        processing_started_at = time.monotonic()
         processing = wait_for_terminal_processing(client, capture.processing_status_url)
+        processing_duration_seconds = time.monotonic() - processing_started_at
         assert processing.processing_run_id == capture.processing_run_id
         assert processing.document_version_id == capture.document_version_id
         assert processing.state == "LEXICAL_READY", processing.error_summary
         assert processing.error_summary is None
-
-        answer_response = client.post(
-            "/api/v1/research-requests",
-            json={
-                "question": M0_0_FIXTURE_ANSWER_CASE.question,
-                "context": {"document_ids": [str(capture.document_id)]},
-            },
+        print(
+            f"Observed upload-to-LEXICAL_READY duration: {processing_duration_seconds:.2f}s",
+            flush=True,
         )
+
+        answer_request = {
+            "question": M0_0_FIXTURE_ANSWER_CASE.question,
+            "context": {"document_ids": [str(capture.document_id)]},
+        }
+        answer_response = client.post("/api/v1/research-requests", json=answer_request)
         assert answer_response.status_code == 200
         answer_events = parse_server_sent_events(answer_response.text)
         assert [event["event"] for event in answer_events] == [
@@ -141,6 +145,20 @@ def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
         assert original_response.status_code == 200
         assert original_response.headers["content-type"] == "application/pdf"
         assert original_response.content == FIXTURE_PDF.read_bytes()
+
+        repeated_response = client.post("/api/v1/research-requests", json=answer_request)
+        assert repeated_response.status_code == 200
+        repeated_events = parse_server_sent_events(repeated_response.text)
+        assert [event["event"] for event in repeated_events] == [
+            "answer.statement",
+            "answer.citation",
+            "answer.completed",
+        ]
+        assert (
+            repeated_events[0]["data"]["research_request_id"]
+            != answer_events[0]["data"]["research_request_id"]
+        )
+        assert repeated_events[1]["data"]["evidence_span_id"] == evidence_span_id
 
         insufficient_response = client.post(
             "/api/v1/research-requests",

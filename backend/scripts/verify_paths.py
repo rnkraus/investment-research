@@ -44,6 +44,15 @@ def select_pytest_paths(paths: Sequence[str]) -> tuple[str, ...]:
     )
 
 
+def select_mypy_paths(paths: Sequence[str]) -> tuple[str, ...]:
+    """Include the complete application package with selected scripts and tests."""
+
+    return (
+        "src",
+        *(path for path in paths if not Path(path).is_relative_to("src")),
+    )
+
+
 def verify_paths(raw_paths: Sequence[str]) -> int:
     """Check selected Python files and run any selected test modules."""
 
@@ -59,7 +68,10 @@ def verify_paths(raw_paths: Sequence[str]) -> int:
             (sys.executable, "-m", "ruff", "format", "--check", *paths),
         ),
         ("Lint selected Python files", (sys.executable, "-m", "ruff", "check", *paths)),
-        ("Type-check selected Python files", (sys.executable, "-m", "mypy", *paths)),
+        (
+            "Type-check selected Python files",
+            (sys.executable, "-m", "mypy", *select_mypy_paths(paths)),
+        ),
     ]
     pytest_paths = select_pytest_paths(paths)
     if pytest_paths:

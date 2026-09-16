@@ -116,7 +116,11 @@ def test_path_verification_checks_selected_files_and_only_runs_test_modules(
     ]
     assert calls[0][1][-3:] == selected_paths
     assert calls[1][1][-3:] == selected_paths
-    assert calls[2][1][-3:] == selected_paths
+    assert calls[2][1][-3:] == (
+        "src",
+        "tests/unit/test_example.py",
+        "tests/integration/factories.py",
+    )
     assert calls[3][1][-1] == "tests/unit/test_example.py"
     assert "tests/integration/factories.py" not in calls[3][1]
 
