@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.7 — Steps 1–4 completed; Step 5 in progress \
+**Status:** Active v0.8 — Steps 1–5 implemented; Step 5 hosted CI confirmation pending \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -695,8 +695,13 @@ drift, downgrade, and upgrade commands. The dependency audit reports no known vu
 adverse package status, configuration validation plus all five hooks pass locally, and the canonical
 PostgreSQL run completes with 59 passing integration tests, six expected storage-specific skips,
 and no migration drift before or after its downgrade/upgrade cycle. Hosted CI remains the final
-workflow confirmation. Step 5 still requires the unchanged frontend test and production-build
-compatibility gate.
+workflow confirmation.
+
+**Local implementation record (2026-09-16, frontend-compatibility block):** No frontend source or
+runtime behavior changed. The generated OpenAPI TypeScript contract remains current, all 15
+frontend tests pass, and the unchanged Next.js 16 production build compiles, type-checks, and emits
+the expected static `/` and `/_not-found` routes. Step 5 is locally complete. The branch still
+requires a successful hosted CI run before merge and Step 6 handoff.
 
 ### Step 6 — M0 acceptance and handoff
 
