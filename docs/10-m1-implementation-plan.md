@@ -1,14 +1,15 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Draft v0.2 — local single-user sequence defined; Step 0 decisions remain open \
+**Status:** Draft v0.3 — AI/vector decision accepted; source-anchor and fixture decisions remain open \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0007 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
 [02-system-design.md](./02-system-design.md),
 [03-domain-model.md](./03-domain-model.md),
 [04-security-and-operations.md](./04-security-and-operations.md),
-[05-delivery-plan.md](./05-delivery-plan.md), and
-[09-m0-implementation-plan.md](./09-m0-implementation-plan.md)
+[05-delivery-plan.md](./05-delivery-plan.md),
+[09-m0-implementation-plan.md](./09-m0-implementation-plan.md), and
+[ADR-0008](./adr/0008-application-owned-ai-and-vector-adapters.md)
 
 ## 1. Purpose and scope
 
@@ -247,7 +248,7 @@ demonstrates that M1 cannot satisfy its trace-ID requirement without one.
 Step 0 must resolve and document these decisions. No provider SDK may be added before the relevant
 decision is accepted.
 
-### 5.1 ADR-0008 — Application-owned AI and vector adapters
+### 5.1 [ADR-0008](./adr/0008-application-owned-ai-and-vector-adapters.md) — Application-owned AI and vector adapters
 
 Confirm:
 
@@ -434,7 +435,7 @@ Documentation and contracts:
 
 - research and approve embedding, Pinecone, generation, support-evaluation, and tracing choices
   under the dependency policy;
-- create and accept ADR-0008 and ADR-0009;
+- retain accepted ADR-0008 and create and accept ADR-0009;
 - freeze the M1 fixture manifest, exact expected anchors, provider budget, and data classification;
 - specify the text-capture payload, source locator union, processing states, indexing job behavior,
   dual-lane selection, provider usage, and trace fields;
