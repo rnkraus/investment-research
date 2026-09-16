@@ -19,6 +19,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_paths.py`            | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`         | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 | `verify_queue_recovery.py`   | Proves live Celery redelivery and lease-based recovery after worker loss.                |
+| `verify_runtime_cleanup.py`  | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                 |
 
 ## Contract flow
 
@@ -274,6 +275,19 @@ diagnostics redact those sentinels before printing logs. The command also report
 upload-to-`LEXICAL_READY`, fixture-test, log-capture, and cleanup durations; these are measurements
 of that run, not performance guarantees. The unique Compose project, its volumes, generated
 secrets, and the uniquely tagged verification image are removed after success or failure.
+
+CI follows the parser-isolation, queue-recovery, and complete-runtime checks with:
+
+```shell
+python3 -m scripts.verify_runtime_cleanup
+```
+
+This standard-library-only command inventories Docker containers, networks, volumes, and temporary
+acceptance images for the verification prefixes owned by those checks. It never removes resources
+or matches the normal local Compose project. A match therefore exposes a cleanup regression instead
+of concealing it. The CI step uses `always()` so the inventory also runs after an earlier verification
+failure; unit tests separately force the failure path and prove that the verifier still enters its
+scoped cleanup.
 
 ## Backend image verification
 
