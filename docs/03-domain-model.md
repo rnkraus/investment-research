@@ -74,7 +74,7 @@ Automatic company assignments remain reviewable suggestions. A duplicate relatio
 |---|---|---|
 | `ProcessingRun` | One versioned intent to process a document version | Configuration versions, state, attempt count, current execution lease, timestamps, error summary |
 | `ProcessingStage` | Independently retryable step within a run | Stage type, attempt, state, input/output references |
-| `StructureBlock` | Canonical parsed unit anchored to the source | Page, type, order, text, source offsets, optional geometry |
+| `StructureBlock` | Canonical parsed unit anchored to the source | Discriminated PDF-page or text-passage location, type, order, text, source offsets, optional geometry |
 | `ChunkSet` | Versioned chunking result for a document version | Chunker and configuration version; active flag |
 | `Chunk` | Retrieval unit built from one or more blocks | Text, block references, token count, ordinal |
 | `IndexReceipt` | Result of applying a chunk version to a vector index | Vector ID, embedding version, index state, timestamp |
@@ -107,7 +107,7 @@ Conversation context may populate explicit filters for a new request. It never b
 |---|---|---|
 | `Answer` | Versioned response to a research request | State, model/prompt version, coverage status, rendered text |
 | `AnswerStatement` | Smallest independently supportable answer unit | Order, structured text, statement type, support status |
-| `EvidenceSpan` | Stable source span in a document version | Structure-block reference, page, character offsets, exact text/hash |
+| `EvidenceSpan` | Stable source span in a document version | Structure-block reference, discriminated source locator, block-relative character offsets, exact text/hash |
 | `StatementEvidence` | Link from a statement to supporting or conflicting evidence | Relationship type and display order |
 | `AnswerValidation` | Server-side validation result | Rule, pass/fail, reason, timestamp |
 
