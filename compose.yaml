@@ -77,6 +77,36 @@ services:
     pids_limit: 64
     restart: "no"
 
+  seed:
+    <<: *backend-runtime
+    profiles:
+      - tools
+    image: investment-research-backend-seed:local
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: seed
+    environment:
+      INVESTMENT_RESEARCH_ENVIRONMENT: development
+      INVESTMENT_RESEARCH_RUNTIME_LOCATION: container
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env or the shell}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env or the shell}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_PORT: 5432
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    secrets:
+      - postgres_password
+    networks:
+      - backend
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: "no"
+
   redis:
     image: investment-research-redis:8.2.9
     build:

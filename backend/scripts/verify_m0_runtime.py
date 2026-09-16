@@ -88,7 +88,6 @@ def verify_m0_runtime() -> int:
     api_port = find_available_loopback_port()
     web_port = find_available_loopback_port()
     secret_values = {name: generate_disposable_credential() for name in COMPOSE_SECRET_FILES}
-    postgres_password = secret_values["POSTGRES_PASSWORD"]
     compose_command = [
         "docker",
         "compose",
@@ -99,7 +98,6 @@ def verify_m0_runtime() -> int:
         "--file",
         str(COMPOSE_TEST_FILE),
     ]
-    python_command = [sys.executable, "-m"]
     exit_code = 0
 
     with disposable_compose_secret_environment(secret_values) as secret_sources:
@@ -118,17 +116,6 @@ def verify_m0_runtime() -> int:
                 "M0_ACCEPTANCE_FIXTURE_PATH": str(FIXTURE_PDF),
             }
         )
-        migration_environment = os.environ.copy()
-        migration_environment.update(
-            {
-                "INVESTMENT_RESEARCH_ENVIRONMENT": "test",
-                "INVESTMENT_RESEARCH_DATABASE_URL": (
-                    f"postgresql+psycopg://{POSTGRES_USER}:{postgres_password}"
-                    f"@127.0.0.1:{postgres_port}/{POSTGRES_DATABASE}"
-                ),
-            }
-        )
-
         try:
             run_command(
                 "Build and start isolated complete M0 runtime",
@@ -144,16 +131,18 @@ def verify_m0_runtime() -> int:
                 environment=compose_environment,
             )
             run_command(
-                "Migrate isolated PostgreSQL database",
-                [*python_command, "alembic", "-c", "alembic.ini", "upgrade", "head"],
-                environment=migration_environment,
-                working_directory=BACKEND_ROOT,
-            )
-            run_command(
-                "Seed isolated PostgreSQL workspaces",
-                [*python_command, "scripts.seed_m0_0"],
-                environment=migration_environment,
-                working_directory=BACKEND_ROOT,
+                "Seed isolated PostgreSQL through the internal tool container",
+                [
+                    *compose_command,
+                    "--profile",
+                    "tools",
+                    "run",
+                    "--build",
+                    "--rm",
+                    "--no-deps",
+                    "seed",
+                ],
+                environment=compose_environment,
             )
             run_command(
                 "Build isolated M0 acceptance image",

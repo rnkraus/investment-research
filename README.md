@@ -83,10 +83,8 @@ docker compose --env-file .env ps
 
 Compose waits for PostgreSQL, runs the reviewed one-shot migration to Alembic `head`, initializes the
 SeaweedFS bucket, and starts the API, worker, and web application only after their required
-dependencies are ready. It does not seed or delete business data during restart. Until the final
-safe developer seed/reset workflow is added, use an already initialized local development volume
-for the interactive view and use `uv run --locked python -m scripts.verify_m0_runtime` for the
-deterministic proof from an empty state.
+dependencies are ready. It does not seed or delete business data during restart. Use the explicit
+seed or reset commands below when deterministic synthetic workspaces are required.
 
 The API writes one structured JSON completion or failure event per HTTP request at the configured
 `INVESTMENT_RESEARCH_LOG_LEVEL`. It generates the correlation identifier on the server and returns
@@ -204,25 +202,34 @@ citation, original bytes, and insufficient-evidence response, and removes every 
 uv run --locked python -m scripts.verify_m0_runtime
 ```
 
-## Run database migrations and seed data
+## Seed or reset local data
 
-With PostgreSQL running and the root `.env` configured, migrate the schema and create the two
-deterministic synthetic M0.0 workspaces:
+The normal Compose startup migrates the database automatically but intentionally does not seed
+business data. With the stack running, create the two deterministic synthetic M0.0 workspaces from
+the repository root through the short-lived internal tool container:
 
 ```shell
-cd backend
-uv run alembic -c alembic.ini upgrade head
-uv run python -m scripts.seed_m0_0
+docker compose --env-file .env --profile tools run --build --rm --no-deps seed
 ```
 
 Repeated seed runs are safe: identical workspaces remain unchanged, while conflicting data under a
-deterministic seed identifier aborts without being overwritten. Verify that the migrated schema still
-matches the SQLAlchemy metadata:
+deterministic seed identifier aborts without being overwritten.
+
+To remove only the fixed local Compose project's PostgreSQL and SeaweedFS volumes, rebuild the
+complete runtime, and restore the synthetic seed, run the guarded reset from `backend/`:
 
 ```shell
-uv run alembic -c alembic.ini check
-uv run alembic -c alembic.ini current
+cd backend
+uv run --locked python -m scripts.reset_local
 ```
+
+The command validates the repository and working directory and proceeds only after the exact
+displayed confirmation phrase is entered. It cannot accept an arbitrary project name or deletion
+path. The reset permanently deletes data in the named local project's volumes; it does not target
+other Compose projects. Do not use it for shared or production data.
+
+For a non-destructive schema, seed, drift, and migration-cycle proof against a disposable database,
+run `uv run --locked python -m scripts.verify_postgres` from `backend/`.
 
 CI runs the deterministic frontend and backend checks, migrates an empty PostgreSQL 17 service,
 applies the synthetic seed, runs all PostgreSQL integration tests, checks metadata drift, and proves

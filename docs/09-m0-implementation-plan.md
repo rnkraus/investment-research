@@ -667,6 +667,22 @@ tests and the complete 588-test backend unit gate pass. Step 5 still requires th
 reset/seed workflow, canonical verification wrappers, pre-commit/CI integration, documentation, and
 the unchanged frontend compatibility gate.
 
+**Local implementation record (2026-09-16, safe-reset-and-seed block):** The backend image now has a
+dedicated non-root `seed` target that contains only the idempotent synthetic workspace seed and its
+required application runtime. Compose exposes it only through the opt-in `tools` profile, attaches
+it only to the private backend network, mounts only the PostgreSQL password secret, and waits for the
+one-shot migration before execution. Normal startup still never seeds or deletes business data.
+`reset_local.py` is fixed to the `investment-research-m0-0` project, validates the exact repository
+and `backend/` working directory, accepts no caller-selected project or deletion path, and requires
+an exact confirmation phrase before removing that project's volumes. It then rebuilds and waits for
+the complete runtime and invokes the internal seed container. Unit tests cover refusal, missing
+Docker, exact command construction, failure short-circuiting, and successful sequencing without
+executing destructive operations. The complete runtime verifier now uses the same internal seed
+boundary instead of constructing a database URL in a host process, and the backend image verifier
+includes the new target. The focused 12-test gate, the complete 593-test backend unit gate, all five
+backend image targets, and the disposable automatic M0 fixture journey pass. Step 5 still requires
+canonical pre-commit/CI integration and the unchanged frontend compatibility gate.
+
 ### Step 6 — M0 acceptance and handoff
 
 **Suggested branch:** `test/m0-acceptance`

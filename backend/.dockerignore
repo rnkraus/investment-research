@@ -6,6 +6,11 @@
 !src/
 !src/**
 
+!scripts/
+scripts/**
+!scripts/__init__.py
+!scripts/seed_m0_0.py
+
 !tests/
 !tests/**
 

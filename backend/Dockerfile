@@ -63,6 +63,14 @@ COPY --chown=65532:65532 migrations ./migrations
 ENTRYPOINT ["/app/.venv/bin/alembic"]
 CMD ["-c", "alembic.ini", "upgrade", "head"]
 
+FROM runtime AS seed
+
+COPY --chown=65532:65532 scripts/__init__.py ./scripts/__init__.py
+COPY --chown=65532:65532 scripts/seed_m0_0.py ./scripts/seed_m0_0.py
+
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "scripts.seed_m0_0"]
+CMD []
+
 FROM runtime AS worker
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \

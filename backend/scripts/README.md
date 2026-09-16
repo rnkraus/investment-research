@@ -9,6 +9,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `__init__.py`                | Makes development commands importable for tests and `python -m` execution.               |
 | `docker_secrets.py`          | Creates portable read-only Compose secret files inside a private temporary directory.    |
 | `export_openapi.py`          | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
+| `reset_local.py`             | Recreates only the fixed local Compose runtime after exact confirmation.                 |
 | `seed_m0_0.py`               | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
 | `verify_backend.py`          | Runs all deterministic backend static checks and unit tests.                             |
 | `verify_backend_images.py`   | Builds and exercises every backend image target in an isolated runtime.                  |
@@ -49,10 +50,30 @@ adds a second sanitized workspace for negative isolation tests. Repeated runs le
 unchanged. An existing deterministic identifier with different data aborts and rolls back the whole
 seed transaction instead of overwriting data.
 
-The command uses the validated local PostgreSQL configuration from the root `.env`, while an
-explicit process URL can override it for isolated tooling. It assumes Alembic has already migrated
-the database to `head`. The verified command is documented in the repository
-[`README.md`](../../README.md#run-database-migrations-and-seed-data).
+The Python module accepts validated host PostgreSQL configuration for isolated tooling. The normal
+Compose workflow instead runs it through the short-lived `seed` image target and `tools` profile.
+That container joins only the private backend network, receives only the PostgreSQL secret, and
+starts only after the one-shot migration has reached `head`. The verified commands are documented
+in the repository [`README.md`](../../README.md#seed-or-reset-local-data).
+
+## Safe local reset
+
+```mermaid
+flowchart LR
+    COMMAND[reset_local.py from backend] --> VALIDATE[Validate repository and exact working directory]
+    VALIDATE --> CONFIRM[Require exact fixed-project phrase]
+    CONFIRM --> DOWN[Remove only fixed-project containers and volumes]
+    DOWN --> UP[Rebuild and wait for the complete runtime]
+    UP --> SEED[Run short-lived internal seed container]
+```
+
+`reset_local.py` deliberately accepts neither a Compose project name nor a filesystem deletion
+target. It is fixed to the `investment-research-m0-0` project, requires the repository `backend/`
+directory as the current working directory, checks repository markers, and requires the exact
+confirmation phrase before invoking Docker. The destructive operation is limited to the named
+Compose project's volumes. It then rebuilds the complete stack and uses the internal `seed`
+container to restore only deterministic synthetic workspaces. A mismatched directory,
+confirmation, missing Docker executable, or failed Compose command stops the workflow.
 
 ## Python verification
 
@@ -218,8 +239,9 @@ unique project and its volumes after both success and failure.
 ```mermaid
 flowchart LR
     COMMAND[verify_m0_runtime.py] --> STACK[Fresh PostgreSQL, Redis, SeaweedFS, parser, and worker]
-    STACK --> MIGRATE[Alembic migration and seed]
-    MIGRATE --> CAPTURE[API capture publishes Celery job]
+    STACK --> MIGRATE[One-shot Alembic migration]
+    MIGRATE --> SEED[Internal seed tool container]
+    SEED --> CAPTURE[API capture publishes Celery job]
     CAPTURE --> READY[Worker reaches LEXICAL_READY]
     READY --> ANSWER[Validated answer and exact citation]
     ANSWER --> REFUSE[Insufficient-evidence control case]
@@ -233,10 +255,11 @@ uv run --locked python -m scripts.verify_m0_runtime
 ```
 
 The command combines `compose.yaml` with the test-only `compose.test.yaml`, creates a unique project,
-generates disposable file-backed credentials, migrates and seeds a fresh database, and runs the
-frozen public fixture through the real API application, Celery worker, isolated parser, SeaweedFS,
-and PostgreSQL. The acceptance container runs non-root with a read-only root filesystem and receives
-only the backend and object-storage data networks. It never starts the M0.0 manual runner.
+generates disposable file-backed credentials, lets the one-shot migration container prepare the
+database, runs the internal seed tool container, and sends the frozen public fixture through the
+real API application, Celery worker, isolated parser, SeaweedFS, and PostgreSQL. The acceptance
+container runs non-root with a read-only root filesystem and receives only the backend and
+object-storage data networks. It never starts the M0.0 manual runner.
 
 Success requires the answerable fixture question to return its validated statement and exact
 page-two evidence, the original endpoint to return byte-identical PDF content, and the unanswerable
@@ -248,7 +271,7 @@ failure.
 
 ```mermaid
 flowchart LR
-    COMMAND[verify_backend_images.py] --> BUILD[Build API, migration, worker, parser]
+    COMMAND[verify_backend_images.py] --> BUILD[Build API, migration, seed, worker, parser]
     BUILD --> METADATA[Check target metadata and secret absence]
     METADATA --> RUNTIME[Run minimal non-root smoke tests]
     RUNTIME --> POSTGRES[Create isolated PostgreSQL and Redis]
@@ -265,7 +288,8 @@ Run the complete image gate from `backend/` with Docker running:
 uv run --locked python -m scripts.verify_backend_images
 ```
 
-The command builds the `api`, `migration`, `worker`, and `parser` targets from the committed lockfile.
+The command builds the `api`, `migration`, `seed`, `worker`, and `parser` targets from the committed
+lockfile.
 For every target it verifies the declared non-root user, exact entry point, expected healthcheck,
 minimal runtime contents, read-only application source for the runtime user, and the absence of
 forbidden credential names from image configuration and build history.

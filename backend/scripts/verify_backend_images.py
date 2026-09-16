@@ -106,6 +106,11 @@ TARGETS: dict[str, TargetExpectation] = {
         command=("-c", "alembic.ini", "upgrade", "head"),
         has_healthcheck=False,
     ),
+    "seed": TargetExpectation(
+        entrypoint=("/app/.venv/bin/python", "-m", "scripts.seed_m0_0"),
+        command=(),
+        has_healthcheck=False,
+    ),
     "worker": TargetExpectation(
         entrypoint=(
             "/app/.venv/bin/celery",
