@@ -342,10 +342,10 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Complete the remaining M1 API, processing, indexing, retrieval, usage, and trace contract freeze
-   before changing dependencies or creating provider resources.
-2. Implement pasted-text capture and the accepted stable source locators against the frozen
-   synthetic PDF and pasted-text fixture set.
+1. Implement M1 Step 1 pasted-text capture and stable source locators in backend, CI, then frontend
+   order against the accepted contracts and frozen fixtures.
+2. Run the complete Step 1 gate for both PDF and pasted text before adding embedding or Pinecone
+   dependencies in Step 2.
 3. Preserve the fixed local owner context and loopback-only boundary without treating a
    client-supplied workspace identifier as authorization.
 4. Implement and evaluate M1 through the retained identity, storage, processing, search, research,

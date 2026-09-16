@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Draft v0.5 — runtime, source-anchor, and fixture decisions accepted; contract freeze remains open \
+**Status:** Implementation-ready v1.0 — Step 0 decisions and contracts frozen; Step 1 next \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -9,6 +9,7 @@
 [04-security-and-operations.md](./04-security-and-operations.md),
 [05-delivery-plan.md](./05-delivery-plan.md),
 [09-m0-implementation-plan.md](./09-m0-implementation-plan.md),
+[11-m1-contracts.md](./11-m1-contracts.md),
 [ADR-0008](./adr/0008-application-owned-ai-and-vector-adapters.md), and
 [ADR-0009](./adr/0009-stable-source-anchors.md)
 
@@ -447,12 +448,18 @@ Documentation and contracts:
   classification;
 - specify the text-capture payload, source locator union, processing states, indexing job behavior,
   dual-lane selection, provider usage, and trace fields;
-- update OpenAPI examples without changing runtime behavior yet;
+- freeze target OpenAPI examples in `docs/11-m1-contracts.md`; generate OpenAPI artifacts only with
+  the owning runtime implementation;
 - define deterministic fake-provider and opt-in live-provider test boundaries.
 
 **Gate:** every provider and dependency is explicitly approved; every new external data flow is
 documented; the API/domain contracts are internally consistent; no unresolved decision would change
 a migration, public API, source anchor, or provider port.
+
+**Completed 2026-09-17:** ADR-0008 and ADR-0009 are accepted, the fixture manifest and external
+data policy are frozen, and `docs/11-m1-contracts.md` fixes the target application, job, provider,
+usage, tracing, API, and verification contracts. No provider resource or credentialed call was
+created during Step 0.
 
 **Suggested commits:** RAG-provider ADR; source-anchor ADR; M1 fixture freeze; contract
 documentation.
