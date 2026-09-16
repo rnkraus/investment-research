@@ -1,6 +1,6 @@
 # Investment Research Archive — M0 Implementation Plan
 
-**Status:** Active v0.8 — Steps 1–5 implemented; Step 5 hosted CI confirmation pending \
+**Status:** Active v0.9 — Steps 1–5 complete; Step 6 acceptance in progress \
 **Active milestone:** M0 — Engineering foundation  
 **Depends on:** completed M0.0 acceptance and its retained contracts  
 **Related:** [02-system-design.md](./02-system-design.md),
@@ -737,6 +737,19 @@ Documentation:
 `05-delivery-plan.md` is satisfied. Only then may M1 expand accepted document input.
 
 **Suggested commits:** acceptance regression suite; container CI gate; measured results and handoff.
+
+**Local implementation record (2026-09-16, acceptance-regression block):** The complete-stack
+fixture journey now repeats the same answerable research request, requires a distinct request ID,
+and proves that the second answer reuses the same canonical evidence span. The verifier captures
+web, API, worker, and parser logs without first displaying them, rejects its injected credential
+marker, every exact disposable credential, and the fixture evidence text, and redacts those values
+before any failure diagnostics are printed. Focused verification passes, as does the canonical
+backend gate with 594 deterministic tests. A clean isolated Compose run completed successfully:
+stack build and health readiness took 35.85 seconds, upload to `LEXICAL_READY` took 0.26 seconds,
+the complete answerable, repeated-answer, original-open, and insufficient-evidence fixture test took
+1.47 seconds, log capture and inspection took 0.08 seconds, and resource cleanup took 24.63 seconds.
+These are observations from one local Docker Desktop run, not service-level guarantees. The
+container CI gate and final measured-results/M0-to-M1 handoff remain open.
 
 ## 8. Verification matrix
 

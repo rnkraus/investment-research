@@ -7,10 +7,12 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import uuid4
 
+from investment_research.infrastructure.generation.deterministic import M0_0_FIXTURE_ANSWER_CASE
 from scripts.docker_secrets import (
     COMPOSE_SECRET_FILES,
     disposable_compose_secret_environment,
@@ -26,6 +28,12 @@ FIXTURE_PDF = (
 ACCEPTANCE_TEST = "tests/acceptance/test_m0_runtime_journey.py"
 POSTGRES_DATABASE = "investment_research"
 POSTGRES_USER = "investment_research"
+SECRET_LOG_MARKER = "m0-acceptance-secret-marker"
+REDACTED_LOG_VALUE = b"[REDACTED]"
+
+
+class SensitiveRuntimeLogError(RuntimeError):
+    """Report sensitive runtime logging without reproducing the logged value."""
 
 
 def find_docker_executable() -> str | None:
@@ -37,7 +45,7 @@ def find_docker_executable() -> str | None:
 def generate_disposable_credential() -> str:
     """Return one random credential used only by an isolated runtime."""
 
-    return secrets.token_hex(24)
+    return f"{SECRET_LOG_MARKER}-{secrets.token_hex(24)}"
 
 
 def find_available_loopback_port() -> int:
@@ -55,17 +63,69 @@ def run_command(
     environment: Mapping[str, str],
     working_directory: Path = REPOSITORY_ROOT,
     check: bool = True,
+    capture_output: bool = False,
 ) -> subprocess.CompletedProcess[bytes]:
     """Run one visible command without rendering its environment values."""
 
     print(f"\n==> {label}", flush=True)
     print(f"$ {shlex.join(command)}", flush=True)
-    return subprocess.run(
+    started_at = time.monotonic()
+    result = subprocess.run(
         command,
         cwd=working_directory,
         env=environment,
         check=check,
+        stdout=subprocess.PIPE if capture_output else None,
+        stderr=subprocess.STDOUT if capture_output else None,
     )
+    print(f"<== {label} completed in {time.monotonic() - started_at:.2f}s", flush=True)
+    return result
+
+
+def capture_runtime_logs(
+    compose_command: Sequence[str],
+    environment: Mapping[str, str],
+) -> bytes:
+    """Capture application logs without writing their untrusted content to the host output."""
+
+    result = run_command(
+        "Capture isolated runtime logs for sensitive-content verification",
+        [*compose_command, "logs", "--no-color", "web", "api", "worker", "parser"],
+        environment=environment,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, result.args)
+    return result.stdout or b""
+
+
+def sensitive_log_values(secret_values: Mapping[str, str]) -> tuple[bytes, ...]:
+    """Return exact synthetic values that must never appear in runtime logs."""
+
+    return (
+        SECRET_LOG_MARKER.encode(),
+        *(value.encode() for value in secret_values.values()),
+        M0_0_FIXTURE_ANSWER_CASE.evidence_text.encode(),
+    )
+
+
+def assert_runtime_logs_are_safe(log_output: bytes, secret_values: Mapping[str, str]) -> None:
+    """Fail without disclosure when logs contain a credential marker or original text."""
+
+    for value in sensitive_log_values(secret_values):
+        if value and value in log_output:
+            raise SensitiveRuntimeLogError("isolated runtime logs contain sensitive content")
+
+
+def redact_runtime_logs(log_output: bytes, secret_values: Mapping[str, str]) -> str:
+    """Remove every known sensitive sentinel before failure diagnostics are displayed."""
+
+    redacted = log_output
+    for value in sorted(sensitive_log_values(secret_values), key=len, reverse=True):
+        if value:
+            redacted = redacted.replace(value, REDACTED_LOG_VALUE)
+    return redacted.decode(errors="replace")
 
 
 def verify_m0_runtime() -> int:
@@ -99,6 +159,7 @@ def verify_m0_runtime() -> int:
         str(COMPOSE_TEST_FILE),
     ]
     exit_code = 0
+    runtime_logs = b""
 
     with disposable_compose_secret_environment(secret_values) as secret_sources:
         compose_environment = os.environ.copy() | secret_sources
@@ -158,21 +219,27 @@ def verify_m0_runtime() -> int:
                     "--no-deps",
                     "acceptance",
                     "-q",
+                    "-s",
                     "-p",
                     "no:cacheprovider",
                     ACCEPTANCE_TEST,
                 ],
                 environment=compose_environment,
             )
+            runtime_logs = capture_runtime_logs(compose_command, compose_environment)
+            assert_runtime_logs_are_safe(runtime_logs, secret_values)
             print("Automatic M0 fixture journey passed.", flush=True)
-        except subprocess.CalledProcessError as error:
-            exit_code = error.returncode or 1
-            run_command(
-                "Show isolated runtime logs after verification failure",
-                [*compose_command, "logs", "--no-color", "web", "api", "worker", "parser"],
-                environment=compose_environment,
-                check=False,
-            )
+        except (SensitiveRuntimeLogError, subprocess.CalledProcessError) as error:
+            if isinstance(error, subprocess.CalledProcessError):
+                exit_code = error.returncode or 1
+            else:
+                exit_code = 1
+            if not runtime_logs:
+                try:
+                    runtime_logs = capture_runtime_logs(compose_command, compose_environment)
+                except subprocess.CalledProcessError:
+                    runtime_logs = b"Runtime logs were unavailable."
+            print(redact_runtime_logs(runtime_logs, secret_values), file=sys.stderr, flush=True)
         finally:
             cleanup = run_command(
                 "Remove isolated M0 runtime and its volumes",

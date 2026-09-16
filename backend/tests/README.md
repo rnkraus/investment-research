@@ -33,6 +33,8 @@ flowchart TD
     POSTGRES --> ANSWER[Atomic validated-answer aggregate]
     ACCEPTANCE --> AUTO[Automatic Celery processing]
     AUTO --> CITATION[Validated answer and exact original evidence]
+    CITATION --> REPEAT[Repeated answer reuses canonical evidence]
+    REPEAT --> SAFELOGS[Runtime logs exclude sensitive sentinels]
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
@@ -40,8 +42,10 @@ Tests use application factories and explicit test settings. They must not read s
 The M0 acceptance test is inactive during normal unit and PostgreSQL suites. The
 `scripts.verify_m0_runtime` command activates it only inside a non-root, read-only verification
 container connected to a disposable migrated Compose runtime. It proves automatic Celery processing,
-the validated answer and citation path, byte-identical original access, and explicit insufficient
-evidence without invoking the M0.0 manual runner.
+the validated answer and citation path, repeated-request reuse of the canonical evidence span,
+byte-identical original access, and explicit insufficient evidence without invoking the M0.0 manual
+runner. The outer verifier additionally captures web, API, worker, and parser logs and fails if they
+contain its injected credential marker, any exact generated credential, or the fixture evidence text.
 
 PostgreSQL integration tests are skipped unless `INVESTMENT_RESEARCH_DATABASE_URL` is explicitly
 configured. They additionally require `INVESTMENT_RESEARCH_ENVIRONMENT=test`, use a schema already

@@ -49,6 +49,7 @@ def test_verification_runs_complete_journey_and_cleans_up(
         environment: Mapping[str, str],
         working_directory: Path = verify_m0_runtime.REPOSITORY_ROOT,
         check: bool = True,
+        capture_output: bool = False,
     ) -> subprocess.CompletedProcess[bytes]:
         del working_directory, check
         calls.append((label, tuple(command), environment))
@@ -56,7 +57,8 @@ def test_verification_runs_complete_journey_and_cleans_up(
             secret_path = Path(environment["POSTGRES_PASSWORD_SECRET_FILE"])
             assert secret_path.read_text(encoding="utf-8") == TEST_CREDENTIAL
             secret_paths.append(secret_path)
-        return subprocess.CompletedProcess(command, 0)
+        output = b"safe synthetic runtime log" if capture_output else None
+        return subprocess.CompletedProcess(command, 0, stdout=output)
 
     monkeypatch.setattr(verify_m0_runtime, "run_command", record_command)
 
@@ -66,6 +68,7 @@ def test_verification_runs_complete_journey_and_cleans_up(
         "Seed isolated PostgreSQL through the internal tool container",
         "Build isolated M0 acceptance image",
         "Run automatic M0 fixture journey",
+        "Capture isolated runtime logs for sensitive-content verification",
         "Remove isolated M0 runtime and its volumes",
         "Remove isolated M0 acceptance image",
     ]
@@ -106,18 +109,54 @@ def test_verification_reports_failure_and_still_cleans_up(
         environment: Mapping[str, str],
         working_directory: Path = verify_m0_runtime.REPOSITORY_ROOT,
         check: bool = True,
+        capture_output: bool = False,
     ) -> subprocess.CompletedProcess[bytes]:
         del working_directory, environment, check
         labels.append(label)
         if label == "Run automatic M0 fixture journey":
             raise subprocess.CalledProcessError(9, command)
-        return subprocess.CompletedProcess(command, 0)
+        output = b"safe failure diagnostics" if capture_output else None
+        return subprocess.CompletedProcess(command, 0, stdout=output)
 
     monkeypatch.setattr(verify_m0_runtime, "run_command", fail_journey)
 
     assert verify_m0_runtime.verify_m0_runtime() == 9
     assert labels[-3:] == [
-        "Show isolated runtime logs after verification failure",
+        "Capture isolated runtime logs for sensitive-content verification",
+        "Remove isolated M0 runtime and its volumes",
+        "Remove isolated M0 acceptance image",
+    ]
+
+
+def test_sensitive_runtime_logs_fail_closed_redact_and_clean_up(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    prepare_deterministic_runtime(monkeypatch)
+    labels: list[str] = []
+
+    def leak_credential(
+        label: str,
+        command: Sequence[str],
+        *,
+        environment: Mapping[str, str],
+        working_directory: Path = verify_m0_runtime.REPOSITORY_ROOT,
+        check: bool = True,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del environment, working_directory, check
+        labels.append(label)
+        output = f"unsafe log: {TEST_CREDENTIAL}".encode() if capture_output else None
+        return subprocess.CompletedProcess(command, 0, stdout=output)
+
+    monkeypatch.setattr(verify_m0_runtime, "run_command", leak_credential)
+
+    assert verify_m0_runtime.verify_m0_runtime() == 1
+    captured = capsys.readouterr()
+    assert TEST_CREDENTIAL not in captured.out
+    assert TEST_CREDENTIAL not in captured.err
+    assert "[REDACTED]" in captured.err
+    assert labels[-2:] == [
         "Remove isolated M0 runtime and its volumes",
         "Remove isolated M0 acceptance image",
     ]

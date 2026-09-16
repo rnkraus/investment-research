@@ -244,8 +244,11 @@ flowchart LR
     SEED --> CAPTURE[API capture publishes Celery job]
     CAPTURE --> READY[Worker reaches LEXICAL_READY]
     READY --> ANSWER[Validated answer and exact citation]
-    ANSWER --> REFUSE[Insufficient-evidence control case]
-    REFUSE --> CLEANUP[Remove project, volumes, and test image]
+    ANSWER --> REPEAT[Repeat question reuses canonical evidence]
+    REPEAT --> ORIGINAL[Open byte-identical original]
+    ORIGINAL --> REFUSE[Insufficient-evidence control case]
+    REFUSE --> LOGS[Scan captured logs for sensitive sentinels]
+    LOGS --> CLEANUP[Remove project, volumes, and test image]
 ```
 
 Run the complete automatic fixture journey from `backend/` with Docker running:
@@ -262,10 +265,15 @@ container runs non-root with a read-only root filesystem and receives only the b
 object-storage data networks. It never starts the M0.0 manual runner.
 
 Success requires the answerable fixture question to return its validated statement and exact
-page-two evidence, the original endpoint to return byte-identical PDF content, and the unanswerable
-control question to return only the insufficient-evidence event. The unique Compose project, its
-volumes, generated secrets, and the uniquely tagged verification image are removed after success or
-failure.
+page-two evidence twice. The second request must create a new research request while reusing the
+same canonical evidence span. The original endpoint must return byte-identical PDF content, and the
+unanswerable control question must return only the insufficient-evidence event. Before cleanup, the
+verifier captures the web, API, worker, and parser logs without displaying them and rejects any
+injected credential marker, exact generated credential, or fixture evidence text. Failure
+diagnostics redact those sentinels before printing logs. The command also reports observed startup,
+upload-to-`LEXICAL_READY`, fixture-test, log-capture, and cleanup durations; these are measurements
+of that run, not performance guarantees. The unique Compose project, its volumes, generated
+secrets, and the uniquely tagged verification image are removed after success or failure.
 
 ## Backend image verification
 
