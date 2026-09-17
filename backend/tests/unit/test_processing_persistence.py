@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from sqlalchemy import ForeignKeyConstraint, Table
 from sqlalchemy.orm import Session
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import (
     Chunk,
@@ -101,6 +102,7 @@ def make_lexical_output() -> tuple[StructureBlock, ChunkSet, Chunk]:
         workspace_id=WORKSPACE_ID,
         processing_run_id=PROCESSING_RUN_ID,
         document_version_id=DOCUMENT_VERSION_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=2,
         block_type=StructureBlockType.PARAGRAPH,
         ordinal=0,
@@ -363,6 +365,56 @@ def test_structure_block_preserves_exact_text_and_rejects_whitespace_only() -> N
         StructureBlock.model_validate({**block.model_dump(), "text": " \n\t "})
 
 
+def test_structure_block_accepts_exact_text_passage_locator() -> None:
+    block, _, _ = make_lexical_output()
+    text = "Exact 🛰 source text"
+
+    text_block = StructureBlock.model_validate(
+        {
+            **block.model_dump(),
+            "source_locator_kind": SourceLocatorKind.TEXT_PASSAGE,
+            "page_number": None,
+            "text": text,
+            "start_character": 11,
+            "end_character": 11 + len(text),
+        }
+    )
+
+    assert text_block.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+    assert text_block.page_number is None
+    assert text_block.end_character - text_block.start_character == len(text)
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected_error"),
+    [
+        pytest.param(
+            {"page_number": None},
+            "PDF_PAGE block requires page_number",
+            id="pdf-without-page",
+        ),
+        pytest.param(
+            {"source_locator_kind": SourceLocatorKind.TEXT_PASSAGE},
+            "TEXT_PASSAGE block must not define page_number",
+            id="text-with-page",
+        ),
+        pytest.param(
+            {"end_character": 10_000},
+            "source offsets must match text length",
+            id="wrong-source-length",
+        ),
+    ],
+)
+def test_structure_block_rejects_invalid_source_locator(
+    changes: dict[str, object],
+    expected_error: str,
+) -> None:
+    block, _, _ = make_lexical_output()
+
+    with pytest.raises(ValidationError, match=expected_error):
+        StructureBlock.model_validate({**block.model_dump(), **changes})
+
+
 def test_repository_matches_application_owned_protocol() -> None:
     session = create_autospec(Session, instance=True)
 
@@ -473,6 +525,13 @@ def test_processing_tables_enforce_scope_and_lexical_indexes() -> None:
             if isinstance(constraint, ForeignKeyConstraint)
         }
         assert ("workspaces.id",) in target_sets
+
+    structure_table = cast(Table, StructureBlockRow.__table__)
+    assert structure_table.c.source_locator_kind.nullable is False
+    assert structure_table.c.page_number.nullable is True
+    constraint_names = {constraint.name for constraint in structure_table.constraints}
+    assert "ck_structure_blocks_valid_source_locator" in constraint_names
+    assert "ck_structure_blocks_matching_text_length" in constraint_names
 
     chunk_table = cast(Table, ChunkRow.__table__)
     computed = chunk_table.c.search_vector.computed

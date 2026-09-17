@@ -194,7 +194,10 @@ class OriginalArtifactRow(Base):
         CheckConstraint("char_length(btrim(storage_key)) > 0", name="non_empty_storage_key"),
         CheckConstraint("byte_size > 0", name="positive_byte_size"),
         CheckConstraint("checksum_sha256 ~ '^[a-f0-9]{64}$'", name="valid_checksum_sha256"),
-        CheckConstraint("media_type IN ('application/pdf')", name="original_media_type"),
+        CheckConstraint(
+            "media_type IN ('application/pdf', 'text/plain')",
+            name="original_media_type",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)

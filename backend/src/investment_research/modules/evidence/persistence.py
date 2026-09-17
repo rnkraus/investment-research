@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from investment_research.infrastructure.database.base import Base
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceRelationship,
@@ -64,7 +65,15 @@ class EvidenceSpanRow(Base):
             ],
             ondelete="RESTRICT",
         ),
-        CheckConstraint("page_number > 0", name="positive_page_number"),
+        CheckConstraint(
+            "(source_locator_kind = 'PDF_PAGE' AND page_number > 0 "
+            "AND source_start_character IS NULL AND source_end_character IS NULL) OR "
+            "(source_locator_kind = 'TEXT_PASSAGE' AND page_number IS NULL "
+            "AND source_start_character >= 0 "
+            "AND source_end_character > source_start_character "
+            "AND source_end_character - source_start_character = char_length(exact_text))",
+            name="valid_source_locator",
+        ),
         CheckConstraint(
             "start_character >= 0 AND end_character > start_character",
             name="ordered_source_offsets",
@@ -81,7 +90,21 @@ class EvidenceSpanRow(Base):
     workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_version_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     structure_block_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_locator_kind: Mapped[SourceLocatorKind] = mapped_column(
+        SqlEnum(
+            SourceLocatorKind,
+            name="source_locator_kind",
+            native_enum=False,
+            create_constraint=False,
+            validate_strings=True,
+            values_callable=lambda enum_type: [member.value for member in enum_type],
+            length=32,
+        ),
+        nullable=False,
+    )
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    source_start_character: Mapped[int | None] = mapped_column(Integer)
+    source_end_character: Mapped[int | None] = mapped_column(Integer)
     start_character: Mapped[int] = mapped_column(Integer, nullable=False)
     end_character: Mapped[int] = mapped_column(Integer, nullable=False)
     exact_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -102,7 +125,10 @@ class EvidenceSpanRow(Base):
             workspace_id=self.workspace_id,
             document_version_id=self.document_version_id,
             structure_block_id=self.structure_block_id,
+            source_locator_kind=self.source_locator_kind,
             page_number=self.page_number,
+            source_start_character=self.source_start_character,
+            source_end_character=self.source_end_character,
             start_character=self.start_character,
             end_character=self.end_character,
             exact_text=self.exact_text,
@@ -329,7 +355,10 @@ class SqlAlchemyEvidenceRepository:
 
         canonical_span = row.to_domain()
         if (
-            canonical_span.page_number != span.page_number
+            canonical_span.source_locator_kind is not span.source_locator_kind
+            or canonical_span.page_number != span.page_number
+            or canonical_span.source_start_character != span.source_start_character
+            or canonical_span.source_end_character != span.source_end_character
             or canonical_span.exact_text != span.exact_text
             or canonical_span.text_sha256 != span.text_sha256
         ):

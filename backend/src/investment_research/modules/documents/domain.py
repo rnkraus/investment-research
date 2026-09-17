@@ -39,9 +39,17 @@ class DocumentLifecycleState(StrEnum):
 
 
 class OriginalMediaType(StrEnum):
-    """Original media types accepted by the M0.0 proof."""
+    """Original media types accepted by the archive capture boundary."""
 
     PDF = "application/pdf"
+    PLAIN_TEXT = "text/plain"
+
+
+class SourceLocatorKind(StrEnum):
+    """Stable ways to locate exact content inside an immutable original."""
+
+    PDF_PAGE = "PDF_PAGE"
+    TEXT_PASSAGE = "TEXT_PASSAGE"
 
 
 class DocumentScopeError(ValueError):

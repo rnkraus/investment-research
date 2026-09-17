@@ -39,6 +39,20 @@ EvidenceSpan.text_sha256
 
 Offsets are relative to the referenced structure block. A valid span has ordered offsets, matching character length, visible exact text, and the correct SHA-256 hash. Step 7 reloads the canonical block and verifies that slicing it at those offsets produces exactly the proposed text before the range becomes a validated reference.
 
+Each span also copies the block's immutable source locator so a citation can return to the original
+without depending on a chunk. A `PDF_PAGE` span requires a physical page number and has no absolute
+source offsets. A `TEXT_PASSAGE` span has no page number and carries the absolute start and end
+characters in the plain-text original. Domain validation and PostgreSQL constraints reject mixed
+shapes such as a text passage with an invented page number.
+
+```mermaid
+flowchart LR
+    RANGE[Block-relative evidence range] --> SPAN[EvidenceSpan]
+    PDF[PDF_PAGE<br/>physical page] --> SPAN
+    TEXT[TEXT_PASSAGE<br/>absolute source range] --> SPAN
+    SPAN --> ORIGINAL[Exact location in immutable original]
+```
+
 The canonical span identity is its workspace, document version, structure block, and character
 range. Repeated answers therefore reuse one persisted `EvidenceSpan` while creating their own
 `StatementEvidence` relationships:
@@ -48,14 +62,14 @@ flowchart LR
     PROPOSED[Validated proposed span] --> UPSERT[Insert by canonical source location]
     UPSERT -->|new location| CREATED[Store new EvidenceSpan]
     UPSERT -->|existing location| REUSE[Load existing EvidenceSpan]
-    CREATED --> VERIFY[Verify page, exact text, and hash]
+    CREATED --> VERIFY[Verify source locator, exact text, and hash]
     REUSE --> VERIFY
     VERIFY --> LINK[Link the current AnswerStatement]
 ```
 
 The PostgreSQL insert is conflict-safe, so concurrent answers do not rely on an unsafe
-read-before-write sequence. An existing location is never reused when its page, exact text, or hash
-differs from the validated proposal.
+read-before-write sequence. An existing location is never reused when its source locator, exact
+text, or hash differs from the validated proposal.
 
 ## Validation records
 

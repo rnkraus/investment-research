@@ -1,6 +1,6 @@
 # Processing
 
-This module owns canonical processing intent, page-aware parsed structure, versioned chunk sets, and lexical retrieval chunks. M0.0 executes one run in a separate development process; later Celery delivery invokes the same application-owned contracts.
+This module owns canonical processing intent, source-aware parsed structure, versioned chunk sets, and lexical retrieval chunks. M0.0 executes one run in a separate development process; later Celery delivery invokes the same application-owned contracts.
 
 ## Contents
 
@@ -25,7 +25,17 @@ flowchart LR
     TSV --> GIN[GIN index]
 ```
 
-`StructureBlock` preserves page, order, exact text, and source offsets independently of chunking strategy. `Chunk` is the retrieval unit. The M0.0 subset anchors each chunk to one block; a later reviewed schema may add an ordered association for chunks spanning several blocks without changing block or chunk identity.
+`StructureBlock` preserves locator kind, order, exact text, and source offsets independently of chunking strategy. A `PDF_PAGE` block requires a physical page number and stores page-relative offsets. A `TEXT_PASSAGE` block has no page number and stores absolute character offsets into the immutable plain-text original. The database enforces these mutually exclusive shapes. `Chunk` is the retrieval unit. The M0.0 subset anchors each chunk to one block; a later reviewed schema may add an ordered association for chunks spanning several blocks without changing block or chunk identity.
+
+```mermaid
+flowchart TD
+    ORIGINAL[Immutable original] --> KIND{Media-aware locator}
+    KIND -->|application/pdf| PDF[PDF_PAGE<br/>page required<br/>page-relative offsets]
+    KIND -->|text/plain| TEXT[TEXT_PASSAGE<br/>no page<br/>absolute source offsets]
+    PDF --> BLOCK[StructureBlock]
+    TEXT --> BLOCK
+    BLOCK --> CHUNK[Retrieval Chunk]
+```
 
 ## Lifecycle
 

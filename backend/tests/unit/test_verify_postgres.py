@@ -61,12 +61,13 @@ def test_verification_runs_complete_sequence_without_exposing_password(
     assert [label for label, _, _ in calls] == [
         "Start isolated PostgreSQL",
         "Migrate empty database to Alembic head",
+        "Check SQLAlchemy metadata against the migrated schema",
+        "Downgrade the empty disposable database to base",
+        "Upgrade the empty disposable database back to head",
+        "Recheck schema after the empty migration cycle",
         "Seed deterministic M0.0 workspaces",
         "Run PostgreSQL integration tests",
-        "Check SQLAlchemy metadata against the migrated schema",
-        "Downgrade the disposable database to base",
-        "Upgrade the disposable database back to head",
-        "Recheck schema after the migration cycle",
+        "Recheck schema after integration tests",
         "Remove isolated PostgreSQL and its volume",
     ]
     assert all(TEST_PASSWORD not in argument for _, command, _ in calls for argument in command)
@@ -104,4 +105,4 @@ def test_verification_cleans_up_and_preserves_failure_code(
 
     assert result == 7
     assert labels[-1] == "Remove isolated PostgreSQL and its volume"
-    assert "Check SQLAlchemy metadata against the migrated schema" not in labels
+    assert "Recheck schema after integration tests" not in labels

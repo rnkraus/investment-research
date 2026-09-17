@@ -12,6 +12,7 @@ from investment_research.api.dependencies import (
     WorkspaceContextDependency,
 )
 from investment_research.api.errors import ApiError
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.application import EvidenceSpanUnavailableError
 
 router = APIRouter(prefix="/api/v1/evidence-spans", tags=["evidence"])
@@ -50,6 +51,12 @@ def resolve_evidence_span(
         ) from error
 
     span = resolved.span
+    if span.source_locator_kind is not SourceLocatorKind.PDF_PAGE or span.page_number is None:
+        raise ApiError(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="evidence span locator is not supported",
+        )
     response.headers["cache-control"] = "private, no-store"
     return EvidenceSpanResult(
         evidence_span_id=span.id,

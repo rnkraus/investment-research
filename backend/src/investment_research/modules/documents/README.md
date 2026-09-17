@@ -1,6 +1,6 @@
 # Documents
 
-This module owns logical archive documents, immutable content versions, and immutable metadata for captured originals. M0.0 supports one active version and PDF originals; later milestones extend lifecycle behavior without changing these ownership boundaries.
+This module owns logical archive documents, immutable content versions, and immutable metadata for captured originals. The canonical model accepts PDF and plain-text originals while preserving the same ownership boundaries for later lifecycle work.
 
 ## Contents
 
@@ -22,7 +22,7 @@ flowchart LR
 
 - `Document` owns `document_type`, lifecycle state, and the current-version pointer.
 - `DocumentVersion` owns version number, title, language, content checksum, and source times.
-- `OriginalArtifact` owns the server-generated storage key, media type, byte count, and original checksum. Page-aware information is created later as versioned processing output rather than invented during capture.
+- `OriginalArtifact` owns the server-generated storage key, media type, byte count, and original checksum. Source-location information is created later as versioned processing output rather than invented during capture.
 
 ## Capture transaction
 
@@ -45,7 +45,7 @@ flowchart TD
     PG -->|commit fails| DISCARD[Discard only the uncommitted stored object]
 ```
 
-The service accepts only a declared `application/pdf` with a `.pdf` filename and a supported `%PDF-…` signature. It enforces the configured byte limit before publishing an object, keeps at most 1 MiB of the validation spool in memory, calculates SHA-256 while copying, and verifies the storage adapter's returned key, size, and checksum.
+The current capture service accepts only a declared `application/pdf` with a `.pdf` filename and a supported `%PDF-…` signature. It enforces the configured byte limit before publishing an object, keeps at most 1 MiB of the validation spool in memory, calculates SHA-256 while copying, and verifies the storage adapter's returned key, size, and checksum. The M1 schema also accepts immutable `text/plain` originals; the dedicated submitted-text capture path is added separately so persistence support does not imply that the HTTP endpoint already accepts text.
 
 `add_capture` rejects mismatched workspace or entity relationships before staging rows. It never commits. The capture unit of work binds both module repositories to one caller-owned SQLAlchemy session, so document metadata and the processing intent commit or roll back together. Because object storage cannot participate in the PostgreSQL transaction, a failed canonical transaction invokes the narrowly scoped `discard_uncommitted` compensation. It is not a general deletion path for committed originals.
 

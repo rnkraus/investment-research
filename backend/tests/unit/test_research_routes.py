@@ -17,6 +17,7 @@ from investment_research.api.dependencies import (
     get_workspace_context,
 )
 from investment_research.main import create_app
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceRelationship,
@@ -151,7 +152,10 @@ def make_result(*, state: AnswerState = AnswerState.STREAMED) -> ValidatedAnswer
         workspace_id=WORKSPACE_ID,
         document_version_id=VERSION_ID,
         structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=2,
+        source_start_character=None,
+        source_end_character=None,
         start_character=0,
         end_character=len(EVIDENCE_TEXT),
         exact_text=EVIDENCE_TEXT,
