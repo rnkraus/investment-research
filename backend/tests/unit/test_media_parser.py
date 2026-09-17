@@ -1,12 +1,15 @@
 """Unit tests for deterministic M1 PDF and pasted-text block extraction."""
 
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 
 from investment_research.infrastructure.parsing.media import MediaAwareDocumentParser
+from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.processing.contracts import (
+    ParsedPdfDocument,
     ParsedTextDocument,
     ParserLimits,
 )
@@ -16,6 +19,31 @@ from investment_research.modules.processing.ports import (
 )
 
 LIMITS = ParserLimits(max_pages=10, max_extracted_characters=20_000)
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+FIXTURE_PDF = (
+    REPOSITORY_ROOT / "fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf"
+)
+
+
+def test_pdf_blocks_preserve_physical_pages_and_exact_page_ranges() -> None:
+    pdf_bytes = FIXTURE_PDF.read_bytes()
+    pages = PypdfDocumentParser().parse(BytesIO(pdf_bytes), limits=LIMITS)
+    document = MediaAwareDocumentParser().parse(
+        BytesIO(pdf_bytes),
+        limits=LIMITS,
+        media_type="application/pdf",
+    )
+
+    assert isinstance(document, ParsedPdfDocument)
+    assert document.physical_page_count == 4
+    assert tuple(block.ordinal for block in document.blocks) == tuple(range(len(document.blocks)))
+    assert {block.page_number for block in document.blocks} == {1, 2, 3, 4}
+    assert all(block.source_locator_kind is SourceLocatorKind.PDF_PAGE for block in document.blocks)
+    page_text_by_number = {page.page_number: page.text for page in pages.pages}
+    for block in document.blocks:
+        assert block.page_number is not None
+        page_text = page_text_by_number[block.page_number]
+        assert page_text[block.start_character : block.end_character] == block.text
 
 
 def parse_text(source: str) -> ParsedTextDocument:

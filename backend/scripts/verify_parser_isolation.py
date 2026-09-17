@@ -97,6 +97,7 @@ from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.processing.contracts import (
     M1_PARSER_CONFIG_VERSION,
     PDF_PARSER_CONFIG_VERSION_V1,
+    ParsedPdfDocument,
     ParsedTextDocument,
     ParserFailureV1,
     ParserLimits,
@@ -123,15 +124,29 @@ with Path("/fixture.pdf").open("rb") as content:
 assert document.page_count >= 1
 assert document.extracted_character_count > 0
 
-text_client = HttpDocumentParser(
+m1_client = HttpDocumentParser(
     endpoint_url="http://parser:8100",
     parser_version=parser_version,
     parser_config_version=M1_PARSER_CONFIG_VERSION,
     timeout_seconds=5,
     max_request_bytes={PARSER_REQUEST_LIMIT_BYTES},
 )
+with Path("/fixture.pdf").open("rb") as content:
+    pdf_document = m1_client.parse(
+        content,
+        limits=ParserLimits(
+            max_pages={PARSER_PAGE_LIMIT},
+            max_extracted_characters={PARSER_TEXT_LIMIT},
+        ),
+        media_type="application/pdf",
+    )
+assert isinstance(pdf_document, ParsedPdfDocument)
+assert pdf_document.physical_page_count >= 1
+assert pdf_document.blocks
+assert all(block.page_number is not None for block in pdf_document.blocks)
+
 text_source = "  Revenue grew.  \\n\\nMargin expanded.\\n"
-text_document = text_client.parse(
+text_document = m1_client.parse(
     BytesIO(text_source.encode("utf-8")),
     limits=ParserLimits(
         max_pages={PARSER_PAGE_LIMIT},

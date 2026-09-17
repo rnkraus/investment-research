@@ -108,6 +108,8 @@ def capture_fixture(
     engine: Engine,
     context: WorkspaceContext,
     storage: LocalObjectStorage,
+    *,
+    profile: ProcessingProfile = M0_0_PROCESSING_PROFILE,
 ) -> CaptureDocumentResult:
     """Capture the public fixture through the same service used by the API."""
 
@@ -117,6 +119,7 @@ def capture_fixture(
         unit_of_work_factory=create_capture_unit_of_work_factory(session_factory),
         max_upload_bytes=FIXTURE_PDF.stat().st_size + 1,
         processing_dispatcher=RecordingProcessingDispatcher(),
+        processing_profile=profile,
         clock=lambda: CAPTURED_AT,
     )
     capture_input = PdfCaptureInput(
@@ -819,3 +822,56 @@ def test_m1_pasted_text_reaches_lexical_ready_with_exact_persisted_ranges(
     )
     for _, _, text, start_character, end_character in persisted_blocks:
         assert source[start_character:end_character] == text
+
+
+def test_m1_pdf_reaches_lexical_ready_with_exact_persisted_page_ranges(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(
+        integration_database_engine,
+        context,
+        storage,
+        profile=M1_PROCESSING_PROFILE,
+    )
+    limits = ParserLimits(max_pages=10, max_extracted_characters=100_000)
+    service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=limits,
+        parser=MediaAwareDocumentParser(),
+        profile=M1_PROCESSING_PROFILE,
+    )
+
+    result = service.process(context, capture.processing_run_id)
+
+    session_factory = create_session_factory(integration_database_engine)
+    with transactional_session(session_factory) as session:
+        persisted_blocks = tuple(
+            (
+                row.source_locator_kind,
+                row.page_number,
+                row.text,
+                row.start_character,
+                row.end_character,
+            )
+            for row in session.scalars(
+                select(StructureBlockRow)
+                .where(StructureBlockRow.processing_run_id == capture.processing_run_id)
+                .order_by(StructureBlockRow.ordinal)
+            )
+        )
+
+    with FIXTURE_PDF.open("rb") as content:
+        parsed_pages = PypdfDocumentParser().parse(content, limits=limits)
+    page_text_by_number = {page.page_number: page.text for page in parsed_pages.pages}
+
+    assert result.state is ProcessingState.LEXICAL_READY
+    assert result.parser_config_version == M1_PROCESSING_PROFILE.parser_config_version
+    assert {block[1] for block in persisted_blocks} == {1, 2, 3, 4}
+    for locator_kind, page_number, text, start_character, end_character in persisted_blocks:
+        assert locator_kind is SourceLocatorKind.PDF_PAGE
+        assert page_number is not None
+        assert page_text_by_number[page_number][start_character:end_character] == text

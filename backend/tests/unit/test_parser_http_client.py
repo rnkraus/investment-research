@@ -22,6 +22,7 @@ from investment_research.modules.processing.contracts import (
     ParsedBlockV2,
     ParsedDocument,
     ParsedPage,
+    ParsedPdfDocument,
     ParsedTextDocument,
     ParserFailureCode,
     ParserFailureV1,
@@ -273,6 +274,50 @@ def test_v2_client_sends_text_media_and_validates_exact_source_slices() -> None:
     )
     request = ParserRequestV2.model_validate_json(headers[PARSER_REQUEST_METADATA_HEADER])
     assert request.max_pdf_pages is None
+    assert request.max_block_characters == 4_000
+
+
+def test_v2_client_sends_pdf_media_and_validates_page_blocks() -> None:
+    document = ParsedPdfDocument(
+        physical_page_count=2,
+        blocks=(
+            ParsedBlockV2(
+                ordinal=0,
+                source_locator_kind=SourceLocatorKind.PDF_PAGE,
+                page_number=2,
+                block_type=StructureBlockType.PARAGRAPH,
+                text="Revenue grew.",
+                start_character=0,
+                end_character=13,
+            ),
+        ),
+    )
+    FakeHttpConnection.next_response = FakeHttpResponse(
+        status=200,
+        body=ParserResponseV2(
+            parser_version=PARSER_VERSION,
+            parser_config_version=M1_PARSER_CONFIG_VERSION,
+            document=document,
+        )
+        .model_dump_json()
+        .encode("utf-8"),
+    )
+
+    result = make_v2_parser().parse(
+        BytesIO(PDF_BYTES),
+        limits=LIMITS,
+        media_type="application/pdf",
+    )
+
+    assert result == document
+    _, path, body, headers = FakeHttpConnection.instances[0].requests[0]
+    assert (path, body, headers["Content-Type"]) == (
+        PARSER_V2_HTTP_PATH,
+        PDF_BYTES,
+        "application/pdf",
+    )
+    request = ParserRequestV2.model_validate_json(headers[PARSER_REQUEST_METADATA_HEADER])
+    assert request.max_pdf_pages == LIMITS.max_pages
     assert request.max_block_characters == 4_000
 
 
