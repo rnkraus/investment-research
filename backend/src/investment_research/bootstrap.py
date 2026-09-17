@@ -59,6 +59,7 @@ from investment_research.modules.identity.application import (
 )
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
+    M1_PROCESSING_PROFILE,
     ExecuteProcessingJobService,
     GetProcessingRunService,
     ProcessDocumentService,
@@ -244,6 +245,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             unit_of_work_factory=create_capture_unit_of_work_factory(database.session_factory),
             max_upload_bytes=settings.max_upload_bytes,
             processing_dispatcher=processing_dispatcher,
+            processing_profile=M1_PROCESSING_PROFILE,
         ),
         open_original_service=open_original_service,
         get_processing_run_service=GetProcessingRunService(
@@ -279,8 +281,8 @@ def build_worker_container(
     identity_context_provider = FixedLocalIdentityContextProvider()
     active_parser = parser or HttpDocumentParser(
         endpoint_url=settings.require_parser_endpoint_url(),
-        parser_version=M0_0_PROCESSING_PROFILE.parser_version,
-        parser_config_version=M0_0_PROCESSING_PROFILE.parser_config_version,
+        parser_version=M1_PROCESSING_PROFILE.parser_version,
+        parser_config_version=M1_PROCESSING_PROFILE.parser_config_version,
         timeout_seconds=settings.processing_timeout_seconds,
         max_request_bytes=settings.max_parser_request_bytes,
     )
@@ -292,6 +294,7 @@ def build_worker_container(
             max_pages=settings.max_pdf_pages,
             max_extracted_characters=settings.max_extracted_characters,
         ),
+        profile=M1_PROCESSING_PROFILE,
     )
     return WorkerContainer(
         settings=settings,

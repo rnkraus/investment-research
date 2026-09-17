@@ -1,6 +1,7 @@
-"""Credential-free internal application for bounded PDF parsing."""
+"""Credential-free internal application for bounded media parsing."""
 
 from io import BytesIO
+from typing import Protocol
 
 from fastapi import FastAPI, Request, Response
 from starlette.concurrency import run_in_threadpool
@@ -13,27 +14,54 @@ from investment_research.infrastructure.parsing.http_protocol import (
     PARSER_REQUEST_CONTENT_TYPE,
     PARSER_REQUEST_METADATA_HEADER,
     PARSER_RESPONSE_CONTENT_TYPE,
+    PARSER_V2_HTTP_PATH,
+    PARSER_V2_REQUEST_CONTENT_TYPES,
 )
+from investment_research.infrastructure.parsing.isolation import (
+    IsolatedParseRunner,
+    ParserCapacityError,
+    ParserExecutionTimeoutError,
+)
+from investment_research.infrastructure.parsing.media import MediaAwareDocumentParser
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.processing.contracts import (
+    M1_PARSER_CONFIG_VERSION,
     PDF_PARSER_CONFIG_VERSION_V1,
+    ParsedDocument,
+    ParsedDocumentV2,
     ParserFailureCode,
     ParserFailureV1,
+    ParserFailureV2,
     ParserRequestV1,
+    ParserRequestV2,
     ParserResponseV1,
+    ParserResponseV2,
     parser_response_byte_limit,
+    parser_response_v2_byte_limit,
 )
 from investment_research.modules.processing.ports import (
     DocumentParser,
     DocumentParserError,
     ParserLimitExceededError,
+    ParserTransportError,
 )
 from investment_research.settings import ParserSettings, get_parser_settings
 
 READ_CHUNK_BYTES = 64 * 1024
 
 
-def _json_response(model: ParserFailureV1 | ParserResponseV1, *, status_code: int) -> Response:
+class V2ParseRunner(Protocol):
+    """Structural boundary used to test HTTP behavior independently of processes."""
+
+    def parse(self, body: bytes, request: ParserRequestV2) -> ParsedDocumentV2:
+        """Return one validated v2 document or raise an application-owned error."""
+
+
+def _json_response(
+    model: ParserFailureV1 | ParserResponseV1 | ParserFailureV2 | ParserResponseV2,
+    *,
+    status_code: int,
+) -> Response:
     """Serialize one bounded protocol model with the exact response media type."""
 
     return Response(
@@ -47,6 +75,12 @@ def _failure(code: ParserFailureCode, *, status_code: int) -> Response:
     """Return one safe failure category without input or implementation details."""
 
     return _json_response(ParserFailureV1(code=code), status_code=status_code)
+
+
+def _failure_v2(code: ParserFailureCode, *, status_code: int) -> Response:
+    """Return one safe v2 failure category without input or implementation details."""
+
+    return _json_response(ParserFailureV2(code=code), status_code=status_code)
 
 
 def _parse_metadata(request: Request) -> ParserRequestV1 | None:
@@ -63,6 +97,24 @@ def _parse_metadata(request: Request) -> ParserRequestV1 | None:
         return None
     try:
         return ParserRequestV1.model_validate_json(encoded_metadata)
+    except ValueError:
+        return None
+
+
+def _parse_metadata_v2(request: Request) -> ParserRequestV2 | None:
+    """Validate one bounded ASCII v2 metadata header without reading the body."""
+
+    raw_metadata = request.headers.get(PARSER_REQUEST_METADATA_HEADER)
+    if raw_metadata is None:
+        return None
+    try:
+        encoded_metadata = raw_metadata.encode("ascii")
+    except UnicodeEncodeError:
+        return None
+    if len(encoded_metadata) > MAX_PARSER_REQUEST_METADATA_BYTES:
+        return None
+    try:
+        return ParserRequestV2.model_validate_json(encoded_metadata)
     except ValueError:
         return None
 
@@ -94,11 +146,17 @@ async def _read_request_body(request: Request, *, maximum_bytes: int) -> bytes |
 def create_parser_app(
     settings: ParserSettings | None = None,
     parser: DocumentParser | None = None,
+    v2_runner: V2ParseRunner | None = None,
 ) -> FastAPI:
     """Create the private parser application without loading application settings."""
 
     active_settings = settings or get_parser_settings()
     active_parser = parser or PypdfDocumentParser()
+    active_v2_parser = MediaAwareDocumentParser()
+    active_v2_runner = v2_runner or IsolatedParseRunner(
+        timeout_seconds=active_settings.child_timeout_seconds,
+        max_concurrent_children=active_settings.max_concurrent_children,
+    )
     application = FastAPI(
         title="Investment Research Internal Parser",
         docs_url=None,
@@ -155,6 +213,8 @@ def create_parser_app(
         except Exception:
             return _failure("internal_error", status_code=500)
 
+        if not isinstance(document, ParsedDocument):
+            return _failure("internal_error", status_code=500)
         if (
             document.page_count > metadata.limits.max_pages
             or document.extracted_character_count > metadata.limits.max_extracted_characters
@@ -174,7 +234,92 @@ def create_parser_app(
             media_type=PARSER_RESPONSE_CONTENT_TYPE,
         )
 
+    @application.post(PARSER_V2_HTTP_PATH, include_in_schema=False)
+    async def parse_document_v2(request: Request) -> Response:
+        """Validate and execute one media-aware parse in a terminable child."""
+
+        content_type = request.headers.get("Content-Type", "").partition(";")[0].strip().lower()
+        if content_type not in PARSER_V2_REQUEST_CONTENT_TYPES:
+            return _failure_v2("invalid_request", status_code=415)
+
+        metadata = _parse_metadata_v2(request)
+        if metadata is None or metadata.media_type != content_type:
+            return _failure_v2("invalid_request", status_code=400)
+        if (
+            metadata.parser_version != active_v2_parser.parser_version
+            or metadata.parser_config_version != M1_PARSER_CONFIG_VERSION
+            or metadata.max_input_bytes > active_settings.max_request_bytes
+            or metadata.max_extracted_characters > active_settings.max_extracted_characters
+            or (
+                metadata.max_pdf_pages is not None
+                and metadata.max_pdf_pages > active_settings.max_pdf_pages
+            )
+        ):
+            return _failure_v2("invalid_request", status_code=400)
+
+        declared_size = _declared_request_size(request)
+        if declared_size is not None and declared_size < 0:
+            return _failure_v2("invalid_request", status_code=400)
+        maximum_input_bytes = min(
+            metadata.max_input_bytes,
+            active_settings.max_request_bytes,
+        )
+        if declared_size is not None and declared_size > maximum_input_bytes:
+            return _failure_v2("request_too_large", status_code=413)
+
+        body = await _read_request_body(request, maximum_bytes=maximum_input_bytes)
+        if body is None:
+            return _failure_v2("request_too_large", status_code=413)
+
+        try:
+            document = await run_in_threadpool(active_v2_runner.parse, body, metadata)
+        except ParserExecutionTimeoutError:
+            return _failure_v2("timeout", status_code=504)
+        except ParserCapacityError:
+            return _failure_v2("internal_error", status_code=503)
+        except ParserLimitExceededError:
+            return _failure_v2("limit_exceeded", status_code=422)
+        except DocumentParserError:
+            return _failure_v2("parse_failed", status_code=422)
+        except ParserTransportError:
+            return _failure_v2("internal_error", status_code=500)
+        except Exception:
+            return _failure_v2("internal_error", status_code=500)
+
+        if not _v2_document_within_request(document, metadata):
+            return _failure_v2("response_too_large", status_code=500)
+        response = ParserResponseV2(
+            parser_version=active_v2_parser.parser_version,
+            parser_config_version=M1_PARSER_CONFIG_VERSION,
+            document=document,
+        )
+        response_body = response.model_dump_json().encode("utf-8")
+        if len(response_body) > parser_response_v2_byte_limit(metadata):
+            return _failure_v2("response_too_large", status_code=500)
+        return Response(
+            content=response_body,
+            status_code=200,
+            media_type=PARSER_RESPONSE_CONTENT_TYPE,
+        )
+
     return application
+
+
+def _v2_document_within_request(
+    document: ParsedDocumentV2,
+    request: ParserRequestV2,
+) -> bool:
+    """Recheck media-specific child output against the caller-owned ceilings."""
+
+    if document.extracted_character_count > request.max_extracted_characters:
+        return False
+    if request.media_type == "application/pdf":
+        return (
+            document.kind == "PDF"
+            and request.max_pdf_pages is not None
+            and document.physical_page_count <= request.max_pdf_pages
+        )
+    return document.kind == "PASTED_TEXT"
 
 
 def main() -> None:
