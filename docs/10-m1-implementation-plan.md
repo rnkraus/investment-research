@@ -516,8 +516,11 @@ while retaining protocol v1 as an unchanged M0.0 PDF regression path. The existi
 the expanded unit, PostgreSQL, and parser-isolation suites without duplicating workflow commands.
 The frontend now offers explicit PDF and pasted-text modes through the shared processing flow and
 renders the discriminated PDF-page or text-passage locator only after runtime contract validation.
-The complete Step 1 gate remains open until hosted CI and the full container-stack fixture and
-browser acceptance journeys pass.
+Local Compose acceptance has captured both frozen fixtures through the web proxy, reached
+`LEXICAL_READY` through the real queue, worker, and isolated parser, and reopened each immutable
+original with its declared SHA-256 checksum. The complete Step 1 gate remains open until hosted CI
+and the manual browser interaction check pass; the broader answer-provider journey remains Step 6
+scope.
 
 **Suggested commits:** text/source domain and migration; text capture; isolated text parsing; source
 viewer API; document CI; frontend input and viewer; docs.
