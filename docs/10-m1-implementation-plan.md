@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Implementation-ready v1.0 — Step 0 decisions and contracts frozen; Step 1 next \
+**Status:** Implementation-ready v1.0 — Step 0 complete; Step 1 implementation in progress \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -505,6 +505,14 @@ Frontend:
 original reopens byte-for-byte; each evidence span resolves to its exact media-appropriate location;
 foreign and unknown sources remain indistinguishable; a timed-out parse cannot keep consuming parser
 capacity or make the next valid parse fail.
+
+**Implemented through 2026-09-17:** Media-aware source anchors and migration `0004`, immutable
+pasted-text capture/download, the `parser-protocol.v2` text path, deterministic exact source blocks,
+and terminable bounded child execution are implemented. Unit tests prove strict UTF-8/newline and
+block-range behavior plus timeout/reaping/capacity recovery. PostgreSQL integration proves an M1
+pasted-text original reaches `LEXICAL_READY` with exact persisted `TEXT_PASSAGE` ranges. Protocol v1
+and explicit M0.0 PDF profiles remain unchanged. The complete Step 1 gate remains open until its
+remaining PDF-v2, CI, frontend, and full fixture acceptance checks pass.
 
 **Suggested commits:** text/source domain and migration; text capture; isolated text parsing; source
 viewer API; document CI; frontend input and viewer; docs.

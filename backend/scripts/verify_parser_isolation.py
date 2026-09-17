@@ -84,6 +84,7 @@ for host, port in (("redis", 6379), ("1.1.1.1", 443)):
 
 WORKER_PROTOCOL_PROBE = f"""\
 from http.client import HTTPConnection
+from io import BytesIO
 from pathlib import Path
 
 from investment_research.infrastructure.parsing.client import HttpDocumentParser
@@ -94,7 +95,9 @@ from investment_research.infrastructure.parsing.http_protocol import (
 )
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.processing.contracts import (
+    M1_PARSER_CONFIG_VERSION,
     PDF_PARSER_CONFIG_VERSION_V1,
+    ParsedTextDocument,
     ParserFailureV1,
     ParserLimits,
     ParserRequestV1,
@@ -119,6 +122,30 @@ with Path("/fixture.pdf").open("rb") as content:
     )
 assert document.page_count >= 1
 assert document.extracted_character_count > 0
+
+text_client = HttpDocumentParser(
+    endpoint_url="http://parser:8100",
+    parser_version=parser_version,
+    parser_config_version=M1_PARSER_CONFIG_VERSION,
+    timeout_seconds=5,
+    max_request_bytes={PARSER_REQUEST_LIMIT_BYTES},
+)
+text_source = "  Revenue grew.  \\n\\nMargin expanded.\\n"
+text_document = text_client.parse(
+    BytesIO(text_source.encode("utf-8")),
+    limits=ParserLimits(
+        max_pages={PARSER_PAGE_LIMIT},
+        max_extracted_characters={PARSER_TEXT_LIMIT},
+    ),
+    media_type="text/plain",
+)
+assert isinstance(text_document, ParsedTextDocument)
+assert tuple(block.text for block in text_document.blocks) == (
+    "Revenue grew.",
+    "Margin expanded.",
+)
+for block in text_document.blocks:
+    assert text_source[block.start_character:block.end_character] == block.text
 
 try:
     with Path("/fixture.pdf").open("rb") as content:

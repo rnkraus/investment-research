@@ -184,8 +184,9 @@ flowchart LR
     IMAGES --> COMPOSE[Start Redis and parser on separate internal networks]
     COMPOSE --> INSPECT[Inspect user, mounts, capabilities, and resource limits]
     INSPECT --> NEGATIVE[Probe secret, filesystem, backend, and internet denial]
-    NEGATIVE --> VALID[Parse the frozen PDF through the private protocol]
-    VALID --> LIMITS[Reject request and extracted-text limit violations]
+    NEGATIVE --> V1[Parse the frozen PDF through protocol v1]
+    V1 --> V2[Parse canonical text through protocol v2 and verify exact slices]
+    V2 --> LIMITS[Reject request and extracted-text limit violations]
     LIMITS --> CLEANUP[Remove project, volumes, images, and secret files]
 ```
 
@@ -201,9 +202,10 @@ read-only root filesystem, dropped capabilities, `no-new-privileges`, exact CPU,
 limits, bounded temporary storage, no published ports, no application secrets, and no Docker socket
 or repository mount. Active probes verify that `/app` is not writable, `/tmp` remains usable, and
 connections to Redis and the external network fail. A worker-image probe must still parse the
-repository-owned PDF through `POST /internal/v1/parse`, while request-size and extracted-text limits
-fail with typed, safe outcomes. The unique Compose project and temporary secrets are removed even
-when a check fails.
+repository-owned PDF through `POST /internal/v1/parse`, then parse canonical UTF-8 text through
+`POST /internal/v2/parse` and verify every returned text slice against the source. Request-size and
+extracted-text limits fail with typed, safe outcomes. The unique Compose project and temporary
+secrets are removed even when a check fails.
 
 ## Queue-recovery verification
 
