@@ -39,10 +39,14 @@ flowchart LR
 
 The browser receives only relative `/api/v1/` paths. `next.config.ts` reads the server-only
 `INVESTMENT_RESEARCH_API_ORIGIN` setting and accepts only a credential-free loopback HTTP origin in
-M0.0. This avoids exposing an internal target in a `NEXT_PUBLIC_` variable and avoids a permissive
+M1. This avoids exposing an internal target in a `NEXT_PUBLIC_` variable and avoids a permissive
 CORS policy.
 
 Successful JSON responses are checked for the fields used by the application instead of being
 trusted solely because TypeScript compiled. Server-sent events are buffered across arbitrary network
 chunks, decoded by their `event` discriminator, and rejected if their runtime shape does not match the
-generated union. Backend-provided status and viewer URLs must remain relative application API paths.
+generated union. PDF capture uses the multipart endpoint; pasted-text capture uses its bounded JSON
+endpoint. Both return the same `DocumentAccepted` contract and enter the same status flow.
+Backend-provided status and viewer URLs must remain relative application API paths. Evidence results
+must carry either a valid `PDF_PAGE` or `TEXT_PASSAGE` locator; unknown locator kinds fail before they
+reach the UI.

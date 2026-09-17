@@ -509,10 +509,15 @@ capacity or make the next valid parse fail.
 **Implemented through 2026-09-17:** Media-aware source anchors and migration `0004`, immutable
 pasted-text capture/download, the `parser-protocol.v2` text path, deterministic exact source blocks,
 and terminable bounded child execution are implemented. Unit tests prove strict UTF-8/newline and
-block-range behavior plus timeout/reaping/capacity recovery. PostgreSQL integration proves an M1
-pasted-text original reaches `LEXICAL_READY` with exact persisted `TEXT_PASSAGE` ranges. Protocol v1
-and explicit M0.0 PDF profiles remain unchanged. The complete Step 1 gate remains open until its
-remaining PDF-v2, CI, frontend, and full fixture acceptance checks pass.
+block-range behavior plus timeout/reaping/capacity recovery. PostgreSQL integration proves M1 PDF
+and pasted-text originals independently reach `LEXICAL_READY` with exact persisted `PDF_PAGE` and
+`TEXT_PASSAGE` ranges. The isolated Docker parser gate exercises protocol v2 for both media types
+while retaining protocol v1 as an unchanged M0.0 PDF regression path. The existing CI jobs collect
+the expanded unit, PostgreSQL, and parser-isolation suites without duplicating workflow commands.
+The frontend now offers explicit PDF and pasted-text modes through the shared processing flow and
+renders the discriminated PDF-page or text-passage locator only after runtime contract validation.
+The complete Step 1 gate remains open until hosted CI and the full container-stack fixture and
+browser acceptance journeys pass.
 
 **Suggested commits:** text/source domain and migration; text capture; isolated text parsing; source
 viewer API; document CI; frontend input and viewer; docs.
