@@ -21,6 +21,7 @@ import { archiveCopy, fixtureDefaults } from "./copy";
 import { ResearchWorkflow } from "./research-workflow";
 
 const PROCESSING_POLL_INTERVAL_MS = 2_000;
+type SourceInputMode = "pdf" | "text";
 
 function processingMessage(result: ProcessingRunResult): string {
   switch (result.state) {
@@ -60,10 +61,13 @@ function safeErrorMessage(error: unknown): string {
 
 export function DocumentWorkflow() {
   const fileInputId = useId();
+  const textInputId = useId();
   const titleInputId = useId();
   const publicationDateInputId = useId();
   const uploadController = useRef<AbortController | null>(null);
+  const [inputMode, setInputMode] = useState<SourceInputMode>("pdf");
   const [file, setFile] = useState<File>();
+  const [text, setText] = useState("");
   const [title, setTitle] = useState<string>(fixtureDefaults.title);
   const [publicationDate, setPublicationDate] = useState("2026-02-19");
   const [accepted, setAccepted] = useState<DocumentAccepted>();
@@ -139,8 +143,12 @@ export function DocumentWorkflow() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (file === undefined) {
+    if (inputMode === "pdf" && file === undefined) {
       setErrorMessage(archiveCopy.errors.missingFile);
+      return;
+    }
+    if (inputMode === "text" && text.trim().length === 0) {
+      setErrorMessage(archiveCopy.errors.missingText);
       return;
     }
 
@@ -153,17 +161,34 @@ export function DocumentWorkflow() {
     setErrorMessage(undefined);
 
     try {
-      const result = await apiClient.captureDocument(
-        {
-          file,
-          title,
-          language: fixtureDefaults.language,
-          publishedAt: publicationDate
-            ? `${publicationDate}T00:00:00Z`
-            : undefined,
-        },
-        controller.signal,
-      );
+      const publishedAt = publicationDate
+        ? `${publicationDate}T00:00:00Z`
+        : undefined;
+      let result: DocumentAccepted;
+      if (inputMode === "pdf") {
+        if (file === undefined) {
+          throw new ApiProtocolError();
+        }
+        result = await apiClient.captureDocument(
+          {
+            file,
+            title,
+            language: fixtureDefaults.language,
+            publishedAt,
+          },
+          controller.signal,
+        );
+      } else {
+        result = await apiClient.capturePastedText(
+          {
+            title,
+            text,
+            language: fixtureDefaults.language,
+            published_at: publishedAt,
+          },
+          controller.signal,
+        );
+      }
       setAccepted(result);
       setProcessing({
         processing_run_id: result.processing_run_id,
@@ -203,29 +228,86 @@ export function DocumentWorkflow() {
         </p>
 
         <div className="mt-8 space-y-5">
-          <div>
-            <label
-              className="text-sm font-semibold text-slate-800"
-              htmlFor={fileInputId}
-            >
-              {archiveCopy.upload.fileLabel}
-            </label>
-            <input
-              accept=".pdf,application/pdf"
-              className="mt-2 block w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-700 file:mr-4 file:rounded-full file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
-              id={fileInputId}
-              name="document"
-              onChange={(event) => {
-                setFile(event.target.files?.[0]);
-                setErrorMessage(undefined);
-              }}
-              required
-              type="file"
-            />
-            <p className="mt-2 text-xs text-slate-500">
-              {archiveCopy.upload.fileHint}
-            </p>
-          </div>
+          <fieldset disabled={isUploading}>
+            <legend className="text-sm font-semibold text-slate-800">
+              {archiveCopy.upload.modeLegend}
+            </legend>
+            <div className="mt-2 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+              {(
+                [
+                  ["pdf", archiveCopy.upload.pdfMode],
+                  ["text", archiveCopy.upload.textMode],
+                ] as const
+              ).map(([mode, label]) => (
+                <label className="cursor-pointer" key={mode}>
+                  <input
+                    checked={inputMode === mode}
+                    className="peer sr-only"
+                    name="source-type"
+                    onChange={() => {
+                      setInputMode(mode);
+                      setErrorMessage(undefined);
+                    }}
+                    type="radio"
+                    value={mode}
+                  />
+                  <span className="block rounded-xl px-4 py-2.5 text-center text-sm font-semibold text-slate-600 transition hover:text-slate-900 peer-checked:bg-white peer-checked:text-slate-950 peer-checked:shadow-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-teal-600">
+                    {label}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {inputMode === "pdf" ? (
+            <div>
+              <label
+                className="text-sm font-semibold text-slate-800"
+                htmlFor={fileInputId}
+              >
+                {archiveCopy.upload.fileLabel}
+              </label>
+              <input
+                accept=".pdf,application/pdf"
+                className="mt-2 block w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-700 file:mr-4 file:rounded-full file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                id={fileInputId}
+                name="document"
+                onChange={(event) => {
+                  setFile(event.target.files?.[0]);
+                  setErrorMessage(undefined);
+                }}
+                required
+                type="file"
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                {archiveCopy.upload.fileHint}
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label
+                className="text-sm font-semibold text-slate-800"
+                htmlFor={textInputId}
+              >
+                {archiveCopy.upload.textLabel}
+              </label>
+              <textarea
+                className="mt-2 block min-h-48 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm leading-6 text-slate-950 shadow-xs outline-none placeholder:text-slate-400 focus:border-teal-600 focus:ring-3 focus:ring-teal-100"
+                id={textInputId}
+                maxLength={100_000}
+                onChange={(event) => {
+                  setText(event.target.value);
+                  setErrorMessage(undefined);
+                }}
+                placeholder={archiveCopy.upload.textPlaceholder}
+                required
+                value={text}
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                {archiveCopy.upload.textHint}
+              </p>
+            </div>
+          )}
 
           <div>
             <label
@@ -263,7 +345,7 @@ export function DocumentWorkflow() {
           </div>
         </div>
 
-        {file !== undefined ? (
+        {inputMode === "pdf" && file !== undefined ? (
           <p className="mt-5 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
             <span className="font-semibold">
               {archiveCopy.upload.selectedFile}:

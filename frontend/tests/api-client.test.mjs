@@ -61,6 +61,43 @@ test("captureDocument sends the exact multipart API fields", async () => {
   assert.equal(result.processing_run_id, PROCESSING_RUN_ID);
 });
 
+test("capturePastedText sends the exact JSON API contract", async () => {
+  let capturedPath;
+  let capturedInit;
+  const client = createApiClient(async (path, init) => {
+    capturedPath = path;
+    capturedInit = init;
+    return jsonResponse(
+      {
+        document_id: DOCUMENT_ID,
+        document_version_id: VERSION_ID,
+        processing_run_id: PROCESSING_RUN_ID,
+        processing_status_url: `/api/v1/processing-runs/${PROCESSING_RUN_ID}`,
+        state: "CAPTURED",
+      },
+      202,
+    );
+  });
+
+  const result = await client.capturePastedText({
+    title: "Research note",
+    language: "en",
+    published_at: "2026-02-20T12:00:00Z",
+    text: "Revenue increased.",
+  });
+
+  assert.equal(capturedPath, "/api/v1/documents/text");
+  assert.equal(capturedInit.method, "POST");
+  assert.equal(capturedInit.headers["content-type"], "application/json");
+  assert.deepEqual(JSON.parse(capturedInit.body), {
+    title: "Research note",
+    language: "en",
+    published_at: "2026-02-20T12:00:00Z",
+    text: "Revenue increased.",
+  });
+  assert.equal(result.processing_run_id, PROCESSING_RUN_ID);
+});
+
 test("API errors preserve only the safe public error contract", async () => {
   const client = createApiClient(async () =>
     jsonResponse(
@@ -98,6 +135,54 @@ test("successful JSON responses still require the runtime contract", async () =>
 
   await assert.rejects(
     client.getProcessingRun(`/api/v1/processing-runs/${PROCESSING_RUN_ID}`),
+    ApiProtocolError,
+  );
+});
+
+test("evidence spans accept PDF-page and text-passage locators", async () => {
+  const locators = [
+    { kind: "PDF_PAGE", page: 2 },
+    { kind: "TEXT_PASSAGE", start_character: 11, end_character: 29 },
+  ];
+
+  for (const locator of locators) {
+    const client = createApiClient(async () =>
+      jsonResponse({
+        evidence_span_id: EVIDENCE_SPAN_ID,
+        document_id: DOCUMENT_ID,
+        document_version_id: VERSION_ID,
+        start_character: 0,
+        end_character: 18,
+        exact_text: "Revenue increased.",
+        text_sha256: "a".repeat(64),
+        locator,
+        viewer_url: `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original`,
+      }),
+    );
+
+    const result = await client.resolveEvidenceSpan(EVIDENCE_SPAN_ID);
+
+    assert.deepEqual(result.locator, locator);
+  }
+});
+
+test("evidence spans reject unknown source locator kinds", async () => {
+  const client = createApiClient(async () =>
+    jsonResponse({
+      evidence_span_id: EVIDENCE_SPAN_ID,
+      document_id: DOCUMENT_ID,
+      document_version_id: VERSION_ID,
+      start_character: 0,
+      end_character: 18,
+      exact_text: "Revenue increased.",
+      text_sha256: "a".repeat(64),
+      locator: { kind: "WEB_URL", url: "https://example.com" },
+      viewer_url: `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original`,
+    }),
+  );
+
+  await assert.rejects(
+    client.resolveEvidenceSpan(EVIDENCE_SPAN_ID),
     ApiProtocolError,
   );
 });
