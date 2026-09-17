@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import (
@@ -194,6 +195,7 @@ def build_lexical_output(
             workspace_id=run.workspace_id,
             processing_run_id=run.id,
             document_version_id=run.document_version_id,
+            source_locator_kind=SourceLocatorKind.PDF_PAGE,
             page_number=page.page_number,
             block_type=StructureBlockType.PARAGRAPH,
             ordinal=ordinal,

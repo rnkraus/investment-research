@@ -15,6 +15,8 @@ from pydantic import (
     model_validator,
 )
 
+from investment_research.modules.documents.domain import SourceLocatorKind
+
 ConfigurationVersion = Annotated[
     str,
     StringConstraints(
@@ -290,13 +292,14 @@ class ProcessingRun(ImmutableProcessingModel):
 
 
 class StructureBlock(ImmutableProcessingModel):
-    """Canonical page-aware parsed text anchored to source offsets."""
+    """Canonical parsed text anchored to one media-appropriate source range."""
 
     id: UUID
     workspace_id: UUID
     processing_run_id: UUID
     document_version_id: UUID
-    page_number: int = Field(ge=1)
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(ge=1)
     block_type: StructureBlockType
     ordinal: int = Field(ge=0)
     text: ProcessingText
@@ -321,11 +324,18 @@ class StructureBlock(ImmutableProcessingModel):
         return value.astimezone(UTC)
 
     @model_validator(mode="after")
-    def require_ordered_source_offsets(self) -> Self:
-        """Require a non-empty source range for the block text."""
+    def require_valid_source_locator(self) -> Self:
+        """Require ordered offsets and the exact fields for the locator kind."""
 
         if self.end_character <= self.start_character:
             raise ValueError("end_character must be greater than start_character")
+        if self.end_character - self.start_character != len(self.text):
+            raise ValueError("source offsets must match text length")
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE block requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE block must not define page_number")
         return self
 
 

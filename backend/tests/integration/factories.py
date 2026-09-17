@@ -16,6 +16,7 @@ from investment_research.modules.documents.domain import (
     DocumentVersion,
     OriginalArtifact,
     OriginalMediaType,
+    SourceLocatorKind,
 )
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.identity.domain import (
@@ -166,6 +167,7 @@ def make_research_source(*, label: str = "Research Source") -> ResearchSource:
             workspace_id=workspace_id,
             processing_run_id=processing_run_id,
             document_version_id=version_id,
+            source_locator_kind=SourceLocatorKind.PDF_PAGE,
             page_number=ordinal + 1,
             block_type=StructureBlockType.PARAGRAPH,
             ordinal=ordinal,

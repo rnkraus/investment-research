@@ -17,6 +17,7 @@ from investment_research.modules.documents.domain import (
     DocumentVersion,
     OriginalArtifact,
     OriginalMediaType,
+    SourceLocatorKind,
 )
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.identity.domain import (
@@ -151,6 +152,7 @@ def make_lexical_output(
         workspace_id=context.workspace_id,
         processing_run_id=run.id,
         document_version_id=run.document_version_id,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=1,
         block_type=StructureBlockType.PARAGRAPH,
         ordinal=0,
@@ -306,3 +308,52 @@ def test_database_allows_only_one_active_chunk_profile(
         transactional_session(session_factory) as session,
     ):
         session.add(ChunkSetRow.from_domain(duplicate_active_profile))
+
+
+def test_database_enforces_media_appropriate_structure_block_locator(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    context, workspace = make_workspace()
+    document, version, original = make_capture(context)
+    text_original = OriginalArtifact.model_validate(
+        {
+            **original.model_dump(),
+            "storage_key": original.storage_key.removesuffix(".pdf") + ".txt",
+            "media_type": OriginalMediaType.PLAIN_TEXT,
+        }
+    )
+    capture = (document, version, text_original)
+    persist_workspace_and_capture(integration_database_engine, context, workspace, capture)
+    run = make_run(context, capture[1].id, state=ProcessingState.LEXICAL_READY)
+
+    with transactional_session(session_factory) as session:
+        SqlAlchemyProcessingRepository(session).add_run(context, run)
+
+    text = "Exact pasted-text passage."
+    text_block = StructureBlock(
+        id=uuid4(),
+        workspace_id=context.workspace_id,
+        processing_run_id=run.id,
+        document_version_id=run.document_version_id,
+        source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+        page_number=None,
+        block_type=StructureBlockType.PARAGRAPH,
+        ordinal=0,
+        text=text,
+        start_character=7,
+        end_character=7 + len(text),
+        created_at=FIXTURE_TIME,
+    )
+    with transactional_session(session_factory) as session:
+        session.add(StructureBlockRow.from_domain(text_block))
+
+    invalid_row = StructureBlockRow.from_domain(text_block)
+    invalid_row.id = uuid4()
+    invalid_row.ordinal = 1
+    invalid_row.page_number = 1
+    with (
+        pytest.raises(IntegrityError),
+        transactional_session(session_factory) as session,
+    ):
+        session.add(invalid_row)

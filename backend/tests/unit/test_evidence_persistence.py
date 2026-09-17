@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import ForeignKeyConstraint, Table
 from sqlalchemy.orm import Session
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceRelationship,
@@ -62,7 +63,10 @@ def make_span(*, workspace_id: UUID = WORKSPACE_ID) -> EvidenceSpan:
         workspace_id=workspace_id,
         document_version_id=DOCUMENT_VERSION_ID,
         structure_block_id=STRUCTURE_BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=2,
+        source_start_character=None,
+        source_end_character=None,
         start_character=START_CHARACTER,
         end_character=START_CHARACTER + len(EXACT_TEXT),
         exact_text=EXACT_TEXT,
@@ -128,6 +132,26 @@ def test_evidence_span_round_trips_exact_text_and_hash() -> None:
     assert span.text_sha256 == sha256(span.exact_text.encode("utf-8")).hexdigest()
 
 
+def test_evidence_span_round_trips_text_passage_locator() -> None:
+    span = make_span()
+    source_start = 41
+    text_span = EvidenceSpan.model_validate(
+        {
+            **span.model_dump(),
+            "source_locator_kind": SourceLocatorKind.TEXT_PASSAGE,
+            "page_number": None,
+            "source_start_character": source_start,
+            "source_end_character": source_start + len(EXACT_TEXT),
+        }
+    )
+
+    row = EvidenceSpanRow.from_domain(text_span)
+
+    assert row.to_domain() == text_span
+    assert text_span.page_number is None
+    assert text_span.source_end_character == source_start + len(EXACT_TEXT)
+
+
 @pytest.mark.parametrize(
     ("changes", "expected_error"),
     [
@@ -165,6 +189,47 @@ def test_evidence_span_rejects_inexact_source_identity(
 
     with pytest.raises(ValidationError, match=expected_error):
         EvidenceSpan.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected_error"),
+    [
+        pytest.param(
+            {"source_start_character": 10, "source_end_character": 20},
+            "PDF_PAGE evidence must not define text-passage offsets",
+            id="pdf-with-text-offsets",
+        ),
+        pytest.param(
+            {"source_locator_kind": SourceLocatorKind.TEXT_PASSAGE},
+            "TEXT_PASSAGE evidence must not define page_number",
+            id="text-with-page",
+        ),
+        pytest.param(
+            {
+                "source_locator_kind": SourceLocatorKind.TEXT_PASSAGE,
+                "page_number": None,
+            },
+            "TEXT_PASSAGE evidence requires source offsets",
+            id="text-without-source-offsets",
+        ),
+        pytest.param(
+            {
+                "source_locator_kind": SourceLocatorKind.TEXT_PASSAGE,
+                "page_number": None,
+                "source_start_character": 10,
+                "source_end_character": 11,
+            },
+            "text-passage offsets must match exact_text length",
+            id="text-with-wrong-source-length",
+        ),
+    ],
+)
+def test_evidence_span_rejects_invalid_source_locator(
+    changes: dict[str, object],
+    expected_error: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_error):
+        EvidenceSpan.model_validate({**make_span().model_dump(), **changes})
 
 
 def test_failed_validation_requires_safe_reason() -> None:
@@ -209,6 +274,41 @@ def test_repository_reads_span_without_cross_workspace_disclosure() -> None:
 
     session.scalar.return_value = None
     assert repository.get_span_by_id(make_context(), OTHER_SPAN_ID) is None
+
+
+def test_repository_reuses_identical_canonical_span() -> None:
+    session = create_autospec(Session, instance=True)
+    span = make_span()
+    session.scalar.side_effect = [None, EvidenceSpanRow.from_domain(span)]
+    repository = SqlAlchemyEvidenceRepository(session)
+
+    assert repository.get_or_add_span(make_context(), span) == span
+    assert session.scalar.call_count == 2
+
+
+def test_repository_rejects_conflicting_text_passage_locator() -> None:
+    session = create_autospec(Session, instance=True)
+    source_start = 20
+    span = EvidenceSpan.model_validate(
+        {
+            **make_span().model_dump(),
+            "source_locator_kind": SourceLocatorKind.TEXT_PASSAGE,
+            "page_number": None,
+            "source_start_character": source_start,
+            "source_end_character": source_start + len(EXACT_TEXT),
+        }
+    )
+    conflicting_span = span.model_copy(
+        update={
+            "source_start_character": source_start + 1,
+            "source_end_character": source_start + 1 + len(EXACT_TEXT),
+        }
+    )
+    session.scalar.side_effect = [None, EvidenceSpanRow.from_domain(conflicting_span)]
+    repository = SqlAlchemyEvidenceRepository(session)
+
+    with pytest.raises(EvidenceRelationshipError, match="conflicts with its source content"):
+        repository.get_or_add_span(make_context(), span)
 
 
 def test_repository_stages_supporting_and_conflicting_evidence_in_order() -> None:
@@ -399,6 +499,13 @@ def test_evidence_tables_enforce_scope_and_source_relationships() -> None:
             if isinstance(constraint, ForeignKeyConstraint)
         }
         assert ("workspaces.id",) in target_sets
+
+    assert span_table.c.source_locator_kind.nullable is False
+    assert span_table.c.page_number.nullable is True
+    assert span_table.c.source_start_character.nullable is True
+    assert span_table.c.source_end_character.nullable is True
+    span_constraint_names = {constraint.name for constraint in span_table.constraints}
+    assert "ck_evidence_spans_valid_source_locator" in span_constraint_names
 
     span_targets = {
         tuple(element.target_fullname for element in constraint.elements)

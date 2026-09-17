@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.application import ValidateGeneratedAnswerService
 from investment_research.modules.evidence.contracts import (
     EvidenceValidationDecision,
@@ -384,7 +385,10 @@ class GenerateValidatedAnswerService:
                         workspace_id=answer.workspace_id,
                         document_version_id=reference.document_version_id,
                         structure_block_id=reference.structure_block_id,
+                        source_locator_kind=SourceLocatorKind.PDF_PAGE,
                         page_number=reference.page_number,
+                        source_start_character=None,
+                        source_end_character=None,
                         start_character=reference.start_character,
                         end_character=reference.end_character,
                         exact_text=reference.exact_text,

@@ -11,6 +11,7 @@ from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
 )
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceRelationship,
@@ -20,8 +21,11 @@ from investment_research.modules.evidence.domain import (
 )
 from investment_research.modules.evidence.persistence import (
     AnswerValidationRow,
+    EvidenceSpanRow,
     SqlAlchemyEvidenceRepository,
 )
+from investment_research.modules.processing.domain import StructureBlock, StructureBlockType
+from investment_research.modules.processing.persistence import StructureBlockRow
 from tests.integration.factories import (
     FIXTURE_TIME,
     AnswerResultFixture,
@@ -52,7 +56,18 @@ def make_span(
         workspace_id=workspace_id or source.context.workspace_id,
         document_version_id=document_version_id or source.version.id,
         structure_block_id=structure_block_id or block.id,
+        source_locator_kind=block.source_locator_kind,
         page_number=block.page_number,
+        source_start_character=(
+            block.start_character
+            if block.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+            else None
+        ),
+        source_end_character=(
+            block.end_character
+            if block.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+            else None
+        ),
         start_character=0,
         end_character=len(block.text),
         exact_text=block.text,
@@ -303,3 +318,69 @@ def test_database_rejects_foreign_statement_validation_and_duplicate_rules(
             transactional_session(session_factory) as session,
         ):
             session.add(AnswerValidationRow.from_domain(duplicate))
+
+
+def test_database_enforces_media_appropriate_evidence_locator(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    source = make_research_source(label="Text evidence locator")
+    persist_research_source(integration_database_engine, source)
+    text = "Exact text evidence passage."
+    source_start = 13
+    text_block = StructureBlock(
+        id=uuid4(),
+        workspace_id=source.context.workspace_id,
+        processing_run_id=source.processing_run.id,
+        document_version_id=source.version.id,
+        source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+        page_number=None,
+        block_type=StructureBlockType.PARAGRAPH,
+        ordinal=len(source.blocks),
+        text=text,
+        start_character=source_start,
+        end_character=source_start + len(text),
+        created_at=FIXTURE_TIME,
+    )
+    with transactional_session(session_factory) as session:
+        session.add(StructureBlockRow.from_domain(text_block))
+
+    span = EvidenceSpan(
+        id=uuid4(),
+        workspace_id=source.context.workspace_id,
+        document_version_id=source.version.id,
+        structure_block_id=text_block.id,
+        source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+        page_number=None,
+        source_start_character=text_block.start_character,
+        source_end_character=text_block.end_character,
+        start_character=0,
+        end_character=len(text),
+        exact_text=text,
+        text_sha256=sha256(text.encode("utf-8")).hexdigest(),
+        created_at=FIXTURE_TIME,
+    )
+    with transactional_session(session_factory) as session:
+        SqlAlchemyEvidenceRepository(session).add_span(source.context, span)
+    with transactional_session(session_factory) as session:
+        assert (
+            SqlAlchemyEvidenceRepository(session).get_span_by_id(
+                source.context,
+                span.id,
+            )
+            == span
+        )
+
+    invalid_text = text[1:]
+    invalid_row = EvidenceSpanRow.from_domain(span)
+    invalid_row.id = uuid4()
+    invalid_row.page_number = 1
+    invalid_row.source_start_character = text_block.start_character + 1
+    invalid_row.start_character = 1
+    invalid_row.exact_text = invalid_text
+    invalid_row.text_sha256 = sha256(invalid_text.encode("utf-8")).hexdigest()
+    with (
+        pytest.raises(IntegrityError),
+        transactional_session(session_factory) as session,
+    ):
+        session.add(invalid_row)

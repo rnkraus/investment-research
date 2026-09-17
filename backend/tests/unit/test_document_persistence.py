@@ -95,6 +95,19 @@ def test_original_artifact_rejects_unsafe_storage_key() -> None:
         )
 
 
+def test_original_artifact_round_trips_plain_text_media_type() -> None:
+    _, _, original = make_capture()
+    text_original = OriginalArtifact.model_validate(
+        {
+            **original.model_dump(),
+            "storage_key": original.storage_key.removesuffix(".pdf") + ".txt",
+            "media_type": OriginalMediaType.PLAIN_TEXT,
+        }
+    )
+
+    assert OriginalArtifactRow.from_domain(text_original).to_domain() == text_original
+
+
 def test_repository_matches_application_owned_protocol() -> None:
     session = create_autospec(Session, instance=True)
 
@@ -182,10 +195,11 @@ def test_repository_hides_unknown_or_ineligible_records() -> None:
 
 def test_document_tables_enforce_workspace_scoped_foreign_keys() -> None:
     document_table = cast(Table, DocumentRow.__table__)
+    original_table = cast(Table, OriginalArtifactRow.__table__)
     tables = (
         document_table,
         cast(Table, DocumentVersionRow.__table__),
-        cast(Table, OriginalArtifactRow.__table__),
+        original_table,
     )
 
     for table in tables:
@@ -205,3 +219,6 @@ def test_document_tables_enforce_workspace_scoped_foreign_keys() -> None:
     assert isinstance(current_version_constraint, ForeignKeyConstraint)
     assert current_version_constraint.deferrable is True
     assert current_version_constraint.initially == "DEFERRED"
+    assert "ck_original_artifacts_original_media_type" in {
+        constraint.name for constraint in original_table.constraints
+    }

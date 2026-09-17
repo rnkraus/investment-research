@@ -124,6 +124,30 @@ def verify_postgres() -> int:
                 environment=verification_environment,
             )
             run_command(
+                "Check SQLAlchemy metadata against the migrated schema",
+                [*python_command, "alembic", "-c", "alembic.ini", "check"],
+                working_directory=BACKEND_ROOT,
+                environment=verification_environment,
+            )
+            run_command(
+                "Downgrade the empty disposable database to base",
+                [*python_command, "alembic", "-c", "alembic.ini", "downgrade", "base"],
+                working_directory=BACKEND_ROOT,
+                environment=verification_environment,
+            )
+            run_command(
+                "Upgrade the empty disposable database back to head",
+                [*python_command, "alembic", "-c", "alembic.ini", "upgrade", "head"],
+                working_directory=BACKEND_ROOT,
+                environment=verification_environment,
+            )
+            run_command(
+                "Recheck schema after the empty migration cycle",
+                [*python_command, "alembic", "-c", "alembic.ini", "check"],
+                working_directory=BACKEND_ROOT,
+                environment=verification_environment,
+            )
+            run_command(
                 "Seed deterministic M0.0 workspaces",
                 [*python_command, "scripts.seed_m0_0"],
                 working_directory=BACKEND_ROOT,
@@ -136,25 +160,7 @@ def verify_postgres() -> int:
                 environment=verification_environment,
             )
             run_command(
-                "Check SQLAlchemy metadata against the migrated schema",
-                [*python_command, "alembic", "-c", "alembic.ini", "check"],
-                working_directory=BACKEND_ROOT,
-                environment=verification_environment,
-            )
-            run_command(
-                "Downgrade the disposable database to base",
-                [*python_command, "alembic", "-c", "alembic.ini", "downgrade", "base"],
-                working_directory=BACKEND_ROOT,
-                environment=verification_environment,
-            )
-            run_command(
-                "Upgrade the disposable database back to head",
-                [*python_command, "alembic", "-c", "alembic.ini", "upgrade", "head"],
-                working_directory=BACKEND_ROOT,
-                environment=verification_environment,
-            )
-            run_command(
-                "Recheck schema after the migration cycle",
+                "Recheck schema after integration tests",
                 [*python_command, "alembic", "-c", "alembic.ini", "check"],
                 working_directory=BACKEND_ROOT,
                 environment=verification_environment,

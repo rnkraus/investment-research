@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from investment_research.infrastructure.database.base import Base
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import (
     Chunk,
@@ -212,12 +213,20 @@ class StructureBlockRow(Base):
             ],
             ondelete="RESTRICT",
         ),
-        CheckConstraint("page_number > 0", name="positive_page_number"),
+        CheckConstraint(
+            "(source_locator_kind = 'PDF_PAGE' AND page_number > 0) OR "
+            "(source_locator_kind = 'TEXT_PASSAGE' AND page_number IS NULL)",
+            name="valid_source_locator",
+        ),
         CheckConstraint("ordinal >= 0", name="non_negative_ordinal"),
         CheckConstraint("text ~ '[^[:space:]]'", name="non_empty_text"),
         CheckConstraint(
             "start_character >= 0 AND end_character > start_character",
             name="ordered_source_offsets",
+        ),
+        CheckConstraint(
+            "char_length(text) = end_character - start_character",
+            name="matching_text_length",
         ),
         CheckConstraint(
             "block_type IN ('HEADING', 'PARAGRAPH', 'LIST_ITEM', 'TABLE')",
@@ -229,7 +238,19 @@ class StructureBlockRow(Base):
     workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     processing_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_version_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_locator_kind: Mapped[SourceLocatorKind] = mapped_column(
+        SqlEnum(
+            SourceLocatorKind,
+            name="source_locator_kind",
+            native_enum=False,
+            create_constraint=False,
+            validate_strings=True,
+            values_callable=lambda enum_type: [member.value for member in enum_type],
+            length=32,
+        ),
+        nullable=False,
+    )
+    page_number: Mapped[int | None] = mapped_column(Integer)
     block_type: Mapped[StructureBlockType] = mapped_column(
         SqlEnum(
             StructureBlockType,

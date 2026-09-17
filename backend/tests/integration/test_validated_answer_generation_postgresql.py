@@ -105,25 +105,29 @@ def make_application_result(
 ) -> ResearchRetrievalResult:
     """Restore the application result shape from the persisted integration graph."""
 
-    hits = tuple(
-        LexicalSearchHit(
-            chunk_id=chunk.id,
-            document_id=source.document.id,
-            document_version_id=source.version.id,
-            structure_block_id=chunk.structure_block_id,
-            page_number=source.blocks[index].page_number,
-            text=chunk.text,
-            raw_score=candidate.raw_score,
+    hits: list[LexicalSearchHit] = []
+    for index, (chunk, candidate) in enumerate(
+        zip(source.chunks, retrieval.candidates, strict=True)
+    ):
+        page_number = source.blocks[index].page_number
+        if page_number is None:
+            raise AssertionError("M0 regression source must use PDF page locators")
+        hits.append(
+            LexicalSearchHit(
+                chunk_id=chunk.id,
+                document_id=source.document.id,
+                document_version_id=source.version.id,
+                structure_block_id=chunk.structure_block_id,
+                page_number=page_number,
+                text=chunk.text,
+                raw_score=candidate.raw_score,
+            )
         )
-        for index, (chunk, candidate) in enumerate(
-            zip(source.chunks, retrieval.candidates, strict=True)
-        )
-    )
     return ResearchRetrievalResult(
         request=source.request,
         retrieval_run=retrieval.run,
         candidates=retrieval.candidates,
-        hits=hits,
+        hits=tuple(hits),
     )
 
 
