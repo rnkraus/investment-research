@@ -1,27 +1,28 @@
 # Archive Feature
 
-This directory owns the English M0.0 archive workflow presented by the home page. It coordinates
+This directory owns the English M1 archive workflow presented by the home page. It coordinates
 browser state and calls the shared API client; it does not define transport payloads, access
-PostgreSQL, or process PDF content.
+PostgreSQL, or parse document content.
 
 ## Current files
 
-| File                    | Responsibility                                                                  |
-| ----------------------- | ------------------------------------------------------------------------------- |
-| `copy.ts`               | Centralizes feature text and synthetic fixture defaults for later localization. |
-| `document-workflow.tsx` | Captures one PDF and polls its canonical background-processing status.          |
-| `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.           |
-| `research-workflow.tsx` | Asks a bounded question and opens resolved evidence in the original PDF.        |
+| File                    | Responsibility                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `copy.ts`               | Centralizes English feature text and defaults for later localization.                |
+| `document-workflow.tsx` | Captures one PDF or pasted-text original and polls its background-processing status. |
+| `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.                |
+| `research-workflow.tsx` | Asks a bounded question and opens resolved PDF-page or text-passage evidence.        |
 
 ## Capture and processing flow
 
 ```mermaid
 flowchart LR
-    USER[User selects PDF] --> FORM[DocumentWorkflow]
-    FORM --> CLIENT[Typed API client]
-    CLIENT --> CAPTURE[FastAPI capture endpoint]
-    CAPTURE --> ACCEPTED[DocumentAccepted]
-    CAPTURE --> QUEUE[Processing task dispatch]
+    USER[User chooses source type] --> FORM[DocumentWorkflow]
+    FORM -->|PDF multipart| PDF[PDF capture endpoint]
+    FORM -->|Text JSON| TEXT[Pasted-text capture endpoint]
+    PDF --> ACCEPTED[DocumentAccepted]
+    TEXT --> ACCEPTED
+    ACCEPTED --> QUEUE[Processing task dispatch]
     QUEUE --> WORKER[Celery worker]
     WORKER --> RUNNER[Isolated parser runner]
     FORM --> POLL[Poll processing status]
@@ -30,11 +31,11 @@ flowchart LR
     POLL --> READY[LEXICAL_READY]
 ```
 
-The upload response supplies the processing status URL and canonical identifiers. The browser never
-starts PDF parsing inside the API process. The capture endpoint commits the canonical `CAPTURED`
+Both capture responses supply the same processing status URL and canonical identifiers. The browser
+never starts parsing inside the API process. Each capture endpoint commits the canonical `CAPTURED`
 run and publishes its task to Celery, and the component polls the workspace-scoped status endpoint
 until the run reaches `LEXICAL_READY` or `FAILED`. The worker invokes the isolated parser runner
-while preserving the processing service and status contract established in M0.0.
+through protocol v2 while the historical protocol-v1 PDF path remains a backend regression contract.
 
 All network access goes through `src/lib/api/client.ts`. Raw exceptions are not rendered. The
 component displays only safe API messages or a generic local failure message, and active requests
@@ -69,7 +70,9 @@ flowchart LR
     SESSION -->|validated completion| IDS[Evidence span IDs]
     IDS --> RESOLVE[Authorized evidence endpoint]
     RESOLVE --> SAFE[Verified local viewer path]
-    SAFE --> RESULT[Exact quote and original-page link]
+    SAFE --> LOCATOR{Locator kind}
+    LOCATOR -->|PDF_PAGE| PAGE[Exact quote and original-page link]
+    LOCATOR -->|TEXT_PASSAGE| TEXT[Exact quote and original-text link]
     SESSION -->|insufficient evidence| EMPTY[Explicit empty result]
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
@@ -78,5 +81,7 @@ flowchart LR
 submits the current document ID as an explicit research filter and never treats streamed partial text
 as a usable answer. After a validated terminal event, each unique evidence span is resolved through
 the workspace-scoped API. The resulting viewer URL must still pass the frontend's local API-path
-check before it becomes an external-page link. This avoids trusting an arbitrary URL returned over
-the network and keeps exact source text separate from the streamed answer contract.
+check before it becomes an original-source link. The discriminated locator renders either the PDF
+page or the one-based visible text range without inventing pages for text. This avoids trusting an
+arbitrary URL returned over the network and keeps exact source text separate from the streamed
+answer contract.
