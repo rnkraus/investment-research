@@ -19,6 +19,7 @@ from investment_research.api.middleware import MULTIPART_OVERHEAD_ALLOWANCE_BYTE
 from investment_research.main import create_app
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
+    InvalidPastedTextError,
     InvalidPdfSignatureError,
     OpenOriginalService,
     OriginalDownload,
@@ -28,8 +29,9 @@ from investment_research.modules.documents.application import (
     UploadTooLargeError,
 )
 from investment_research.modules.documents.contracts import (
-    CaptureDocumentInput,
     CaptureDocumentResult,
+    PastedTextCaptureInput,
+    PdfCaptureInput,
 )
 from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.ports import (
@@ -51,6 +53,7 @@ PROCESSING_RUN_ID = UUID("10000000-0000-4000-8000-000000000004")
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 PDF_CONTENT = b"%PDF-1.7\nsynthetic route test\n%%EOF\n"
+TEXT_CONTENT = b"Capacity rose by 12%.\n"
 
 
 class FakeCaptureDocumentService:
@@ -58,12 +61,18 @@ class FakeCaptureDocumentService:
 
     def __init__(self) -> None:
         self.error: Exception | None = None
-        self.calls: list[tuple[WorkspaceContext, CaptureDocumentInput, bytes]] = []
+        self.calls: list[
+            tuple[
+                WorkspaceContext,
+                PdfCaptureInput | PastedTextCaptureInput,
+                bytes | None,
+            ]
+        ] = []
 
-    def capture(
+    def capture_pdf(
         self,
         context: WorkspaceContext,
-        capture_input: CaptureDocumentInput,
+        capture_input: PdfCaptureInput,
         content: BinaryReadable,
     ) -> CaptureDocumentResult:
         """Record a complete stream read and return deterministic identifiers."""
@@ -71,6 +80,24 @@ class FakeCaptureDocumentService:
         if self.error is not None:
             raise self.error
         self.calls.append((context, capture_input, content.read()))
+        return self._result()
+
+    def capture_text(
+        self,
+        context: WorkspaceContext,
+        capture_input: PastedTextCaptureInput,
+    ) -> CaptureDocumentResult:
+        """Record one typed JSON input and return deterministic identifiers."""
+
+        if self.error is not None:
+            raise self.error
+        self.calls.append((context, capture_input, None))
+        return self._result()
+
+    @staticmethod
+    def _result() -> CaptureDocumentResult:
+        """Return the common accepted result used by both media paths."""
+
         return CaptureDocumentResult(
             document_id=DOCUMENT_ID,
             document_version_id=VERSION_ID,
@@ -87,6 +114,8 @@ class FakeOpenOriginalService:
         self.error: Exception | None = None
         self.calls: list[tuple[WorkspaceContext, UUID, UUID]] = []
         self.download: OriginalDownload | None = None
+        self.media_type = OriginalMediaType.PDF
+        self.content = PDF_CONTENT
 
     def open_original(
         self,
@@ -99,13 +128,14 @@ class FakeOpenOriginalService:
         if self.error is not None:
             raise self.error
         content = SpooledTemporaryFile[bytes](mode="w+b")
-        content.write(PDF_CONTENT)
+        content.write(self.content)
         content.seek(0)
         self.calls.append((context, document_id, version_id))
+        extension = "pdf" if self.media_type is OriginalMediaType.PDF else "txt"
         self.download = OriginalDownload(
-            media_type=OriginalMediaType.PDF,
-            byte_size=len(PDF_CONTENT),
-            filename=f"document-{document_id}-version-{version_id}.pdf",
+            media_type=self.media_type,
+            byte_size=len(self.content),
+            filename=f"document-{document_id}-version-{version_id}.{extension}",
             _content=content,
         )
         return self.download
@@ -208,6 +238,7 @@ def test_capture_route_maps_multipart_input_and_returns_accepted(
     assert len(service.calls) == 1
     context, capture_input, content = service.calls[0]
     assert context.workspace_id == WORKSPACE_ID
+    assert isinstance(capture_input, PdfCaptureInput)
     assert capture_input.filename == "earnings-brief.pdf"
     assert capture_input.media_type == "application/pdf"
     assert capture_input.title == "Northstar Grid Analytics FY2025 Earnings Brief"
@@ -228,6 +259,69 @@ def test_client_workspace_field_cannot_change_effective_workspace(
 
     assert response.status_code == 202
     assert service.calls[0][0].workspace_id == WORKSPACE_ID
+
+
+def test_text_capture_route_maps_strict_json_and_returns_accepted(
+    capture_client: tuple[TestClient, FakeCaptureDocumentService],
+) -> None:
+    client, service = capture_client
+
+    response = client.post(
+        "/api/v1/documents/text",
+        json={
+            "title": "Northstar Grid Analytics FY2026 Capacity Update",
+            "language": "en",
+            "published_at": "2026-07-22T00:00:00Z",
+            "available_at": "2026-07-22T00:00:00Z",
+            "text": "Capacity rose by 12%.\r\n",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["state"] == "CAPTURED"
+    assert response.json()["processing_run_id"] == str(PROCESSING_RUN_ID)
+    assert len(service.calls) == 1
+    context, capture_input, content = service.calls[0]
+    assert context == make_context()
+    assert isinstance(capture_input, PastedTextCaptureInput)
+    assert capture_input.text == "Capacity rose by 12%.\r\n"
+    assert content is None
+
+
+def test_text_capture_rejects_unknown_fields_before_application_service(
+    capture_client: tuple[TestClient, FakeCaptureDocumentService],
+) -> None:
+    client, service = capture_client
+
+    response = client.post(
+        "/api/v1/documents/text",
+        json={
+            "title": "Capacity Update",
+            "text": "Capacity rose by 12%.",
+            "workspace_id": str(OTHER_WORKSPACE_ID),
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert str(OTHER_WORKSPACE_ID) not in response.text
+    assert service.calls == []
+
+
+def test_text_capture_rejects_non_json_content_type(
+    capture_client: tuple[TestClient, FakeCaptureDocumentService],
+) -> None:
+    client, service = capture_client
+
+    response = client.post(
+        "/api/v1/documents/text",
+        content='{"title":"Capacity Update","text":"Visible text"}',
+        headers={"content-type": "text/plain"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert service.calls == []
 
 
 def test_invalid_form_returns_stable_error_without_echoing_input(
@@ -292,6 +386,35 @@ def test_capture_route_translates_known_failures(
     assert "private database detail" not in response.text
 
 
+@pytest.mark.parametrize(
+    ("error", "expected_status", "expected_code"),
+    [
+        pytest.param(InvalidPastedTextError(), 422, "INVALID_REQUEST", id="invalid-text"),
+        pytest.param(UploadTooLargeError(), 413, "PAYLOAD_TOO_LARGE", id="byte-limit"),
+        pytest.param(ObjectAlreadyExistsError(), 409, "CONFLICT", id="immutable-conflict"),
+        pytest.param(ObjectStorageError(), 500, "INTERNAL_ERROR", id="storage"),
+        pytest.param(SQLAlchemyError("private database detail"), 500, "INTERNAL_ERROR", id="db"),
+    ],
+)
+def test_text_capture_route_translates_known_failures(
+    capture_client: tuple[TestClient, FakeCaptureDocumentService],
+    error: Exception,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    client, service = capture_client
+    service.error = error
+
+    response = client.post(
+        "/api/v1/documents/text",
+        json={"title": "Capacity Update", "text": "Visible text"},
+    )
+
+    assert response.status_code == expected_status
+    assert response.json()["error"]["code"] == expected_code
+    assert "private database detail" not in response.text
+
+
 def test_request_limit_rejects_body_before_capture_service(
     capture_client: tuple[TestClient, FakeCaptureDocumentService],
 ) -> None:
@@ -328,6 +451,25 @@ def test_open_original_route_streams_verified_pdf_with_safe_headers(
     assert service.calls == [(make_context(), DOCUMENT_ID, VERSION_ID)]
     assert service.download is not None
     assert service.download._content.closed
+
+
+def test_open_original_route_streams_utf8_text_with_safe_headers(
+    original_client: tuple[TestClient, FakeOpenOriginalService],
+) -> None:
+    client, service = original_client
+    service.media_type = OriginalMediaType.PLAIN_TEXT
+    service.content = TEXT_CONTENT
+
+    response = client.get(f"/api/v1/documents/{DOCUMENT_ID}/versions/{VERSION_ID}/original")
+
+    assert response.status_code == 200
+    assert response.content == TEXT_CONTENT
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert response.headers["content-disposition"] == (
+        f'inline; filename="document-{DOCUMENT_ID}-version-{VERSION_ID}.txt"'
+    )
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 @pytest.mark.parametrize(

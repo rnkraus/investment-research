@@ -17,11 +17,17 @@ from pydantic import ValidationError
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
+    InvalidPastedTextError,
     InvalidPdfSignatureError,
     UnsupportedDocumentTypeError,
     UploadTooLargeError,
 )
-from investment_research.modules.documents.contracts import CaptureDocumentInput
+from investment_research.modules.documents.contracts import (
+    MAX_PASTED_TEXT_CHARACTERS,
+    PastedTextCaptureInput,
+    PdfCaptureInput,
+)
+from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.ports import (
     CaptureUnitOfWork,
     CaptureUnitOfWorkFactory,
@@ -46,6 +52,9 @@ PROCESSING_RUN_ID = UUID("10000000-0000-4000-8000-000000000004")
 CAPTURED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 PDF_CONTENT = b"%PDF-1.7\nsynthetic capture test\n%%EOF\n"
 PDF_SHA256 = sha256(PDF_CONTENT).hexdigest()
+SUBMITTED_TEXT = "First line\r\nCafé 😀\rFinal line\n"
+NORMALIZED_TEXT = "First line\nCafé 😀\nFinal line\n"
+NORMALIZED_TEXT_BYTES = NORMALIZED_TEXT.encode("utf-8")
 
 
 class RecordingUnitOfWork:
@@ -104,16 +113,28 @@ def make_input(
     *,
     filename: str = "earnings-brief.pdf",
     media_type: str = "application/pdf",
-) -> CaptureDocumentInput:
+) -> PdfCaptureInput:
     """Build valid synthetic capture metadata with optional type overrides."""
 
-    return CaptureDocumentInput(
+    return PdfCaptureInput(
         filename=filename,
         media_type=media_type,
         title="Northstar Grid Analytics FY2025 Earnings Brief",
         language="en",
         published_at=datetime(2026, 2, 19, tzinfo=UTC),
         available_at=datetime(2026, 2, 19, tzinfo=UTC),
+    )
+
+
+def make_text_input(*, text: str = SUBMITTED_TEXT) -> PastedTextCaptureInput:
+    """Build valid synthetic pasted-text metadata."""
+
+    return PastedTextCaptureInput(
+        title="Northstar Grid Analytics FY2026 Capacity Update",
+        language="en",
+        published_at=datetime(2026, 7, 22, tzinfo=UTC),
+        available_at=datetime(2026, 7, 22, tzinfo=UTC),
+        text=text,
     )
 
 
@@ -148,7 +169,7 @@ def test_capture_preserves_pdf_and_stages_consistent_canonical_records(tmp_path:
         processing_dispatcher=dispatcher,
     )
 
-    result = service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+    result = service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
     assert result.document_id == DOCUMENT_ID
     assert result.document_version_id == VERSION_ID
@@ -202,7 +223,7 @@ def test_capture_discards_stored_object_when_canonical_transaction_fails(
     )
 
     with pytest.raises(RuntimeError, match="canonical transaction failure"):
-        service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+        service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
     unit_of_work.document_mock.add_capture.assert_called_once()
     unit_of_work.processing_mock.add_run.assert_called_once()
@@ -236,7 +257,7 @@ def test_capture_preserves_committed_state_when_dispatch_fails(
         processing_dispatcher=dispatcher,
     )
 
-    result = service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+    result = service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
     assert result.state is ProcessingState.CAPTURED
     assert dispatcher.transaction_states == [False]
@@ -265,7 +286,7 @@ def test_capture_does_not_delete_committed_original_after_programming_error(
     )
 
     with pytest.raises(TypeError, match="synthetic programming error"):
-        service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+        service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
     assert dispatcher.transaction_states == [False]
     storage_key = f"workspaces/{WORKSPACE_ID}/originals/{ORIGINAL_ID}.pdf"
@@ -289,7 +310,7 @@ def test_capture_rejects_unsupported_declared_type_before_storage(
     service = make_service(tmp_path, unit_of_work)
 
     with pytest.raises(UnsupportedDocumentTypeError):
-        service.capture(
+        service.capture_pdf(
             make_context(),
             make_input(filename=filename, media_type=media_type),
             BytesIO(PDF_CONTENT),
@@ -304,7 +325,7 @@ def test_capture_rejects_invalid_signature_without_publishing_object(tmp_path: P
     service = make_service(tmp_path, unit_of_work)
 
     with pytest.raises(InvalidPdfSignatureError):
-        service.capture(make_context(), make_input(), BytesIO(b"not a PDF"))
+        service.capture_pdf(make_context(), make_input(), BytesIO(b"not a PDF"))
 
     assert unit_of_work.enter_count == 0
     assert not (tmp_path / "objects").exists()
@@ -319,7 +340,7 @@ def test_capture_rejects_oversized_pdf_without_publishing_object(tmp_path: Path)
     )
 
     with pytest.raises(UploadTooLargeError, match="upload limit"):
-        service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+        service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
     assert unit_of_work.enter_count == 0
     assert not (tmp_path / "objects").exists()
@@ -333,7 +354,7 @@ def test_capture_accepts_pdf_at_exact_byte_limit(tmp_path: Path) -> None:
         max_upload_bytes=len(PDF_CONTENT),
     )
 
-    result = service.capture(make_context(), make_input(), BytesIO(PDF_CONTENT))
+    result = service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
 
     assert result.state is ProcessingState.CAPTURED
     assert unit_of_work.enter_count == 1
@@ -342,6 +363,97 @@ def test_capture_accepts_pdf_at_exact_byte_limit(tmp_path: Path) -> None:
 def test_capture_input_rejects_client_path_as_filename() -> None:
     with pytest.raises(ValidationError, match="filename"):
         make_input(filename="../earnings-brief.pdf")
+
+
+def test_capture_text_normalizes_and_preserves_canonical_utf8_original(tmp_path: Path) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    dispatcher = RecordingProcessingDispatcher(unit_of_work)
+    service = make_service(tmp_path, unit_of_work, processing_dispatcher=dispatcher)
+
+    result = service.capture_text(make_context(), make_text_input())
+
+    assert result.state is ProcessingState.CAPTURED
+    context, _, version, original = unit_of_work.document_mock.add_capture.call_args.args
+    assert context == make_context()
+    assert original.media_type is OriginalMediaType.PLAIN_TEXT
+    assert original.storage_key == f"workspaces/{WORKSPACE_ID}/originals/{ORIGINAL_ID}.txt"
+    assert original.byte_size == len(NORMALIZED_TEXT_BYTES)
+    expected_checksum = sha256(NORMALIZED_TEXT_BYTES).hexdigest()
+    assert original.checksum_sha256 == version.content_sha256 == expected_checksum
+    with LocalObjectStorage(tmp_path / "objects").open(
+        make_context(), original.storage_key
+    ) as stored_file:
+        assert stored_file.read() == NORMALIZED_TEXT_BYTES
+    assert dispatcher.jobs == [
+        ProcessingJobV1.create(
+            workspace_id=WORKSPACE_ID,
+            processing_run_id=PROCESSING_RUN_ID,
+        )
+    ]
+    assert dispatcher.transaction_states == [False]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("", id="empty"),
+        pytest.param(" \n\t", id="whitespace-only"),
+        pytest.param("visible\x00hidden", id="nul"),
+    ],
+)
+def test_capture_text_rejects_noncanonical_content_before_storage(
+    tmp_path: Path,
+    text: str,
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    service = make_service(tmp_path, unit_of_work)
+
+    with pytest.raises(InvalidPastedTextError):
+        service.capture_text(make_context(), make_text_input(text=text))
+
+    assert unit_of_work.enter_count == 0
+    assert not (tmp_path / "objects").exists()
+
+
+def test_capture_text_contract_rejects_invalid_unicode() -> None:
+    with pytest.raises(ValidationError, match="valid string"):
+        make_text_input(text="\ud800")
+
+
+def test_capture_text_rejects_encoded_bytes_over_limit(tmp_path: Path) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    service = make_service(tmp_path, unit_of_work, max_upload_bytes=8)
+
+    with pytest.raises(UploadTooLargeError, match="upload limit"):
+        service.capture_text(make_context(), make_text_input(text="€€€"))
+
+    assert unit_of_work.enter_count == 0
+    assert not (tmp_path / "objects").exists()
+
+
+def test_capture_text_contract_rejects_excessive_code_points() -> None:
+    with pytest.raises(ValidationError, match="text"):
+        make_text_input(text="x" * (MAX_PASTED_TEXT_CHARACTERS + 1))
+
+
+def test_capture_text_discards_object_when_canonical_transaction_fails(
+    tmp_path: Path,
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    unit_of_work.processing_mock.add_run.side_effect = RuntimeError(
+        "simulated canonical transaction failure"
+    )
+    service = make_service(tmp_path, unit_of_work)
+
+    with pytest.raises(RuntimeError, match="canonical transaction failure"):
+        service.capture_text(make_context(), make_text_input())
+
+    storage_key = f"workspaces/{WORKSPACE_ID}/originals/{ORIGINAL_ID}.txt"
+    with (
+        pytest.raises(ObjectNotFoundError, match="object is unavailable"),
+        LocalObjectStorage(tmp_path / "objects").open(make_context(), storage_key),
+    ):
+        pytest.fail("a failed text capture must not leave a published object")
 
 
 def test_service_rejects_impossibly_small_limit() -> None:

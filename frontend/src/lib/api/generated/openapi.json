@@ -480,6 +480,59 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "PastedTextDocumentInput": {
+        "additionalProperties": false,
+        "description": "Bounded JSON body for one immutable English pasted-text original.",
+        "properties": {
+          "available_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available At"
+          },
+          "language": {
+            "const": "en",
+            "default": "en",
+            "title": "Language",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "text": {
+            "maxLength": 100000,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ],
+        "title": "PastedTextDocumentInput",
+        "type": "object"
+      },
       "ProcessingRunResult": {
         "additionalProperties": false,
         "description": "Safe processing status visible to the owning workspace.",
@@ -811,6 +864,78 @@
         ]
       }
     },
+    "/api/v1/documents/text": {
+      "post": {
+        "description": "Accept one bounded English text original and return its capture identifiers.",
+        "operationId": "capture_pasted_text_api_v1_documents_text_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PastedTextDocumentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Capture Pasted Text",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/api/v1/documents/{document_id}/versions/{version_id}/original": {
       "get": {
         "description": "Stream one verified current original without disclosing foreign records.",
@@ -845,9 +970,14 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Verified immutable PDF original"
+            "description": "Verified immutable PDF or plain-text original"
           },
           "404": {
             "content": {

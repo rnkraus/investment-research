@@ -39,8 +39,10 @@ identifiers are intentionally indistinguishable.
 
 The transport-wide body limit includes a small allowance for multipart framing and rejects excessive
 declared or streamed bytes before endpoint execution. The document capture service independently
-enforces the configured PDF-byte limit and validates filename, media type, signature, and metadata;
-the middleware is an early resource guard, not a replacement for application validation.
+enforces the configured canonical-byte limit. The multipart route validates PDF filename, media
+type, signature, and metadata. The separate JSON route validates bounded English pasted text,
+rejects unknown fields, and delegates exact newline and UTF-8 normalization to the application
+service. The middleware is an early resource guard, not a replacement for application validation.
 
 Research requests default to the current eligible archive state. Historical `PUBLIC_KNOWLEDGE` and `PERSONAL_ARCHIVE` requests require an explicit cutoff, while `CURRENT` requests must not provide one. The API boundary rejects inconsistent combinations before invoking an application service.
 
@@ -59,5 +61,5 @@ unlinked identifiers share one `404 NOT_FOUND` response. The result contains the
 character range, exact text, and hash plus a protected original-document URL; storage keys and
 filesystem paths never cross the API boundary.
 
-The authoritative HTTP surface is defined in
-[`docs/08-m0-0-implementation-plan.md`](../../../../docs/08-m0-0-implementation-plan.md#41-http-surface).
+The current M1 HTTP contracts are defined in
+[`docs/11-m1-contracts.md`](../../../../docs/11-m1-contracts.md#3-capture-and-original-access).

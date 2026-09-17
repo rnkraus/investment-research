@@ -1,7 +1,7 @@
 """Typed application contracts for capturing archive documents."""
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -24,6 +24,7 @@ OriginalFilename = Annotated[
         pattern=r"^[^/\\\x00]+$",
     ),
 ]
+MAX_PASTED_TEXT_CHARACTERS = 100_000
 SubmittedMediaType = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=127),
@@ -36,11 +37,9 @@ class ImmutableContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class CaptureDocumentInput(ImmutableContract):
-    """Validated metadata supplied with one untrusted original stream."""
+class CaptureMetadata(ImmutableContract):
+    """Metadata shared by every supported immutable-original input."""
 
-    filename: OriginalFilename
-    media_type: SubmittedMediaType
     title: DocumentTitle
     language: LanguageCode = "en"
     published_at: AwareDatetime | None = None
@@ -52,6 +51,22 @@ class CaptureDocumentInput(ImmutableContract):
         """Normalize known source times without inventing missing metadata."""
 
         return None if value is None else value.astimezone(UTC)
+
+
+class PdfCaptureInput(CaptureMetadata):
+    """Validated PDF metadata supplied with one untrusted binary stream."""
+
+    kind: Literal["PDF"] = "PDF"
+    filename: OriginalFilename
+    media_type: SubmittedMediaType
+
+
+class PastedTextCaptureInput(CaptureMetadata):
+    """Validated English pasted text before canonical newline normalization."""
+
+    kind: Literal["PASTED_TEXT"] = "PASTED_TEXT"
+    language: Literal["en"] = "en"
+    text: Annotated[str, StringConstraints(max_length=MAX_PASTED_TEXT_CHARACTERS)]
 
 
 class CaptureDocumentResult(ImmutableContract):

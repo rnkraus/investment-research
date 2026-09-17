@@ -12,8 +12,10 @@ from typing import BinaryIO, Final, cast
 from uuid import UUID, uuid4
 
 from investment_research.modules.documents.contracts import (
-    CaptureDocumentInput,
     CaptureDocumentResult,
+    CaptureMetadata,
+    PastedTextCaptureInput,
+    PdfCaptureInput,
 )
 from investment_research.modules.documents.domain import (
     Document,
@@ -64,6 +66,10 @@ class InvalidPdfSignatureError(DocumentCaptureError):
     """Raised when content does not begin with a supported PDF signature."""
 
 
+class InvalidPastedTextError(DocumentCaptureError):
+    """Raised when pasted text cannot become one canonical plain-text original."""
+
+
 class UploadTooLargeError(DocumentCaptureError):
     """Raised as soon as an upload exceeds its configured byte limit."""
 
@@ -100,6 +106,17 @@ class OriginalDownload:
         self._content.close()
 
 
+@dataclass(slots=True)
+class PreparedOriginal:
+    """Validated immutable bytes plus the metadata required by common capture."""
+
+    media_type: OriginalMediaType
+    filename_extension: str
+    byte_size: int
+    checksum_sha256: str
+    content: SpooledTemporaryFile[bytes]
+
+
 class OpenOriginalService:
     """Resolve and verify one eligible immutable original before download."""
 
@@ -132,7 +149,7 @@ class OpenOriginalService:
         return self._prepare_download(
             context,
             original,
-            filename=f"document-{document_id}-version-{version_id}.pdf",
+            filename=self._download_filename(document_id, version_id, original.media_type),
         )
 
     @contextmanager
@@ -154,7 +171,11 @@ class OpenOriginalService:
         download = self._prepare_download(
             context,
             original,
-            filename=f"document-version-{document_version_id}.pdf",
+            filename=self._download_filename(
+                None,
+                document_version_id,
+                original.media_type,
+            ),
         )
         try:
             yield cast(BinaryIO, download._content)
@@ -205,6 +226,18 @@ class OpenOriginalService:
             _content=prepared,
         )
 
+    @staticmethod
+    def _download_filename(
+        document_id: UUID | None,
+        version_id: UUID,
+        media_type: OriginalMediaType,
+    ) -> str:
+        """Create a server-owned safe filename that matches the immutable media type."""
+
+        extension = "pdf" if media_type is OriginalMediaType.PDF else "txt"
+        prefix = f"document-{document_id}-" if document_id is not None else "document-"
+        return f"{prefix}version-{version_id}.{extension}"
+
 
 class CaptureDocumentService:
     """Validate and atomically record one immutable document capture."""
@@ -230,39 +263,100 @@ class CaptureDocumentService:
         self._clock = clock
         self._identifier_factory = identifier_factory
 
-    def capture(
+    def capture_pdf(
         self,
         context: WorkspaceContext,
-        capture_input: CaptureDocumentInput,
+        capture_input: PdfCaptureInput,
         content: BinaryReadable,
     ) -> CaptureDocumentResult:
         """Validate, preserve, and record one PDF plus its processing intent."""
 
         self._validate_declared_type(capture_input)
-        captured_at = self._aware_utc_now()
-        document_id = self._identifier_factory()
-        document_version_id = self._identifier_factory()
-        original_artifact_id = self._identifier_factory()
-        processing_run_id = self._identifier_factory()
-        storage_key = f"workspaces/{context.workspace_id}/originals/{original_artifact_id}.pdf"
-
         with SpooledTemporaryFile[bytes](
             max_size=min(self._max_upload_bytes, READ_CHUNK_SIZE),
             mode="w+b",
         ) as validated_content:
             byte_size, checksum = self._copy_validated_pdf(content, validated_content)
             validated_content.seek(0)
-            stored_object = self._object_storage.store_immutable(
+            return self._capture_prepared(
                 context,
-                storage_key,
-                validated_content,
+                capture_input,
+                PreparedOriginal(
+                    media_type=OriginalMediaType.PDF,
+                    filename_extension="pdf",
+                    byte_size=byte_size,
+                    checksum_sha256=checksum,
+                    content=validated_content,
+                ),
             )
+
+    def capture_text(
+        self,
+        context: WorkspaceContext,
+        capture_input: PastedTextCaptureInput,
+    ) -> CaptureDocumentResult:
+        """Normalize, preserve, and record one pasted-text original."""
+
+        normalized_text = capture_input.text.replace("\r\n", "\n").replace("\r", "\n")
+        if "\x00" in normalized_text:
+            raise InvalidPastedTextError("pasted text must not contain NUL")
+        if not any(not character.isspace() for character in normalized_text):
+            raise InvalidPastedTextError("pasted text must contain visible content")
+        try:
+            content_bytes = normalized_text.encode("utf-8", errors="strict")
+        except UnicodeEncodeError as error:
+            raise InvalidPastedTextError("pasted text must be valid Unicode") from error
+        if len(content_bytes) > self._max_upload_bytes:
+            raise UploadTooLargeError(
+                f"document exceeds the {self._max_upload_bytes}-byte upload limit"
+            )
+
+        with SpooledTemporaryFile[bytes](
+            max_size=min(self._max_upload_bytes, READ_CHUNK_SIZE),
+            mode="w+b",
+        ) as validated_content:
+            validated_content.write(content_bytes)
+            validated_content.seek(0)
+            return self._capture_prepared(
+                context,
+                capture_input,
+                PreparedOriginal(
+                    media_type=OriginalMediaType.PLAIN_TEXT,
+                    filename_extension="txt",
+                    byte_size=len(content_bytes),
+                    checksum_sha256=sha256(content_bytes).hexdigest(),
+                    content=validated_content,
+                ),
+            )
+
+    def _capture_prepared(
+        self,
+        context: WorkspaceContext,
+        capture_input: CaptureMetadata,
+        prepared: PreparedOriginal,
+    ) -> CaptureDocumentResult:
+        """Store and commit one already validated canonical original."""
+
+        captured_at = self._aware_utc_now()
+        document_id = self._identifier_factory()
+        document_version_id = self._identifier_factory()
+        original_artifact_id = self._identifier_factory()
+        processing_run_id = self._identifier_factory()
+        storage_key = (
+            f"workspaces/{context.workspace_id}/originals/{original_artifact_id}."
+            f"{prepared.filename_extension}"
+        )
+        stored_object = self._object_storage.store_immutable(
+            context,
+            storage_key,
+            prepared.content,
+        )
 
         try:
             if (
                 stored_object.storage_key != storage_key
-                or stored_object.byte_size != byte_size
-                or stored_object.checksum_sha256 != checksum
+                or stored_object.byte_size != prepared.byte_size
+                or stored_object.checksum_sha256 != prepared.checksum_sha256
             ):
                 raise ObjectStorageError("stored object verification failed")
             result = self._record_capture(
@@ -274,8 +368,9 @@ class CaptureDocumentService:
                 original_artifact_id=original_artifact_id,
                 processing_run_id=processing_run_id,
                 storage_key=storage_key,
-                byte_size=byte_size,
-                checksum=checksum,
+                media_type=prepared.media_type,
+                byte_size=prepared.byte_size,
+                checksum=prepared.checksum_sha256,
             )
         except BaseException as capture_error:
             try:
@@ -315,13 +410,14 @@ class CaptureDocumentService:
         self,
         *,
         context: WorkspaceContext,
-        capture_input: CaptureDocumentInput,
+        capture_input: CaptureMetadata,
         captured_at: datetime,
         document_id: UUID,
         document_version_id: UUID,
         original_artifact_id: UUID,
         processing_run_id: UUID,
         storage_key: str,
+        media_type: OriginalMediaType,
         byte_size: int,
         checksum: str,
     ) -> CaptureDocumentResult:
@@ -352,7 +448,7 @@ class CaptureDocumentService:
             workspace_id=context.workspace_id,
             document_version_id=document_version_id,
             storage_key=storage_key,
-            media_type=OriginalMediaType.PDF,
+            media_type=media_type,
             byte_size=byte_size,
             checksum_sha256=checksum,
             captured_at=captured_at,
@@ -378,7 +474,7 @@ class CaptureDocumentService:
         )
 
     @staticmethod
-    def _validate_declared_type(capture_input: CaptureDocumentInput) -> None:
+    def _validate_declared_type(capture_input: PdfCaptureInput) -> None:
         """Require both an allowed filename extension and declared media type."""
 
         if not capture_input.filename.casefold().endswith(".pdf"):

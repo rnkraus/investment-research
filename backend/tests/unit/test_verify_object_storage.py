@@ -197,6 +197,11 @@ def test_verification_runs_complete_sequence_without_exposing_credentials(
         command for label, command, _ in calls if label == "Run SeaweedFS S3 contract tests"
     )
     assert "INVESTMENT_RESEARCH_DATABASE_URL" not in direct_s3_command
+    selection = direct_s3_command[direct_s3_command.index("-k") + 1]
+    assert all(
+        f"not {test_name}" in selection
+        for test_name in verify_object_storage.API_CONTRACT_TEST_NAMES
+    )
     assert secret_paths and all(not path.exists() for path in secret_paths)
 
 
@@ -302,6 +307,7 @@ def test_api_contract_container_uses_both_data_networks_and_is_removed(
         "Run API capture and authorized original-open contract",
         "Remove isolated API object-storage contract container",
     ]
+    assert all(test_id in calls[0][1] for test_id in verify_object_storage.API_CONTRACT_TESTS)
     assert "isolated-project_storage-data" in calls[0][1]
     assert "INVESTMENT_RESEARCH_DATABASE_URL" in calls[0][1]
     assert "INVESTMENT_RESEARCH_REDIS_URL" in calls[0][1]
