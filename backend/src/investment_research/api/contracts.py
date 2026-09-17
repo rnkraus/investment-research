@@ -128,17 +128,46 @@ class EvidenceRelationship(StrEnum):
     CONFLICTS = "CONFLICTS"
 
 
+class EvidencePdfPageLocator(StrictContract):
+    """Physical one-based page inside an immutable PDF original."""
+
+    kind: Literal["PDF_PAGE"] = "PDF_PAGE"
+    page: int = Field(ge=1)
+
+
+class EvidenceTextPassageLocator(StrictContract):
+    """Absolute Python-code-point range inside an immutable plain-text original."""
+
+    kind: Literal["TEXT_PASSAGE"] = "TEXT_PASSAGE"
+    start_character: int = Field(ge=0)
+    end_character: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def require_ordered_source_range(self) -> Self:
+        """Ensure the absolute source range is non-empty and ordered."""
+
+        if self.end_character <= self.start_character:
+            raise ValueError("end_character must be greater than start_character")
+        return self
+
+
+EvidenceSourceLocator = Annotated[
+    EvidencePdfPageLocator | EvidenceTextPassageLocator,
+    Field(discriminator="kind"),
+]
+
+
 class EvidenceSpanResult(StrictContract):
     """Exact source location returned for an authorized citation."""
 
     evidence_span_id: UUID
     document_id: UUID
     document_version_id: UUID
-    page: int = Field(ge=1)
     start_character: int = Field(ge=0)
     end_character: int = Field(gt=0)
     exact_text: Annotated[str, StringConstraints(min_length=1)]
     text_sha256: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
+    locator: EvidenceSourceLocator
     viewer_url: str
 
     @model_validator(mode="after")

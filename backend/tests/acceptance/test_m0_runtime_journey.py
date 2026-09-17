@@ -136,12 +136,16 @@ def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
         evidence = EvidenceSpanResult.model_validate(evidence_response.json())
         assert evidence.document_id == capture.document_id
         assert evidence.document_version_id == capture.document_version_id
-        assert evidence.page == EXPECTED_CITATION_PAGE
+        assert evidence.locator.kind == "PDF_PAGE"
+        assert evidence.locator.page == EXPECTED_CITATION_PAGE
         assert evidence.exact_text == M0_0_FIXTURE_ANSWER_CASE.evidence_text
         assert evidence.text_sha256 == sha256(evidence.exact_text.encode()).hexdigest()
-        assert evidence.viewer_url.endswith(f"#page={EXPECTED_CITATION_PAGE}")
+        assert evidence.viewer_url == f"/sources/{evidence_span_id}"
 
-        original_response = client.get(evidence.viewer_url.split("#", maxsplit=1)[0])
+        original_response = client.get(
+            f"/api/v1/documents/{capture.document_id}/versions/"
+            f"{capture.document_version_id}/original"
+        )
         assert original_response.status_code == 200
         assert original_response.headers["content-type"] == "application/pdf"
         assert original_response.content == FIXTURE_PDF.read_bytes()

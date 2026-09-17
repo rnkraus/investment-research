@@ -57,8 +57,11 @@ already completed.
 The evidence-span route accepts only a citation UUID and resolves it through the trusted workspace
 context. The application rechecks that the span belongs to the current version of an active
 document and is linked to a validated statement in a streamed answer. Unknown, foreign, stale, and
-unlinked identifiers share one `404 NOT_FOUND` response. The result contains the canonical page,
-character range, exact text, and hash plus a protected original-document URL; storage keys and
+unlinked identifiers share one `404 NOT_FOUND` response. The result contains the canonical
+block-relative character range, exact text, and hash plus one required discriminated locator: a
+physical `PDF_PAGE` or an absolute `TEXT_PASSAGE` range. Its protected
+`/sources/{evidence_span_id}` viewer
+URL contains no exact text, storage key, or direct object-storage location. Storage keys and
 filesystem paths never cross the API boundary.
 
 The current M1 HTTP contracts are defined in

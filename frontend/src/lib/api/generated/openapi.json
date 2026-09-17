@@ -383,6 +383,28 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "EvidencePdfPageLocator": {
+        "additionalProperties": false,
+        "description": "Physical one-based page inside an immutable PDF original.",
+        "properties": {
+          "kind": {
+            "const": "PDF_PAGE",
+            "default": "PDF_PAGE",
+            "title": "Kind",
+            "type": "string"
+          },
+          "page": {
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page"
+        ],
+        "title": "EvidencePdfPageLocator",
+        "type": "object"
+      },
       "EvidenceRelationship": {
         "description": "How a source span relates to an answer statement.",
         "enum": [
@@ -421,10 +443,23 @@
             "title": "Exact Text",
             "type": "string"
           },
-          "page": {
-            "minimum": 1.0,
-            "title": "Page",
-            "type": "integer"
+          "locator": {
+            "discriminator": {
+              "mapping": {
+                "PDF_PAGE": "#/components/schemas/EvidencePdfPageLocator",
+                "TEXT_PASSAGE": "#/components/schemas/EvidenceTextPassageLocator"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EvidencePdfPageLocator"
+              },
+              {
+                "$ref": "#/components/schemas/EvidenceTextPassageLocator"
+              }
+            ],
+            "title": "Locator"
           },
           "start_character": {
             "minimum": 0.0,
@@ -445,14 +480,42 @@
           "evidence_span_id",
           "document_id",
           "document_version_id",
-          "page",
           "start_character",
           "end_character",
           "exact_text",
           "text_sha256",
+          "locator",
           "viewer_url"
         ],
         "title": "EvidenceSpanResult",
+        "type": "object"
+      },
+      "EvidenceTextPassageLocator": {
+        "additionalProperties": false,
+        "description": "Absolute Python-code-point range inside an immutable plain-text original.",
+        "properties": {
+          "end_character": {
+            "exclusiveMinimum": 0.0,
+            "title": "End Character",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "TEXT_PASSAGE",
+            "default": "TEXT_PASSAGE",
+            "title": "Kind",
+            "type": "string"
+          },
+          "start_character": {
+            "minimum": 0.0,
+            "title": "Start Character",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_character",
+          "end_character"
+        ],
+        "title": "EvidenceTextPassageLocator",
         "type": "object"
       },
       "HealthResponse": {
