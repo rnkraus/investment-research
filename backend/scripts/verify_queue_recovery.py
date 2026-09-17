@@ -47,14 +47,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from investment_research.bootstrap import build_api_container
-from investment_research.modules.documents.contracts import CaptureDocumentInput
+from investment_research.modules.documents.contracts import PdfCaptureInput
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.settings import load_api_settings
 
 container = build_api_container(load_api_settings(env_file=None))
 try:
     context = container.identity_context_provider.resolve()
-    capture_input = CaptureDocumentInput(
+    capture_input = PdfCaptureInput(
         filename="northstar-grid-analytics-fy2025-earnings-brief.pdf",
         media_type="application/pdf",
         title="Queue recovery verification fixture",
@@ -63,7 +63,7 @@ try:
         available_at=datetime(2026, 2, 20, 12, tzinfo=UTC),
     )
     with Path("/verification-fixture.pdf").open("rb") as content:
-        result = container.capture_document_service.capture(context, capture_input, content)
+        result = container.capture_document_service.capture_pdf(context, capture_input, content)
     assert result.state is ProcessingState.CAPTURED
 finally:
     container.close()

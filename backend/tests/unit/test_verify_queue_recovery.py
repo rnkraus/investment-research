@@ -17,6 +17,14 @@ PROCESSING_RUN_ID = UUID("10000000-0000-4000-8000-000000000004")
 TEST_CREDENTIAL = "synthetic-disposable-credential"
 
 
+def test_capture_probe_uses_current_pdf_capture_contract() -> None:
+    """Keep the code executed inside the worker image aligned with M1 capture names."""
+
+    assert "PdfCaptureInput" in verify_queue_recovery.CAPTURE_PROBE_CODE
+    assert ".capture_pdf(" in verify_queue_recovery.CAPTURE_PROBE_CODE
+    assert "CaptureDocumentInput" not in verify_queue_recovery.CAPTURE_PROBE_CODE
+
+
 def prepare_deterministic_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Mock, list[ProcessingState], list[str]]:
