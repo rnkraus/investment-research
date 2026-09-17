@@ -7,19 +7,27 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
     MAX_CONFIGURABLE_PDF_PAGES,
+    ParsedBlockV2,
     ParsedDocument,
     ParsedPage,
+    ParsedPdfDocument,
+    ParsedTextDocument,
     ParserFailureV1,
     ParserLimits,
+    ParserMediaType,
     ParserRequestV1,
+    ParserRequestV2,
     ParserResponseV1,
+    ParserResponseV2,
     ProcessingJobV1,
     parser_response_byte_limit,
     processing_job_idempotency_key,
 )
+from investment_research.modules.processing.domain import StructureBlockType
 from investment_research.modules.processing.ports import (
     DocumentParser,
     ProcessingDispatcher,
@@ -38,11 +46,18 @@ class FakeDocumentParser:
 
         return "fake-parser-1"
 
-    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+    def parse(
+        self,
+        content: BinaryIO,
+        *,
+        limits: ParserLimits,
+        media_type: ParserMediaType = "application/pdf",
+    ) -> ParsedDocument:
         """Return fixed page text after observing the caller-owned inputs."""
 
         assert content.read() == b"%PDF-synthetic"
         assert limits.max_pages == 10
+        assert media_type == "application/pdf"
         return ParsedDocument(pages=(ParsedPage(page_number=1, text="Revenue grew."),))
 
 
@@ -242,6 +257,7 @@ def test_document_parser_port_accepts_an_application_owned_implementation() -> N
     result = parser.parse(content, limits=limits)
 
     assert parser.parser_version == "fake-parser-1"
+    assert isinstance(result, ParsedDocument)
     assert result.pages == (ParsedPage(page_number=1, text="Revenue grew."),)
     assert content.closed is False
 
@@ -289,3 +305,92 @@ def test_parser_response_limit_accounts_for_json_expansion_and_pages() -> None:
     limits = ParserLimits(max_pages=10, max_extracted_characters=1_000)
 
     assert parser_response_byte_limit(limits) == 64 * 1024 + 6_000 + 1_280
+
+
+def test_parser_protocol_v2_round_trips_exact_text_blocks() -> None:
+    request = ParserRequestV2(
+        media_type="text/plain",
+        parser_version="fake-parser-2",
+        parser_config_version="m1-media-aware-blocks-v1",
+        max_input_bytes=1_024,
+        max_extracted_characters=1_000,
+    )
+    document = ParsedTextDocument(
+        blocks=(
+            ParsedBlockV2(
+                ordinal=0,
+                source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+                block_type=StructureBlockType.PARAGRAPH,
+                text="Revenue grew.",
+                start_character=2,
+                end_character=15,
+            ),
+        )
+    )
+    response = ParserResponseV2(
+        parser_version=request.parser_version,
+        parser_config_version=request.parser_config_version,
+        document=document,
+    )
+
+    assert ParserRequestV2.model_validate_json(request.model_dump_json()) == request
+    assert ParserResponseV2.model_validate_json(response.model_dump_json()) == response
+    assert response.document.kind == "PASTED_TEXT"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(
+            {
+                "media_type": "application/pdf",
+                "parser_version": "fake-parser-2",
+                "parser_config_version": "m1-media-aware-blocks-v1",
+                "max_input_bytes": 1_024,
+                "max_extracted_characters": 1_000,
+            },
+            id="pdf-without-page-limit",
+        ),
+        pytest.param(
+            {
+                "media_type": "text/plain",
+                "parser_version": "fake-parser-2",
+                "parser_config_version": "m1-media-aware-blocks-v1",
+                "max_input_bytes": 1_024,
+                "max_extracted_characters": 1_000,
+                "max_pdf_pages": 10,
+            },
+            id="text-with-page-limit",
+        ),
+    ],
+)
+def test_parser_request_v2_rejects_wrong_media_specific_limits(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        ParserRequestV2.model_validate(payload)
+
+
+def test_parser_document_v2_rejects_non_contiguous_or_mismatched_blocks() -> None:
+    invalid_pdf_block = ParsedBlockV2(
+        ordinal=1,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
+        page_number=2,
+        block_type=StructureBlockType.PARAGRAPH,
+        text="Exact",
+        start_character=0,
+        end_character=5,
+    )
+
+    with pytest.raises(ValidationError):
+        ParsedPdfDocument(physical_page_count=1, blocks=(invalid_pdf_block,))
+
+    with pytest.raises(ValidationError):
+        ParsedBlockV2(
+            ordinal=0,
+            source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+            block_type=StructureBlockType.PARAGRAPH,
+            text="Exact",
+            start_character=0,
+            end_character=4,
+        )

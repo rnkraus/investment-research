@@ -1,17 +1,21 @@
 """Typed application contracts for queued and bounded document processing."""
 
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from investment_research.modules.processing.domain import ConfigurationVersion
+from investment_research.modules.documents.domain import SourceLocatorKind
+from investment_research.modules.processing.domain import ConfigurationVersion, StructureBlockType
 
 MAX_CONFIGURABLE_PDF_PAGES = 1_000
 MAX_CONFIGURABLE_EXTRACTED_CHARACTERS = 10_000_000
 PROCESSING_JOB_SCHEMA_VERSION: Literal["processing-job.v1"] = "processing-job.v1"
 PARSER_PROTOCOL_SCHEMA_VERSION: Literal["parser-protocol.v1"] = "parser-protocol.v1"
+PARSER_PROTOCOL_V2_SCHEMA_VERSION: Literal["parser-protocol.v2"] = "parser-protocol.v2"
 PDF_PARSER_CONFIG_VERSION_V1 = "m0.0-pdf-bounds-v1"
+M1_PARSER_CONFIG_VERSION = "m1-media-aware-blocks-v1"
+M1_MAX_BLOCK_CHARACTERS: Literal[4_000] = 4_000
 PARSER_RESPONSE_JSON_OVERHEAD_BYTES = 64 * 1024
 MAX_JSON_BYTES_PER_EXTRACTED_CHARACTER = 6
 MAX_JSON_BYTES_PER_PAGE = 128
@@ -22,8 +26,11 @@ type ParserFailureCode = Literal[
     "parse_failed",
     "limit_exceeded",
     "response_too_large",
+    "timeout",
     "internal_error",
 ]
+
+type ParserMediaType = Literal["application/pdf", "text/plain"]
 
 
 class ImmutableProcessingContract(BaseModel):
@@ -158,3 +165,149 @@ class ParserFailureV1(ImmutableProcessingContract):
 
     schema_version: Literal["parser-protocol.v1"] = PARSER_PROTOCOL_SCHEMA_VERSION
     code: ParserFailureCode
+
+
+class ParserRequestV2(ImmutableProcessingContract):
+    """Media-aware limits accompanying one raw immutable original."""
+
+    schema_version: Literal["parser-protocol.v2"] = PARSER_PROTOCOL_V2_SCHEMA_VERSION
+    media_type: ParserMediaType
+    parser_version: ConfigurationVersion
+    parser_config_version: ConfigurationVersion
+    max_input_bytes: int = Field(ge=1)
+    max_extracted_characters: int = Field(
+        ge=1,
+        le=MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
+    )
+    max_pdf_pages: int | None = Field(default=None, ge=1, le=MAX_CONFIGURABLE_PDF_PAGES)
+    max_block_characters: Literal[4_000] = M1_MAX_BLOCK_CHARACTERS
+
+    @model_validator(mode="after")
+    def require_media_specific_limits(self) -> Self:
+        """Require the physical-page ceiling only for PDF originals."""
+
+        if self.media_type == "application/pdf" and self.max_pdf_pages is None:
+            raise ValueError("PDF parser request requires max_pdf_pages")
+        if self.media_type == "text/plain" and self.max_pdf_pages is not None:
+            raise ValueError("plain-text parser request must not define max_pdf_pages")
+        return self
+
+
+class ParsedBlockV2(ImmutableProcessingContract):
+    """Exact visible source slice emitted by the M1 parser."""
+
+    ordinal: int = Field(ge=0)
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
+    block_type: StructureBlockType
+    text: str = Field(min_length=1)
+    start_character: int = Field(ge=0)
+    end_character: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def require_exact_locator_shape(self) -> Self:
+        """Reject invisible text, mismatched ranges, and mixed locator fields."""
+
+        if not self.text.strip():
+            raise ValueError("parsed block must contain visible text")
+        if self.end_character <= self.start_character:
+            raise ValueError("parsed block range must be increasing")
+        if self.end_character - self.start_character != len(self.text):
+            raise ValueError("parsed block range must match its text length")
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE block requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE block must not define page_number")
+        return self
+
+
+class ParsedPdfDocument(ImmutableProcessingContract):
+    """Ordered source blocks anchored to one-based physical PDF pages."""
+
+    kind: Literal["PDF"] = "PDF"
+    physical_page_count: int = Field(ge=1)
+    blocks: tuple[ParsedBlockV2, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_pdf_blocks(self) -> Self:
+        """Require contiguous ordinals and valid physical-page references."""
+
+        _require_contiguous_block_ordinals(self.blocks)
+        for block in self.blocks:
+            if block.source_locator_kind is not SourceLocatorKind.PDF_PAGE:
+                raise ValueError("PDF document contains a non-PDF block")
+            if block.page_number is None or block.page_number > self.physical_page_count:
+                raise ValueError("PDF block references an invalid physical page")
+        return self
+
+    @property
+    def extracted_character_count(self) -> int:
+        """Return visible characters emitted across all PDF blocks."""
+
+        return sum(len(block.text) for block in self.blocks)
+
+
+class ParsedTextDocument(ImmutableProcessingContract):
+    """Ordered source blocks anchored to one canonical pasted-text original."""
+
+    kind: Literal["PASTED_TEXT"] = "PASTED_TEXT"
+    blocks: tuple[ParsedBlockV2, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_text_blocks(self) -> Self:
+        """Require contiguous ordinals and text-only locators."""
+
+        _require_contiguous_block_ordinals(self.blocks)
+        if any(
+            block.source_locator_kind is not SourceLocatorKind.TEXT_PASSAGE for block in self.blocks
+        ):
+            raise ValueError("pasted-text document contains a non-text block")
+        return self
+
+    @property
+    def extracted_character_count(self) -> int:
+        """Return visible characters emitted across all text blocks."""
+
+        return sum(len(block.text) for block in self.blocks)
+
+
+type ParsedDocumentV2 = Annotated[
+    ParsedPdfDocument | ParsedTextDocument,
+    Field(discriminator="kind"),
+]
+
+
+class ParserResponseV2(ImmutableProcessingContract):
+    """Successful media-aware parser response returned to the trusted worker."""
+
+    schema_version: Literal["parser-protocol.v2"] = PARSER_PROTOCOL_V2_SCHEMA_VERSION
+    parser_version: ConfigurationVersion
+    parser_config_version: ConfigurationVersion
+    document: ParsedDocumentV2
+
+
+class ParserFailureV2(ImmutableProcessingContract):
+    """Safe v2 parser failure without original text or internal details."""
+
+    schema_version: Literal["parser-protocol.v2"] = PARSER_PROTOCOL_V2_SCHEMA_VERSION
+    code: ParserFailureCode
+
+
+def parser_response_v2_byte_limit(request: ParserRequestV2) -> int:
+    """Bound v2 JSON output using the caller-owned extraction ceiling."""
+
+    return (
+        PARSER_RESPONSE_JSON_OVERHEAD_BYTES
+        + request.max_extracted_characters * MAX_JSON_BYTES_PER_EXTRACTED_CHARACTER
+        + request.max_extracted_characters * MAX_JSON_BYTES_PER_PAGE
+    )
+
+
+def _require_contiguous_block_ordinals(blocks: tuple[ParsedBlockV2, ...]) -> None:
+    """Keep serialized order identical to zero-based canonical block order."""
+
+    ordinals = tuple(block.ordinal for block in blocks)
+    expected = tuple(range(len(blocks)))
+    if ordinals != expected:
+        raise ValueError("parsed block ordinals must be contiguous from zero")

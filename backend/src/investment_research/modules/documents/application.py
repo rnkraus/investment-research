@@ -42,6 +42,7 @@ from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.ports import (
     ProcessingDispatcher,
     ProcessingDispatchError,
+    ProcessingOriginal,
 )
 
 PDF_HEADER_PATTERN: Final = re.compile(rb"%PDF-(?:1\.[0-9]|2\.0)")
@@ -157,8 +158,8 @@ class OpenOriginalService:
         self,
         context: WorkspaceContext,
         document_version_id: UUID,
-    ) -> Generator[BinaryIO]:
-        """Yield one verified current original for an internal processing run."""
+    ) -> Generator[ProcessingOriginal]:
+        """Yield one verified typed original for an internal processing run."""
 
         with self._unit_of_work_factory() as unit_of_work:
             original = unit_of_work.documents.get_original_artifact_by_version_id(
@@ -178,7 +179,10 @@ class OpenOriginalService:
             ),
         )
         try:
-            yield cast(BinaryIO, download._content)
+            yield ProcessingOriginal(
+                content=cast(BinaryIO, download._content),
+                media_type=original.media_type.value,
+            )
         finally:
             download.close()
 

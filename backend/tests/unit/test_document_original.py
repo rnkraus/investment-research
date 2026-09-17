@@ -128,11 +128,12 @@ def test_open_for_processing_yields_verified_version_stream_and_closes_it(
     original = make_original()
     service: ProcessingOriginalProvider = make_service(tmp_path, unit_of_work, original)
 
-    with service.open_for_processing(make_context(), VERSION_ID) as content:
-        assert content.read() == PDF_CONTENT
-        assert content.closed is False
+    with service.open_for_processing(make_context(), VERSION_ID) as processing_original:
+        assert processing_original.media_type == "application/pdf"
+        assert processing_original.content.read() == PDF_CONTENT
+        assert processing_original.content.closed is False
 
-    assert content.closed is True
+    assert processing_original.content.closed is True
     assert unit_of_work.enter_count == unit_of_work.exit_count == 1
     unit_of_work.document_mock.get_original_artifact_by_version_id.assert_called_once_with(
         make_context(),

@@ -2,13 +2,17 @@
 
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import (
     ParsedDocument,
+    ParsedPdfDocument,
+    ParsedTextDocument,
     ParserLimits,
+    ParserMediaType,
     ProcessingJobV1,
 )
 from investment_research.modules.processing.domain import (
@@ -47,15 +51,32 @@ class ProcessingDispatcher(Protocol):
         """Publish one validated job or raise a provider-neutral dispatch error."""
 
 
+type ParsedDocumentResult = ParsedDocument | ParsedPdfDocument | ParsedTextDocument
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessingOriginal:
+    """Verified original stream plus the media type required for safe dispatch."""
+
+    content: BinaryIO
+    media_type: ParserMediaType
+
+
 class DocumentParser(Protocol):
-    """Extract ordered page text from one PDF through an interchangeable adapter."""
+    """Extract ordered source blocks through an interchangeable parser adapter."""
 
     @property
     def parser_version(self) -> ConfigurationVersion:
         """Return the stable implementation version recorded on processing runs."""
 
-    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
-        """Parse one binary stream without closing its caller-owned resource."""
+    def parse(
+        self,
+        content: BinaryIO,
+        *,
+        limits: ParserLimits,
+        media_type: ParserMediaType = "application/pdf",
+    ) -> ParsedDocumentResult:
+        """Parse one typed binary stream without closing its caller-owned resource."""
 
 
 class ProcessingOriginalProvider(Protocol):
@@ -65,8 +86,8 @@ class ProcessingOriginalProvider(Protocol):
         self,
         context: WorkspaceContext,
         document_version_id: UUID,
-    ) -> AbstractContextManager[BinaryIO]:
-        """Yield verified bytes for one eligible version and close them afterward."""
+    ) -> AbstractContextManager[ProcessingOriginal]:
+        """Yield a verified typed stream and close it afterward."""
 
 
 class ProcessingRepository(Protocol):
