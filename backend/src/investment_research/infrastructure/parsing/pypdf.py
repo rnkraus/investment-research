@@ -10,6 +10,7 @@ from investment_research.modules.processing.contracts import (
     ParsedDocument,
     ParsedPage,
     ParserLimits,
+    ParserMediaType,
 )
 from investment_research.modules.processing.domain import ConfigurationVersion
 from investment_research.modules.processing.ports import (
@@ -27,8 +28,17 @@ class PypdfDocumentParser:
 
         return f"pypdf-{pypdf_version}"
 
-    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+    def parse(
+        self,
+        content: BinaryIO,
+        *,
+        limits: ParserLimits,
+        media_type: ParserMediaType = "application/pdf",
+    ) -> ParsedDocument:
         """Parse a caller-owned PDF stream without closing it."""
+
+        if media_type != "application/pdf":
+            raise DocumentParserError("pypdf accepts only PDF originals")
 
         try:
             reader = PdfReader(content, strict=True)

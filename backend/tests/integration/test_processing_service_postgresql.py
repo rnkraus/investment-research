@@ -27,6 +27,7 @@ from investment_research.infrastructure.database.unit_of_work import (
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.infrastructure.parsing.client import HttpDocumentParser
 from investment_research.infrastructure.parsing.http_protocol import PARSER_RESPONSE_CONTENT_TYPE
+from investment_research.infrastructure.parsing.media import MediaAwareDocumentParser
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -34,8 +35,10 @@ from investment_research.modules.documents.application import (
 )
 from investment_research.modules.documents.contracts import (
     CaptureDocumentResult,
+    PastedTextCaptureInput,
     PdfCaptureInput,
 )
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.identity.domain import (
     Workspace,
@@ -45,6 +48,7 @@ from investment_research.modules.identity.domain import (
 from investment_research.modules.identity.persistence import SqlAlchemyWorkspaceRepository
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
+    M1_PROCESSING_PROFILE,
     ProcessDocumentService,
     ProcessingProfile,
     ProcessingRetryableError,
@@ -56,6 +60,7 @@ from investment_research.modules.processing.contracts import (
     PDF_PARSER_CONFIG_VERSION_V1,
     ParsedDocument,
     ParserLimits,
+    ParserMediaType,
 )
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import (
@@ -173,13 +178,19 @@ class BlockingParser:
 
         return self._delegate.parser_version
 
-    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+    def parse(
+        self,
+        content: BinaryIO,
+        *,
+        limits: ParserLimits,
+        media_type: ParserMediaType = "application/pdf",
+    ) -> ParsedDocument:
         """Wait for the test before parsing the caller-owned original stream."""
 
         self.entered.set()
         if not self.release.wait(timeout=5):
             raise TimeoutError("blocking parser was not released by the test")
-        return self._delegate.parse(content, limits=limits)
+        return self._delegate.parse(content, limits=limits, media_type=media_type)
 
 
 class FailOnceParser:
@@ -195,13 +206,19 @@ class FailOnceParser:
 
         return self._delegate.parser_version
 
-    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+    def parse(
+        self,
+        content: BinaryIO,
+        *,
+        limits: ParserLimits,
+        media_type: ParserMediaType = "application/pdf",
+    ) -> ParsedDocument:
         """Fail the first delivery and parse normally on the retry."""
 
         self.calls += 1
         if self.calls == 1:
             raise ParserTransportError("synthetic private transport failure")
-        return self._delegate.parse(content, limits=limits)
+        return self._delegate.parse(content, limits=limits, media_type=media_type)
 
 
 class ParserFailureHttpServer(ThreadingHTTPServer):
@@ -737,3 +754,68 @@ def test_expired_lease_is_reclaimed_and_stale_worker_cannot_commit(
 
     assert persisted_run == reclaimed_result
     assert chunk_set_count == 1
+
+
+def test_m1_pasted_text_reaches_lexical_ready_with_exact_persisted_ranges(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    session_factory = create_session_factory(integration_database_engine)
+    capture_service = CaptureDocumentService(
+        object_storage=storage,
+        unit_of_work_factory=create_capture_unit_of_work_factory(session_factory),
+        max_upload_bytes=1_024,
+        processing_dispatcher=RecordingProcessingDispatcher(),
+        processing_profile=M1_PROCESSING_PROFILE,
+        clock=lambda: CAPTURED_AT,
+    )
+    source = "  Revenue grew.  \n\nMargin expanded.\n"
+    capture = capture_service.capture_text(
+        context,
+        PastedTextCaptureInput(
+            title="Synthetic pasted research",
+            language="en",
+            published_at=CAPTURED_AT,
+            available_at=CAPTURED_AT,
+            text=source,
+        ),
+    )
+    service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=ParserLimits(max_pages=10, max_extracted_characters=1_000),
+        parser=MediaAwareDocumentParser(),
+        profile=M1_PROCESSING_PROFILE,
+    )
+
+    result = service.process(context, capture.processing_run_id)
+
+    with transactional_session(session_factory) as session:
+        persisted_blocks = tuple(
+            (
+                row.source_locator_kind,
+                row.page_number,
+                row.text,
+                row.start_character,
+                row.end_character,
+            )
+            for row in session.scalars(
+                select(StructureBlockRow)
+                .where(StructureBlockRow.processing_run_id == capture.processing_run_id)
+                .order_by(StructureBlockRow.ordinal)
+            )
+        )
+    assert result.state is ProcessingState.LEXICAL_READY
+    assert tuple(block[0] for block in persisted_blocks) == (
+        SourceLocatorKind.TEXT_PASSAGE,
+        SourceLocatorKind.TEXT_PASSAGE,
+    )
+    assert tuple(block[1] for block in persisted_blocks) == (None, None)
+    assert tuple(block[2] for block in persisted_blocks) == (
+        "Revenue grew.",
+        "Margin expanded.",
+    )
+    for _, _, text, start_character, end_character in persisted_blocks:
+        assert source[start_character:end_character] == text

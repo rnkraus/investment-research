@@ -9,6 +9,7 @@ from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import (
+    M1_PARSER_CONFIG_VERSION,
     PDF_PARSER_CONFIG_VERSION_V1,
     ParsedDocument,
     ParserLimits,
@@ -28,6 +29,7 @@ from investment_research.modules.processing.domain import (
 from investment_research.modules.processing.ports import (
     DocumentParser,
     DocumentParserError,
+    ParsedDocumentResult,
     ParserLimitExceededError,
     ParserTransportError,
     ProcessingOriginalProvider,
@@ -66,6 +68,16 @@ M0_0_PROCESSING_PROFILE = ProcessingProfile(
     chunker_version="m0.0-structure-block-v1",
     chunking_config_version="m0.0-structure-block-config-v1",
     lexical_config_version="m0.0-english-lexical-v1",
+    maximum_attempts=3,
+    lease_duration=timedelta(seconds=360),
+)
+
+M1_PROCESSING_PROFILE = ProcessingProfile(
+    parser_version="pypdf-6.16.2",
+    parser_config_version=M1_PARSER_CONFIG_VERSION,
+    chunker_version="m1-source-block-v1",
+    chunking_config_version="m1-source-block-config-v1",
+    lexical_config_version="m1-english-lexical-v1",
     maximum_attempts=3,
     lease_duration=timedelta(seconds=360),
 )
@@ -163,18 +175,14 @@ def create_captured_processing_run(
 def build_lexical_output(
     *,
     run: ProcessingRun,
-    parsed_document: ParsedDocument,
+    parsed_document: ParsedDocumentResult,
     created_at: datetime,
     id_factory: Callable[[], UUID] = uuid4,
 ) -> LexicalOutput:
-    """Map visible PDF pages to the deterministic M0.0 lexical representation."""
+    """Map v1 pages or exact v2 blocks to one deterministic lexical representation."""
 
     if run.state is not ProcessingState.PARSING:
         raise ProcessingRunNotActiveError("lexical output requires a PARSING run")
-
-    visible_pages = tuple(page for page in parsed_document.pages if page.text.strip())
-    if not visible_pages:
-        raise NoExtractableTextError("parsed document contains no extractable text")
 
     chunk_set = ChunkSet(
         id=id_factory(),
@@ -189,19 +197,69 @@ def build_lexical_output(
     )
     blocks: list[StructureBlock] = []
     chunks: list[Chunk] = []
-    for ordinal, page in enumerate(visible_pages):
+    source_blocks: tuple[
+        tuple[
+            SourceLocatorKind,
+            int | None,
+            StructureBlockType,
+            int,
+            str,
+            int,
+            int,
+        ],
+        ...,
+    ]
+    if isinstance(parsed_document, ParsedDocument):
+        visible_pages = tuple(page for page in parsed_document.pages if page.text.strip())
+        source_blocks = tuple(
+            (
+                SourceLocatorKind.PDF_PAGE,
+                page.page_number,
+                StructureBlockType.PARAGRAPH,
+                ordinal,
+                page.text,
+                0,
+                len(page.text),
+            )
+            for ordinal, page in enumerate(visible_pages)
+        )
+    else:
+        source_blocks = tuple(
+            (
+                block.source_locator_kind,
+                block.page_number,
+                block.block_type,
+                block.ordinal,
+                block.text,
+                block.start_character,
+                block.end_character,
+            )
+            for block in parsed_document.blocks
+        )
+    if not source_blocks:
+        raise NoExtractableTextError("parsed document contains no extractable text")
+
+    for (
+        source_locator_kind,
+        page_number,
+        block_type,
+        ordinal,
+        text,
+        start_character,
+        end_character,
+    ) in source_blocks:
         block = StructureBlock(
             id=id_factory(),
             workspace_id=run.workspace_id,
             processing_run_id=run.id,
             document_version_id=run.document_version_id,
-            source_locator_kind=SourceLocatorKind.PDF_PAGE,
-            page_number=page.page_number,
-            block_type=StructureBlockType.PARAGRAPH,
+            source_locator_kind=source_locator_kind,
+            page_number=page_number,
+            block_type=block_type,
             ordinal=ordinal,
-            text=page.text,
-            start_character=0,
-            end_character=len(page.text),
+            text=text,
+            start_character=start_character,
+            end_character=end_character,
             created_at=created_at,
         )
         blocks.append(block)
@@ -271,7 +329,11 @@ class ProcessDocumentService:
                 context,
                 parsing_run.document_version_id,
             ) as original:
-                parsed_document = self._parser.parse(original, limits=self._parser_limits)
+                parsed_document = self._parser.parse(
+                    original.content,
+                    limits=self._parser_limits,
+                    media_type=original.media_type,
+                )
 
             completed_at = self._aware_utc_now()
             output = build_lexical_output(

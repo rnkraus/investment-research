@@ -23,6 +23,7 @@ from investment_research.modules.processing.contracts import (
     ParsedDocument,
     ParsedPage,
     ParserLimits,
+    ParserMediaType,
 )
 from investment_research.modules.processing.domain import (
     Chunk,
@@ -34,6 +35,7 @@ from investment_research.modules.processing.domain import (
 from investment_research.modules.processing.ports import (
     DocumentParserError,
     ParserTransportError,
+    ProcessingOriginal,
     ProcessingRepository,
     ProcessingUnitOfWork,
 )
@@ -166,10 +168,10 @@ class RecordingOriginalProvider:
         self,
         context: WorkspaceContext,
         document_version_id: UUID,
-    ) -> Iterator[BinaryIO]:
+    ) -> Iterator[ProcessingOriginal]:
         self.calls.append((context, document_version_id))
         with BytesIO(b"synthetic PDF bytes") as content:
-            yield content
+            yield ProcessingOriginal(content=content, media_type="application/pdf")
 
 
 class RecordingParser:
@@ -185,15 +187,21 @@ class RecordingParser:
         self._parsed_document = parsed_document
         self._error = error
         self._parser_version = parser_version
-        self.calls: list[ParserLimits] = []
+        self.calls: list[tuple[ParserLimits, ParserMediaType]] = []
 
     @property
     def parser_version(self) -> str:
         return self._parser_version
 
-    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+    def parse(
+        self,
+        content: BinaryIO,
+        *,
+        limits: ParserLimits,
+        media_type: ParserMediaType = "application/pdf",
+    ) -> ParsedDocument:
         assert content.read() == b"synthetic PDF bytes"
-        self.calls.append(limits)
+        self.calls.append((limits, media_type))
         if self._error is not None:
             raise self._error
         assert self._parsed_document is not None
@@ -262,7 +270,7 @@ def test_process_commits_start_and_lexical_output_in_separate_transactions() -> 
     ]
     assert unit_of_work_factory.transaction_count == 2
     assert original_provider.calls == [(context, DOCUMENT_VERSION_ID)]
-    assert parser.calls == [PARSER_LIMITS]
+    assert parser.calls == [(PARSER_LIMITS, "application/pdf")]
     blocks, chunk_set, chunks = repository.lexical_outputs[0]
     assert tuple(block.id for block in blocks) == (BLOCK_ID,)
     assert chunk_set.id == CHUNK_SET_ID
