@@ -21,7 +21,9 @@ from investment_research.modules.processing.contracts import (
     PDF_PARSER_CONFIG_VERSION_V1,
     ParsedBlockV2,
     ParsedDocument,
+    ParsedDocumentV2,
     ParsedPage,
+    ParsedPdfDocument,
     ParsedTextDocument,
     ParserFailureV1,
     ParserFailureV2,
@@ -91,11 +93,11 @@ class ControllableParser:
 class ControllableV2Runner:
     """Return one v2 document or a safe runner error without starting a process."""
 
-    result: ParsedTextDocument
+    result: ParsedDocumentV2
     error: Exception | None = None
     calls: list[tuple[bytes, ParserRequestV2]] = field(default_factory=list)
 
-    def parse(self, body: bytes, request: ParserRequestV2) -> ParsedTextDocument:
+    def parse(self, body: bytes, request: ParserRequestV2) -> ParsedDocumentV2:
         self.calls.append((body, request))
         if self.error is not None:
             raise self.error
@@ -274,6 +276,23 @@ def text_document() -> ParsedTextDocument:
     )
 
 
+def pdf_document() -> ParsedPdfDocument:
+    return ParsedPdfDocument(
+        physical_page_count=2,
+        blocks=(
+            ParsedBlockV2(
+                ordinal=0,
+                source_locator_kind=SourceLocatorKind.PDF_PAGE,
+                page_number=2,
+                block_type=StructureBlockType.PARAGRAPH,
+                text="Revenue grew.",
+                start_character=0,
+                end_character=13,
+            ),
+        ),
+    )
+
+
 def v2_metadata_header(*, media_type: str = "text/plain") -> dict[str, str]:
     metadata = ParserRequestV2(
         media_type=cast(ParserMediaType, media_type),
@@ -301,6 +320,27 @@ def test_v2_text_request_returns_versioned_exact_blocks() -> None:
     assert result.document == runner.result
     assert runner.calls[0][0] == b"Revenue grew."
     assert runner.calls[0][1].media_type == "text/plain"
+
+
+def test_v2_pdf_request_returns_versioned_page_blocks() -> None:
+    runner = ControllableV2Runner(result=pdf_document())
+    client = TestClient(create_parser_app(make_settings(), v2_runner=runner))
+
+    response = client.post(
+        PARSER_V2_HTTP_PATH,
+        content=PDF_BYTES,
+        headers={
+            "Content-Type": "application/pdf",
+            **v2_metadata_header(media_type="application/pdf"),
+        },
+    )
+    result = ParserResponseV2.model_validate(response.json())
+
+    assert response.status_code == 200
+    assert result.document == runner.result
+    assert runner.calls[0][0] == PDF_BYTES
+    assert runner.calls[0][1].media_type == "application/pdf"
+    assert runner.calls[0][1].max_pdf_pages == 10
 
 
 def test_v2_rejects_content_type_that_disagrees_with_metadata() -> None:
