@@ -10,7 +10,10 @@ from investment_research.infrastructure.evidence.deterministic import (
     DeterministicFixtureStatementSupportEvaluator,
     FixtureStatementSupportRule,
 )
-from investment_research.modules.documents.domain import DocumentLifecycleState
+from investment_research.modules.documents.domain import (
+    DocumentLifecycleState,
+    SourceLocatorKind,
+)
 from investment_research.modules.evidence.application import ValidateGeneratedAnswerService
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
@@ -95,8 +98,11 @@ def make_source(**changes: object) -> CanonicalEvidenceSource:
         version_available_at=FIXTURE_TIME,
         version_captured_at=FIXTURE_TIME,
         structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=2,
         structure_block_text=SOURCE_TEXT,
+        structure_block_start_character=0,
+        structure_block_end_character=len(SOURCE_TEXT),
         retrieval_filters=RetrievalFilters(document_ids=(DOCUMENT_ID,)),
         retrieval_lexical_config_version="english-lexical-v1",
     )
@@ -172,6 +178,26 @@ def test_valid_proposal_returns_only_canonical_exact_evidence() -> None:
     assert len(reference.text_sha256) == 64
     assert all(finding.passed for finding in decision.findings)
     assert reader.calls == [(make_context(), RUN_ID, CANDIDATE_ID)]
+
+
+def test_text_proposal_derives_absolute_original_range_from_canonical_block() -> None:
+    block_start = 120
+    service, _ = make_service(
+        make_source(
+            source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+            page_number=None,
+            structure_block_start_character=block_start,
+            structure_block_end_character=block_start + len(SOURCE_TEXT),
+        )
+    )
+
+    decision = service.validate(make_context(), RUN_ID, make_answer())
+
+    reference = decision.statements[0].evidence[0]
+    assert reference.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+    assert reference.page_number is None
+    assert reference.source_start_character == block_start + REFERENCE_START
+    assert reference.source_end_character == block_start + REFERENCE_START + len(EVIDENCE_TEXT)
 
 
 def test_explicit_insufficient_result_is_safe_without_loading_sources() -> None:

@@ -11,6 +11,7 @@ from investment_research.infrastructure.database.session import (
     transactional_session,
 )
 from investment_research.infrastructure.search.postgresql import PostgresLexicalSearch
+from investment_research.modules.documents.domain import OriginalMediaType, SourceLocatorKind
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.application import build_lexical_search_query
@@ -114,10 +115,50 @@ def test_known_passage_is_retrieved_and_unanswerable_question_returns_no_hit(
     assert answerable_hits[0].document_id == source.document.id
     assert answerable_hits[0].document_version_id == source.version.id
     assert answerable_hits[0].structure_block_id == source.blocks[0].id
+    assert answerable_hits[0].source_locator_kind is SourceLocatorKind.PDF_PAGE
     assert answerable_hits[0].page_number == 1
     assert answerable_hits[0].text == ANSWERABLE_TEXT
     assert answerable_hits[0].raw_score > 0
     assert unanswerable_hits == ()
+
+
+def test_pasted_text_hit_preserves_text_passage_locator(
+    integration_database_engine: Engine,
+) -> None:
+    source = with_chunk_texts(
+        make_research_source(label="Pasted Text Lexical Source"),
+        (ANSWERABLE_TEXT, "Operating margin increased to 18.4 percent."),
+    )
+    source = replace(
+        source,
+        original=source.original.model_copy(
+            update={
+                "storage_key": source.original.storage_key.removesuffix(".pdf") + ".txt",
+                "media_type": OriginalMediaType.PLAIN_TEXT,
+            }
+        ),
+        blocks=tuple(
+            block.model_copy(
+                update={
+                    "source_locator_kind": SourceLocatorKind.TEXT_PASSAGE,
+                    "page_number": None,
+                }
+            )
+            for block in source.blocks
+        ),
+    )
+    persist_research_source(integration_database_engine, source)
+
+    hits = search(
+        integration_database_engine,
+        source.context,
+        make_query(source, ANSWERABLE_QUESTION),
+    )
+
+    assert [hit.chunk_id for hit in hits] == [source.chunks[0].id]
+    assert hits[0].source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+    assert hits[0].page_number is None
+    assert hits[0].text == ANSWERABLE_TEXT
 
 
 def test_workspace_document_configuration_and_time_filters_are_applied_in_sql(

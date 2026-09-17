@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceSpan,
@@ -134,7 +135,8 @@ class AnswerGenerationSource(ImmutableResearchContract):
     document_id: UUID
     document_version_id: UUID
     structure_block_id: UUID
-    page_number: int = Field(ge=1)
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
     text: str = Field(min_length=1, max_length=100_000)
 
     @field_validator("text")
@@ -145,6 +147,17 @@ class AnswerGenerationSource(ImmutableResearchContract):
         if not value.strip():
             raise ValueError("source text must contain a non-whitespace character")
         return value
+
+    @model_validator(mode="after")
+    def require_media_appropriate_locator(self) -> Self:
+        """Keep generator context aligned with the canonical source medium."""
+
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE generation source requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE generation source must not define page_number")
+        return self
 
 
 class AnswerGenerationInput(ImmutableResearchContract):

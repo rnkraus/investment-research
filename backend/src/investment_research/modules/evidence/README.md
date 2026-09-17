@@ -139,5 +139,7 @@ links to it. Every failed condition raises the same application error, so caller
 an unknown identifier from inaccessible or stale evidence.
 
 `ResolvedEvidenceSpan` contains only the authorized domain span and its document identifier. The
-HTTP layer constructs the protected viewer URL because URLs are a transport concern rather than an
-Evidence domain value.
+HTTP layer maps its immutable source locator to the discriminated `PDF_PAGE` or `TEXT_PASSAGE`
+result and constructs `/sources/{evidence_span_id}` because URLs are a transport concern rather
+than an Evidence domain value. It never exposes a storage URL or places exact source text in the
+viewer URL.

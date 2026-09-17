@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
-from investment_research.modules.documents.domain import DocumentLifecycleState
+from investment_research.modules.documents.domain import DocumentLifecycleState, SourceLocatorKind
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
@@ -39,6 +39,7 @@ class PostgresLexicalSearch:
                 document_id=document_id,
                 document_version_id=document_version_id,
                 structure_block_id=structure_block_id,
+                source_locator_kind=source_locator_kind,
                 page_number=page_number,
                 text=text,
                 raw_score=float(raw_score),
@@ -48,6 +49,7 @@ class PostgresLexicalSearch:
                 document_id,
                 document_version_id,
                 structure_block_id,
+                source_locator_kind,
                 page_number,
                 text,
                 raw_score,
@@ -58,7 +60,7 @@ class PostgresLexicalSearch:
     def _build_statement(
         context: WorkspaceContext,
         query: LexicalSearchQuery,
-    ) -> Select[tuple[UUID, UUID, UUID, UUID, int, str, float]]:
+    ) -> Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str, float]]:
         """Build one query that filters canonical state before ranking and limiting."""
 
         text_query = func.websearch_to_tsquery("english", query.normalized_query)
@@ -70,6 +72,7 @@ class PostgresLexicalSearch:
                 DocumentVersionRow.document_id,
                 ChunkRow.document_version_id,
                 ChunkRow.structure_block_id,
+                StructureBlockRow.source_locator_kind,
                 StructureBlockRow.page_number,
                 ChunkRow.text,
                 raw_score,

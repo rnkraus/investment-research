@@ -15,7 +15,10 @@ from investment_research.infrastructure.evidence.deterministic import (
     DeterministicFixtureStatementSupportEvaluator,
     FixtureStatementSupportRule,
 )
-from investment_research.modules.documents.domain import DocumentLifecycleState
+from investment_research.modules.documents.domain import (
+    DocumentLifecycleState,
+    SourceLocatorKind,
+)
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
     EvidenceValidationProfile,
@@ -181,6 +184,7 @@ def make_retrieval_result() -> ResearchRetrievalResult:
         document_id=DOCUMENT_ID,
         document_version_id=VERSION_ID,
         structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=2,
         text=SOURCE_TEXT,
         raw_score=0.75,
@@ -224,8 +228,11 @@ def make_canonical_source() -> CanonicalEvidenceSource:
         version_available_at=RETRIEVED_AT,
         version_captured_at=RETRIEVED_AT,
         structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=2,
         structure_block_text=SOURCE_TEXT,
+        structure_block_start_character=0,
+        structure_block_end_character=len(SOURCE_TEXT),
         retrieval_filters=RetrievalFilters(),
         retrieval_lexical_config_version="m0.0-english-lexical-v1",
     )
