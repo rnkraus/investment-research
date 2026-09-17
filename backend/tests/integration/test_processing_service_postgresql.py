@@ -33,8 +33,8 @@ from investment_research.modules.documents.application import (
     OpenOriginalService,
 )
 from investment_research.modules.documents.contracts import (
-    CaptureDocumentInput,
     CaptureDocumentResult,
+    PdfCaptureInput,
 )
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.identity.domain import (
@@ -114,7 +114,7 @@ def capture_fixture(
         processing_dispatcher=RecordingProcessingDispatcher(),
         clock=lambda: CAPTURED_AT,
     )
-    capture_input = CaptureDocumentInput(
+    capture_input = PdfCaptureInput(
         filename=FIXTURE_PDF.name,
         media_type="application/pdf",
         title="Northstar Grid Analytics FY2025 Earnings Brief",
@@ -123,7 +123,7 @@ def capture_fixture(
         available_at=CAPTURED_AT,
     )
     with FIXTURE_PDF.open("rb") as content:
-        result = service.capture(context, capture_input, content)
+        result = service.capture_pdf(context, capture_input, content)
     return result
 
 

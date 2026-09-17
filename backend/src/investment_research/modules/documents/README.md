@@ -28,9 +28,11 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    INPUT[Untrusted PDF stream and metadata] --> TYPE[Validate filename, media type, and PDF header]
-    TYPE --> LIMIT[Copy into bounded private spool and calculate SHA-256]
-    LIMIT --> STORE[Atomically store under a server-generated workspace key]
+    PDF[Untrusted PDF stream and metadata] --> PDF_VALIDATE[Validate filename, media type, PDF header, and bytes]
+    TEXT[Untrusted pasted-text JSON] --> TEXT_VALIDATE[Reject invalid content and normalize newlines]
+    PDF_VALIDATE --> PREPARED[PreparedOriginal<br/>canonical bytes, media type, size, and SHA-256]
+    TEXT_VALIDATE --> PREPARED
+    PREPARED --> STORE[Atomically store under a server-generated workspace key]
     STORE --> BUILD[Build Document, DocumentVersion, OriginalArtifact, and CAPTURED ProcessingRun]
     BUILD --> UOW[CaptureUnitOfWork]
     UOW --> DOCS[DocumentRepository]
@@ -45,7 +47,12 @@ flowchart TD
     PG -->|commit fails| DISCARD[Discard only the uncommitted stored object]
 ```
 
-The current capture service accepts only a declared `application/pdf` with a `.pdf` filename and a supported `%PDF-…` signature. It enforces the configured byte limit before publishing an object, keeps at most 1 MiB of the validation spool in memory, calculates SHA-256 while copying, and verifies the storage adapter's returned key, size, and checksum. The M1 schema also accepts immutable `text/plain` originals; the dedicated submitted-text capture path is added separately so persistence support does not imply that the HTTP endpoint already accepts text.
+The PDF path accepts only a declared `application/pdf` with a `.pdf` filename and a supported
+`%PDF-…` signature. The pasted-text path accepts a strict JSON body with at most 100,000 Unicode
+code points, rejects NUL and content without a visible character, converts `CRLF` and remaining `CR`
+to `LF`, performs no trimming or Unicode normalization, and encodes strict UTF-8 without a byte-order
+mark. Both paths enforce the configured byte limit before publishing an object, calculate SHA-256
+over the exact stored bytes, and verify the storage adapter's returned key, size, and checksum.
 
 `add_capture` rejects mismatched workspace or entity relationships before staging rows. It never commits. The capture unit of work binds both module repositories to one caller-owned SQLAlchemy session, so document metadata and the processing intent commit or roll back together. Because object storage cannot participate in the PostgreSQL transaction, a failed canonical transaction invokes the narrowly scoped `discard_uncommitted` compensation. It is not a general deletion path for committed originals.
 

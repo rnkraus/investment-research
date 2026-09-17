@@ -22,6 +22,13 @@ REPOSITORY_ROOT = BACKEND_ROOT.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
 COMPOSE_TEST_FILE = REPOSITORY_ROOT / "compose.test.yaml"
 INTEGRATION_TEST = "tests/integration/test_s3_object_storage_seaweedfs.py"
+API_CONTRACT_TEST_NAMES = (
+    "test_api_capture_and_authorized_original_open_use_seaweedfs",
+    "test_api_text_capture_and_original_open_use_seaweedfs",
+)
+API_CONTRACT_TESTS = tuple(
+    f"{INTEGRATION_TEST}::{test_name}" for test_name in API_CONTRACT_TEST_NAMES
+)
 STORAGE_SERVICES = (
     "seaweedfs-master",
     "seaweedfs-volume",
@@ -387,7 +394,7 @@ def run_api_contract_test(
                 "-p",
                 "no:cacheprovider",
                 "-q",
-                f"{INTEGRATION_TEST}::test_api_capture_and_authorized_original_open_use_seaweedfs",
+                *API_CONTRACT_TESTS,
             ],
             working_directory=REPOSITORY_ROOT,
             environment=environment,
@@ -572,9 +579,11 @@ def verify_object_storage() -> int:
                     "-q",
                     INTEGRATION_TEST,
                     "-k",
-                    (
-                        "not test_object_survives_storage_restart and "
-                        "not test_api_capture_and_authorized_original_open_use_seaweedfs"
+                    " and ".join(
+                        (
+                            "not test_object_survives_storage_restart",
+                            *(f"not {test_name}" for test_name in API_CONTRACT_TEST_NAMES),
+                        )
                     ),
                 ),
             ),

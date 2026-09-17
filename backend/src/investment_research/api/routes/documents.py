@@ -15,6 +15,7 @@ from investment_research.api.contracts import (
     ErrorCode,
     ErrorResponse,
     LanguageCode,
+    PastedTextDocumentInput,
     TrimmedTitle,
 )
 from investment_research.api.dependencies import (
@@ -24,13 +25,17 @@ from investment_research.api.dependencies import (
 )
 from investment_research.api.errors import ApiError
 from investment_research.modules.documents.application import (
+    InvalidPastedTextError,
     InvalidPdfSignatureError,
     OriginalIntegrityError,
     OriginalUnavailableError,
     UnsupportedDocumentTypeError,
     UploadTooLargeError,
 )
-from investment_research.modules.documents.contracts import CaptureDocumentInput
+from investment_research.modules.documents.contracts import (
+    PastedTextCaptureInput,
+    PdfCaptureInput,
+)
 from investment_research.modules.documents.ports import (
     ObjectAlreadyExistsError,
     ObjectStorageError,
@@ -85,7 +90,7 @@ def capture_document(
     """Accept one bounded PDF and return its canonical capture identifiers."""
 
     try:
-        capture_input = CaptureDocumentInput(
+        capture_input = PdfCaptureInput(
             filename=file.filename or "",
             media_type=file.content_type or "",
             title=metadata.title,
@@ -93,7 +98,7 @@ def capture_document(
             published_at=metadata.published_at,
             available_at=metadata.available_at,
         )
-        result = service.capture(context, capture_input, file.file)
+        result = service.capture_pdf(context, capture_input, file.file)
     except ValidationError as error:
         raise ApiError(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -133,6 +138,74 @@ def capture_document(
     )
 
 
+@router.post(
+    "/text",
+    response_model=DocumentAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+        status.HTTP_413_CONTENT_TOO_LARGE: {"model": ErrorResponse},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorResponse},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse},
+    },
+)
+def capture_pasted_text(
+    payload: PastedTextDocumentInput,
+    service: CaptureDocumentServiceDependency,
+    context: WorkspaceContextDependency,
+) -> DocumentAccepted:
+    """Accept one bounded English text original and return its capture identifiers."""
+
+    try:
+        result = service.capture_text(
+            context,
+            PastedTextCaptureInput(
+                title=payload.title,
+                language=payload.language,
+                published_at=payload.published_at,
+                available_at=payload.available_at,
+                text=payload.text,
+            ),
+        )
+    except ValidationError as error:
+        raise ApiError(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            code=ErrorCode.INVALID_REQUEST,
+            message="submitted text metadata is invalid",
+        ) from error
+    except InvalidPastedTextError as error:
+        raise ApiError(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            code=ErrorCode.INVALID_REQUEST,
+            message="submitted text is invalid",
+        ) from error
+    except UploadTooLargeError as error:
+        raise ApiError(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            code=ErrorCode.PAYLOAD_TOO_LARGE,
+            message="submitted text exceeds the configured size limit",
+        ) from error
+    except ObjectAlreadyExistsError as error:
+        raise ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code=ErrorCode.CONFLICT,
+            message="immutable original already exists",
+        ) from error
+    except (ObjectStorageError, SQLAlchemyError) as error:
+        raise ApiError(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="document capture failed",
+        ) from error
+
+    return DocumentAccepted(
+        document_id=result.document_id,
+        document_version_id=result.document_version_id,
+        processing_run_id=result.processing_run_id,
+        processing_status_url=f"/api/v1/processing-runs/{result.processing_run_id}",
+    )
+
+
 @router.get(
     "/{document_id}/versions/{version_id}/original",
     response_class=StreamingResponse,
@@ -141,9 +214,12 @@ def capture_document(
             "content": {
                 "application/pdf": {
                     "schema": {"type": "string", "format": "binary"},
-                }
+                },
+                "text/plain": {
+                    "schema": {"type": "string"},
+                },
             },
-            "description": "Verified immutable PDF original",
+            "description": "Verified immutable PDF or plain-text original",
         },
         status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorResponse},

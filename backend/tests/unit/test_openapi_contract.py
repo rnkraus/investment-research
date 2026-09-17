@@ -28,6 +28,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/health",
         "/ready",
         "/api/v1/documents",
+        "/api/v1/documents/text",
         "/api/v1/documents/{document_id}/versions/{version_id}/original",
         "/api/v1/evidence-spans/{evidence_span_id}",
         "/api/v1/processing-runs/{processing_run_id}",
@@ -74,7 +75,26 @@ def test_document_capture_uses_scoped_multipart_contract() -> None:
         }
 
 
-def test_original_route_exposes_binary_pdf_without_workspace_input() -> None:
+def test_text_capture_uses_strict_bounded_json_contract() -> None:
+    schema = create_app(ApiSettings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/documents/text"]["post"]
+
+    assert operation["requestBody"]["content"] == {
+        "application/json": {"schema": {"$ref": "#/components/schemas/PastedTextDocumentInput"}}
+    }
+    body_schema = schema["components"]["schemas"]["PastedTextDocumentInput"]
+    assert body_schema["additionalProperties"] is False
+    assert set(body_schema["required"]) == {"title", "text"}
+    assert body_schema["properties"]["language"]["const"] == "en"
+    assert body_schema["properties"]["text"]["maxLength"] == 100_000
+    assert "workspace_id" not in json.dumps(operation)
+    for status_code in ("409", "413", "422", "500"):
+        assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+
+
+def test_original_route_exposes_media_aware_original_without_workspace_input() -> None:
     schema = create_app(ApiSettings(environment="test")).openapi()
     operation = schema["paths"]["/api/v1/documents/{document_id}/versions/{version_id}/original"][
         "get"
@@ -96,7 +116,8 @@ def test_original_route_exposes_binary_pdf_without_workspace_input() -> None:
     ]
     assert "workspace_id" not in json.dumps(operation)
     assert operation["responses"]["200"]["content"] == {
-        "application/pdf": {"schema": {"type": "string", "format": "binary"}}
+        "application/pdf": {"schema": {"type": "string", "format": "binary"}},
+        "text/plain": {"schema": {"type": "string"}},
     }
     for status_code in ("404", "422", "500"):
         assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {

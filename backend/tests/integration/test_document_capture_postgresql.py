@@ -18,7 +18,7 @@ from investment_research.infrastructure.database.unit_of_work import (
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
 from investment_research.modules.documents.application import CaptureDocumentService
-from investment_research.modules.documents.contracts import CaptureDocumentInput
+from investment_research.modules.documents.contracts import PdfCaptureInput
 from investment_research.modules.documents.persistence import (
     DocumentRow,
     DocumentVersionRow,
@@ -59,10 +59,10 @@ def create_workspace(engine: Engine) -> WorkspaceContext:
     return context
 
 
-def make_capture_input() -> CaptureDocumentInput:
+def make_capture_input() -> PdfCaptureInput:
     """Return valid synthetic PDF metadata for the integration path."""
 
-    return CaptureDocumentInput(
+    return PdfCaptureInput(
         filename="earnings-brief.pdf",
         media_type="application/pdf",
         title="Synthetic PostgreSQL Capture",
@@ -99,7 +99,7 @@ def test_capture_commits_document_original_and_processing_intent(
     other_context = create_workspace(integration_database_engine)
     service = make_capture_service(integration_database_engine, tmp_path / "objects")
 
-    result = service.capture(context, make_capture_input(), BytesIO(PDF_CONTENT))
+    result = service.capture_pdf(context, make_capture_input(), BytesIO(PDF_CONTENT))
 
     session_factory = create_session_factory(integration_database_engine)
     with transactional_session(session_factory) as session:
@@ -172,7 +172,7 @@ def test_capture_rolls_back_all_rows_and_discards_object_on_failure(
     monkeypatch.setattr(SqlAlchemyProcessingRepository, "add_run", fail_processing_write)
 
     with pytest.raises(RuntimeError, match="processing persistence failure"):
-        service.capture(context, make_capture_input(), BytesIO(PDF_CONTENT))
+        service.capture_pdf(context, make_capture_input(), BytesIO(PDF_CONTENT))
 
     session_factory = create_session_factory(integration_database_engine)
     table_types = (DocumentRow, DocumentVersionRow, OriginalArtifactRow, ProcessingRunRow)

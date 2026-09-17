@@ -161,8 +161,9 @@ The command generates disposable PostgreSQL and Redis passwords, administrator a
 storage credentials, a private bucket, a unique Compose project, and a unique verification image.
 Direct S3 tests reach only the gateway through the internal `storage-data` network. A separately
 confined API contract container joins that network and the project's backend network, captures a
-synthetic PDF through `POST /api/v1/documents`, publishes its processing task to Redis, and reopens
-the immutable bytes through the authorized original endpoint.
+synthetic PDF through `POST /api/v1/documents` and synthetic text through
+`POST /api/v1/documents/text`, publishes their processing tasks to Redis, and reopens both immutable
+originals through the authorized original endpoint.
 SeaweedFS publishes no host port. Tests cover immutable conditional creation under concurrency,
 checksum and byte integrity, open and cleanup, missing/foreign non-disclosure, workspace key scope,
 least-privilege application credentials, and restart persistence. Runtime inspection also verifies

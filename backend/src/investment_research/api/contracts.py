@@ -13,6 +13,7 @@ from pydantic import (
     model_validator,
 )
 
+from investment_research.modules.documents.contracts import MAX_PASTED_TEXT_CHARACTERS
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.domain import TemporalMode
 
@@ -67,6 +68,13 @@ class DocumentMetadataInput(StrictContract):
     language: LanguageCode = "en"
     published_at: AwareDatetime | None = None
     available_at: AwareDatetime | None = None
+
+
+class PastedTextDocumentInput(DocumentMetadataInput):
+    """Bounded JSON body for one immutable English pasted-text original."""
+
+    language: Literal["en"] = "en"
+    text: Annotated[str, StringConstraints(max_length=MAX_PASTED_TEXT_CHARACTERS)]
 
 
 class DocumentAccepted(StrictContract):
@@ -220,6 +228,7 @@ ResearchStreamEvent = Annotated[
 PUBLIC_CONTRACT_MODELS: tuple[type[BaseModel], ...] = (
     ErrorResponse,
     DocumentMetadataInput,
+    PastedTextDocumentInput,
     DocumentAccepted,
     ProcessingRunResult,
     ResearchRequestInput,

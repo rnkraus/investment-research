@@ -35,6 +35,8 @@ OTHER_WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000003")
 PERSISTENCE_OBJECT_ID = UUID("00000000-0000-4000-8000-000000000004")
 PDF_CONTENT = b"%PDF-1.7\nsynthetic SeaweedFS integration document\n%%EOF\n"
 OTHER_PDF_CONTENT = b"%PDF-1.7\ncompeting immutable document\n%%EOF\n"
+SUBMITTED_TEXT = "Capacity increased in Montréal.\r\nOutlook: 😀\r"
+NORMALIZED_TEXT_BYTES = "Capacity increased in Montréal.\nOutlook: 😀\n".encode()
 
 
 class AdministrativeS3Client(Protocol):
@@ -220,6 +222,36 @@ def test_api_capture_and_authorized_original_open_use_seaweedfs(
     assert original_response.status_code == 200
     assert original_response.headers["content-type"] == "application/pdf"
     assert original_response.content == PDF_CONTENT
+
+
+def test_api_text_capture_and_original_open_use_seaweedfs(
+    s3_configuration: S3IntegrationConfiguration,
+) -> None:
+    settings = load_api_settings(env_file=None)
+    assert settings.require_s3_settings().bucket == s3_configuration.bucket
+    application = create_app(settings)
+
+    with TestClient(application) as client:
+        capture_response = client.post(
+            "/api/v1/documents/text",
+            json={
+                "title": "Synthetic SeaweedFS Text Integration",
+                "language": "en",
+                "published_at": "2026-07-22T00:00:00Z",
+                "text": SUBMITTED_TEXT,
+            },
+        )
+
+        assert capture_response.status_code == 202
+        capture = DocumentAccepted.model_validate(capture_response.json())
+        original_response = client.get(
+            f"/api/v1/documents/{capture.document_id}/versions/"
+            f"{capture.document_version_id}/original"
+        )
+
+    assert original_response.status_code == 200
+    assert original_response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert original_response.content == NORMALIZED_TEXT_BYTES
 
 
 def test_object_survives_storage_restart(

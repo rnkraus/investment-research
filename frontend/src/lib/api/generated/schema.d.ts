@@ -24,6 +24,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/documents/text": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Capture Pasted Text
+         * @description Accept one bounded English text original and return its capture identifiers.
+         */
+        readonly post: operations["capture_pasted_text_api_v1_documents_text_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/documents/{document_id}/versions/{version_id}/original": {
         readonly parameters: {
             readonly query?: never;
@@ -424,6 +444,26 @@ export interface components {
             readonly version: string;
         };
         /**
+         * PastedTextDocumentInput
+         * @description Bounded JSON body for one immutable English pasted-text original.
+         */
+        readonly PastedTextDocumentInput: {
+            /** Available At */
+            readonly available_at?: string | null;
+            /**
+             * Language
+             * @default en
+             * @constant
+             */
+            readonly language: "en";
+            /** Published At */
+            readonly published_at?: string | null;
+            /** Text */
+            readonly text: string;
+            /** Title */
+            readonly title: string;
+        };
+        /**
          * ProcessingRunResult
          * @description Safe processing status visible to the owning workspace.
          */
@@ -620,6 +660,66 @@ export interface operations {
             };
         };
     };
+    readonly capture_pasted_text_api_v1_documents_text_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PastedTextDocumentInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentAccepted"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly open_original_api_v1_documents__document_id__versions__version_id__original_get: {
         readonly parameters: {
             readonly query?: never;
@@ -632,13 +732,14 @@ export interface operations {
         };
         readonly requestBody?: never;
         readonly responses: {
-            /** @description Verified immutable PDF original */
+            /** @description Verified immutable PDF or plain-text original */
             readonly 200: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
                 content: {
                     readonly "application/pdf": string;
+                    readonly "text/plain": string;
                 };
             };
             /** @description Not Found */
