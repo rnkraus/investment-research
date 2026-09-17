@@ -31,7 +31,7 @@ from investment_research.infrastructure.generation.deterministic import (
 )
 from investment_research.main import create_app
 from investment_research.modules.evidence.persistence import EvidenceSpanRow
-from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
+from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
@@ -126,7 +126,7 @@ def test_api_rejects_untrusted_answer_without_exposing_usable_content(
     source = make_searchable_research_source(
         label=f"M0.0 Adversarial API {adversarial_case}",
         primary_text=searchable_text,
-        lexical_config_version=M0_0_PROCESSING_PROFILE.lexical_config_version,
+        lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
     )
     persist_research_source(integration_database_engine, source)
     application = create_app(
