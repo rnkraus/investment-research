@@ -91,8 +91,10 @@ flowchart LR
 
 `AnswerGenerationInput` contains the exact question and a bounded, ordered snapshot of the selected
 retrieval sources. Each source keeps its retrieval-candidate, chunk, document-version, structure,
-page, and text identity. A generated evidence reference points to a candidate and an exact text
-range; it is only a proposal until the server reloads and validates canonical data.
+media locator, and text identity. A generated evidence reference points to a candidate and an exact
+block-relative text range; it is only a proposal until the server reloads and validates canonical
+data. For pasted text, the server derives the absolute original range from the canonical structure
+block rather than accepting one from the generator.
 
 The generator result is immutable and schema-valid but intentionally named `Unvalidated`. It may
 never be persisted as an accepted statement or emitted to a client merely because its Pydantic

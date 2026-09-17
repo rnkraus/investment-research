@@ -30,6 +30,7 @@ from investment_research.infrastructure.generation.deterministic import (
     DeterministicFixtureAnswerGenerator,
     FixtureAnswerCase,
 )
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.contracts import EvidenceValidationProfile
 from investment_research.modules.evidence.domain import AnswerValidation
 from investment_research.modules.evidence.persistence import (
@@ -118,6 +119,7 @@ def make_application_result(
                 document_id=source.document.id,
                 document_version_id=source.version.id,
                 structure_block_id=chunk.structure_block_id,
+                source_locator_kind=SourceLocatorKind.PDF_PAGE,
                 page_number=page_number,
                 text=chunk.text,
                 raw_score=candidate.raw_score,

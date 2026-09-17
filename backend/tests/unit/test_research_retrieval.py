@@ -10,6 +10,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.application import RetrieveResearchService
 from investment_research.modules.research.contracts import ResearchRetrievalInput
@@ -73,6 +74,7 @@ def make_hit(*, chunk_id: UUID, raw_score: float, page_number: int) -> LexicalSe
         document_id=DOCUMENT_ID,
         document_version_id=VERSION_ID,
         structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=page_number,
         text=f"Eligible source text on page {page_number}.",
         raw_score=raw_score,

@@ -5,8 +5,16 @@ from math import isfinite
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.search.domain import (
     ConfigurationVersion,
     NormalizedQuery,
@@ -52,7 +60,8 @@ class LexicalSearchHit(ImmutableSearchContract):
     document_id: UUID
     document_version_id: UUID
     structure_block_id: UUID
-    page_number: int = Field(ge=1)
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
     text: SearchableText
     raw_score: float = Field(gt=0, allow_inf_nan=False)
 
@@ -64,6 +73,17 @@ class LexicalSearchHit(ImmutableSearchContract):
         if not value.strip():
             raise ValueError("text must contain a non-whitespace character")
         return value
+
+    @model_validator(mode="after")
+    def require_media_appropriate_locator(self) -> LexicalSearchHit:
+        """Require a physical page only for PDF-backed search hits."""
+
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE search hit requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE search hit must not define page_number")
+        return self
 
 
 class EmbeddingInput(ImmutableSearchContract):

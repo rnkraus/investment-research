@@ -3,7 +3,7 @@
 from hashlib import sha256
 from uuid import UUID
 
-from investment_research.modules.documents.domain import DocumentLifecycleState
+from investment_research.modules.documents.domain import DocumentLifecycleState, SourceLocatorKind
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
     EvidenceValidationDecision,
@@ -259,12 +259,25 @@ class ValidateGeneratedAnswerService:
         ):
             return None
 
+        source_start_character = None
+        source_end_character = None
+        if source.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE:
+            source_start_character = (
+                source.structure_block_start_character + reference.start_character
+            )
+            source_end_character = source.structure_block_start_character + reference.end_character
+            if source_end_character > source.structure_block_end_character:
+                return None
+
         return ValidatedEvidenceReference(
             retrieval_candidate_id=source.retrieval_candidate_id,
             document_id=source.document_id,
             document_version_id=source.document_version_id,
             structure_block_id=source.structure_block_id,
+            source_locator_kind=source.source_locator_kind,
             page_number=source.page_number,
+            source_start_character=source_start_character,
+            source_end_character=source_end_character,
             start_character=reference.start_character,
             end_character=reference.end_character,
             exact_text=reference.exact_text,

@@ -219,8 +219,11 @@ class PostgresCanonicalEvidenceSourceReader:
             version_available_at=document_version.available_at,
             version_captured_at=document_version.captured_at,
             structure_block_id=structure_block.id,
+            source_locator_kind=structure_block.source_locator_kind,
             page_number=structure_block.page_number,
             structure_block_text=structure_block.text,
+            structure_block_start_character=structure_block.start_character,
+            structure_block_end_character=structure_block.end_character,
             retrieval_filters=retrieval_run.to_domain().filters,
             retrieval_lexical_config_version=retrieval_run.lexical_config_version,
         )

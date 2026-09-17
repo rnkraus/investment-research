@@ -6,7 +6,10 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from investment_research.modules.documents.domain import DocumentLifecycleState
+from investment_research.modules.documents.domain import (
+    DocumentLifecycleState,
+    SourceLocatorKind,
+)
 from investment_research.modules.evidence.domain import (
     ConfigurationVersion,
     EvidenceSpan,
@@ -67,8 +70,11 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
     version_available_at: AwareDatetime | None
     version_captured_at: AwareDatetime
     structure_block_id: UUID
-    page_number: int = Field(ge=1)
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
     structure_block_text: str = Field(min_length=1, max_length=100_000)
+    structure_block_start_character: int = Field(ge=0)
+    structure_block_end_character: int = Field(gt=0)
     retrieval_filters: RetrievalFilters
     retrieval_lexical_config_version: ConfigurationVersion
 
@@ -87,6 +93,23 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
         """Normalize canonical eligibility timestamps to UTC."""
 
         return None if value is None else value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def require_media_appropriate_source_range(self) -> Self:
+        """Require one valid block locator before evidence validation can use it."""
+
+        if self.structure_block_end_character <= self.structure_block_start_character:
+            raise ValueError("structure block source range must be ordered")
+        if self.structure_block_end_character - self.structure_block_start_character != len(
+            self.structure_block_text
+        ):
+            raise ValueError("structure block source range must match its text length")
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE evidence source requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE evidence source must not define page_number")
+        return self
 
 
 class ValidationFinding(ImmutableEvidenceContract):
@@ -115,7 +138,10 @@ class ValidatedEvidenceReference(ImmutableEvidenceContract):
     document_id: UUID
     document_version_id: UUID
     structure_block_id: UUID
-    page_number: int = Field(ge=1)
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
+    source_start_character: int | None = Field(default=None, ge=0)
+    source_end_character: int | None = Field(default=None, gt=0)
     start_character: int = Field(ge=0)
     end_character: int = Field(gt=0)
     exact_text: str = Field(min_length=1, max_length=50_000)
@@ -129,6 +155,20 @@ class ValidatedEvidenceReference(ImmutableEvidenceContract):
             raise ValueError("end_character must be greater than start_character")
         if self.end_character - self.start_character != len(self.exact_text):
             raise ValueError("validated offsets must match exact_text length")
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE reference requires page_number")
+            if self.source_start_character is not None or self.source_end_character is not None:
+                raise ValueError("PDF_PAGE reference must not define text-passage offsets")
+        else:
+            if self.page_number is not None:
+                raise ValueError("TEXT_PASSAGE reference must not define page_number")
+            if self.source_start_character is None or self.source_end_character is None:
+                raise ValueError("TEXT_PASSAGE reference requires source offsets")
+            if self.source_end_character <= self.source_start_character:
+                raise ValueError("source_end_character must follow source_start_character")
+            if self.source_end_character - self.source_start_character != len(self.exact_text):
+                raise ValueError("text-passage source offsets must match exact_text length")
         return self
 
 

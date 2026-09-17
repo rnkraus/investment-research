@@ -47,9 +47,11 @@ Temporal filters record the actual eligibility predicates rather than repeating 
 the document entered the workspace archive. An archive cutoff therefore requires an availability
 cutoff. This keeps Search independent of Research while preserving the exact executed filter state.
 
-Each hit identifies its canonical chunk, document, version, source block, and physical page, retains
-the exact chunk text, and carries a positive finite lexical score. A hit is only a retrieval
-candidate; it cannot become citation evidence until the later evidence-validation step succeeds.
+Each hit identifies its canonical chunk, document, version, source block, and media-appropriate
+locator kind. PDF hits carry a physical page; pasted-text hits deliberately carry no invented page.
+Every hit retains the exact chunk text and a positive finite lexical score. A hit is only a
+retrieval candidate; it cannot become citation evidence until the later evidence-validation step
+succeeds.
 
 ## Persisted retrieval result
 

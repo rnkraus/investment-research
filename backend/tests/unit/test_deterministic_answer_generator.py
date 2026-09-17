@@ -11,6 +11,7 @@ from investment_research.infrastructure.generation.deterministic import (
     DeterministicFixtureAnswerGenerator,
     FixtureAnswerCase,
 )
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
@@ -49,6 +50,7 @@ def make_source(text: str) -> AnswerGenerationSource:
         document_id=DOCUMENT_ID,
         document_version_id=VERSION_ID,
         structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
         page_number=2,
         text=text,
     )
