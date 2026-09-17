@@ -8,6 +8,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from investment_research.api.contracts import (
     DocumentMetadataInput,
+    EvidencePdfPageLocator,
     EvidenceSpanResult,
     ResearchRequestContext,
     ResearchRequestInput,
@@ -76,12 +77,12 @@ def test_evidence_span_requires_an_ordered_source_range() -> None:
             evidence_span_id=UUID("00000000-0000-4000-8000-000000000010"),
             document_id=UUID("00000000-0000-4000-8000-000000000011"),
             document_version_id=UUID("00000000-0000-4000-8000-000000000012"),
-            page=1,
             start_character=20,
             end_character=20,
             exact_text="Revenue increased.",
             text_sha256="a" * 64,
-            viewer_url="/documents/00000000-0000-4000-8000-000000000011?page=1",
+            locator=EvidencePdfPageLocator(page=1),
+            viewer_url="/sources/00000000-0000-4000-8000-000000000010",
         )
 
 

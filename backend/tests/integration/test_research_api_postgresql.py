@@ -243,15 +243,13 @@ def test_evidence_api_resolves_a_streamed_citation_to_its_exact_active_source(
     assert payload["evidence_span_id"] == citation_event["payload"]["evidence_span_id"]
     assert payload["document_id"] == str(source.document.id)
     assert payload["document_version_id"] == str(source.version.id)
-    assert payload["page"] == 2
+    assert payload["locator"] == {"kind": "PDF_PAGE", "page": 2}
     assert payload["start_character"] == expected_start
     assert payload["end_character"] == (
         expected_start + len(M0_0_FIXTURE_ANSWER_CASE.evidence_text)
     )
     assert payload["exact_text"] == M0_0_FIXTURE_ANSWER_CASE.evidence_text
-    assert payload["viewer_url"] == (
-        f"/api/v1/documents/{source.document.id}/versions/{source.version.id}/original#page=2"
-    )
+    assert payload["viewer_url"] == f"/sources/{payload['evidence_span_id']}"
     assert evidence_response.headers["cache-control"] == "private, no-store"
     assert "storage_key" not in evidence_response.text
 

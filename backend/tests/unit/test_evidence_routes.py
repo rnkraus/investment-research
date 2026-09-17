@@ -34,6 +34,7 @@ VERSION_ID = UUID("10000000-0000-4000-8000-000000000003")
 BLOCK_ID = UUID("10000000-0000-4000-8000-000000000004")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 EVIDENCE_TEXT = "FY2025 revenue was $184.2 million."
+TEXT_SOURCE_START = 185
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
 
@@ -88,6 +89,29 @@ def make_result() -> ResolvedEvidenceSpan:
     )
 
 
+def make_text_result() -> ResolvedEvidenceSpan:
+    """Build one authorized pasted-text citation location."""
+
+    return ResolvedEvidenceSpan(
+        document_id=DOCUMENT_ID,
+        span=EvidenceSpan(
+            id=SPAN_ID,
+            workspace_id=WORKSPACE_ID,
+            document_version_id=VERSION_ID,
+            structure_block_id=BLOCK_ID,
+            source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+            page_number=None,
+            source_start_character=TEXT_SOURCE_START,
+            source_end_character=TEXT_SOURCE_START + len(EVIDENCE_TEXT),
+            start_character=0,
+            end_character=len(EVIDENCE_TEXT),
+            exact_text=EVIDENCE_TEXT,
+            text_sha256=sha256(EVIDENCE_TEXT.encode()).hexdigest(),
+            created_at=CREATED_AT,
+        ),
+    )
+
+
 @pytest.fixture
 def evidence_client(
     tmp_path: Path,
@@ -121,24 +145,42 @@ def test_evidence_route_returns_exact_location_and_protected_viewer_target(
     client, service = evidence_client
 
     response = client.get(f"/api/v1/evidence-spans/{SPAN_ID}")
-    expected_viewer_url = f"/api/v1/documents/{DOCUMENT_ID}/versions/{VERSION_ID}/original#page=2"
+    expected_viewer_url = f"/sources/{SPAN_ID}"
 
     assert response.status_code == 200
     assert response.json() == {
         "evidence_span_id": str(SPAN_ID),
         "document_id": str(DOCUMENT_ID),
         "document_version_id": str(VERSION_ID),
-        "page": 2,
         "start_character": 0,
         "end_character": len(EVIDENCE_TEXT),
         "exact_text": EVIDENCE_TEXT,
         "text_sha256": sha256(EVIDENCE_TEXT.encode()).hexdigest(),
+        "locator": {"kind": "PDF_PAGE", "page": 2},
         "viewer_url": expected_viewer_url,
     }
     assert response.headers["cache-control"] == "private, no-store"
     assert "workspace" not in response.text
     assert "storage_key" not in response.text
     assert service.calls == [(make_context(), SPAN_ID)]
+
+
+def test_evidence_route_returns_absolute_text_passage_locator(
+    evidence_client: tuple[TestClient, FakeResolveEvidenceSpanService],
+) -> None:
+    client, service = evidence_client
+    service.result = make_text_result()
+
+    response = client.get(f"/api/v1/evidence-spans/{SPAN_ID}")
+
+    assert response.status_code == 200
+    assert response.json()["locator"] == {
+        "kind": "TEXT_PASSAGE",
+        "start_character": TEXT_SOURCE_START,
+        "end_character": TEXT_SOURCE_START + len(EVIDENCE_TEXT),
+    }
+    assert response.json()["viewer_url"] == f"/sources/{SPAN_ID}"
+    assert response.headers["cache-control"] == "private, no-store"
 
 
 @pytest.mark.parametrize(

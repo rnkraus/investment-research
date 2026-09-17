@@ -6,7 +6,14 @@ from fastapi import APIRouter, Response, status
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from investment_research.api.contracts import ErrorCode, ErrorResponse, EvidenceSpanResult
+from investment_research.api.contracts import (
+    ErrorCode,
+    ErrorResponse,
+    EvidencePdfPageLocator,
+    EvidenceSourceLocator,
+    EvidenceSpanResult,
+    EvidenceTextPassageLocator,
+)
 from investment_research.api.dependencies import (
     ResolveEvidenceSpanServiceDependency,
     WorkspaceContextDependency,
@@ -51,7 +58,19 @@ def resolve_evidence_span(
         ) from error
 
     span = resolved.span
-    if span.source_locator_kind is not SourceLocatorKind.PDF_PAGE or span.page_number is None:
+    locator: EvidenceSourceLocator
+    if span.source_locator_kind is SourceLocatorKind.PDF_PAGE and span.page_number is not None:
+        locator = EvidencePdfPageLocator(page=span.page_number)
+    elif (
+        span.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+        and span.source_start_character is not None
+        and span.source_end_character is not None
+    ):
+        locator = EvidenceTextPassageLocator(
+            start_character=span.source_start_character,
+            end_character=span.source_end_character,
+        )
+    else:
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code=ErrorCode.INTERNAL_ERROR,
@@ -62,13 +81,10 @@ def resolve_evidence_span(
         evidence_span_id=span.id,
         document_id=resolved.document_id,
         document_version_id=span.document_version_id,
-        page=span.page_number,
         start_character=span.start_character,
         end_character=span.end_character,
         exact_text=span.exact_text,
         text_sha256=span.text_sha256,
-        viewer_url=(
-            f"/api/v1/documents/{resolved.document_id}/versions/"
-            f"{span.document_version_id}/original#page={span.page_number}"
-        ),
+        locator=locator,
+        viewer_url=f"/sources/{span.id}",
     )
