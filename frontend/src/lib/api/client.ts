@@ -2,6 +2,8 @@ import type { components } from "./generated/schema";
 
 export type DocumentAccepted = components["schemas"]["DocumentAccepted"];
 export type ProcessingRunResult = components["schemas"]["ProcessingRunResult"];
+export type PastedTextDocumentInput =
+  components["schemas"]["PastedTextDocumentInput"];
 export type ResearchRequestInput =
   components["schemas"]["ResearchRequestInput"];
 export type ResearchStreamEvent = components["schemas"]["ResearchStreamEvent"];
@@ -124,16 +126,34 @@ function isEvidenceSpanResult(value: unknown): value is EvidenceSpanResult {
     isUuid(value.evidence_span_id) &&
     isUuid(value.document_id) &&
     isUuid(value.document_version_id) &&
-    Number.isInteger(value.page) &&
-    Number(value.page) >= 1 &&
     isNonNegativeInteger(value.start_character) &&
     Number.isInteger(value.end_character) &&
     Number(value.end_character) > Number(value.start_character) &&
     isNonEmptyString(value.exact_text) &&
     typeof value.text_sha256 === "string" &&
     SHA256_PATTERN.test(value.text_sha256) &&
-    isNonEmptyString(value.viewer_url)
+    isNonEmptyString(value.viewer_url) &&
+    isEvidenceLocator(value.locator)
   );
+}
+
+function isEvidenceLocator(
+  value: unknown,
+): value is EvidenceSpanResult["locator"] {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.kind === "PDF_PAGE") {
+    return Number.isInteger(value.page) && Number(value.page) >= 1;
+  }
+  if (value.kind === "TEXT_PASSAGE") {
+    return (
+      isNonNegativeInteger(value.start_character) &&
+      Number.isInteger(value.end_character) &&
+      Number(value.end_character) > Number(value.start_character)
+    );
+  }
+  return false;
 }
 
 function isErrorCode(value: unknown): value is ApiErrorCode {
@@ -356,6 +376,23 @@ export function createApiClient(
         "/api/v1/documents",
         isDocumentAccepted,
         { method: "POST", body, signal },
+      );
+    },
+
+    capturePastedText(
+      input: PastedTextDocumentInput,
+      signal?: AbortSignal,
+    ): Promise<DocumentAccepted> {
+      return requestJson(
+        fetchImplementation,
+        "/api/v1/documents/text",
+        isDocumentAccepted,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+          signal,
+        },
       );
     },
 

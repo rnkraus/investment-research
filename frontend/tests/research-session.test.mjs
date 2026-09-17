@@ -61,7 +61,7 @@ test("a statement becomes complete only after its citation arrives", () => {
   assert.equal(completed.statements[0].citations[0].evidenceSpanId, SPAN_ID);
 });
 
-test("an authorized source attaches only to its matching citation", () => {
+test("authorized PDF and text sources attach only to their matching citation", () => {
   const completed = applyResearchEvent(
     applyResearchEvent(
       applyResearchEvent(beginResearchSession(), statementEvent()),
@@ -69,21 +69,40 @@ test("an authorized source attaches only to its matching citation", () => {
     ),
     completedEvent(),
   );
-  const source = {
-    evidence_span_id: SPAN_ID,
-    document_id: DOCUMENT_ID,
-    document_version_id: VERSION_ID,
-    page: 2,
-    start_character: 10,
-    end_character: 24,
-    exact_text: "Revenue grew.",
-    text_sha256: "a".repeat(64),
-    viewer_url: `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original#page=2`,
-  };
+  const sources = [
+    {
+      evidence_span_id: SPAN_ID,
+      document_id: DOCUMENT_ID,
+      document_version_id: VERSION_ID,
+      start_character: 10,
+      end_character: 24,
+      exact_text: "Revenue grew.",
+      text_sha256: "a".repeat(64),
+      locator: { kind: "PDF_PAGE", page: 2 },
+      viewer_url: `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original#page=2`,
+    },
+    {
+      evidence_span_id: SPAN_ID,
+      document_id: DOCUMENT_ID,
+      document_version_id: VERSION_ID,
+      start_character: 0,
+      end_character: 14,
+      exact_text: "Revenue grew.",
+      text_sha256: "a".repeat(64),
+      locator: {
+        kind: "TEXT_PASSAGE",
+        start_character: 31,
+        end_character: 45,
+      },
+      viewer_url: `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original#chars=31,45`,
+    },
+  ];
 
-  const resolved = attachCitationSource(completed, source);
+  for (const source of sources) {
+    const resolved = attachCitationSource(completed, source);
 
-  assert.deepEqual(resolved.statements[0].citations[0].source, source);
+    assert.deepEqual(resolved.statements[0].citations[0].source, source);
+  }
 });
 
 test("an insufficient result remains explicit and contains no statements", () => {

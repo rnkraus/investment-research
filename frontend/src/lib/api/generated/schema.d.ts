@@ -389,6 +389,19 @@ export interface components {
             readonly error: components["schemas"]["ErrorDetail"];
         };
         /**
+         * EvidencePdfPageLocator
+         * @description Physical one-based page inside an immutable PDF original.
+         */
+        readonly EvidencePdfPageLocator: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "PDF_PAGE";
+            /** Page */
+            readonly page: number;
+        };
+        /**
          * EvidenceRelationship
          * @description How a source span relates to an answer statement.
          * @enum {string}
@@ -418,14 +431,29 @@ export interface components {
             readonly evidence_span_id: string;
             /** Exact Text */
             readonly exact_text: string;
-            /** Page */
-            readonly page: number;
+            /** Locator */
+            readonly locator: components["schemas"]["EvidencePdfPageLocator"] | components["schemas"]["EvidenceTextPassageLocator"];
             /** Start Character */
             readonly start_character: number;
             /** Text Sha256 */
             readonly text_sha256: string;
             /** Viewer Url */
             readonly viewer_url: string;
+        };
+        /**
+         * EvidenceTextPassageLocator
+         * @description Absolute Python-code-point range inside an immutable plain-text original.
+         */
+        readonly EvidenceTextPassageLocator: {
+            /** End Character */
+            readonly end_character: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "TEXT_PASSAGE";
+            /** Start Character */
+            readonly start_character: number;
         };
         /**
          * HealthResponse

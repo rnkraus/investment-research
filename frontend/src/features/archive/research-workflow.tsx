@@ -254,8 +254,20 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
                             </blockquote>
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                               <span className="text-xs font-semibold text-slate-500">
-                                {archiveCopy.citation.pageLabel}{" "}
-                                {citation.source.page}
+                                {citation.source.locator.kind === "PDF_PAGE" ? (
+                                  <>
+                                    {archiveCopy.citation.pageLabel}{" "}
+                                    {citation.source.locator.page}
+                                  </>
+                                ) : (
+                                  <>
+                                    {archiveCopy.citation.textRangeLabel}{" "}
+                                    {citation.source.locator.start_character +
+                                      1}
+                                    {"–"}
+                                    {citation.source.locator.end_character}
+                                  </>
+                                )}
                               </span>
                               <a
                                 className="text-sm font-semibold text-teal-700 underline decoration-teal-300 underline-offset-4 hover:text-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"

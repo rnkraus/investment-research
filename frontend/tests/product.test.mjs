@@ -9,9 +9,10 @@ test("the product copy describes the evidence contract", () => {
   assert.match(productCopy.description, /verifiable citations/i);
 });
 
-test("the archive copy states the accepted M0.0 fixture boundary", () => {
-  assert.match(archiveCopy.safetyNote, /included synthetic fixture only/i);
-  assert.match(archiveCopy.upload.fileHint, /included synthetic PDF fixture/i);
+test("the archive copy states the local M1 input and data boundaries", () => {
+  assert.match(archiveCopy.safetyNote, /public, synthetic, or non-sensitive/i);
+  assert.match(archiveCopy.upload.pdfMode, /PDF/i);
+  assert.match(archiveCopy.upload.textMode, /text/i);
 });
 
 test("the processing copy describes automatic background execution", () => {
