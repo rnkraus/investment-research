@@ -18,7 +18,7 @@ from investment_research.modules.evidence.persistence import (
     EvidenceSpanRow,
     StatementEvidenceRow,
 )
-from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
+from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     ResearchSource,
@@ -40,7 +40,7 @@ def make_manifest_source(*, label: str) -> ResearchSource:
     return make_searchable_research_source(
         label=label,
         primary_text=answerable_text,
-        lexical_config_version=M0_0_PROCESSING_PROFILE.lexical_config_version,
+        lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
     )
 
 

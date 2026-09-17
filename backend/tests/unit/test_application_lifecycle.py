@@ -32,6 +32,7 @@ from investment_research.modules.documents.application import (
 )
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.processing.application import (
+    M1_PROCESSING_PROFILE,
     ExecuteProcessingJobService,
     GetProcessingRunService,
     ProcessDocumentService,
@@ -131,9 +132,17 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
                 CeleryBrokerReadinessProbe,
             )
             assert isinstance(container.capture_document_service, CaptureDocumentService)
+            assert (
+                container.capture_document_service._processing_profile.lexical_config_version
+                == M1_PROCESSING_PROFILE.lexical_config_version
+            )
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.get_processing_run_service, GetProcessingRunService)
             assert isinstance(container.retrieve_research_service, RetrieveResearchService)
+            assert (
+                container.retrieve_research_service._search_profile.lexical_config_version
+                == M1_PROCESSING_PROFILE.lexical_config_version
+            )
             assert isinstance(
                 container.generate_validated_answer_service,
                 GenerateValidatedAnswerService,

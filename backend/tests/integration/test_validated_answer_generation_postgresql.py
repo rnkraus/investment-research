@@ -40,7 +40,7 @@ from investment_research.modules.evidence.persistence import (
     StatementEvidenceRow,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
+from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.research.application import GenerateValidatedAnswerService
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -222,7 +222,7 @@ def test_container_wires_the_manifest_answer_path(
     source = make_searchable_research_source(
         label="Container Answer Path",
         primary_text=answerable_text,
-        lexical_config_version=M0_0_PROCESSING_PROFILE.lexical_config_version,
+        lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
     )
     persist_research_source(integration_database_engine, source)
     container = build_api_container(integration_api_settings)

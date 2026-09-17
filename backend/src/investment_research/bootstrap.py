@@ -58,7 +58,6 @@ from investment_research.modules.identity.application import (
     IdentityContextProvider,
 )
 from investment_research.modules.processing.application import (
-    M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
     ExecuteProcessingJobService,
     GetProcessingRunService,
@@ -203,7 +202,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             database.session_factory
         ),
         search_profile=LexicalSearchProfile(
-            lexical_config_version=M0_0_PROCESSING_PROFILE.lexical_config_version,
+            lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
             candidate_limit=10,
         ),
     )
