@@ -1,13 +1,15 @@
 # Processing
 
-This module owns canonical processing intent, source-aware parsed structure, versioned chunk sets, and lexical retrieval chunks. M0.0 executes one run in a separate development process; later Celery delivery invokes the same application-owned contracts.
+This module owns canonical processing intent, source-aware parsed structure, versioned chunk sets,
+and lexical retrieval chunks. Celery delivery invokes the same application-owned services for
+historical M0.0 PDF runs and new media-aware M1 runs.
 
 ## Contents
 
 | File             | Responsibility                                                                                   |
 | ---------------- | ------------------------------------------------------------------------------------------------ |
 | `application.py` | Creates and reads runs, builds lexical output, and orchestrates one bounded processing attempt.  |
-| `contracts.py`   | Defines bounded, immutable parser input and page-aware output types.                             |
+| `contracts.py`   | Defines immutable v1 page and v2 media-aware parser protocols, bounds, and exact block outputs.  |
 | `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants. |
 | `ports.py`       | Defines parser, verified-original-provider, repository, and processing unit-of-work contracts.   |
 | `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior. |
@@ -69,25 +71,29 @@ service supplies a bounded, sanitized failure summary rather than storing an exc
 document content directly.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the
-initial durable intent. The factory applies the versioned M0.0 profile and the trusted workspace
-context, so the documents module does not duplicate processing configuration knowledge. The
-processing service requires its configured parser version to match that recorded profile rather
-than silently substituting different parsing semantics.
+initial durable intent. The caller supplies the active versioned profile and trusted workspace
+context, so the documents module does not duplicate processing configuration knowledge. API
+captures now use the M1 media-aware profile; historical tests and records retain the explicit M0.0
+profile. The processing service requires its configured parser version to match the recorded
+profile rather than silently substituting different parsing semantics.
 
 ## Parser boundary
 
 ```mermaid
 flowchart LR
-    STREAM[Caller-owned PDF binary stream] --> PORT[DocumentParser port]
+    ORIGINAL[ProcessingOriginal<br/>verified stream plus media type] --> PORT[DocumentParser port]
     LIMITS[ParserLimits<br/>pages and extracted characters] --> PORT
-    PORT --> RESULT[ParsedDocument]
-    RESULT --> PAGES[Ordered ParsedPages<br/>physical page number and exact text]
-    PAGES --> MAPPING[Later application mapping]
-    MAPPING --> BLOCKS[StructureBlocks and Chunks]
+    PROFILE[Recorded parser profile] --> PORT
+    PORT --> V1[Historical ParsedDocument<br/>ordered PDF pages]
+    PORT --> V2[ParsedPdfDocument or ParsedTextDocument<br/>ordered exact blocks]
+    V1 --> MAPPING[build_lexical_output]
+    V2 --> MAPPING
+    MAPPING --> BLOCKS[StructureBlocks and one-to-one Chunks]
 ```
 
-The application owns both sides of this boundary: `ParserLimits` describes fail-closed extraction
-limits, and `ParsedDocument` contains only ordered page text. A concrete PDF library remains behind
+The application owns both sides of this boundary. `ParserLimits` describes fail-closed extraction
+limits. Protocol v1 retains ordered PDF page text. Protocol v2 adds the canonical media type and
+returns validated PDF-page or pasted-text source blocks. A concrete PDF library remains behind
 the `DocumentParser` port and cannot leak library-specific page objects into domain or persistence
 code. The parser does not create blocks, chunks, or evidence spans; those require application-level
 versioning and provenance rules.
@@ -176,16 +182,20 @@ processing service before persistence.
 ## Isolated parser adapter
 
 The Celery worker receives `HttpDocumentParser` through the existing `DocumentParser` port. The
-adapter sends bounded PDF bytes and `ParserRequestV1` metadata to the fixed private parser endpoint,
-then validates `ParserResponseV1` before returning a `ParsedDocument`. The application service does
-not know whether parsing occurred locally or across the isolated transport.
+adapter selects the immutable protocol from the run's recorded parser profile. Historical M0.0 PDF
+runs use `ParserRequestV1`/`ParserResponseV1`; M1 PDF and pasted-text runs use
+`ParserRequestV2`/`ParserResponseV2`. The application service does not know whether parsing occurred
+locally or across the isolated transport.
 
 ```mermaid
 flowchart LR
     SERVICE[ProcessDocumentService] --> PORT[DocumentParser port]
     PORT --> HTTP[HttpDocumentParser]
-    HTTP -->|private bounded protocol| APP[Credential-free parser app]
-    APP --> PYPDF[PypdfDocumentParser]
+    HTTP -->|v1 historical PDF| V1[Credential-free parser app]
+    HTTP -->|v2 media-aware| V2[Credential-free parser app]
+    V1 --> PYPDF[PypdfDocumentParser]
+    V2 --> CHILD[Terminable parser child]
+    CHILD --> MEDIA[MediaAwareDocumentParser]
 ```
 
 Transport, protocol, document, and limit failures use application-owned exception types. This lets
@@ -202,16 +212,23 @@ PostgreSQL integration tests exercise these categories through the real HTTP ada
 the original bytes to remain unchanged, the terminal lease to be cleared, and no structure block,
 chunk set, or chunk to be committed for a failed parse.
 
-## M0.0 lexical mapping
+## Lexical mapping
 
-`build_lexical_output` accepts only a run in `PARSING`. It maps every non-blank parsed page to one
-`PARAGRAPH` structure block and one matching chunk. The complete extracted page text is preserved
-without trimming; block source offsets are therefore `0` through `len(text)`. Blank pages create no
-database records, but later page numbers do not shift.
+`build_lexical_output` accepts only a run in `PARSING`. Historical v1 output still maps every
+non-blank parsed page to one `PARAGRAPH` structure block and one matching chunk. The complete page
+text remains untrimmed with offsets `0` through `len(text)`; blank physical pages create no records
+but later page numbers do not shift.
+
+For v2, the isolated parser has already produced exact bounded blocks. The builder copies each
+locator kind, physical page number when present, block type, ordinal, text, and source range without
+reinterpretation. It creates exactly one chunk per block with identical text and the same ordinal.
+Pasted-text ranges are absolute codepoint offsets into the normalized immutable original; PDF
+ranges are relative to the extracted text of the named physical page.
 
 ```mermaid
 flowchart LR
-    PD[ParsedDocument<br/>pages 1, blank 2, and 3] --> BUILDER[build_lexical_output]
+    V1[Protocol v1<br/>pages 1, blank 2, and 3] --> BUILDER[build_lexical_output]
+    V2[Protocol v2<br/>exact ordered source blocks] --> BUILDER
     RUN[PARSING ProcessingRun<br/>workspace and versions] --> BUILDER
     BUILDER --> CS[One active ChunkSet]
     BUILDER --> B1[Block 0<br/>physical page 1]
@@ -222,11 +239,11 @@ flowchart LR
     CS --> C2
 ```
 
-M0.0 records whitespace-separated word units in `token_count`; the versioned
-`m0.0-structure-block-config-v1` identifier makes this deliberately simple counting rule explicit.
-A later tokenizer or structure-aware strategy creates a new chunking configuration and chunk set
-rather than altering historical output. A document whose pages are all blank fails before any
-lexical records are created.
+M0.0 and M1 currently record whitespace-separated word units in `token_count`; their distinct
+versioned profiles make that deliberately simple rule and their different block policies explicit.
+A later tokenizer or chunking strategy creates a new configuration and chunk set rather than
+altering historical output. A document with no visible blocks fails before any lexical records are
+created.
 
 ## Lexical output transaction
 
