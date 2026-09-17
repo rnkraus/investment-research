@@ -13,17 +13,25 @@ from investment_research.infrastructure.parsing.http_protocol import (
     PARSER_HTTP_PATH,
     PARSER_REQUEST_CONTENT_TYPE,
     PARSER_REQUEST_METADATA_HEADER,
+    PARSER_V2_HTTP_PATH,
 )
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.processing.contracts import (
+    M1_PARSER_CONFIG_VERSION,
     PDF_PARSER_CONFIG_VERSION_V1,
+    ParsedBlockV2,
     ParsedDocument,
     ParsedPage,
+    ParsedTextDocument,
     ParserFailureCode,
     ParserFailureV1,
     ParserLimits,
     ParserRequestV1,
+    ParserRequestV2,
     ParserResponseV1,
+    ParserResponseV2,
 )
+from investment_research.modules.processing.domain import StructureBlockType
 from investment_research.modules.processing.ports import (
     DocumentParserError,
     ParserLimitExceededError,
@@ -114,6 +122,16 @@ def make_parser(*, max_request_bytes: int = 1_024) -> HttpDocumentParser:
     )
 
 
+def make_v2_parser(*, max_request_bytes: int = 1_024) -> HttpDocumentParser:
+    return HttpDocumentParser(
+        endpoint_url="http://127.0.0.1:8100",
+        parser_version=PARSER_VERSION,
+        parser_config_version=M1_PARSER_CONFIG_VERSION,
+        timeout_seconds=30,
+        max_request_bytes=max_request_bytes,
+    )
+
+
 def success_response(
     *,
     parser_version: str = PARSER_VERSION,
@@ -137,6 +155,7 @@ def test_client_sends_bounded_pdf_and_versioned_metadata() -> None:
 
     result = parser.parse(BytesIO(PDF_BYTES), limits=LIMITS)
 
+    assert isinstance(result, ParsedDocument)
     assert result.pages == (ParsedPage(page_number=1, text="Revenue grew."),)
     connection = FakeHttpConnection.instances[0]
     assert (connection.host, connection.port, connection.timeout) == ("127.0.0.1", 8100, 30)
@@ -212,3 +231,77 @@ def test_client_translates_timeout_and_closes_connection() -> None:
 
     assert "sensitive" not in str(error.value)
     assert FakeHttpConnection.instances[0].closed is True
+
+
+def test_v2_client_sends_text_media_and_validates_exact_source_slices() -> None:
+    source = b"  Revenue grew.  "
+    document = ParsedTextDocument(
+        blocks=(
+            ParsedBlockV2(
+                ordinal=0,
+                source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+                block_type=StructureBlockType.PARAGRAPH,
+                text="Revenue grew.",
+                start_character=2,
+                end_character=15,
+            ),
+        )
+    )
+    FakeHttpConnection.next_response = FakeHttpResponse(
+        status=200,
+        body=ParserResponseV2(
+            parser_version=PARSER_VERSION,
+            parser_config_version=M1_PARSER_CONFIG_VERSION,
+            document=document,
+        )
+        .model_dump_json()
+        .encode("utf-8"),
+    )
+
+    result = make_v2_parser().parse(
+        BytesIO(source),
+        limits=LIMITS,
+        media_type="text/plain",
+    )
+
+    assert result == document
+    _, path, body, headers = FakeHttpConnection.instances[0].requests[0]
+    assert (path, body, headers["Content-Type"]) == (
+        PARSER_V2_HTTP_PATH,
+        source,
+        "text/plain",
+    )
+    request = ParserRequestV2.model_validate_json(headers[PARSER_REQUEST_METADATA_HEADER])
+    assert request.max_pdf_pages is None
+    assert request.max_block_characters == 4_000
+
+
+def test_v2_client_rejects_text_block_that_does_not_match_original() -> None:
+    FakeHttpConnection.next_response = FakeHttpResponse(
+        status=200,
+        body=ParserResponseV2(
+            parser_version=PARSER_VERSION,
+            parser_config_version=M1_PARSER_CONFIG_VERSION,
+            document=ParsedTextDocument(
+                blocks=(
+                    ParsedBlockV2(
+                        ordinal=0,
+                        source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+                        block_type=StructureBlockType.PARAGRAPH,
+                        text="forged",
+                        start_character=0,
+                        end_character=6,
+                    ),
+                )
+            ),
+        )
+        .model_dump_json()
+        .encode("utf-8"),
+    )
+
+    with pytest.raises(ParserProtocolError, match="does not match the text original"):
+        make_v2_parser().parse(
+            BytesIO(b"source"),
+            limits=LIMITS,
+            media_type="text/plain",
+        )

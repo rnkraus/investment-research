@@ -11,16 +11,28 @@ from investment_research.infrastructure.parsing.http_protocol import (
     PARSER_HTTP_PATH,
     PARSER_REQUEST_CONTENT_TYPE,
     PARSER_REQUEST_METADATA_HEADER,
+    PARSER_V2_HTTP_PATH,
 )
+from investment_research.infrastructure.parsing.isolation import ParserExecutionTimeoutError
+from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.processing.contracts import (
+    M1_PARSER_CONFIG_VERSION,
     PDF_PARSER_CONFIG_VERSION_V1,
+    ParsedBlockV2,
     ParsedDocument,
     ParsedPage,
+    ParsedTextDocument,
     ParserFailureV1,
+    ParserFailureV2,
     ParserLimits,
+    ParserMediaType,
     ParserRequestV1,
+    ParserRequestV2,
     ParserResponseV1,
+    ParserResponseV2,
 )
+from investment_research.modules.processing.domain import StructureBlockType
 from investment_research.modules.processing.ports import (
     DocumentParserError,
     ParserLimitExceededError,
@@ -61,8 +73,30 @@ class ControllableParser:
     def parser_version(self) -> str:
         return PARSER_VERSION
 
-    def parse(self, content: BinaryIO, *, limits: ParserLimits) -> ParsedDocument:
+    def parse(
+        self,
+        content: BinaryIO,
+        *,
+        limits: ParserLimits,
+        media_type: ParserMediaType = "application/pdf",
+    ) -> ParsedDocument:
+        assert media_type == "application/pdf"
         self.calls.append((content.read(), limits))
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+@dataclass(slots=True)
+class ControllableV2Runner:
+    """Return one v2 document or a safe runner error without starting a process."""
+
+    result: ParsedTextDocument
+    error: Exception | None = None
+    calls: list[tuple[bytes, ParserRequestV2]] = field(default_factory=list)
+
+    def parse(self, body: bytes, request: ParserRequestV2) -> ParsedTextDocument:
+        self.calls.append((body, request))
         if self.error is not None:
             raise self.error
         return self.result
@@ -223,3 +257,80 @@ def test_parser_output_cannot_exceed_requested_document_limits() -> None:
 
     assert response.status_code == 500
     assert ParserFailureV1.model_validate(response.json()).code == "response_too_large"
+
+
+def text_document() -> ParsedTextDocument:
+    return ParsedTextDocument(
+        blocks=(
+            ParsedBlockV2(
+                ordinal=0,
+                source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+                block_type=StructureBlockType.PARAGRAPH,
+                text="Revenue grew.",
+                start_character=0,
+                end_character=13,
+            ),
+        )
+    )
+
+
+def v2_metadata_header(*, media_type: str = "text/plain") -> dict[str, str]:
+    metadata = ParserRequestV2(
+        media_type=cast(ParserMediaType, media_type),
+        parser_version=PypdfDocumentParser().parser_version,
+        parser_config_version=M1_PARSER_CONFIG_VERSION,
+        max_input_bytes=1_024,
+        max_extracted_characters=1_000,
+        max_pdf_pages=10 if media_type == "application/pdf" else None,
+    )
+    return {PARSER_REQUEST_METADATA_HEADER: metadata.model_dump_json()}
+
+
+def test_v2_text_request_returns_versioned_exact_blocks() -> None:
+    runner = ControllableV2Runner(result=text_document())
+    client = TestClient(create_parser_app(make_settings(), v2_runner=runner))
+
+    response = client.post(
+        PARSER_V2_HTTP_PATH,
+        content=b"Revenue grew.",
+        headers={"Content-Type": "text/plain", **v2_metadata_header()},
+    )
+    result = ParserResponseV2.model_validate(response.json())
+
+    assert response.status_code == 200
+    assert result.document == runner.result
+    assert runner.calls[0][0] == b"Revenue grew."
+    assert runner.calls[0][1].media_type == "text/plain"
+
+
+def test_v2_rejects_content_type_that_disagrees_with_metadata() -> None:
+    runner = ControllableV2Runner(result=text_document())
+    client = TestClient(create_parser_app(make_settings(), v2_runner=runner))
+
+    response = client.post(
+        PARSER_V2_HTTP_PATH,
+        content=b"not a PDF",
+        headers={"Content-Type": "application/pdf", **v2_metadata_header()},
+    )
+
+    assert response.status_code == 400
+    assert ParserFailureV2.model_validate(response.json()).code == "invalid_request"
+    assert runner.calls == []
+
+
+def test_v2_timeout_returns_only_safe_failure_category() -> None:
+    runner = ControllableV2Runner(
+        result=text_document(),
+        error=ParserExecutionTimeoutError("sensitive child details"),
+    )
+    client = TestClient(create_parser_app(make_settings(), v2_runner=runner))
+
+    response = client.post(
+        PARSER_V2_HTTP_PATH,
+        content=b"Revenue grew.",
+        headers={"Content-Type": "text/plain", **v2_metadata_header()},
+    )
+
+    assert response.status_code == 504
+    assert ParserFailureV2.model_validate(response.json()).code == "timeout"
+    assert "sensitive" not in response.text

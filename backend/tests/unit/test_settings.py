@@ -13,6 +13,8 @@ from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_PDF_PAGES,
 )
 from investment_research.settings import (
+    MAX_CONFIGURABLE_PARSER_CHILD_TIMEOUT_SECONDS,
+    MAX_CONFIGURABLE_PARSER_CONCURRENT_CHILDREN,
     MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
     PARSER_FORBIDDEN_ENVIRONMENT_NAMES,
     PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES,
@@ -879,6 +881,8 @@ def test_parser_settings_load_non_secret_process_values(
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES", "1048576")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_PDF_PAGES", "80")
     monkeypatch.setenv("INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS", "500000")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_CHILD_TIMEOUT_SECONDS", "12")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PARSER_MAX_CONCURRENT_CHILDREN", "3")
 
     settings = load_parser_settings()
 
@@ -890,6 +894,32 @@ def test_parser_settings_load_non_secret_process_values(
     assert settings.max_request_bytes == 1_048_576
     assert settings.max_pdf_pages == 80
     assert settings.max_extracted_characters == 500_000
+    assert settings.child_timeout_seconds == 12
+    assert settings.max_concurrent_children == 3
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("child_timeout_seconds", 0, id="zero-child-timeout"),
+        pytest.param(
+            "child_timeout_seconds",
+            MAX_CONFIGURABLE_PARSER_CHILD_TIMEOUT_SECONDS + 1,
+            id="excessive-child-timeout",
+        ),
+        pytest.param("max_concurrent_children", 0, id="zero-child-capacity"),
+        pytest.param(
+            "max_concurrent_children",
+            MAX_CONFIGURABLE_PARSER_CONCURRENT_CHILDREN + 1,
+            id="excessive-child-capacity",
+        ),
+    ],
+)
+def test_parser_settings_reject_unsafe_child_limits(field: str, value: int) -> None:
+    with pytest.raises(ValidationError) as error:
+        ParserSettings.model_validate({field: value})
+
+    assert error.value.errors()[0]["loc"] == (field,)
 
 
 @pytest.mark.parametrize(

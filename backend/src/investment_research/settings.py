@@ -32,6 +32,10 @@ DEFAULT_MAX_PDF_PAGES = 250
 DEFAULT_MAX_EXTRACTED_CHARACTERS = 2_000_000
 DEFAULT_PROCESSING_TIMEOUT_SECONDS = 30
 MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS = 300
+DEFAULT_PARSER_CHILD_TIMEOUT_SECONDS = 20
+MAX_CONFIGURABLE_PARSER_CHILD_TIMEOUT_SECONDS = 295
+DEFAULT_PARSER_MAX_CONCURRENT_CHILDREN = 2
+MAX_CONFIGURABLE_PARSER_CONCURRENT_CHILDREN = 16
 DEFAULT_PARSER_PORT = 8100
 DOCKER_SECRETS_ROOT = Path("/run/secrets")
 POSTGRES_SETTING_NAMES = (
@@ -421,6 +425,16 @@ class ParserSettings(RuntimeSettings):
         ge=1,
         le=MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
     )
+    child_timeout_seconds: int = Field(
+        default=DEFAULT_PARSER_CHILD_TIMEOUT_SECONDS,
+        ge=1,
+        le=MAX_CONFIGURABLE_PARSER_CHILD_TIMEOUT_SECONDS,
+    )
+    max_concurrent_children: int = Field(
+        default=DEFAULT_PARSER_MAX_CONCURRENT_CHILDREN,
+        ge=1,
+        le=MAX_CONFIGURABLE_PARSER_CONCURRENT_CHILDREN,
+    )
 
     @model_validator(mode="after")
     def require_supported_parser_host(self) -> ParserSettings:
@@ -793,6 +807,16 @@ def load_parser_settings() -> ParserSettings:
             "INVESTMENT_RESEARCH_MAX_EXTRACTED_CHARACTERS",
             file_values,
             str(DEFAULT_MAX_EXTRACTED_CHARACTERS),
+        ),
+        "child_timeout_seconds": _configuration_value(
+            "INVESTMENT_RESEARCH_PARSER_CHILD_TIMEOUT_SECONDS",
+            file_values,
+            str(DEFAULT_PARSER_CHILD_TIMEOUT_SECONDS),
+        ),
+        "max_concurrent_children": _configuration_value(
+            "INVESTMENT_RESEARCH_PARSER_MAX_CONCURRENT_CHILDREN",
+            file_values,
+            str(DEFAULT_PARSER_MAX_CONCURRENT_CHILDREN),
         ),
     }
     return ParserSettings.model_validate(values)
