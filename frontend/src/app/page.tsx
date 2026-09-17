@@ -42,7 +42,7 @@ export default function Home() {
           </div>
 
           <ol
-            aria-label="M0.0 workflow"
+            aria-label="M1 workflow"
             className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200"
           >
             {archiveCopy.steps.map((step, index) => (
