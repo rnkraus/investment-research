@@ -562,12 +562,16 @@ evidence merely because it exists in Pinecone.
 **Suggested commits:** indexing states and migration; embedding adapter; Pinecone adapter; worker
 index orchestration; indexing CI; frontend status; docs.
 
-As of 2026-09-18, required CI automatically exercises the deterministic embedding, Pinecone,
-indexing-lifecycle, lease-recovery, workspace-scope, and PostgreSQL integration checks without
-provider credentials or spend. The separate manually dispatched `M1 provider smoke` workflow now
-implements the frozen public-fixture allowlist, request and cost preflight, unique namespace, and
-verified cleanup contract. It has not yet been run against live providers. Step 2 remains open until
-the frontend status behavior and the complete gate above pass.
+As of 2026-09-18, Step 2 is implementation-complete locally. Required CI exercises deterministic
+embedding, Pinecone, indexing-lifecycle, lease-recovery, workspace-scope, and PostgreSQL integration
+checks without provider credentials or spend. The deterministic Step 2 gate parses both approved
+fixture media types through the real media-aware parser, carries their canonical chunks through the
+production application services to `SEARCHABLE`, and proves stable vector identities under
+redelivery. The frontend keeps `LEXICAL_READY` and `INDEXING` active and exposes research only at
+`SEARCHABLE`. The separate manually dispatched `M1 provider smoke` workflow implements the frozen
+public-fixture allowlist, request and cost preflight, unique namespace, and verified cleanup
+contract; it has not yet been run against live providers. Hosted CI verification remains pending the
+next push, while complete-stack M1 acceptance remains the separate Step 6 gate.
 
 ### Step 3 — Canonically qualified dual retrieval
 
