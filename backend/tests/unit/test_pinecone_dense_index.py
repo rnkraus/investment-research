@@ -67,6 +67,7 @@ class RecordingGrpcIndex:
     error: Exception | None = None
     upsert_calls: list[dict[str, object]] = field(default_factory=list)
     fetch_calls: list[dict[str, object]] = field(default_factory=list)
+    closed: bool = False
 
     def upsert(self, **kwargs: object) -> UpsertResponse:
         self.upsert_calls.append(kwargs)
@@ -79,6 +80,9 @@ class RecordingGrpcIndex:
         if self.error is not None:
             raise self.error
         return self.fetch_response
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def make_context() -> WorkspaceContext:
@@ -239,6 +243,15 @@ def test_factory_enforces_tls_timeout_and_single_attempt(
     retry_config = captured["retry_config"]
     assert isinstance(retry_config, RetryConfig)
     assert retry_config.max_retries == 0
+
+
+def test_close_releases_grpc_index() -> None:
+    index = RecordingGrpcIndex()
+    writer = make_writer(index)
+
+    writer.close()
+
+    assert index.closed is True
 
 
 @pytest.mark.parametrize(
