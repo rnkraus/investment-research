@@ -4,22 +4,23 @@ This directory contains small, reviewable development utilities. Scripts support
 
 ## Contents
 
-| File                         | Responsibility                                                                           |
-| ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `__init__.py`                | Makes development commands importable for tests and `python -m` execution.               |
-| `docker_secrets.py`          | Creates portable read-only Compose secret files inside a private temporary directory.    |
-| `export_openapi.py`          | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
-| `reset_local.py`             | Recreates only the fixed local Compose runtime after exact confirmation.                 |
-| `seed_m0_0.py`               | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
-| `verify_backend.py`          | Runs all deterministic backend static checks and unit tests.                             |
-| `verify_backend_images.py`   | Builds and exercises every backend image target in an isolated runtime.                  |
-| `verify_m0_runtime.py`       | Proves the complete fixture journey through the production-shaped M0 runtime.            |
-| `verify_object_storage.py`   | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
-| `verify_parser_isolation.py` | Exercises the final parser image, protocol, resources, and network isolation.            |
-| `verify_paths.py`            | Runs deterministic checks for explicitly selected backend Python files.                  |
-| `verify_postgres.py`         | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
-| `verify_queue_recovery.py`   | Proves live Celery redelivery and lease-based recovery after worker loss.                |
-| `verify_runtime_cleanup.py`  | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                 |
+| File                          | Responsibility                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `__init__.py`                 | Makes development commands importable for tests and `python -m` execution.               |
+| `docker_secrets.py`           | Creates portable read-only Compose secret files inside a private temporary directory.    |
+| `export_openapi.py`           | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
+| `reset_local.py`              | Recreates only the fixed local Compose runtime after exact confirmation.                 |
+| `seed_m0_0.py`                | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
+| `verify_backend.py`           | Runs all deterministic backend static checks and unit tests.                             |
+| `verify_backend_images.py`    | Builds and exercises every backend image target in an isolated runtime.                  |
+| `verify_m0_runtime.py`        | Proves the complete fixture journey through the production-shaped M0 runtime.            |
+| `verify_m1_provider_smoke.py` | Runs one explicit, bounded embedding and Pinecone compatibility smoke.                   |
+| `verify_object_storage.py`    | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
+| `verify_parser_isolation.py`  | Exercises the final parser image, protocol, resources, and network isolation.            |
+| `verify_paths.py`             | Runs deterministic checks for explicitly selected backend Python files.                  |
+| `verify_postgres.py`          | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
+| `verify_queue_recovery.py`    | Proves live Celery redelivery and lease-based recovery after worker loss.                |
+| `verify_runtime_cleanup.py`   | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                |
 
 ## Contract flow
 
@@ -328,3 +329,33 @@ return the exact public liveness and readiness responses. Displayed commands con
 environment-variable names but never their values. Cleanup removes only the resources, temporary
 image tags, and secret directory owned by that invocation, including after a failed build or runtime
 check.
+
+## M1 provider compatibility smoke
+
+`verify_m1_provider_smoke.py` is an optional live-provider compatibility check. It is never part of
+normal pull-request or push CI and never replaces deterministic correctness tests. Run it only with
+the approved public-synthetic fixture manifest, a Pinecone Starter index with the frozen M1
+configuration, and least-privilege document-indexing credentials:
+
+```shell
+INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY='<configured outside the repository>' \
+INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY='<configured outside the repository>' \
+INVESTMENT_RESEARCH_PINECONE_INDEX_HOST='<configured outside the repository>' \
+uv run --locked python -m scripts.verify_m1_provider_smoke \
+  --manifest ../fixtures/m1/manifest.yaml \
+  --confirm-public-synthetic \
+  --confirm-pinecone-starter
+```
+
+The runner accepts only the exact repository manifest and frozen fixture digests. Before any
+provider call it proves that one embedding request and one vector remain below the manifest's
+request, token, vector, and USD ceilings. It writes no source text to Pinecone metadata, uses a
+unique workspace namespace, deletes that complete namespace in `finally`, verifies that the vector
+is absent, closes both provider clients, and prints only safe counts, estimated embedding spend, and
+cleanup status. Provider responses, fixture text, identifiers, hosts, and credentials are not
+logged.
+
+GitHub's separate `M1 provider smoke` workflow exposes the same operation only through manual
+dispatch with both confirmation inputs enabled. Configure repository secrets
+`M1_OPENAI_DOCUMENT_API_KEY`, `M1_PINECONE_INDEX_API_KEY`, and `M1_PINECONE_INDEX_HOST` before a
+run. Keep this workflow non-required for untrusted pull requests.

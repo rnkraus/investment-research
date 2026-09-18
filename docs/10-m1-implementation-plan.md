@@ -562,6 +562,13 @@ evidence merely because it exists in Pinecone.
 **Suggested commits:** indexing states and migration; embedding adapter; Pinecone adapter; worker
 index orchestration; indexing CI; frontend status; docs.
 
+As of 2026-09-18, required CI automatically exercises the deterministic embedding, Pinecone,
+indexing-lifecycle, lease-recovery, workspace-scope, and PostgreSQL integration checks without
+provider credentials or spend. The separate manually dispatched `M1 provider smoke` workflow now
+implements the frozen public-fixture allowlist, request and cost preflight, unique namespace, and
+verified cleanup contract. It has not yet been run against live providers. Step 2 remains open until
+the frontend status behavior and the complete gate above pass.
+
 ### Step 3 — Canonically qualified dual retrieval
 
 **Suggested branch:** `feat/m1-dual-retrieval`
