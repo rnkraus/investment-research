@@ -39,6 +39,8 @@ export const archiveCopy = {
     runLabel: "Processing run",
     captured: "Captured and queued for automatic processing.",
     parsing: "The isolated parser is extracting searchable text.",
+    lexicalReady:
+      "Text extraction is complete. Dense indexing will start next.",
     indexing: "The extracted evidence is being added to the search index.",
     ready: "Searchable evidence is ready.",
     failed: "Processing stopped safely.",

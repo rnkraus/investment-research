@@ -18,6 +18,10 @@ import {
 } from "@/lib/api/client";
 
 import { archiveCopy, fixtureDefaults } from "./copy";
+import {
+  canResearchProcessingRun,
+  shouldPollProcessing,
+} from "./processing-state";
 import { ResearchWorkflow } from "./research-workflow";
 
 const PROCESSING_POLL_INTERVAL_MS = 2_000;
@@ -30,7 +34,7 @@ function processingMessage(result: ProcessingRunResult): string {
     case "PARSING":
       return archiveCopy.processing.parsing;
     case "LEXICAL_READY":
-      return archiveCopy.processing.ready;
+      return archiveCopy.processing.lexicalReady;
     case "INDEXING":
       return archiveCopy.processing.indexing;
     case "SEARCHABLE":
@@ -42,12 +46,12 @@ function processingMessage(result: ProcessingRunResult): string {
 
 function statusStyle(state: ProcessingRunResult["state"]): string {
   switch (state) {
-    case "LEXICAL_READY":
     case "SEARCHABLE":
       return "border-emerald-300 bg-emerald-50 text-emerald-800";
     case "FAILED":
       return "border-rose-300 bg-rose-50 text-rose-800";
     case "PARSING":
+    case "LEXICAL_READY":
     case "INDEXING":
       return "border-sky-300 bg-sky-50 text-sky-800";
     case "CAPTURED":
@@ -121,12 +125,7 @@ export function DocumentWorkflow() {
   );
 
   useEffect(() => {
-    if (
-      accepted === undefined ||
-      processing?.state === "LEXICAL_READY" ||
-      processing?.state === "SEARCHABLE" ||
-      processing?.state === "FAILED"
-    ) {
+    if (accepted === undefined || !shouldPollProcessing(processing?.state)) {
       return;
     }
 
@@ -414,9 +413,7 @@ export function DocumentWorkflow() {
               </div>
             </dl>
 
-            {processing.state !== "LEXICAL_READY" &&
-            processing.state !== "SEARCHABLE" &&
-            processing.state !== "FAILED" ? (
+            {shouldPollProcessing(processing.state) ? (
               <div className="mt-6">
                 <p className="text-sm leading-6 text-slate-300">
                   {archiveCopy.processing.waiting}
@@ -439,9 +436,7 @@ export function DocumentWorkflow() {
         )}
       </section>
 
-      {accepted !== undefined &&
-      (processing?.state === "LEXICAL_READY" ||
-        processing?.state === "SEARCHABLE") ? (
+      {accepted !== undefined && canResearchProcessingRun(processing?.state) ? (
         <div className="lg:col-span-2">
           <ResearchWorkflow
             documentId={accepted.document_id}
