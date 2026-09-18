@@ -31,7 +31,7 @@ from investment_research.modules.search.ports import (
     SearchProviderTransientError,
 )
 
-PINECONE_OPERATION_TIMEOUT_SECONDS = 30.0
+PINECONE_OPERATION_TIMEOUT_SECONDS = 20.0
 PINECONE_CONNECT_TIMEOUT_SECONDS = 5.0
 
 _TRANSIENT_PINECONE_ERRORS = (
@@ -52,7 +52,7 @@ class PineconeDenseIndexWriter:
 
     def __post_init__(self) -> None:
         if not 0 < self.operation_timeout_seconds <= PINECONE_OPERATION_TIMEOUT_SECONDS:
-            raise ValueError("Pinecone operation timeout must be between 0 and 30 seconds")
+            raise ValueError("Pinecone operation timeout must be between 0 and 20 seconds")
 
     def upsert(
         self,
@@ -159,7 +159,7 @@ def create_pinecone_dense_index_writer(
     if not index_host.strip():
         raise ValueError("Pinecone index host must not be empty")
     if not 0 < operation_timeout_seconds <= PINECONE_OPERATION_TIMEOUT_SECONDS:
-        raise ValueError("Pinecone operation timeout must be between 0 and 30 seconds")
+        raise ValueError("Pinecone operation timeout must be between 0 and 20 seconds")
 
     index = GrpcIndex(
         host=index_host,
