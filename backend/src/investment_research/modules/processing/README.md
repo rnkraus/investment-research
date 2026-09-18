@@ -99,11 +99,11 @@ The capture-time profile snapshots the complete processing intent before asynchr
 | M1      | `m1-english-lexical-v1`   | `openai-text-embedding-3-small-1536-v1` | `pinecone-serverless-cosine-1536-aws-us-east-1-v1` |
 
 These values describe which versioned behavior a run requires; storing them does not itself call an
-embedding or vector provider. The canonical indexing service now consumes the M1 snapshots, but the
-default worker remains on the earlier lexical completion path until the approved embedding adapter
-can be wired in the same complete change. Migration `0005_m1_indexing_config` preserves historical
-lexical intent, backfills disabled values for M0-era runs, and backfills the fixed M1 values for M1
-lexical runs.
+embedding or vector provider. The default M1 worker now passes the retained parsing lease to the
+canonical indexing service, which consumes those snapshots through the approved OpenAI embedding
+and Pinecone data-plane adapters. Migration `0005_m1_indexing_config` preserves historical lexical
+intent, backfills disabled values for M0-era runs, and backfills the fixed M1 values for M1 lexical
+runs.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the
 initial durable intent. The caller supplies the active versioned profile and trusted workspace
@@ -149,15 +149,22 @@ isolated parser and Celery runtime rather than this in-process data contract.
 
 `ExecuteProcessingJobService` is the application boundary for a validated `ProcessingJobV1`. It
 resolves the trusted context from server-controlled identity state and requires the job's workspace
-identifier to match before forwarding only the run identifier to `ProcessDocumentService`. A
-foreign job and an unknown run therefore produce the same non-disclosing unavailable result.
+identifier to match before forwarding only the run identifier to `ProcessDocumentService`. For an
+M1 run returned in `LEXICAL_READY` or `INDEXING`, it then passes the same owned lease to
+`IndexProcessingRunService` only when this invocation acquired that lease while parsing. A
+pre-existing dense stage carries no ownership claim, so indexing must reject its active lease or
+reclaim it after expiry. A foreign job and an unknown run therefore produce the same non-disclosing
+unavailable result, while terminal redelivery remains a no-op.
 
 ```mermaid
 flowchart LR
     JOB[Validated ProcessingJobV1] --> CONTEXT[Resolve server-controlled context]
     CONTEXT --> MATCH{Workspace matches?}
     MATCH -->|no| HIDDEN[ProcessingRunUnavailableError]
-    MATCH -->|yes| SERVICE[ProcessDocumentService]
+    MATCH -->|yes| PARSE[ProcessDocumentService]
+    PARSE -->|M0 terminal or FAILED| DONE[Return canonical run]
+    PARSE -->|M1 LEXICAL_READY or INDEXING| INDEX[IndexProcessingRunService]
+    INDEX --> DONE
 ```
 
 `ProcessDocumentService` accepts only a trusted `WorkspaceContext` and a processing-run identifier.
@@ -176,7 +183,9 @@ flowchart LR
     ORIGINAL --> PARSER[Bounded DocumentParser]
     PARSER --> BUILD[Build blocks and chunks]
     BUILD --> SUCCESS[Transaction 2<br/>lock run and verify lease owner]
-    SUCCESS --> READY[Commit output and LEXICAL_READY<br/>clear lease]
+    SUCCESS --> MODE{Dense indexing enabled?}
+    MODE -->|no, historical M0| M0_READY[Commit LEXICAL_READY<br/>clear lease]
+    MODE -->|yes, M1| M1_READY[Commit LEXICAL_READY<br/>retain lease]
     ORIGINAL -. failure .-> FAILURE[Fresh transaction<br/>lock run]
     PARSER -. failure .-> FAILURE
     BUILD -. failure .-> FAILURE
