@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 
 from investment_research import bootstrap as bootstrap_module
 from investment_research.bootstrap import (
@@ -25,6 +26,8 @@ from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
     CeleryProcessingDispatcher,
 )
+from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
+from investment_research.infrastructure.search.pinecone import PineconeDenseIndexWriter
 from investment_research.main import create_app
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -37,15 +40,29 @@ from investment_research.modules.processing.application import (
     GetProcessingRunService,
     ProcessDocumentService,
 )
+from investment_research.modules.processing.indexing import IndexProcessingRunService
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
     RetrieveResearchService,
 )
+from investment_research.modules.search.indexing import IndexActiveChunksService
 from investment_research.settings import ApiSettings, WorkerSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
+
+
+def indexing_provider_values() -> dict[str, object]:
+    """Build complete synthetic M1 provider settings without making provider calls."""
+
+    return {
+        "embedding": {"api_key": "synthetic-openai-key"},
+        "pinecone": {
+            "api_key": "synthetic-pinecone-key",
+            "index_host": "synthetic-index.example.svc.pinecone.io",
+        },
+    }
 
 
 class UnusedS3Client:
@@ -86,6 +103,7 @@ def make_worker_settings(object_storage_root: Path) -> WorkerSettings:
             "database_url": LOCAL_DATABASE_URL,
             "object_storage_root": object_storage_root,
             "parser_endpoint_url": "http://127.0.0.1:8100",
+            "indexing_providers": indexing_provider_values(),
         }
     )
 
@@ -175,11 +193,37 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             assert container.database_engine.dialect.name == "postgresql"
             assert session.bind is container.database_engine
             assert isinstance(container.object_storage, LocalObjectStorage)
+            assert isinstance(container.embedding_provider, OpenAIEmbeddingProvider)
+            assert isinstance(container.dense_index_writer, PineconeDenseIndexWriter)
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.process_document_service, ProcessDocumentService)
             assert isinstance(
+                container.index_active_chunks_service,
+                IndexActiveChunksService,
+            )
+            assert isinstance(
+                container.index_processing_run_service,
+                IndexProcessingRunService,
+            )
+            assert isinstance(
                 container.execute_processing_job_service,
                 ExecuteProcessingJobService,
+            )
+            assert (
+                container.index_active_chunks_service.embedding_provider
+                is container.embedding_provider
+            )
+            assert (
+                container.index_active_chunks_service.dense_index_writer
+                is container.dense_index_writer
+            )
+            assert (
+                container.index_processing_run_service._indexing_service
+                is container.index_active_chunks_service
+            )
+            assert (
+                container.execute_processing_job_service.indexing_service
+                is container.index_processing_run_service
             )
             assert not hasattr(container, "capture_document_service")
             assert not hasattr(container, "answer_research_request_service")
@@ -207,6 +251,7 @@ def test_s3_provider_wires_same_adapter_into_api_and_worker(
             {
                 **s3_provider_values(),
                 "parser_endpoint_url": "http://127.0.0.1:8100",
+                "indexing_providers": indexing_provider_values(),
             }
         )
     )
@@ -237,6 +282,37 @@ def test_s3_provider_wires_same_adapter_into_api_and_worker(
     finally:
         api_container.close()
         worker_container.close()
+
+
+def test_worker_container_closes_provider_and_database_resources(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    original_dense_close = PineconeDenseIndexWriter.close
+    original_embedding_close = OpenAIEmbeddingProvider.close
+    original_database_dispose = Engine.dispose
+
+    def close_dense(writer: PineconeDenseIndexWriter) -> None:
+        events.append("dense-index")
+        original_dense_close(writer)
+
+    def close_embedding(provider: OpenAIEmbeddingProvider) -> None:
+        events.append("embedding")
+        original_embedding_close(provider)
+
+    def dispose_database(engine: Engine) -> None:
+        events.append("database")
+        original_database_dispose(engine)
+
+    monkeypatch.setattr(PineconeDenseIndexWriter, "close", close_dense)
+    monkeypatch.setattr(OpenAIEmbeddingProvider, "close", close_embedding)
+    monkeypatch.setattr(Engine, "dispose", dispose_database)
+    container = build_worker_container(make_worker_settings(tmp_path / "objects"))
+
+    container.close()
+
+    assert events == ["dense-index", "embedding", "database"]
 
 
 def test_application_lifespan_owns_container(

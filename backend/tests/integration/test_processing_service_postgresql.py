@@ -2,9 +2,9 @@
 
 import socket
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -49,6 +49,7 @@ from investment_research.modules.identity.persistence import SqlAlchemyWorkspace
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
+    ExecuteProcessingJobService,
     ProcessDocumentService,
     ProcessingProfile,
     ProcessingRetryableError,
@@ -61,8 +62,10 @@ from investment_research.modules.processing.contracts import (
     ParsedDocument,
     ParserLimits,
     ParserMediaType,
+    ProcessingJobV1,
 )
 from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.processing.indexing import IndexProcessingRunService
 from investment_research.modules.processing.persistence import (
     ChunkRow,
     ChunkSetRow,
@@ -76,6 +79,15 @@ from investment_research.modules.processing.ports import (
     ParserProtocolError,
     ParserTransportError,
 )
+from investment_research.modules.search.contracts import (
+    M1_EMBEDDING_DIMENSIONS,
+    DenseIndexWriteRequest,
+    DenseIndexWriteResult,
+    DenseVectorId,
+    EmbeddingRequest,
+    EmbeddingVector,
+)
+from investment_research.modules.search.indexing import IndexActiveChunksService
 from tests.fakes import RecordingProcessingDispatcher
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -85,6 +97,68 @@ FIXTURE_PDF = (
 CAPTURED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 STARTED_AT = CAPTURED_AT + timedelta(seconds=1)
 COMPLETED_AT = CAPTURED_AT + timedelta(seconds=2)
+INDEXING_STARTED_AT = CAPTURED_AT + timedelta(seconds=3)
+INDEXING_COMPLETED_AT = CAPTURED_AT + timedelta(seconds=4)
+VECTOR_VALUES = (0.125,) * M1_EMBEDDING_DIMENSIONS
+
+
+@dataclass(frozen=True, slots=True)
+class StaticIdentityContextProvider:
+    """Return one integration-test context from server-controlled state."""
+
+    context: WorkspaceContext
+
+    def resolve(self) -> WorkspaceContext:
+        return self.context
+
+
+@dataclass(slots=True)
+class RecordingEmbeddingProvider:
+    """Return one fixed valid vector for every canonical document chunk."""
+
+    calls: list[EmbeddingRequest] = field(default_factory=list)
+
+    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+        self.calls.append(request)
+        return tuple(
+            EmbeddingVector(
+                input_id=item.input_id,
+                values=VECTOR_VALUES,
+                embedding_config_version=request.embedding_config_version,
+            )
+            for item in request.inputs
+        )
+
+
+@dataclass(slots=True)
+class ImmediatelyVisibleDenseIndexWriter:
+    """Record deterministic writes and make acknowledged IDs immediately visible."""
+
+    upsert_calls: list[tuple[WorkspaceContext, DenseIndexWriteRequest]] = field(
+        default_factory=list
+    )
+    fetch_calls: list[tuple[WorkspaceContext, tuple[DenseVectorId, ...]]] = field(
+        default_factory=list
+    )
+
+    def upsert(
+        self,
+        context: WorkspaceContext,
+        request: DenseIndexWriteRequest,
+    ) -> DenseIndexWriteResult:
+        self.upsert_calls.append((context, request))
+        return DenseIndexWriteResult(
+            vector_ids=tuple(vector.vector_id for vector in request.vectors)
+        )
+
+    def fetch_visible(
+        self,
+        context: WorkspaceContext,
+        vector_ids: Sequence[DenseVectorId],
+    ) -> tuple[DenseVectorId, ...]:
+        visible_ids = tuple(vector_ids)
+        self.fetch_calls.append((context, visible_ids))
+        return visible_ids
 
 
 def create_workspace(engine: Engine) -> WorkspaceContext:
@@ -410,6 +484,72 @@ def test_process_fixture_commits_searchable_output_and_ready_state(
     assert chunk_set_count == 1
     assert chunk_count == 4
     assert revenue_matches is not None and revenue_matches > 0
+
+
+def test_m1_job_reaches_searchable_and_duplicate_delivery_is_a_noop(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    context = create_workspace(integration_database_engine)
+    storage = LocalObjectStorage(tmp_path / "objects")
+    capture = capture_fixture(
+        integration_database_engine,
+        context,
+        storage,
+        profile=M1_PROCESSING_PROFILE,
+    )
+    processing_service = make_processing_service(
+        integration_database_engine,
+        storage,
+        limits=ParserLimits(max_pages=10, max_extracted_characters=100_000),
+        profile=M1_PROCESSING_PROFILE,
+    )
+    embedding_provider = RecordingEmbeddingProvider()
+    dense_index_writer = ImmediatelyVisibleDenseIndexWriter()
+    session_factory = create_session_factory(integration_database_engine)
+    indexing_timestamps = iter((INDEXING_STARTED_AT, INDEXING_COMPLETED_AT))
+    indexing_service = IndexProcessingRunService(
+        indexing_service=IndexActiveChunksService(
+            embedding_provider=embedding_provider,
+            dense_index_writer=dense_index_writer,
+        ),
+        unit_of_work_factory=create_processing_unit_of_work_factory(session_factory),
+        profile=M1_PROCESSING_PROFILE,
+        clock=lambda: next(indexing_timestamps),
+    )
+    job_service = ExecuteProcessingJobService(
+        processing_service=processing_service,
+        indexing_service=indexing_service,
+        identity_context_provider=StaticIdentityContextProvider(context),
+    )
+    job = ProcessingJobV1.create(
+        workspace_id=context.workspace_id,
+        processing_run_id=capture.processing_run_id,
+    )
+
+    first_result = job_service.execute(job)
+    duplicate_result = job_service.execute(job)
+
+    assert first_result.state is ProcessingState.SEARCHABLE
+    assert first_result.started_at == STARTED_AT
+    assert first_result.completed_at == INDEXING_COMPLETED_AT
+    assert first_result.attempt_count == 1
+    assert first_result.lease_id is None
+    assert duplicate_result == first_result
+    assert len(embedding_provider.calls) == 1
+    assert len(dense_index_writer.upsert_calls) == 1
+    assert len(dense_index_writer.fetch_calls) == 1
+    written_vectors = dense_index_writer.upsert_calls[0][1].vectors
+    assert len(written_vectors) == 4
+    assert len({vector.vector_id for vector in written_vectors}) == 4
+
+    with transactional_session(session_factory) as session:
+        persisted_run = SqlAlchemyProcessingRepository(session).get_run_by_id(
+            context,
+            capture.processing_run_id,
+        )
+
+    assert persisted_run == first_result
 
 
 def test_parser_limit_failure_preserves_original_and_records_failed_state(

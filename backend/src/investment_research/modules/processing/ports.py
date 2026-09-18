@@ -161,3 +161,16 @@ class ProcessingJobExecutor(Protocol):
 
     def execute(self, job: ProcessingJobV1) -> ProcessingRun:
         """Validate canonical scope and process the job's referenced run."""
+
+
+class ProcessingRunIndexer(Protocol):
+    """Advance one canonical run through provider-backed dense indexing."""
+
+    def index(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+        *,
+        owned_lease_id: UUID | None = None,
+    ) -> ProcessingRun:
+        """Index active chunks, optionally continuing the caller-owned lease."""

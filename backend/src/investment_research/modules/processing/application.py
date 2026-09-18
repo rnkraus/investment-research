@@ -36,6 +36,7 @@ from investment_research.modules.processing.ports import (
     ParserTransportError,
     ProcessingOriginalProvider,
     ProcessingReadUnitOfWorkFactory,
+    ProcessingRunIndexer,
     ProcessingUnitOfWorkFactory,
 )
 
@@ -129,6 +130,14 @@ class ProcessingClaim:
 
     run: ProcessingRun
     claimed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessingAttemptResult:
+    """Committed run plus any indexing lease owned by this exact invocation."""
+
+    run: ProcessingRun
+    owned_indexing_lease_id: UUID | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,11 +333,23 @@ class ProcessDocumentService:
         context: WorkspaceContext,
         processing_run_id: UUID,
     ) -> ProcessingRun:
-        """Process one run by identifier and return its committed terminal state."""
+        """Parse one run by identifier and return its committed next-stage state."""
+
+        return self.process_attempt(context, processing_run_id).run
+
+    def process_attempt(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> ProcessingAttemptResult:
+        """Parse one run and report only indexing lease ownership acquired here."""
 
         claim = self._claim_run(context, processing_run_id)
         if not claim.claimed:
-            return claim.run
+            return ProcessingAttemptResult(
+                run=claim.run,
+                owned_indexing_lease_id=None,
+            )
         parsing_run = claim.run
         lease_id = parsing_run.lease_id
         if lease_id is None:
@@ -352,9 +373,13 @@ class ProcessDocumentService:
                 created_at=completed_at,
                 id_factory=self._identifier_factory,
             )
-            ready_run = parsing_run.mark_lexical_ready(
-                lease_id=lease_id,
-                completed_at=completed_at,
+            ready_run = (
+                parsing_run.mark_lexical_ready_for_indexing(lease_id=lease_id)
+                if parsing_run.dense_indexing_enabled
+                else parsing_run.mark_lexical_ready(
+                    lease_id=lease_id,
+                    completed_at=completed_at,
+                )
             )
             self._commit_output(context, parsing_run, ready_run, output)
         except ParserTransportError as error:
@@ -393,7 +418,10 @@ class ProcessDocumentService:
                 )
             raise
 
-        return ready_run
+        return ProcessingAttemptResult(
+            run=ready_run,
+            owned_indexing_lease_id=lease_id if ready_run.dense_indexing_enabled else None,
+        )
 
     def _claim_run(
         self,
@@ -412,6 +440,8 @@ class ProcessDocumentService:
 
             if current_run.state in {
                 ProcessingState.LEXICAL_READY,
+                ProcessingState.INDEXING,
+                ProcessingState.SEARCHABLE,
                 ProcessingState.FAILED,
             }:
                 return ProcessingClaim(run=current_run, claimed=False)
@@ -566,6 +596,7 @@ class ExecuteProcessingJobService:
     """Execute a queue job only within server-controlled workspace scope."""
 
     processing_service: ProcessDocumentService
+    indexing_service: ProcessingRunIndexer
     identity_context_provider: IdentityContextProvider
 
     def execute(self, job: ProcessingJobV1) -> ProcessingRun:
@@ -574,4 +605,18 @@ class ExecuteProcessingJobService:
         context = self.identity_context_provider.resolve()
         if job.workspace_id != context.workspace_id:
             raise ProcessingRunUnavailableError("processing run is unavailable")
-        return self.processing_service.process(context, job.processing_run_id)
+        processing_attempt = self.processing_service.process_attempt(
+            context,
+            job.processing_run_id,
+        )
+        processed_run = processing_attempt.run
+        if not processed_run.dense_indexing_enabled or processed_run.state not in {
+            ProcessingState.LEXICAL_READY,
+            ProcessingState.INDEXING,
+        }:
+            return processed_run
+        return self.indexing_service.index(
+            context,
+            processed_run.id,
+            owned_lease_id=processing_attempt.owned_indexing_lease_id,
+        )

@@ -13,8 +13,10 @@ import pytest
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
+    M1_PROCESSING_PROFILE,
     ProcessDocumentService,
     ProcessingParserVersionError,
+    ProcessingProfile,
     ProcessingRetryableError,
     ProcessingRunAlreadyActiveError,
     ProcessingRunUnavailableError,
@@ -78,6 +80,23 @@ def make_run() -> ProcessingRun:
         embedding_config_version="m0.0-embedding-disabled-v1",
         dense_index_config_version="m0.0-dense-index-disabled-v1",
         created_at=CREATED_AT,
+    )
+
+
+def make_m1_run() -> ProcessingRun:
+    """Build one captured run carrying the complete M1 processing profile."""
+
+    return ProcessingRun.model_validate(
+        {
+            **make_run().model_dump(),
+            "parser_version": M1_PROCESSING_PROFILE.parser_version,
+            "parser_config_version": M1_PROCESSING_PROFILE.parser_config_version,
+            "chunker_version": M1_PROCESSING_PROFILE.chunker_version,
+            "chunking_config_version": M1_PROCESSING_PROFILE.chunking_config_version,
+            "lexical_config_version": M1_PROCESSING_PROFILE.lexical_config_version,
+            "embedding_config_version": M1_PROCESSING_PROFILE.embedding_config_version,
+            "dense_index_config_version": M1_PROCESSING_PROFILE.dense_index_config_version,
+        }
     )
 
 
@@ -235,6 +254,7 @@ def make_service(
     *,
     clock_values: tuple[datetime, ...] = (STARTED_AT, COMPLETED_AT),
     maximum_attempts: int = 3,
+    profile: ProcessingProfile = M0_0_PROCESSING_PROFILE,
 ) -> tuple[ProcessDocumentService, RecordingUnitOfWorkFactory]:
     """Build one deterministic service and expose its transaction recorder."""
 
@@ -248,7 +268,7 @@ def make_service(
             unit_of_work_factory=unit_of_work_factory.open,
             parser_limits=PARSER_LIMITS,
             profile=replace(
-                M0_0_PROCESSING_PROFILE,
+                profile,
                 maximum_attempts=maximum_attempts,
             ),
             clock=lambda: next(timestamps),
@@ -289,6 +309,76 @@ def test_process_commits_start_and_lexical_output_in_separate_transactions() -> 
     assert tuple(block.id for block in blocks) == (BLOCK_ID,)
     assert chunk_set.id == CHUNK_SET_ID
     assert tuple(chunk.id for chunk in chunks) == (CHUNK_ID,)
+
+
+def test_m1_process_hands_lease_to_dense_indexing_without_completing_run() -> None:
+    context = make_context()
+    run = make_m1_run()
+    repository = InMemoryProcessingRepository(run)
+    parsed_document = ParsedDocument(
+        pages=(ParsedPage(page_number=1, text="Revenue grew by 22%."),)
+    )
+    parser = RecordingParser(
+        parsed_document=parsed_document,
+        parser_version=M1_PROCESSING_PROFILE.parser_version,
+    )
+    original_provider = RecordingOriginalProvider()
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        original_provider,
+        profile=M1_PROCESSING_PROFILE,
+    )
+
+    attempt = service.process_attempt(context, PROCESSING_RUN_ID)
+    result = attempt.run
+
+    assert result.state is ProcessingState.LEXICAL_READY
+    assert result.started_at == STARTED_AT
+    assert result.completed_at is None
+    assert result.attempt_count == 1
+    assert result.lease_id == LEASE_ID
+    assert result.lease_expires_at == STARTED_AT + M1_PROCESSING_PROFILE.lease_duration
+    assert attempt.owned_indexing_lease_id == LEASE_ID
+    assert repository.run == result
+    assert [run.state for run in repository.updates] == [
+        ProcessingState.PARSING,
+        ProcessingState.LEXICAL_READY,
+    ]
+    assert unit_of_work_factory.transaction_count == 2
+    assert original_provider.calls == [(context, DOCUMENT_VERSION_ID)]
+    assert parser.calls == [(PARSER_LIMITS, "application/pdf")]
+
+
+def test_preexisting_m1_dense_stage_does_not_grant_lease_ownership() -> None:
+    parsing_run = make_m1_run().claim_for_processing(
+        lease_id=OTHER_LEASE_ID,
+        claimed_at=STARTED_AT,
+        lease_expires_at=LEASE_EXPIRES_AT,
+        maximum_attempts=3,
+    )
+    ready_run = parsing_run.mark_lexical_ready_for_indexing(lease_id=OTHER_LEASE_ID)
+    repository = InMemoryProcessingRepository(ready_run)
+    parser = RecordingParser(
+        parsed_document=ParsedDocument(pages=(ParsedPage(page_number=1, text="Text"),)),
+        parser_version=M1_PROCESSING_PROFILE.parser_version,
+    )
+    original_provider = RecordingOriginalProvider()
+    service, unit_of_work_factory = make_service(
+        repository,
+        parser,
+        original_provider,
+        profile=M1_PROCESSING_PROFILE,
+    )
+
+    attempt = service.process_attempt(make_context(), PROCESSING_RUN_ID)
+
+    assert attempt.run == ready_run
+    assert attempt.owned_indexing_lease_id is None
+    assert repository.updates == []
+    assert parser.calls == []
+    assert original_provider.calls == []
+    assert unit_of_work_factory.transaction_count == 1
 
 
 def test_parser_failure_is_recorded_safely_in_a_new_transaction() -> None:
