@@ -4,6 +4,8 @@
 
 **Date:** 2026-09-17
 
+**Amended:** 2026-09-18 — narrow OpenAI SDK release-age exception
+
 **Scope:** M1 embeddings, dense indexing, answer generation, semantic support evaluation, and local
 trace context
 
@@ -106,8 +108,18 @@ The following rules are binding:
 The approved package baselines are `pinecone` 10.0.0, `openai` 3.14.1 or a later compatible 3.x,
 and `opentelemetry-api` plus `opentelemetry-sdk` 1.44.0 or a later compatible 1.x. Exact versions are
 locked in `backend/uv.lock` only after another release-age, provenance, Python 3.14, license,
-transitive-dependency, and vulnerability check. OpenAI 3.14.1 is not eligible before
-2026-09-22 23:12 UTC and receives no exception merely to start M1.
+transitive-dependency, and vulnerability check.
+
+OpenAI 3.14.1 received a user-approved, package-specific release-age exception on 2026-09-18. The
+normally eligible 3.13.0 lacks the 3.14.1 fix that validates retry limits and prevents application
+exceptions, including Celery worker termination signals, from being retried as transport failures.
+Using the fixed release was therefore judged safer than downgrading solely to satisfy age. The
+exception pins exactly `openai==3.14.1` and caps only that package at its 2026-09-16 upload boundary;
+all transitive packages remain subject to the global seven-day rule. PyPI Trusted Publishing
+provenance, Apache-2.0 licensing, CPython 3.14.7 import, dependency resolution, malware checks, and
+the vulnerability audit passed. Remove the package-specific cutoff and relock under the normal
+policy no earlier than 2026-09-22 23:14 UTC. This exception is not precedent for later releases or
+other packages.
 
 Pinecone 10.0.0 was locked on 2026-09-18 after its release-age, PyPI Trusted Publishing
 provenance, Apache-2.0 license, CPython 3.14 import, ARM64 wheel availability, transitive dependency,
