@@ -9,6 +9,7 @@ This module owns reproducible retrieval records and the ordered candidates selec
 | `application.py` | Normalizes raw questions and builds bounded lexical-search queries.            |
 | `contracts.py`   | Defines immutable lexical and provider-neutral retrieval boundary values.      |
 | `domain.py`      | Defines retrieval runs, filter snapshots, candidates, origins, and invariants. |
+| `indexing.py`    | Orchestrates bounded embedding, deterministic writes, and vector readiness.    |
 | `ports.py`       | Defines lexical, embedding, dense, reranking, and repository contracts.        |
 | `persistence.py` | Maps retrieval records and implements workspace-scoped repository behavior.    |
 
@@ -93,12 +94,15 @@ points, and every returned vector must contain exactly 1536 finite values.
 
 ```mermaid
 flowchart LR
-    TEXT[Query or canonical chunk text] --> EMBED[EmbeddingProvider]
+    CHUNKS[Ordered active canonical chunks] --> BATCH[Bounded document batches]
+    TEXT[Query text] --> EMBED[EmbeddingProvider]
+    BATCH --> EMBED
     EMBED --> VALIDATE[Ordered response validation]
     VALIDATE --> VECTOR[Correlated EmbeddingVector]
     VECTOR --> ID[Workspace-scoped deterministic vector ID]
     ID --> WRITER[DenseIndexWriter]
-    WRITER --> VISIBLE[Fetch-based visibility check]
+    WRITER --> VISIBLE[Bounded fetch-based visibility sequence]
+    VISIBLE --> READY[All IDs visible]
     VECTOR --> DENSE[DenseRetriever]
     FILTERS[Canonical RetrievalFilters] --> DENSE
     DENSE --> HITS[Untrusted dense hits]
@@ -112,6 +116,14 @@ embedding configuration version. Provider metadata contains only bounded canonic
 configuration versions; it contains no source text, title, filename, prompt, answer, or
 authorization decision. The provider adapter derives the workspace namespace from the trusted
 `WorkspaceContext`, never from a client-supplied value.
+
+`IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
+requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders
+chunks deterministically, and packs requests under both the 16-item and 32,000-character limits.
+Embedding and upsert operations receive at most two application-owned attempts; adapters perform no
+nested retries. After every exact provider acknowledgement, the service polls fetch batches under
+one 30-second total deadline and succeeds only when every deterministic vector ID is visible. The
+service performs no database writes, so its provider work always remains outside a transaction.
 
 Unavailable infrastructure adapters fail explicitly with `SearchProviderUnavailableError`, so an
 accidentally enabled path cannot masquerade as a valid empty result. The Pinecone infrastructure
