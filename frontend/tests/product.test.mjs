@@ -20,5 +20,7 @@ test("the processing copy describes automatic background execution", () => {
 
   assert.match(processingCopy, /automatically in the background/i);
   assert.match(archiveCopy.processing.captured, /queued/i);
+  assert.match(archiveCopy.processing.lexicalReady, /dense indexing/i);
+  assert.match(archiveCopy.processing.ready, /searchable evidence is ready/i);
   assert.doesNotMatch(processingCopy, /separate terminal|copy command/i);
 });
