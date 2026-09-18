@@ -46,6 +46,14 @@ from investment_research.infrastructure.queue.celery import (
     CeleryProcessingDispatcher,
     create_celery_app,
 )
+from investment_research.infrastructure.search.openai import (
+    OpenAIEmbeddingProvider,
+    create_openai_embedding_provider,
+)
+from investment_research.infrastructure.search.pinecone import (
+    PineconeDenseIndexWriter,
+    create_pinecone_dense_index_writer,
+)
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
@@ -64,6 +72,7 @@ from investment_research.modules.processing.application import (
     ProcessDocumentService,
 )
 from investment_research.modules.processing.contracts import ParserLimits
+from investment_research.modules.processing.indexing import IndexProcessingRunService
 from investment_research.modules.processing.ports import DocumentParser, ProcessingDispatcher
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
@@ -72,6 +81,7 @@ from investment_research.modules.research.application import (
 )
 from investment_research.modules.research.contracts import AnswerGenerationProfile
 from investment_research.modules.search.contracts import LexicalSearchProfile
+from investment_research.modules.search.indexing import IndexActiveChunksService
 from investment_research.settings import (
     ApiSettings,
     DatabaseSettings,
@@ -174,14 +184,24 @@ class WorkerContainer:
     database_engine: Engine
     session_factory: SessionFactory
     object_storage: ObjectStorage
+    embedding_provider: OpenAIEmbeddingProvider
+    dense_index_writer: PineconeDenseIndexWriter
     open_original_service: OpenOriginalService
     process_document_service: ProcessDocumentService
+    index_active_chunks_service: IndexActiveChunksService
+    index_processing_run_service: IndexProcessingRunService
     execute_processing_job_service: ExecuteProcessingJobService
 
     def close(self) -> None:
         """Release process-wide resources owned by the worker container."""
 
-        self.database_engine.dispose()
+        try:
+            self.dense_index_writer.close()
+        finally:
+            try:
+                self.embedding_provider.close()
+            finally:
+                self.database_engine.dispose()
 
 
 def build_api_container(settings: ApiSettings) -> ApiContainer:
@@ -272,39 +292,78 @@ def build_worker_container(
     """Wire document processing without constructing API-only services."""
 
     database = _build_database_resources(settings)
-    object_storage = _build_object_storage(settings)
-    open_original_service = OpenOriginalService(
-        object_storage=object_storage.adapter,
-        unit_of_work_factory=create_document_read_unit_of_work_factory(database.session_factory),
-    )
-    identity_context_provider = FixedLocalIdentityContextProvider()
-    active_parser = parser or HttpDocumentParser(
-        endpoint_url=settings.require_parser_endpoint_url(),
-        parser_version=M1_PROCESSING_PROFILE.parser_version,
-        parser_config_version=M1_PROCESSING_PROFILE.parser_config_version,
-        timeout_seconds=settings.processing_timeout_seconds,
-        max_request_bytes=settings.max_parser_request_bytes,
-    )
-    process_document_service = ProcessDocumentService(
-        parser=active_parser,
-        original_provider=open_original_service,
-        unit_of_work_factory=create_processing_unit_of_work_factory(database.session_factory),
-        parser_limits=ParserLimits(
-            max_pages=settings.max_pdf_pages,
-            max_extracted_characters=settings.max_extracted_characters,
-        ),
-        profile=M1_PROCESSING_PROFILE,
-    )
-    return WorkerContainer(
-        settings=settings,
-        identity_context_provider=identity_context_provider,
-        database_engine=database.engine,
-        session_factory=database.session_factory,
-        object_storage=object_storage.adapter,
-        open_original_service=open_original_service,
-        process_document_service=process_document_service,
-        execute_processing_job_service=ExecuteProcessingJobService(
-            processing_service=process_document_service,
+    embedding_provider: OpenAIEmbeddingProvider | None = None
+    dense_index_writer: PineconeDenseIndexWriter | None = None
+    try:
+        object_storage = _build_object_storage(settings)
+        provider_settings = settings.require_indexing_providers()
+        embedding_provider = create_openai_embedding_provider(
+            api_key=provider_settings.embedding.api_key.get_secret_value(),
+            embedding_config_version=provider_settings.embedding.config_version,
+            model=provider_settings.embedding.model,
+            dimensions=provider_settings.embedding.dimensions,
+            operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
+        )
+        dense_index_writer = create_pinecone_dense_index_writer(
+            api_key=provider_settings.pinecone.api_key.get_secret_value(),
+            index_host=provider_settings.pinecone.index_host,
+            operation_timeout_seconds=provider_settings.pinecone.operation_timeout_seconds,
+        )
+        open_original_service = OpenOriginalService(
+            object_storage=object_storage.adapter,
+            unit_of_work_factory=create_document_read_unit_of_work_factory(
+                database.session_factory
+            ),
+        )
+        identity_context_provider = FixedLocalIdentityContextProvider()
+        active_parser = parser or HttpDocumentParser(
+            endpoint_url=settings.require_parser_endpoint_url(),
+            parser_version=M1_PROCESSING_PROFILE.parser_version,
+            parser_config_version=M1_PROCESSING_PROFILE.parser_config_version,
+            timeout_seconds=settings.processing_timeout_seconds,
+            max_request_bytes=settings.max_parser_request_bytes,
+        )
+        process_document_service = ProcessDocumentService(
+            parser=active_parser,
+            original_provider=open_original_service,
+            unit_of_work_factory=create_processing_unit_of_work_factory(database.session_factory),
+            parser_limits=ParserLimits(
+                max_pages=settings.max_pdf_pages,
+                max_extracted_characters=settings.max_extracted_characters,
+            ),
+            profile=M1_PROCESSING_PROFILE,
+        )
+        index_active_chunks_service = IndexActiveChunksService(
+            embedding_provider=embedding_provider,
+            dense_index_writer=dense_index_writer,
+        )
+        index_processing_run_service = IndexProcessingRunService(
+            indexing_service=index_active_chunks_service,
+            unit_of_work_factory=create_processing_unit_of_work_factory(database.session_factory),
+            profile=M1_PROCESSING_PROFILE,
+        )
+        return WorkerContainer(
+            settings=settings,
             identity_context_provider=identity_context_provider,
-        ),
-    )
+            database_engine=database.engine,
+            session_factory=database.session_factory,
+            object_storage=object_storage.adapter,
+            embedding_provider=embedding_provider,
+            dense_index_writer=dense_index_writer,
+            open_original_service=open_original_service,
+            process_document_service=process_document_service,
+            index_active_chunks_service=index_active_chunks_service,
+            index_processing_run_service=index_processing_run_service,
+            execute_processing_job_service=ExecuteProcessingJobService(
+                processing_service=process_document_service,
+                indexing_service=index_processing_run_service,
+                identity_context_provider=identity_context_provider,
+            ),
+        )
+    except Exception:
+        if dense_index_writer is not None:
+            dense_index_writer.close()
+        if embedding_provider is not None:
+            embedding_provider.close()
+        database.engine.dispose()
+        raise
