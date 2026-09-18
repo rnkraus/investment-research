@@ -575,6 +575,24 @@ def test_repository_locks_scoped_run_for_lifecycle_update() -> None:
     assert "processing_runs.id" in compiled
 
 
+def test_repository_lists_only_active_scoped_chunks_in_stable_order() -> None:
+    session = create_autospec(Session, instance=True)
+    _, _, chunk = make_lexical_output()
+    session.scalars.return_value.all.return_value = [ChunkRow.from_domain(chunk)]
+    repository = SqlAlchemyProcessingRepository(session)
+
+    result = repository.list_active_chunks(make_context(), PROCESSING_RUN_ID)
+
+    assert result == (chunk,)
+    statement = session.scalars.call_args.args[0]
+    compiled = str(statement)
+    assert "chunks.workspace_id" in compiled
+    assert "chunks.processing_run_id" in compiled
+    assert "chunk_sets.is_active IS true" in compiled
+    assert "chunk_sets.lexical_config_version = processing_runs.lexical_config_version" in compiled
+    assert "ORDER BY chunks.ordinal, chunks.id" in compiled
+
+
 def test_repository_stages_consistent_lexical_output() -> None:
     session = create_autospec(Session, instance=True)
     repository = SqlAlchemyProcessingRepository(session)

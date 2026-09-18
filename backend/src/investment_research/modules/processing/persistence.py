@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    and_,
     func,
     select,
     text,
@@ -429,6 +430,22 @@ class ChunkRow(Base):
 
         return cls(**chunk.model_dump())
 
+    def to_domain(self) -> Chunk:
+        """Translate a loaded row into one immutable canonical chunk."""
+
+        return Chunk(
+            id=self.id,
+            workspace_id=self.workspace_id,
+            processing_run_id=self.processing_run_id,
+            document_version_id=self.document_version_id,
+            chunk_set_id=self.chunk_set_id,
+            structure_block_id=self.structure_block_id,
+            ordinal=self.ordinal,
+            text=self.text,
+            token_count=self.token_count,
+            created_at=self.created_at,
+        )
+
 
 class SqlAlchemyProcessingRepository:
     """Processing repository bound to one caller-owned SQLAlchemy session."""
@@ -500,6 +517,42 @@ class SqlAlchemyProcessingRepository:
 
         row.apply_state(run)
         return True
+
+    def list_active_chunks(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> Sequence[Chunk]:
+        """Return active canonical chunks for one scoped run in stable order."""
+
+        rows = self._session.scalars(
+            select(ChunkRow)
+            .join(
+                ChunkSetRow,
+                and_(
+                    ChunkSetRow.workspace_id == ChunkRow.workspace_id,
+                    ChunkSetRow.processing_run_id == ChunkRow.processing_run_id,
+                    ChunkSetRow.document_version_id == ChunkRow.document_version_id,
+                    ChunkSetRow.id == ChunkRow.chunk_set_id,
+                ),
+            )
+            .join(
+                ProcessingRunRow,
+                and_(
+                    ProcessingRunRow.workspace_id == ChunkRow.workspace_id,
+                    ProcessingRunRow.id == ChunkRow.processing_run_id,
+                    ProcessingRunRow.document_version_id == ChunkRow.document_version_id,
+                ),
+            )
+            .where(
+                ChunkRow.workspace_id == context.workspace_id,
+                ChunkRow.processing_run_id == processing_run_id,
+                ChunkSetRow.is_active.is_(True),
+                ChunkSetRow.lexical_config_version == ProcessingRunRow.lexical_config_version,
+            )
+            .order_by(ChunkRow.ordinal, ChunkRow.id)
+        ).all()
+        return tuple(row.to_domain() for row in rows)
 
     def add_lexical_output(
         self,

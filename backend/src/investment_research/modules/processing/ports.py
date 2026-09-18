@@ -113,6 +113,13 @@ class ProcessingRepository(Protocol):
     def update_run(self, context: WorkspaceContext, run: ProcessingRun) -> bool:
         """Update a scoped run snapshot and report whether it existed."""
 
+    def list_active_chunks(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> Sequence[Chunk]:
+        """Return active canonical chunks for one scoped processing run in stable order."""
+
     def add_lexical_output(
         self,
         context: WorkspaceContext,
