@@ -249,6 +249,14 @@ def test_processing_lifecycle_and_lexical_output_are_scoped_and_searchable(
         state=ProcessingState.LEXICAL_READY,
     )
     block, chunk_set, chunk = make_lexical_output(context, ready_run)
+    second_block = block.model_copy(update={"id": uuid4(), "ordinal": 1})
+    second_chunk = chunk.model_copy(
+        update={
+            "id": uuid4(),
+            "structure_block_id": second_block.id,
+            "ordinal": 1,
+        }
+    )
 
     with transactional_session(session_factory) as session:
         SqlAlchemyProcessingRepository(session).add_run(context, captured_run)
@@ -257,7 +265,12 @@ def test_processing_lifecycle_and_lexical_output_are_scoped_and_searchable(
     with transactional_session(session_factory) as session:
         repository = SqlAlchemyProcessingRepository(session)
         assert repository.update_run(context, ready_run) is True
-        repository.add_lexical_output(context, [block], chunk_set, [chunk])
+        repository.add_lexical_output(
+            context,
+            [second_block, block],
+            chunk_set,
+            [second_chunk, chunk],
+        )
 
     with transactional_session(session_factory) as session:
         repository = SqlAlchemyProcessingRepository(session)
@@ -266,6 +279,12 @@ def test_processing_lifecycle_and_lexical_output_are_scoped_and_searchable(
         assert session.get(StructureBlockRow, block.id) is not None
         assert session.get(ChunkSetRow, chunk_set.id) is not None
         assert session.get(ChunkRow, chunk.id) is not None
+        assert repository.list_active_chunks(context, ready_run.id) == (
+            chunk,
+            second_chunk,
+        )
+        assert repository.list_active_chunks(foreign_context, ready_run.id) == ()
+        assert repository.list_active_chunks(context, uuid4()) == ()
         lexical_match_count = session.scalar(
             select(func.count())
             .select_from(ChunkRow)

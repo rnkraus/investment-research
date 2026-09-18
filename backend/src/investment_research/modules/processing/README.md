@@ -285,4 +285,11 @@ flowchart LR
 
 Composite foreign keys repeat workspace, run, and document-version identifiers so PostgreSQL can reject cross-workspace or cross-run relationships directly. A partial unique index permits only one active chunk set per document version and lexical configuration.
 
+`list_active_chunks` is the canonical handoff from processing persistence to the later embedding
+orchestrator. It requires trusted workspace context, joins the requested run to an active chunk set
+with the same lexical configuration, and returns immutable chunks ordered by ordinal and chunk ID.
+Unknown and foreign run identifiers both return an empty sequence. A resumed `LEXICAL_READY` or
+`INDEXING` attempt can therefore rebuild the same embedding inputs from PostgreSQL without parsing
+the original again or trusting vector-provider state.
+
 PostgreSQL derives `chunks.search_vector` from `chunks.text` using the explicit English configuration and stores it as a generated column. A GIN index supports lexical candidate lookup. The application never writes the vector directly, and the configuration version records which retrieval behavior produced the active set.

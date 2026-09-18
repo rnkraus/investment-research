@@ -115,6 +115,18 @@ class InMemoryProcessingRepository:
         self.updates.append(run)
         return True
 
+    def list_active_chunks(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> Sequence[Chunk]:
+        if self._scoped_run(context, processing_run_id) is None:
+            return ()
+        for _, chunk_set, chunks in reversed(self.lexical_outputs):
+            if chunk_set.processing_run_id == processing_run_id and chunk_set.is_active:
+                return tuple(sorted(chunks, key=lambda chunk: (chunk.ordinal, chunk.id)))
+        return ()
+
     def add_lexical_output(
         self,
         context: WorkspaceContext,
