@@ -41,22 +41,33 @@ flowchart TD
 
 ## Lifecycle
 
-```text
-CAPTURED ──claim──► PARSING + active lease ──owner completes──► LEXICAL_READY
-                         │
-                         ├─ owner fails permanently ──────────► FAILED
-                         ├─ lease expires ──reclaim──► PARSING + new lease
-                         └─ lease expires at attempt limit ───► FAILED
+```mermaid
+flowchart LR
+    CAPTURED -->|claim| PARSING[PARSING<br/>active lease]
+    PARSING -->|M0 lexical-only completion| M0_READY[LEXICAL_READY<br/>terminal, no lease]
+    PARSING -->|M1 commit canonical chunks| M1_READY[LEXICAL_READY<br/>active lease]
+    M1_READY --> INDEXING[INDEXING<br/>active lease]
+    INDEXING --> SEARCHABLE[SEARCHABLE<br/>terminal, no lease]
+    PARSING -. permanent failure .-> FAILED[FAILED<br/>terminal, no lease]
+    M1_READY -. permanent failure .-> FAILED
+    INDEXING -. permanent failure .-> FAILED
 ```
 
 State, timestamps, attempt metadata, and safe error summaries must agree. `claim_for_processing`
-claims `CAPTURED` or reclaims an expired `PARSING` run. `mark_lexical_ready` and `mark_failed`
-require the current `lease_id` and clear the lease on the terminal snapshot.
-`expire_lease_for_retry` makes an owned lease immediately reclaimable, while
-`mark_attempts_exhausted` closes an abandoned run after the configured attempt ceiling. Each
-operation returns a new fully validated immutable snapshot; it does not mutate the earlier state.
-Direct jumps, active-lease theft, stale-lease completion, and restarting a terminal run raise typed
-processing transition errors.
+claims `CAPTURED` or reclaims an expired `PARSING` run. Historical M0 runs use
+`mark_lexical_ready`, which clears the lease and makes `LEXICAL_READY` terminal. M1 runs use
+`mark_lexical_ready_for_indexing`, retain the same lease through `begin_indexing`, and clear it only
+when `mark_searchable` confirms completion. `claim_for_indexing` can reclaim an expired active
+`LEXICAL_READY` or `INDEXING` run without repeating parsing. `mark_failed` applies to every active
+stage. `expire_lease_for_retry` makes an owned lease immediately reclaimable, while
+`mark_attempts_exhausted` closes an abandoned run after the configured attempt ceiling.
+
+Each operation returns a new fully validated immutable snapshot; it does not mutate the earlier
+state. Direct jumps, active-lease theft, stale-lease completion, restarting a terminal run, and
+dense-index transitions with an M0 disabled configuration raise typed processing transition errors.
+Migration `0006_m1_indexing_lifecycle` enforces the same rules in PostgreSQL while preserving
+historical M1 runs that already ended at terminal `LEXICAL_READY` before indexing orchestration
+existed.
 
 `attempt_count` records successful canonical claims, not broker deliveries. `lease_id` is the
 current attempt's ownership token, and `lease_expires_at` is the earliest UTC instant at which a new
@@ -79,8 +90,10 @@ The capture-time profile snapshots the complete processing intent before asynchr
 
 These values describe which versioned behavior a run requires; storing them does not itself call an
 embedding or vector provider. The indexing application service consumes the M1 snapshots in the
-later indexing stage. Migration `0005_m1_indexing_config` preserves historical lexical intent,
-backfills disabled values for M0-era runs, and backfills the fixed M1 values for M1 lexical runs.
+later indexing stage. The current processing service still selects the terminal M0 transition; the
+next orchestration block will route M1 profiles through the active indexing states. Migration
+`0005_m1_indexing_config` preserves historical lexical intent, backfills disabled values for M0-era
+runs, and backfills the fixed M1 values for M1 lexical runs.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the
 initial durable intent. The caller supplies the active versioned profile and trusted workspace

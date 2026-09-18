@@ -16,6 +16,8 @@ from investment_research.modules.processing.contracts import (
     ProcessingJobV1,
 )
 from investment_research.modules.processing.domain import (
+    M0_DISABLED_DENSE_INDEX_CONFIG_VERSION,
+    M0_DISABLED_EMBEDDING_CONFIG_VERSION,
     Chunk,
     ChunkSet,
     ConfigurationVersion,
@@ -70,8 +72,8 @@ M0_0_PROCESSING_PROFILE = ProcessingProfile(
     chunker_version="m0.0-structure-block-v1",
     chunking_config_version="m0.0-structure-block-config-v1",
     lexical_config_version="m0.0-english-lexical-v1",
-    embedding_config_version="m0.0-embedding-disabled-v1",
-    dense_index_config_version="m0.0-dense-index-disabled-v1",
+    embedding_config_version=M0_DISABLED_EMBEDDING_CONFIG_VERSION,
+    dense_index_config_version=M0_DISABLED_DENSE_INDEX_CONFIG_VERSION,
     maximum_attempts=3,
     lease_duration=timedelta(seconds=360),
 )

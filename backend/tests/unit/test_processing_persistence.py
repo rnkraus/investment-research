@@ -60,18 +60,30 @@ def make_context() -> WorkspaceContext:
 def make_run(
     state: ProcessingState = ProcessingState.CAPTURED,
     workspace_id: UUID = WORKSPACE_ID,
+    *,
+    dense_indexing_enabled: bool = False,
+    active_lexical_ready: bool = False,
 ) -> ProcessingRun:
     """Build a lifecycle-consistent processing run snapshot."""
 
     started_at = None if state is ProcessingState.CAPTURED else CLAIMED_AT
+    is_active = state in {ProcessingState.PARSING, ProcessingState.INDEXING} or (
+        state is ProcessingState.LEXICAL_READY and active_lexical_ready
+    )
     completed_at = (
         CREATED_AT + timedelta(seconds=2)
-        if state in {ProcessingState.LEXICAL_READY, ProcessingState.FAILED}
+        if state
+        in {
+            ProcessingState.LEXICAL_READY,
+            ProcessingState.SEARCHABLE,
+            ProcessingState.FAILED,
+        }
+        and not active_lexical_ready
         else None
     )
     attempt_count = 0 if state is ProcessingState.CAPTURED else 1
-    lease_id = LEASE_ID if state is ProcessingState.PARSING else None
-    lease_expires_at = LEASE_EXPIRES_AT if state is ProcessingState.PARSING else None
+    lease_id = LEASE_ID if is_active else None
+    lease_expires_at = LEASE_EXPIRES_AT if is_active else None
     error_summary = "Synthetic parser failure" if state is ProcessingState.FAILED else None
     return ProcessingRun(
         id=PROCESSING_RUN_ID,
@@ -83,8 +95,16 @@ def make_run(
         chunker_version="structure-block-1",
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
-        embedding_config_version="m0.0-embedding-disabled-v1",
-        dense_index_config_version="m0.0-dense-index-disabled-v1",
+        embedding_config_version=(
+            "openai-text-embedding-3-small-1536-v1"
+            if dense_indexing_enabled
+            else "m0.0-embedding-disabled-v1"
+        ),
+        dense_index_config_version=(
+            "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
+            if dense_indexing_enabled
+            else "m0.0-dense-index-disabled-v1"
+        ),
         created_at=CREATED_AT,
         attempt_count=attempt_count,
         lease_id=lease_id,
@@ -227,6 +247,69 @@ def test_processing_run_exposes_valid_immutable_forward_transitions() -> None:
     assert failed.error_summary == "PDF parsing failed safely"
     assert failed.lease_id is None
     assert failed.lease_expires_at is None
+
+
+def test_processing_run_exposes_m1_dense_indexing_transitions() -> None:
+    captured = make_run(dense_indexing_enabled=True)
+    completed_at = CREATED_AT + timedelta(seconds=3)
+
+    parsing = captured.claim_for_processing(
+        lease_id=LEASE_ID,
+        claimed_at=CLAIMED_AT,
+        lease_expires_at=LEASE_EXPIRES_AT,
+        maximum_attempts=3,
+    )
+    lexical_ready = parsing.mark_lexical_ready_for_indexing(lease_id=LEASE_ID)
+    indexing = lexical_ready.begin_indexing(lease_id=LEASE_ID)
+    searchable = indexing.mark_searchable(
+        lease_id=LEASE_ID,
+        completed_at=completed_at,
+    )
+
+    assert lexical_ready.state is ProcessingState.LEXICAL_READY
+    assert lexical_ready.lease_id == LEASE_ID
+    assert lexical_ready.completed_at is None
+    assert indexing.state is ProcessingState.INDEXING
+    assert indexing.lease_id == LEASE_ID
+    assert searchable.state is ProcessingState.SEARCHABLE
+    assert searchable.completed_at == completed_at
+    assert searchable.lease_id is None
+    assert searchable.lease_expires_at is None
+
+
+@pytest.mark.parametrize("state", [ProcessingState.LEXICAL_READY, ProcessingState.INDEXING])
+def test_processing_run_reclaims_expired_dense_stage_without_reparsing(
+    state: ProcessingState,
+) -> None:
+    active = make_run(
+        state,
+        dense_indexing_enabled=True,
+        active_lexical_ready=state is ProcessingState.LEXICAL_READY,
+    )
+
+    reclaimed = active.claim_for_indexing(
+        lease_id=OTHER_LEASE_ID,
+        claimed_at=LEASE_EXPIRES_AT,
+        lease_expires_at=LEASE_EXPIRES_AT + timedelta(seconds=45),
+        maximum_attempts=3,
+    )
+
+    assert reclaimed.state is state
+    assert reclaimed.started_at == active.started_at
+    assert reclaimed.attempt_count == 2
+    assert reclaimed.lease_id == OTHER_LEASE_ID
+
+
+def test_processing_run_rejects_incoherent_or_disabled_dense_configuration() -> None:
+    payload = make_run().model_dump()
+    payload["embedding_config_version"] = "openai-text-embedding-3-small-1536-v1"
+
+    with pytest.raises(ValidationError, match="enabled together"):
+        ProcessingRun.model_validate(payload)
+
+    parsing = make_run(ProcessingState.PARSING)
+    with pytest.raises(InvalidProcessingTransitionError, match="dense indexing disabled"):
+        parsing.mark_lexical_ready_for_indexing(lease_id=LEASE_ID)
 
 
 def test_processing_run_rejects_skipped_and_terminal_transitions() -> None:
