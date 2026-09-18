@@ -59,7 +59,7 @@ dense-index-configuration identifiers. Raw chunk text and user-facing metadata n
 metadata.
 
 The factory constructs `GrpcIndex` directly from the configured index host, avoiding a control-plane
-lookup. TLS is mandatory, operation time is capped at 30 seconds, concurrency is one, and
+lookup. TLS is mandatory, each operation is capped at 20 seconds, concurrency is one, and
 `RetryConfig(max_retries=0)` makes the application the only retry owner. A successful transport
 response is insufficient: the adapter requires complete item counts with no failed items or batch
 errors. Fetch-based readiness rejects unexpected IDs and preserves application request order.

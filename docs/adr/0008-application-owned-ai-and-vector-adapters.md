@@ -112,7 +112,7 @@ transitive-dependency, and vulnerability check. OpenAI 3.14.1 is not eligible be
 Pinecone 10.0.0 was locked on 2026-09-18 after its release-age, PyPI Trusted Publishing
 provenance, Apache-2.0 license, CPython 3.14 import, ARM64 wheel availability, transitive dependency,
 malware, and vulnerability checks passed. The M1 data adapter uses the gRPC client directly with TLS,
-a 30-second deadline, concurrency one, and `RetryConfig(max_retries=0)`. The REST data client is not
+a 20-second per-operation deadline, concurrency one, and `RetryConfig(max_retries=0)`. The REST data client is not
 used because version 10.0.0 does not forward configurable retry policy to REST data-plane calls;
 using it would violate the single application-owned retry policy.
 
