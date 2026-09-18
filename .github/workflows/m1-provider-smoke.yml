@@ -1,0 +1,58 @@
+name: M1 provider smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_public_synthetic:
+        description: Confirm that only the frozen public-synthetic M1 fixture may be sent
+        required: true
+        type: boolean
+        default: false
+      confirm_pinecone_starter:
+        description: Confirm that the configured Pinecone index uses the approved Starter plan
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m1-provider-smoke
+  cancel-in-progress: false
+
+jobs:
+  provider-smoke:
+    name: Bounded public-fixture provider smoke
+    if: ${{ inputs.confirm_public_synthetic && inputs.confirm_pinecone_starter }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: backend/pyproject.toml
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Run bounded M1 provider compatibility smoke
+        working-directory: backend
+        env:
+          INVESTMENT_RESEARCH_ENVIRONMENT: test
+          INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY: ${{ secrets.M1_OPENAI_DOCUMENT_API_KEY }}
+          INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY: ${{ secrets.M1_PINECONE_INDEX_API_KEY }}
+          INVESTMENT_RESEARCH_PINECONE_INDEX_HOST: ${{ secrets.M1_PINECONE_INDEX_HOST }}
+        run: >-
+          uv run --locked python -m scripts.verify_m1_provider_smoke
+          --manifest ../fixtures/m1/manifest.yaml
+          --confirm-public-synthetic
+          --confirm-pinecone-starter
