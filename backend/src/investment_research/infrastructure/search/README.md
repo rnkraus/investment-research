@@ -5,12 +5,13 @@ query must read physical data owned by several business modules.
 
 ## Contents
 
-| File             | Responsibility                                                                          |
-| ---------------- | --------------------------------------------------------------------------------------- |
-| `__init__.py`    | Identifies the search-adapter package without exporting a concrete implementation.      |
-| `pinecone.py`    | Writes and verifies bounded vectors through a single-attempt Pinecone gRPC data client. |
-| `postgresql.py`  | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
-| `unavailable.py` | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
+| File               | Responsibility                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `__init__.py`      | Identifies the search-adapter package without exporting a concrete implementation.      |
+| `deterministic.py` | Returns explicitly configured fixed embeddings for credential-free correctness tests.  |
+| `pinecone.py`      | Writes and verifies bounded vectors through a single-attempt Pinecone gRPC data client. |
+| `postgresql.py`    | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
+| `unavailable.py`   | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
 
 ## Dependency direction
 
@@ -23,6 +24,7 @@ flowchart LR
     PG --> DB[(PostgreSQL)]
 
     FUTURE[Later application path] --> PROVIDER_PORTS[Embedding, dense, and reranking ports]
+    DETERMINISTIC[DeterministicEmbeddingProvider] -. implements .-> PROVIDER_PORTS
     PINECONE[PineconeDenseIndexWriter] -. implements .-> PROVIDER_PORTS
     PINECONE --> GRPC[Pinecone gRPC data plane]
     UNAVAILABLE[M0 unavailable adapters] -. implement .-> PROVIDER_PORTS
@@ -68,6 +70,19 @@ Pinecone connection, timeout, rate-limit, and service errors become bounded tran
 errors. Authentication, configuration, and other deterministic SDK failures become bounded
 configuration errors. Partial or contradictory responses become contract errors. Provider exception
 messages and request details never cross the adapter boundary.
+
+## Deterministic embedding behavior
+
+`DeterministicEmbeddingProvider` is a credential-free correctness-test adapter, not a semantic
+embedding implementation. Its caller supplies explicit purpose-and-text cases with fixed
+1536-dimensional finite vectors. The adapter preserves input order, identifiers, and the configured
+embedding version. An unknown case or configuration-version mismatch fails closed instead of
+inventing a vector.
+
+Fixture texts and expected relationships stay in tests and acceptance-fixture configuration rather
+than this infrastructure package. That keeps production code fixture-neutral while allowing normal
+CI to prove document indexing and later dense-retrieval behavior without network access, credentials,
+provider availability, or spend.
 
 ## Unavailable provider behavior
 
