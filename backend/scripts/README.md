@@ -129,11 +129,14 @@ temporary directory, and uses a unique Compose project name. The directory block
 host users while the file mode lets native-Linux Docker bind-mount the secret for non-root container
 users with different UIDs. Normal `compose.yaml` publishes no PostgreSQL port and keeps the backend
 network internal. `compose.test.yaml` adds a separate non-internal `host-test` network and one
-loopback-only database port for host-driven Alembic and SQLAlchemy checks. The PostgreSQL,
-object-storage, queue-recovery, and complete-runtime verifiers load this override; normal startup and
-container-only gates do not. Cleanup runs after success, command failure, or test failure. It removes
-only resources owned by that invocation and never targets the normal development database or its
-volume. The temporary secret directory is removed when the command exits.
+loopback-only database port for host-driven Alembic and SQLAlchemy checks. It also selects the
+credential-free `m0-regression` worker profile, which stops after `LEXICAL_READY`, only while the
+runtime environment is `test`; normal M1 workers keep the `m1` profile and require the configured
+embedding and dense-index providers. The PostgreSQL, object-storage, queue-recovery, and
+complete-runtime verifiers load this override; normal startup and container-only gates do not.
+Cleanup runs after success, command failure, or test failure. It removes only resources owned by
+that invocation and never targets the normal development database or its volume. The temporary
+secret directory is removed when the command exits.
 
 ## Isolated object-storage verification
 

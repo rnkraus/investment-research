@@ -20,6 +20,7 @@ type RuntimeEnvironment = Literal["development", "test"]
 type RuntimeLocation = Literal["host", "container"]
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 type ObjectStorageProvider = Literal["local", "s3"]
+type WorkerProcessingProfile = Literal["m1", "m0-regression"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
@@ -447,6 +448,7 @@ class ApiSettings(ObjectStorageSettings):
 class WorkerSettings(ObjectStorageSettings):
     """Least-privilege configuration available to the Celery worker."""
 
+    processing_profile: WorkerProcessingProfile = "m1"
     parser_endpoint_url: str | None = None
     max_parser_request_bytes: int = Field(
         default=DEFAULT_MAX_UPLOAD_BYTES,
@@ -469,6 +471,16 @@ class WorkerSettings(ObjectStorageSettings):
         le=MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
     )
     indexing_providers: DenseProviderSettings | None = None
+
+    @model_validator(mode="after")
+    def restrict_regression_processing_profile(self) -> WorkerSettings:
+        """Keep the credential-free legacy profile inside isolated test runtimes."""
+
+        if self.processing_profile == "m0-regression" and self.environment != "test":
+            raise ValueError(
+                "m0-regression processing_profile is allowed only in the test environment"
+            )
+        return self
 
     @model_validator(mode="after")
     def require_supported_parser_endpoint(self) -> WorkerSettings:
@@ -886,6 +898,11 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
         **database_values,
         **_queue_runtime_values(file_values, database_values.get("runtime_location")),
         **_object_storage_runtime_values(file_values),
+        "processing_profile": _configuration_value(
+            "INVESTMENT_RESEARCH_PROCESSING_PROFILE",
+            file_values,
+            "m1",
+        ),
         "max_pdf_pages": _configuration_value(
             "INVESTMENT_RESEARCH_MAX_PDF_PAGES",
             file_values,

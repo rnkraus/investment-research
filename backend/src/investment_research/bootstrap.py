@@ -66,10 +66,12 @@ from investment_research.modules.identity.application import (
     IdentityContextProvider,
 )
 from investment_research.modules.processing.application import (
+    M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
     ExecuteProcessingJobService,
     GetProcessingRunService,
     ProcessDocumentService,
+    ProcessingProfile,
 )
 from investment_research.modules.processing.contracts import ParserLimits
 from investment_research.modules.processing.indexing import IndexProcessingRunService
@@ -184,22 +186,24 @@ class WorkerContainer:
     database_engine: Engine
     session_factory: SessionFactory
     object_storage: ObjectStorage
-    embedding_provider: OpenAIEmbeddingProvider
-    dense_index_writer: PineconeDenseIndexWriter
+    embedding_provider: OpenAIEmbeddingProvider | None
+    dense_index_writer: PineconeDenseIndexWriter | None
     open_original_service: OpenOriginalService
     process_document_service: ProcessDocumentService
-    index_active_chunks_service: IndexActiveChunksService
-    index_processing_run_service: IndexProcessingRunService
+    index_active_chunks_service: IndexActiveChunksService | None
+    index_processing_run_service: IndexProcessingRunService | None
     execute_processing_job_service: ExecuteProcessingJobService
 
     def close(self) -> None:
         """Release process-wide resources owned by the worker container."""
 
         try:
-            self.dense_index_writer.close()
+            if self.dense_index_writer is not None:
+                self.dense_index_writer.close()
         finally:
             try:
-                self.embedding_provider.close()
+                if self.embedding_provider is not None:
+                    self.embedding_provider.close()
             finally:
                 self.database_engine.dispose()
 
@@ -291,24 +295,16 @@ def build_worker_container(
 ) -> WorkerContainer:
     """Wire document processing without constructing API-only services."""
 
+    processing_profile: ProcessingProfile = (
+        M0_0_PROCESSING_PROFILE
+        if settings.processing_profile == "m0-regression"
+        else M1_PROCESSING_PROFILE
+    )
     database = _build_database_resources(settings)
     embedding_provider: OpenAIEmbeddingProvider | None = None
     dense_index_writer: PineconeDenseIndexWriter | None = None
     try:
         object_storage = _build_object_storage(settings)
-        provider_settings = settings.require_indexing_providers()
-        embedding_provider = create_openai_embedding_provider(
-            api_key=provider_settings.embedding.api_key.get_secret_value(),
-            embedding_config_version=provider_settings.embedding.config_version,
-            model=provider_settings.embedding.model,
-            dimensions=provider_settings.embedding.dimensions,
-            operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
-        )
-        dense_index_writer = create_pinecone_dense_index_writer(
-            api_key=provider_settings.pinecone.api_key.get_secret_value(),
-            index_host=provider_settings.pinecone.index_host,
-            operation_timeout_seconds=provider_settings.pinecone.operation_timeout_seconds,
-        )
         open_original_service = OpenOriginalService(
             object_storage=object_storage.adapter,
             unit_of_work_factory=create_document_read_unit_of_work_factory(
@@ -318,8 +314,8 @@ def build_worker_container(
         identity_context_provider = FixedLocalIdentityContextProvider()
         active_parser = parser or HttpDocumentParser(
             endpoint_url=settings.require_parser_endpoint_url(),
-            parser_version=M1_PROCESSING_PROFILE.parser_version,
-            parser_config_version=M1_PROCESSING_PROFILE.parser_config_version,
+            parser_version=processing_profile.parser_version,
+            parser_config_version=processing_profile.parser_config_version,
             timeout_seconds=settings.processing_timeout_seconds,
             max_request_bytes=settings.max_parser_request_bytes,
         )
@@ -331,17 +327,35 @@ def build_worker_container(
                 max_pages=settings.max_pdf_pages,
                 max_extracted_characters=settings.max_extracted_characters,
             ),
-            profile=M1_PROCESSING_PROFILE,
+            profile=processing_profile,
         )
-        index_active_chunks_service = IndexActiveChunksService(
-            embedding_provider=embedding_provider,
-            dense_index_writer=dense_index_writer,
-        )
-        index_processing_run_service = IndexProcessingRunService(
-            indexing_service=index_active_chunks_service,
-            unit_of_work_factory=create_processing_unit_of_work_factory(database.session_factory),
-            profile=M1_PROCESSING_PROFILE,
-        )
+        index_active_chunks_service: IndexActiveChunksService | None = None
+        index_processing_run_service: IndexProcessingRunService | None = None
+        if settings.processing_profile == "m1":
+            provider_settings = settings.require_indexing_providers()
+            embedding_provider = create_openai_embedding_provider(
+                api_key=provider_settings.embedding.api_key.get_secret_value(),
+                embedding_config_version=provider_settings.embedding.config_version,
+                model=provider_settings.embedding.model,
+                dimensions=provider_settings.embedding.dimensions,
+                operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
+            )
+            dense_index_writer = create_pinecone_dense_index_writer(
+                api_key=provider_settings.pinecone.api_key.get_secret_value(),
+                index_host=provider_settings.pinecone.index_host,
+                operation_timeout_seconds=provider_settings.pinecone.operation_timeout_seconds,
+            )
+            index_active_chunks_service = IndexActiveChunksService(
+                embedding_provider=embedding_provider,
+                dense_index_writer=dense_index_writer,
+            )
+            index_processing_run_service = IndexProcessingRunService(
+                indexing_service=index_active_chunks_service,
+                unit_of_work_factory=create_processing_unit_of_work_factory(
+                    database.session_factory
+                ),
+                profile=processing_profile,
+            )
         return WorkerContainer(
             settings=settings,
             identity_context_provider=identity_context_provider,
