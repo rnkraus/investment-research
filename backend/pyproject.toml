@@ -13,6 +13,7 @@ dependencies = [
   "botocore>=1.43.89,<1.44",
   "celery[redis]>=5.6.3,<5.7",
   "fastapi>=0.116,<1",
+  "openai==3.14.1",
   "pinecone==10.0.0",
   "psycopg[binary]>=3.3,<4",
   "pydantic>=2.11,<3",
@@ -36,6 +37,7 @@ dev = [
 [tool.uv]
 required-version = ">=0.12.7,<0.13"
 exclude-newer = "7 days"
+exclude-newer-package = { openai = "2026-09-16T00:00:00Z" }
 
 [tool.uv.audit]
 malware-check = true

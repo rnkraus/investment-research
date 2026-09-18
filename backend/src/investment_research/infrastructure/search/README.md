@@ -9,6 +9,7 @@ query must read physical data owned by several business modules.
 | ------------------ | --------------------------------------------------------------------------------------- |
 | `__init__.py`      | Identifies the search-adapter package without exporting a concrete implementation.      |
 | `deterministic.py` | Returns explicitly configured fixed embeddings for credential-free correctness tests.  |
+| `openai.py`        | Creates bounded, correlated embeddings through one retry-free OpenAI SDK call.          |
 | `pinecone.py`      | Writes and verifies bounded vectors through a single-attempt Pinecone gRPC data client. |
 | `postgresql.py`    | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
 | `unavailable.py`   | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
@@ -25,6 +26,8 @@ flowchart LR
 
     FUTURE[Later application path] --> PROVIDER_PORTS[Embedding, dense, and reranking ports]
     DETERMINISTIC[DeterministicEmbeddingProvider] -. implements .-> PROVIDER_PORTS
+    OPENAI[OpenAIEmbeddingProvider] -. implements .-> PROVIDER_PORTS
+    OPENAI --> OPENAI_API[OpenAI embeddings API]
     PINECONE[PineconeDenseIndexWriter] -. implements .-> PROVIDER_PORTS
     PINECONE --> GRPC[Pinecone gRPC data plane]
     UNAVAILABLE[M0 unavailable adapters] -. implement .-> PROVIDER_PORTS
@@ -51,6 +54,24 @@ and document. Before ranking, it requires:
 Only eligible rows are ranked with `ts_rank_cd`. Results use descending score and ascending
 `chunk_id` as the final deterministic tie-breaker, then apply the validated candidate limit. The
 adapter returns immutable `LexicalSearchHit` values and never commits a transaction.
+
+## OpenAI embedding adapter
+
+`OpenAIEmbeddingProvider` sends one already-bounded ordered text list to
+`text-embedding-3-small` with the frozen 1536 dimensions and a maximum 30-second operation timeout.
+Input identifiers, purposes, workspace identifiers, and application configuration objects remain
+inside the application; only the text list and provider parameters cross the network boundary.
+
+The SDK client has `max_retries=0`. The application service above this adapter owns the complete
+two-attempt M1 retry policy. Transport, timeout, rate-limit, request-timeout, conflict, and service
+failures become safe transient errors. Authentication, authorization, and deterministic request
+failures become safe configuration errors. Malformed or contradictory output becomes a contract
+error, and raw provider details are never included in those messages. Non-SDK exceptions propagate
+unchanged so a worker shutdown or time limit cannot be mistaken for a retryable provider outage.
+
+Before returning, the adapter requires the configured model, list object, exact item count, and
+provider indexes `0..n-1` in request order. Every vector then passes the application contract's
+dimension and finite-number validation. Pinecone is never called with an unvalidated embedding.
 
 ## Pinecone dense-index writer
 
