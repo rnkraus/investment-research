@@ -7,18 +7,39 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.application import (
+    DenseIndexRelationshipError,
+    EmbeddingResponseContractError,
+    build_dense_index_vector,
     build_lexical_search_query,
+    dense_index_namespace,
+    dense_vector_id,
     normalize_lexical_query,
+    validate_embedding_response,
 )
-from investment_research.modules.search.contracts import LexicalSearchHit
+from investment_research.modules.search.contracts import (
+    M1_EMBEDDING_DIMENSIONS,
+    EmbeddingInput,
+    EmbeddingPurpose,
+    EmbeddingRequest,
+    EmbeddingVector,
+    LexicalSearchHit,
+)
 from investment_research.modules.search.domain import RetrievalFilters
 
 DOCUMENT_ID = UUID("10000000-0000-4000-8000-000000000001")
 VERSION_ID = UUID("10000000-0000-4000-8000-000000000002")
 BLOCK_ID = UUID("10000000-0000-4000-8000-000000000003")
 CHUNK_ID = UUID("10000000-0000-4000-8000-000000000004")
+SECOND_CHUNK_ID = UUID("10000000-0000-4000-8000-000000000005")
+CHUNK_SET_ID = UUID("10000000-0000-4000-8000-000000000006")
+WORKSPACE_ID = UUID("10000000-0000-4000-8000-000000000010")
+FOREIGN_WORKSPACE_ID = UUID("10000000-0000-4000-8000-000000000011")
+USER_ID = UUID("10000000-0000-4000-8000-000000000012")
 CUTOFF_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
+VECTOR_VALUES = (0.0,) * M1_EMBEDDING_DIMENSIONS
+EXPECTED_VECTOR_ID = "v1:744949988e775492e6767a69a22cb197dc7c8f40736c3ecf075dd4aa7e6ca899"
 
 
 def make_hit(**changes: object) -> LexicalSearchHit:
@@ -83,6 +104,101 @@ def test_build_lexical_search_query_rejects_unbounded_candidate_limits(
             filters=RetrievalFilters(),
             lexical_config_version="m0.0-english-lexical-v1",
             candidate_limit=candidate_limit,
+        )
+
+
+def test_embedding_response_requires_exact_order_and_configuration() -> None:
+    request = EmbeddingRequest(
+        inputs=(
+            EmbeddingInput(
+                input_id=CHUNK_ID,
+                text="Canonical chunk one",
+                purpose=EmbeddingPurpose.DOCUMENT,
+            ),
+            EmbeddingInput(
+                input_id=SECOND_CHUNK_ID,
+                text="Canonical chunk two",
+                purpose=EmbeddingPurpose.DOCUMENT,
+            ),
+        ),
+        embedding_config_version="embedding-v1",
+    )
+    first = EmbeddingVector(
+        input_id=CHUNK_ID,
+        values=VECTOR_VALUES,
+        embedding_config_version="embedding-v1",
+    )
+    second = EmbeddingVector(
+        input_id=SECOND_CHUNK_ID,
+        values=VECTOR_VALUES,
+        embedding_config_version="embedding-v1",
+    )
+
+    assert validate_embedding_response(request, (first, second)) == (first, second)
+
+    with pytest.raises(EmbeddingResponseContractError, match="exactly once and in order"):
+        validate_embedding_response(request, (second, first))
+    with pytest.raises(EmbeddingResponseContractError, match="exactly once and in order"):
+        validate_embedding_response(request, (first,))
+    with pytest.raises(EmbeddingResponseContractError, match="configuration version"):
+        validate_embedding_response(
+            request,
+            (first, second.model_copy(update={"embedding_config_version": "embedding-v2"})),
+        )
+
+
+def test_dense_identity_and_metadata_are_workspace_scoped_and_deterministic() -> None:
+    context = WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID)
+    foreign_context = WorkspaceContext(user_id=USER_ID, workspace_id=FOREIGN_WORKSPACE_ID)
+    embedding = EmbeddingVector(
+        input_id=CHUNK_ID,
+        values=VECTOR_VALUES,
+        embedding_config_version="embedding-v1",
+    )
+
+    assert dense_index_namespace(context) == f"ws-{WORKSPACE_ID.hex}"
+    assert (
+        dense_vector_id(
+            context,
+            chunk_id=CHUNK_ID,
+            embedding_config_version="embedding-v1",
+        )
+        == EXPECTED_VECTOR_ID
+    )
+    assert dense_vector_id(
+        foreign_context,
+        chunk_id=CHUNK_ID,
+        embedding_config_version="embedding-v1",
+    ) != dense_vector_id(
+        context,
+        chunk_id=CHUNK_ID,
+        embedding_config_version="embedding-v1",
+    )
+
+    vector = build_dense_index_vector(
+        context,
+        chunk_id=CHUNK_ID,
+        document_version_id=VERSION_ID,
+        chunk_set_id=CHUNK_SET_ID,
+        embedding=embedding,
+        dense_index_config_version="dense-v1",
+    )
+
+    assert vector.vector_id == EXPECTED_VECTOR_ID
+    assert vector.chunk_id == CHUNK_ID
+    assert vector.document_version_id == VERSION_ID
+    assert vector.chunk_set_id == CHUNK_SET_ID
+    assert vector.embedding_config_version == "embedding-v1"
+    assert vector.dense_index_config_version == "dense-v1"
+
+    with pytest.raises(DenseIndexRelationshipError, match="canonical chunk"):
+        build_dense_index_vector(
+            context,
+            chunk_id=SECOND_CHUNK_ID,
+            document_version_id=VERSION_ID,
+            chunk_set_id=CHUNK_SET_ID,
+            embedding=embedding,
+            dense_index_config_version="dense-v1",
         )
 
 
