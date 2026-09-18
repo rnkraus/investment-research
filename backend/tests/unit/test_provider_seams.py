@@ -6,6 +6,7 @@ import pytest
 
 from investment_research.infrastructure.operations.noop import NoopOperationTracer
 from investment_research.infrastructure.search.unavailable import (
+    UnavailableDenseIndexWriter,
     UnavailableDenseRetriever,
     UnavailableEmbeddingProvider,
     UnavailableReranker,
@@ -13,6 +14,9 @@ from investment_research.infrastructure.search.unavailable import (
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.ports import OperationTracer
 from investment_research.modules.search.contracts import (
+    M1_EMBEDDING_DIMENSIONS,
+    DenseIndexVector,
+    DenseIndexWriteRequest,
     DenseRetrievalQuery,
     EmbeddingInput,
     EmbeddingPurpose,
@@ -22,6 +26,7 @@ from investment_research.modules.search.contracts import (
 )
 from investment_research.modules.search.domain import RetrievalFilters
 from investment_research.modules.search.ports import (
+    DenseIndexWriter,
     DenseRetriever,
     EmbeddingProvider,
     Reranker,
@@ -32,10 +37,15 @@ USER_ID = UUID("00000000-0000-4000-8000-000000000311")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000312")
 INPUT_ID = UUID("00000000-0000-4000-8000-000000000313")
 CANDIDATE_ID = UUID("00000000-0000-4000-8000-000000000314")
+DOCUMENT_VERSION_ID = UUID("00000000-0000-4000-8000-000000000315")
+CHUNK_SET_ID = UUID("00000000-0000-4000-8000-000000000316")
+VECTOR_ID = f"v1:{'a' * 64}"
+VECTOR_VALUES = (0.0,) * M1_EMBEDDING_DIMENSIONS
 
 
 def test_unavailable_search_adapters_fail_without_provider_calls() -> None:
     embedding_provider: EmbeddingProvider = UnavailableEmbeddingProvider()
+    dense_index_writer: DenseIndexWriter = UnavailableDenseIndexWriter()
     dense_retriever: DenseRetriever = UnavailableDenseRetriever()
     reranker: Reranker = UnavailableReranker()
     context = WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID)
@@ -53,11 +63,31 @@ def test_unavailable_search_adapters_fail_without_provider_calls() -> None:
                 embedding_config_version="embedding-v1",
             )
         )
+    with pytest.raises(SearchProviderUnavailableError, match="dense index writer"):
+        dense_index_writer.upsert(
+            context,
+            DenseIndexWriteRequest(
+                vectors=(
+                    DenseIndexVector(
+                        vector_id=VECTOR_ID,
+                        values=VECTOR_VALUES,
+                        chunk_id=INPUT_ID,
+                        document_version_id=DOCUMENT_VERSION_ID,
+                        chunk_set_id=CHUNK_SET_ID,
+                        embedding_config_version="embedding-v1",
+                        dense_index_config_version="dense-v1",
+                    ),
+                ),
+                dense_index_config_version="dense-v1",
+            ),
+        )
+    with pytest.raises(SearchProviderUnavailableError, match="dense index writer"):
+        dense_index_writer.fetch_visible(context, (VECTOR_ID,))
     with pytest.raises(SearchProviderUnavailableError, match="dense retrieval provider"):
         dense_retriever.retrieve(
             context,
             DenseRetrievalQuery(
-                query_vector=(0.25, -0.5),
+                query_vector=VECTOR_VALUES,
                 filters=RetrievalFilters(),
                 embedding_config_version="embedding-v1",
                 dense_config_version="dense-v1",

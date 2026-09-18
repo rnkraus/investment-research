@@ -22,6 +22,14 @@ from investment_research.modules.search.domain import (
 )
 
 SearchableText = Annotated[str, StringConstraints(min_length=1)]
+DenseVectorId = Annotated[
+    str,
+    StringConstraints(pattern=r"^v1:[a-f0-9]{64}$"),
+]
+
+M1_EMBEDDING_BATCH_LIMIT = 16
+M1_EMBEDDING_CHARACTER_LIMIT = 32_000
+M1_EMBEDDING_DIMENSIONS = 1_536
 
 
 class EmbeddingPurpose(StrEnum):
@@ -106,7 +114,10 @@ class EmbeddingInput(ImmutableSearchContract):
 class EmbeddingRequest(ImmutableSearchContract):
     """One versioned and bounded provider request for ordered text inputs."""
 
-    inputs: tuple[EmbeddingInput, ...] = Field(min_length=1, max_length=100)
+    inputs: tuple[EmbeddingInput, ...] = Field(
+        min_length=1,
+        max_length=M1_EMBEDDING_BATCH_LIMIT,
+    )
     embedding_config_version: ConfigurationVersion
 
     @field_validator("inputs")
@@ -120,6 +131,8 @@ class EmbeddingRequest(ImmutableSearchContract):
         input_ids = [item.input_id for item in value]
         if len(input_ids) != len(set(input_ids)):
             raise ValueError("embedding input IDs must be unique")
+        if sum(len(item.text) for item in value) > M1_EMBEDDING_CHARACTER_LIMIT:
+            raise ValueError("embedding request exceeds the character limit")
         return value
 
 
@@ -127,7 +140,10 @@ class EmbeddingVector(ImmutableSearchContract):
     """One finite provider vector correlated to its original input."""
 
     input_id: UUID
-    values: tuple[float, ...] = Field(min_length=1, max_length=4_096)
+    values: tuple[float, ...] = Field(
+        min_length=M1_EMBEDDING_DIMENSIONS,
+        max_length=M1_EMBEDDING_DIMENSIONS,
+    )
     embedding_config_version: ConfigurationVersion
 
     @field_validator("values")
@@ -140,10 +156,82 @@ class EmbeddingVector(ImmutableSearchContract):
         return value
 
 
+class DenseIndexVector(ImmutableSearchContract):
+    """One application-owned vector and its bounded provider metadata."""
+
+    vector_id: DenseVectorId
+    values: tuple[float, ...] = Field(
+        min_length=M1_EMBEDDING_DIMENSIONS,
+        max_length=M1_EMBEDDING_DIMENSIONS,
+    )
+    chunk_id: UUID
+    document_version_id: UUID
+    chunk_set_id: UUID
+    embedding_config_version: ConfigurationVersion
+    dense_index_config_version: ConfigurationVersion
+
+    @field_validator("values")
+    @classmethod
+    def require_finite_index_values(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        """Reject malformed vectors before crossing the dense-index boundary."""
+
+        if any(not isfinite(item) for item in value):
+            raise ValueError("dense index values must be finite")
+        return value
+
+
+class DenseIndexWriteRequest(ImmutableSearchContract):
+    """One bounded idempotent write of correlated application vectors."""
+
+    vectors: tuple[DenseIndexVector, ...] = Field(
+        min_length=1,
+        max_length=M1_EMBEDDING_BATCH_LIMIT,
+    )
+    dense_index_config_version: ConfigurationVersion
+
+    @model_validator(mode="after")
+    def require_coherent_vectors(self) -> DenseIndexWriteRequest:
+        """Reject duplicate identities or mixed dense-index configurations."""
+
+        vector_ids = [vector.vector_id for vector in self.vectors]
+        chunk_ids = [vector.chunk_id for vector in self.vectors]
+        if len(vector_ids) != len(set(vector_ids)):
+            raise ValueError("dense index vector IDs must be unique")
+        if len(chunk_ids) != len(set(chunk_ids)):
+            raise ValueError("dense index chunk IDs must be unique")
+        if any(
+            vector.dense_index_config_version != self.dense_index_config_version
+            for vector in self.vectors
+        ):
+            raise ValueError("dense index configuration versions must match")
+        return self
+
+
+class DenseIndexWriteResult(ImmutableSearchContract):
+    """The deterministic vector identities acknowledged by one successful write."""
+
+    vector_ids: tuple[DenseVectorId, ...] = Field(
+        min_length=1,
+        max_length=M1_EMBEDDING_BATCH_LIMIT,
+    )
+
+    @field_validator("vector_ids")
+    @classmethod
+    def require_unique_vector_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        """Reject an ambiguous provider acknowledgement."""
+
+        if len(value) != len(set(value)):
+            raise ValueError("dense index result vector IDs must be unique")
+        return value
+
+
 class DenseRetrievalQuery(ImmutableSearchContract):
     """One bounded vector query with canonical eligibility filters."""
 
-    query_vector: tuple[float, ...] = Field(min_length=1, max_length=4_096)
+    query_vector: tuple[float, ...] = Field(
+        min_length=M1_EMBEDDING_DIMENSIONS,
+        max_length=M1_EMBEDDING_DIMENSIONS,
+    )
     filters: RetrievalFilters
     embedding_config_version: ConfigurationVersion
     dense_config_version: ConfigurationVersion

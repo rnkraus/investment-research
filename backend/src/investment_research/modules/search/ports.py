@@ -6,8 +6,11 @@ from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.contracts import (
+    DenseIndexWriteRequest,
+    DenseIndexWriteResult,
     DenseRetrievalHit,
     DenseRetrievalQuery,
+    DenseVectorId,
     EmbeddingRequest,
     EmbeddingVector,
     LexicalSearchHit,
@@ -38,6 +41,24 @@ class EmbeddingProvider(Protocol):
 
     def embed(self, request: EmbeddingRequest) -> Sequence[EmbeddingVector]:
         """Return one ordered vector for every input or raise a provider error."""
+
+
+class DenseIndexWriter(Protocol):
+    """Write and verify derived vectors inside one trusted workspace namespace."""
+
+    def upsert(
+        self,
+        context: WorkspaceContext,
+        request: DenseIndexWriteRequest,
+    ) -> DenseIndexWriteResult:
+        """Idempotently write deterministic vector identities."""
+
+    def fetch_visible(
+        self,
+        context: WorkspaceContext,
+        vector_ids: Sequence[DenseVectorId],
+    ) -> Sequence[DenseVectorId]:
+        """Return only requested vector identities currently visible in the index."""
 
 
 class DenseRetriever(Protocol):

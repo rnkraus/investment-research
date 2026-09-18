@@ -4,8 +4,11 @@ from collections.abc import Sequence
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.contracts import (
+    DenseIndexWriteRequest,
+    DenseIndexWriteResult,
     DenseRetrievalHit,
     DenseRetrievalQuery,
+    DenseVectorId,
     EmbeddingRequest,
     EmbeddingVector,
     RerankRequest,
@@ -22,6 +25,30 @@ class UnavailableEmbeddingProvider:
 
         del request
         raise SearchProviderUnavailableError("embedding provider is unavailable")
+
+
+class UnavailableDenseIndexWriter:
+    """Reject dense-index writes until an approved vector index is configured."""
+
+    def upsert(
+        self,
+        context: WorkspaceContext,
+        request: DenseIndexWriteRequest,
+    ) -> DenseIndexWriteResult:
+        """Fail explicitly without contacting a vector index."""
+
+        del context, request
+        raise SearchProviderUnavailableError("dense index writer is unavailable")
+
+    def fetch_visible(
+        self,
+        context: WorkspaceContext,
+        vector_ids: Sequence[DenseVectorId],
+    ) -> Sequence[DenseVectorId]:
+        """Fail explicitly without contacting a vector index."""
+
+        del context, vector_ids
+        raise SearchProviderUnavailableError("dense index writer is unavailable")
 
 
 class UnavailableDenseRetriever:

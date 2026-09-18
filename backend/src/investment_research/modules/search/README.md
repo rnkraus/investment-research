@@ -83,16 +83,22 @@ tie-breaker before applying the candidate limit. The adapter only returns hits. 
 `RetrieveResearchService` invokes it through the port and maps those ordered hits to an atomically
 persisted retrieval run and `LEXICAL` candidates without importing Search persistence.
 
-## Later-provider seams
+## Provider seams
 
-The application owns `EmbeddingProvider`, `DenseRetriever`, and `Reranker`; no provider SDK appears
-in this module. Their immutable contracts preserve input correlation, configuration versions,
-bounded batch and candidate sizes, canonical filters, and finite vectors and scores.
+The application owns `EmbeddingProvider`, `DenseIndexWriter`, `DenseRetriever`, and `Reranker`; no
+provider SDK appears in this module. Their immutable contracts preserve input correlation,
+configuration versions, bounded batch and candidate sizes, canonical filters, and finite vectors
+and scores. The M1 embedding boundary accepts at most 16 inputs and 32,000 total Unicode code
+points, and every returned vector must contain exactly 1536 finite values.
 
 ```mermaid
 flowchart LR
     TEXT[Query or canonical chunk text] --> EMBED[EmbeddingProvider]
-    EMBED --> VECTOR[Correlated EmbeddingVector]
+    EMBED --> VALIDATE[Ordered response validation]
+    VALIDATE --> VECTOR[Correlated EmbeddingVector]
+    VECTOR --> ID[Workspace-scoped deterministic vector ID]
+    ID --> WRITER[DenseIndexWriter]
+    WRITER --> VISIBLE[Fetch-based visibility check]
     VECTOR --> DENSE[DenseRetriever]
     FILTERS[Canonical RetrievalFilters] --> DENSE
     DENSE --> HITS[Untrusted dense hits]
@@ -101,8 +107,15 @@ flowchart LR
     RERANK --> ORDERED[Versioned ranked results]
 ```
 
-M0 does not invoke these ports. Its infrastructure adapters fail explicitly with
-`SearchProviderUnavailableError`, so an accidentally enabled later path cannot masquerade as a
-valid empty result. Dense retrieval and embedding begin only in their assigned milestone; reranking
-is activated only after its evaluation gate. Provider results remain candidates, never citation
-evidence, until canonical eligibility and evidence validation succeed.
+The deterministic M1 vector identity hashes the trusted workspace ID, canonical chunk ID, and
+embedding configuration version. Provider metadata contains only bounded canonical IDs and
+configuration versions; it contains no source text, title, filename, prompt, answer, or
+authorization decision. The provider adapter derives the workspace namespace from the trusted
+`WorkspaceContext`, never from a client-supplied value.
+
+Unavailable infrastructure adapters fail explicitly with `SearchProviderUnavailableError`, so an
+accidentally enabled path cannot masquerade as a valid empty result. The current block defines and
+validates the dense-index boundary but does not yet contact an embedding or vector provider. Dense
+retrieval begins in its assigned step, and reranking is activated only after its evaluation gate.
+Provider results remain candidates, never citation evidence, until canonical eligibility and
+evidence validation succeed.
