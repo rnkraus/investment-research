@@ -75,6 +75,8 @@ def make_run() -> ProcessingRun:
         chunker_version="structure-block-1",
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
+        embedding_config_version="m0.0-embedding-disabled-v1",
+        dense_index_config_version="m0.0-dense-index-disabled-v1",
         created_at=CREATED_AT,
     )
 

@@ -93,6 +93,8 @@ class ProcessingRun(ImmutableProcessingModel):
     chunker_version: ConfigurationVersion
     chunking_config_version: ConfigurationVersion
     lexical_config_version: ConfigurationVersion
+    embedding_config_version: ConfigurationVersion
+    dense_index_config_version: ConfigurationVersion
     created_at: AwareDatetime
     attempt_count: int = Field(default=0, ge=0)
     lease_id: UUID | None = None

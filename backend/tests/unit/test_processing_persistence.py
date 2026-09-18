@@ -83,6 +83,8 @@ def make_run(
         chunker_version="structure-block-1",
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
+        embedding_config_version="m0.0-embedding-disabled-v1",
+        dense_index_config_version="m0.0-dense-index-disabled-v1",
         created_at=CREATED_AT,
         attempt_count=attempt_count,
         lease_id=lease_id,
@@ -451,9 +453,18 @@ def test_repository_updates_only_mutable_run_state() -> None:
     assert updated is True
     assert stored_row.to_domain() == parsing_run
 
-    changed_config = parsing_run.model_copy(update={"parser_version": "other-parser"})
-    with pytest.raises(ProcessingRelationshipError, match="configuration changed"):
-        repository.update_run(make_context(), changed_config)
+    for field_name in (
+        "parser_version",
+        "parser_config_version",
+        "chunker_version",
+        "chunking_config_version",
+        "lexical_config_version",
+        "embedding_config_version",
+        "dense_index_config_version",
+    ):
+        changed_config = parsing_run.model_copy(update={field_name: "other-config"})
+        with pytest.raises(ProcessingRelationshipError, match="configuration changed"):
+            repository.update_run(make_context(), changed_config)
 
 
 def test_repository_reports_unknown_run_without_disclosure() -> None:

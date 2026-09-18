@@ -6,10 +6,13 @@ from uuid import UUID
 
 import pytest
 
+from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import (
+    M1_PROCESSING_PROFILE,
     NoExtractableTextError,
     ProcessingRunNotActiveError,
     build_lexical_output,
+    create_captured_processing_run,
 )
 from investment_research.modules.processing.contracts import ParsedDocument, ParsedPage
 from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
@@ -25,6 +28,7 @@ PAGE_THREE_BLOCK_ID = UUID("30000000-0000-4000-8000-000000000004")
 PAGE_THREE_CHUNK_ID = UUID("30000000-0000-4000-8000-000000000005")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
 OUTPUT_CREATED_AT = CREATED_AT + timedelta(seconds=2)
+USER_ID = UUID("00000000-0000-4000-8000-000000000002")
 
 
 def make_run(state: ProcessingState = ProcessingState.PARSING) -> ProcessingRun:
@@ -48,6 +52,8 @@ def make_run(state: ProcessingState = ProcessingState.PARSING) -> ProcessingRun:
         chunker_version="m0.0-structure-block-v1",
         chunking_config_version="m0.0-structure-block-config-v1",
         lexical_config_version="m0.0-english-lexical-v1",
+        embedding_config_version="m0.0-embedding-disabled-v1",
+        dense_index_config_version="m0.0-dense-index-disabled-v1",
         created_at=CREATED_AT,
         attempt_count=0 if is_captured else 1,
         lease_id=LEASE_ID if is_parsing else None,
@@ -68,6 +74,19 @@ def deterministic_ids() -> Iterator[UUID]:
         PAGE_THREE_BLOCK_ID,
         PAGE_THREE_CHUNK_ID,
     )
+
+
+def test_captured_run_snapshots_m1_dense_configuration_versions() -> None:
+    run = create_captured_processing_run(
+        context=WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID),
+        document_version_id=DOCUMENT_VERSION_ID,
+        processing_run_id=PROCESSING_RUN_ID,
+        created_at=CREATED_AT,
+        profile=M1_PROCESSING_PROFILE,
+    )
+
+    assert run.embedding_config_version == "openai-text-embedding-3-small-1536-v1"
+    assert run.dense_index_config_version == "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
 
 
 def test_build_lexical_output_preserves_visible_pages_and_run_provenance() -> None:

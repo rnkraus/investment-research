@@ -58,7 +58,9 @@ class ProcessingRunRow(Base):
             "AND char_length(btrim(parser_config_version)) > 0 "
             "AND char_length(btrim(chunker_version)) > 0 "
             "AND char_length(btrim(chunking_config_version)) > 0 "
-            "AND char_length(btrim(lexical_config_version)) > 0",
+            "AND char_length(btrim(lexical_config_version)) > 0 "
+            "AND char_length(btrim(embedding_config_version)) > 0 "
+            "AND char_length(btrim(dense_index_config_version)) > 0",
             name="non_empty_configuration_versions",
         ),
         CheckConstraint(
@@ -116,6 +118,8 @@ class ProcessingRunRow(Base):
     chunker_version: Mapped[str] = mapped_column(String(128), nullable=False)
     chunking_config_version: Mapped[str] = mapped_column(String(128), nullable=False)
     lexical_config_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    embedding_config_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    dense_index_config_version: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -146,6 +150,8 @@ class ProcessingRunRow(Base):
             chunker_version=run.chunker_version,
             chunking_config_version=run.chunking_config_version,
             lexical_config_version=run.lexical_config_version,
+            embedding_config_version=run.embedding_config_version,
+            dense_index_config_version=run.dense_index_config_version,
             created_at=run.created_at,
             attempt_count=run.attempt_count,
             lease_id=run.lease_id,
@@ -179,6 +185,8 @@ class ProcessingRunRow(Base):
             chunker_version=self.chunker_version,
             chunking_config_version=self.chunking_config_version,
             lexical_config_version=self.lexical_config_version,
+            embedding_config_version=self.embedding_config_version,
+            dense_index_config_version=self.dense_index_config_version,
             created_at=self.created_at,
             attempt_count=self.attempt_count,
             lease_id=self.lease_id,
@@ -456,6 +464,8 @@ class SqlAlchemyProcessingRepository:
             or row.chunker_version != run.chunker_version
             or row.chunking_config_version != run.chunking_config_version
             or row.lexical_config_version != run.lexical_config_version
+            or row.embedding_config_version != run.embedding_config_version
+            or row.dense_index_config_version != run.dense_index_config_version
         ):
             raise ProcessingRelationshipError("processing run identity or configuration changed")
 
