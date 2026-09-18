@@ -37,6 +37,18 @@ MAX_CONFIGURABLE_PARSER_CHILD_TIMEOUT_SECONDS = 295
 DEFAULT_PARSER_MAX_CONCURRENT_CHILDREN = 2
 MAX_CONFIGURABLE_PARSER_CONCURRENT_CHILDREN = 16
 DEFAULT_PARSER_PORT = 8100
+DEFAULT_EMBEDDING_MODEL: Literal["text-embedding-3-small"] = "text-embedding-3-small"
+DEFAULT_EMBEDDING_DIMENSIONS: Literal[1536] = 1_536
+DEFAULT_EMBEDDING_CONFIG_VERSION: Literal["openai-text-embedding-3-small-1536-v1"] = (
+    "openai-text-embedding-3-small-1536-v1"
+)
+DEFAULT_EMBEDDING_TIMEOUT_SECONDS = 30
+MAX_EMBEDDING_TIMEOUT_SECONDS = 30
+DEFAULT_DENSE_INDEX_CONFIG_VERSION: Literal["pinecone-serverless-cosine-1536-aws-us-east-1-v1"] = (
+    "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
+)
+DEFAULT_PINECONE_OPERATION_TIMEOUT_SECONDS = 20
+MAX_PINECONE_OPERATION_TIMEOUT_SECONDS = 20
 DOCKER_SECRETS_ROOT = Path("/run/secrets")
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
@@ -64,7 +76,10 @@ PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES = (
     "MINIO_",
     "AWS_",
     "INVESTMENT_RESEARCH_S3_",
+    "INVESTMENT_RESEARCH_OPENAI_",
+    "INVESTMENT_RESEARCH_PINECONE_",
     "OPENAI_",
+    "PINECONE_",
     "LANGSMITH_",
 )
 
@@ -317,6 +332,85 @@ class ObjectStorageSettings(QueueSettings):
         return self.s3
 
 
+class EmbeddingProviderSettings(BaseModel):
+    """Fixed M1 embedding configuration plus one role-specific secret."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    api_key: SecretStr
+    model: Literal["text-embedding-3-small"] = DEFAULT_EMBEDDING_MODEL
+    dimensions: Literal[1536] = DEFAULT_EMBEDDING_DIMENSIONS
+    config_version: Literal["openai-text-embedding-3-small-1536-v1"] = (
+        DEFAULT_EMBEDDING_CONFIG_VERSION
+    )
+    timeout_seconds: int = Field(
+        default=DEFAULT_EMBEDDING_TIMEOUT_SECONDS,
+        ge=1,
+        le=MAX_EMBEDDING_TIMEOUT_SECONDS,
+    )
+
+    @field_validator("api_key")
+    @classmethod
+    def require_normalized_api_key(cls, value: SecretStr) -> SecretStr:
+        """Reject blank or padded credentials without exposing their values."""
+
+        secret = value.get_secret_value()
+        if not secret or secret != secret.strip():
+            raise ValueError("embedding API key must be a non-empty normalized value")
+        return value
+
+
+class PineconeProviderSettings(BaseModel):
+    """Fixed M1 dense-index configuration plus one role-specific data-plane key."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    api_key: SecretStr
+    index_host: str
+    config_version: Literal["pinecone-serverless-cosine-1536-aws-us-east-1-v1"] = (
+        DEFAULT_DENSE_INDEX_CONFIG_VERSION
+    )
+    operation_timeout_seconds: int = Field(
+        default=DEFAULT_PINECONE_OPERATION_TIMEOUT_SECONDS,
+        ge=1,
+        le=MAX_PINECONE_OPERATION_TIMEOUT_SECONDS,
+    )
+
+    @field_validator("api_key")
+    @classmethod
+    def require_normalized_api_key(cls, value: SecretStr) -> SecretStr:
+        """Reject blank or padded credentials without exposing their values."""
+
+        secret = value.get_secret_value()
+        if not secret or secret != secret.strip():
+            raise ValueError("Pinecone API key must be a non-empty normalized value")
+        return value
+
+    @field_validator("index_host")
+    @classmethod
+    def require_pinecone_data_plane_host(cls, value: str) -> str:
+        """Accept one normalized Pinecone host without scheme, path, port, or credentials."""
+
+        valid = (
+            value == value.strip().lower()
+            and len(value) <= 253
+            and ".." not in value
+            and fullmatch(r"[a-z0-9][a-z0-9.-]*[a-z0-9]\.pinecone\.io", value) is not None
+        )
+        if not valid:
+            raise ValueError("index_host must be a normalized Pinecone data-plane host")
+        return value
+
+
+class DenseProviderSettings(BaseModel):
+    """One complete role-specific embedding and dense-index provider pair."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    embedding: EmbeddingProviderSettings
+    pinecone: PineconeProviderSettings
+
+
 class ApiSettings(ObjectStorageSettings):
     """Configuration available to the FastAPI process."""
 
@@ -328,6 +422,7 @@ class ApiSettings(ObjectStorageSettings):
         ge=1024,
         le=MAX_CONFIGURABLE_UPLOAD_BYTES,
     )
+    query_providers: DenseProviderSettings | None = None
 
     @model_validator(mode="after")
     def require_supported_api_host(self) -> ApiSettings:
@@ -340,6 +435,13 @@ class ApiSettings(ObjectStorageSettings):
         if not valid:
             raise ValueError("api_host is not allowed for the selected runtime location")
         return self
+
+    def require_query_providers(self) -> DenseProviderSettings:
+        """Return complete query-provider values only when M1 dense retrieval is enabled."""
+
+        if self.query_providers is None:
+            raise RuntimeError("query provider configuration is required")
+        return self.query_providers
 
 
 class WorkerSettings(ObjectStorageSettings):
@@ -366,6 +468,7 @@ class WorkerSettings(ObjectStorageSettings):
         ge=1,
         le=MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
     )
+    indexing_providers: DenseProviderSettings | None = None
 
     @model_validator(mode="after")
     def require_supported_parser_endpoint(self) -> WorkerSettings:
@@ -403,6 +506,13 @@ class WorkerSettings(ObjectStorageSettings):
         if self.parser_endpoint_url is None:
             raise RuntimeError("parser endpoint configuration is required")
         return self.parser_endpoint_url
+
+    def require_indexing_providers(self) -> DenseProviderSettings:
+        """Return complete document-index provider values only when M1 indexing is enabled."""
+
+        if self.indexing_providers is None:
+            raise RuntimeError("indexing provider configuration is required")
+        return self.indexing_providers
 
 
 class ParserSettings(RuntimeSettings):
@@ -688,6 +798,45 @@ def _object_storage_runtime_values(file_values: dict[str, str | None]) -> dict[s
     return values
 
 
+def _dense_provider_runtime_values(
+    file_values: dict[str, str | None],
+    *,
+    embedding_key_name: str,
+    pinecone_key_name: str,
+) -> dict[str, object] | None:
+    """Load one complete role-specific provider pair without sharing credentials."""
+
+    embedding_api_key = _secret_configuration_value(embedding_key_name, file_values)
+    pinecone_api_key = _secret_configuration_value(pinecone_key_name, file_values)
+    if embedding_api_key is None and pinecone_api_key is None:
+        return None
+
+    index_host = _configuration_value(
+        "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST",
+        file_values,
+    )
+    configured_values = {
+        embedding_key_name: embedding_api_key,
+        pinecone_key_name: pinecone_api_key,
+        "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST": index_host,
+    }
+    missing_names = [name for name, value in configured_values.items() if not value]
+    if missing_names:
+        raise ValueError(
+            "dense provider configuration is incomplete; missing: " + ", ".join(missing_names)
+        )
+    assert embedding_api_key is not None
+    assert pinecone_api_key is not None
+    assert index_host is not None
+    return {
+        "embedding": {"api_key": embedding_api_key},
+        "pinecone": {
+            "api_key": pinecone_api_key,
+            "index_host": index_host,
+        },
+    }
+
+
 def load_database_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> DatabaseSettings:
     """Load only values required for a direct PostgreSQL maintenance process."""
 
@@ -718,6 +867,11 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
             "INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES",
             file_values,
             str(DEFAULT_MAX_UPLOAD_BYTES),
+        ),
+        "query_providers": _dense_provider_runtime_values(
+            file_values,
+            embedding_key_name="INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
+            pinecone_key_name="INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
         ),
     }
     return ApiSettings.model_validate(values)
@@ -755,6 +909,11 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
             "INVESTMENT_RESEARCH_PROCESSING_TIMEOUT_SECONDS",
             file_values,
             str(DEFAULT_PROCESSING_TIMEOUT_SECONDS),
+        ),
+        "indexing_providers": _dense_provider_runtime_values(
+            file_values,
+            embedding_key_name="INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
+            pinecone_key_name="INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY",
         ),
     }
     return WorkerSettings.model_validate(values)

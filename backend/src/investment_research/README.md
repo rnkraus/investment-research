@@ -94,8 +94,13 @@ opens the original or commits derived output.
 
 `ApiSettings` and `WorkerSettings` may load the ignored root development file. The API requires an
 authenticated Redis broker URL when its container is built; host development may derive it from
-`REDIS_PASSWORD` and `REDIS_PORT`. `ParserSettings` loads only its allowlisted process variables,
-exposes no database or queue field, and rejects known application credential variables.
+`REDIS_PASSWORD` and `REDIS_PORT`. Optional M1 provider groups are role-specific and fail closed when
+partially configured: `ApiSettings.query_providers` accepts only query-embedding and Pinecone-query
+credentials, while `WorkerSettings.indexing_providers` accepts only document-embedding and
+Pinecone-index credentials. Both retain the frozen model, dimensions, configuration versions, and
+timeouts. These groups define the least-privilege configuration boundary but remain unused until
+their approved adapters are wired. `ParserSettings` loads only its allowlisted process variables,
+exposes no database, queue, or provider field, and rejects known application credential variables.
 `runtime_location=host` restricts bind, database, object-storage, and broker targets to loopback;
 `runtime_location=container` permits only the fixed internal Compose service targets required by
 the topology.
