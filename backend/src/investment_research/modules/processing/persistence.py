@@ -29,6 +29,8 @@ from investment_research.infrastructure.database.base import Base
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import (
+    M0_DISABLED_DENSE_INDEX_CONFIG_VERSION,
+    M0_DISABLED_EMBEDDING_CONFIG_VERSION,
     Chunk,
     ChunkSet,
     ProcessingRelationshipError,
@@ -64,6 +66,17 @@ class ProcessingRunRow(Base):
             name="non_empty_configuration_versions",
         ),
         CheckConstraint(
+            "(embedding_config_version = "
+            f"'{M0_DISABLED_EMBEDDING_CONFIG_VERSION}' AND "
+            "dense_index_config_version = "
+            f"'{M0_DISABLED_DENSE_INDEX_CONFIG_VERSION}') OR "
+            "(embedding_config_version <> "
+            f"'{M0_DISABLED_EMBEDDING_CONFIG_VERSION}' AND "
+            "dense_index_config_version <> "
+            f"'{M0_DISABLED_DENSE_INDEX_CONFIG_VERSION}')",
+            name="coherent_dense_index_configuration",
+        ),
+        CheckConstraint(
             "started_at IS NULL OR started_at >= created_at",
             name="ordered_start_time",
         ),
@@ -84,16 +97,32 @@ class ProcessingRunRow(Base):
             "(state = 'PARSING' AND started_at IS NOT NULL AND completed_at IS NULL "
             "AND error_summary IS NULL AND attempt_count > 0 "
             "AND lease_id IS NOT NULL AND lease_expires_at IS NOT NULL) OR "
-            "(state = 'LEXICAL_READY' AND started_at IS NOT NULL AND completed_at IS NOT NULL "
-            "AND error_summary IS NULL AND attempt_count > 0 "
+            "(state = 'LEXICAL_READY' AND started_at IS NOT NULL "
+            "AND error_summary IS NULL AND attempt_count > 0 AND ((completed_at IS NOT NULL "
             "AND lease_id IS NULL AND lease_expires_at IS NULL) OR "
+            "(completed_at IS NULL AND lease_id IS NOT NULL AND lease_expires_at IS NOT NULL "
+            "AND embedding_config_version <> "
+            f"'{M0_DISABLED_EMBEDDING_CONFIG_VERSION}' AND dense_index_config_version <> "
+            f"'{M0_DISABLED_DENSE_INDEX_CONFIG_VERSION}'))) OR "
+            "(state = 'INDEXING' AND started_at IS NOT NULL AND completed_at IS NULL "
+            "AND error_summary IS NULL AND attempt_count > 0 "
+            "AND lease_id IS NOT NULL AND lease_expires_at IS NOT NULL "
+            "AND embedding_config_version <> "
+            f"'{M0_DISABLED_EMBEDDING_CONFIG_VERSION}' AND dense_index_config_version <> "
+            f"'{M0_DISABLED_DENSE_INDEX_CONFIG_VERSION}') OR "
+            "(state = 'SEARCHABLE' AND started_at IS NOT NULL AND completed_at IS NOT NULL "
+            "AND error_summary IS NULL AND attempt_count > 0 "
+            "AND lease_id IS NULL AND lease_expires_at IS NULL "
+            "AND embedding_config_version <> "
+            f"'{M0_DISABLED_EMBEDDING_CONFIG_VERSION}' AND dense_index_config_version <> "
+            f"'{M0_DISABLED_DENSE_INDEX_CONFIG_VERSION}') OR "
             "(state = 'FAILED' AND started_at IS NOT NULL AND completed_at IS NOT NULL "
             "AND char_length(btrim(error_summary)) > 0 AND attempt_count > 0 "
             "AND lease_id IS NULL AND lease_expires_at IS NULL)",
             name="consistent_state",
         ),
         CheckConstraint(
-            "state IN ('CAPTURED', 'PARSING', 'LEXICAL_READY', 'FAILED')",
+            "state IN ('CAPTURED', 'PARSING', 'LEXICAL_READY', 'INDEXING', 'SEARCHABLE', 'FAILED')",
             name="processing_state",
         ),
     )

@@ -31,6 +31,10 @@ function processingMessage(result: ProcessingRunResult): string {
       return archiveCopy.processing.parsing;
     case "LEXICAL_READY":
       return archiveCopy.processing.ready;
+    case "INDEXING":
+      return archiveCopy.processing.indexing;
+    case "SEARCHABLE":
+      return archiveCopy.processing.ready;
     case "FAILED":
       return result.error_summary ?? archiveCopy.processing.failed;
   }
@@ -39,10 +43,12 @@ function processingMessage(result: ProcessingRunResult): string {
 function statusStyle(state: ProcessingRunResult["state"]): string {
   switch (state) {
     case "LEXICAL_READY":
+    case "SEARCHABLE":
       return "border-emerald-300 bg-emerald-50 text-emerald-800";
     case "FAILED":
       return "border-rose-300 bg-rose-50 text-rose-800";
     case "PARSING":
+    case "INDEXING":
       return "border-sky-300 bg-sky-50 text-sky-800";
     case "CAPTURED":
       return "border-amber-300 bg-amber-50 text-amber-900";
@@ -118,6 +124,7 @@ export function DocumentWorkflow() {
     if (
       accepted === undefined ||
       processing?.state === "LEXICAL_READY" ||
+      processing?.state === "SEARCHABLE" ||
       processing?.state === "FAILED"
     ) {
       return;
@@ -408,6 +415,7 @@ export function DocumentWorkflow() {
             </dl>
 
             {processing.state !== "LEXICAL_READY" &&
+            processing.state !== "SEARCHABLE" &&
             processing.state !== "FAILED" ? (
               <div className="mt-6">
                 <p className="text-sm leading-6 text-slate-300">
@@ -431,7 +439,9 @@ export function DocumentWorkflow() {
         )}
       </section>
 
-      {accepted !== undefined && processing?.state === "LEXICAL_READY" ? (
+      {accepted !== undefined &&
+      (processing?.state === "LEXICAL_READY" ||
+        processing?.state === "SEARCHABLE") ? (
         <div className="lg:col-span-2">
           <ResearchWorkflow
             documentId={accepted.document_id}

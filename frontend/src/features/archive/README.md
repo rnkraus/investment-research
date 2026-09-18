@@ -28,14 +28,19 @@ flowchart LR
     FORM --> POLL[Poll processing status]
     RUNNER --> STATUS[Canonical ProcessingRun state]
     STATUS --> POLL
-    POLL --> READY[LEXICAL_READY]
+    POLL --> LEXICAL[LEXICAL_READY]
+    LEXICAL -->|M1 dense path| INDEXING[INDEXING]
+    INDEXING --> SEARCHABLE[SEARCHABLE]
+    LEXICAL -->|historical terminal path| READY[Ready for research]
+    SEARCHABLE --> READY
 ```
 
 Both capture responses supply the same processing status URL and canonical identifiers. The browser
 never starts parsing inside the API process. Each capture endpoint commits the canonical `CAPTURED`
 run and publishes its task to Celery, and the component polls the workspace-scoped status endpoint
-until the run reaches `LEXICAL_READY` or `FAILED`. The worker invokes the isolated parser runner
-through protocol v2 while the historical protocol-v1 PDF path remains a backend regression contract.
+until the run reaches `SEARCHABLE`, terminal `LEXICAL_READY`, or `FAILED`. `INDEXING` remains an
+active state and therefore continues polling. The worker invokes the isolated parser runner through
+protocol v2 while the historical protocol-v1 PDF path remains a backend regression contract.
 
 All network access goes through `src/lib/api/client.ts`. Raw exceptions are not rendered. The
 component displays only safe API messages or a generic local failure message, and active requests
@@ -64,7 +69,7 @@ then does `attachCitationSource` add the exact source location to the completed 
 
 ```mermaid
 flowchart LR
-    READY[LEXICAL_READY document] --> FORM[ResearchWorkflow]
+    READY[SEARCHABLE or terminal LEXICAL_READY document] --> FORM[ResearchWorkflow]
     FORM --> STREAM[Typed research event stream]
     STREAM --> SESSION[Research session reducer]
     SESSION -->|validated completion| IDS[Evidence span IDs]
@@ -77,11 +82,11 @@ flowchart LR
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
 
-`document-workflow.tsx` mounts the research UI only for a `LEXICAL_READY` processing run. The UI
-submits the current document ID as an explicit research filter and never treats streamed partial text
-as a usable answer. After a validated terminal event, each unique evidence span is resolved through
-the workspace-scoped API. The resulting viewer URL must still pass the frontend's local API-path
-check before it becomes an original-source link. The discriminated locator renders either the PDF
-page or the one-based visible text range without inventing pages for text. This avoids trusting an
-arbitrary URL returned over the network and keeps exact source text separate from the streamed
-answer contract.
+`document-workflow.tsx` mounts the research UI for the M1 `SEARCHABLE` state and for historical
+terminal `LEXICAL_READY` runs retained during the migration. The UI submits the current document ID
+as an explicit research filter and never treats streamed partial text as a usable answer. After a
+validated terminal event, each unique evidence span is resolved through the workspace-scoped API.
+The resulting viewer URL must still pass the frontend's local API-path check before it becomes an
+original-source link. The discriminated locator renders either the PDF page or the one-based visible
+text range without inventing pages for text. This avoids trusting an arbitrary URL returned over the
+network and keeps exact source text separate from the streamed answer contract.

@@ -31,14 +31,18 @@ SafeErrorSummary = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
 ]
+M0_DISABLED_EMBEDDING_CONFIG_VERSION = "m0.0-embedding-disabled-v1"
+M0_DISABLED_DENSE_INDEX_CONFIG_VERSION = "m0.0-dense-index-disabled-v1"
 
 
 class ProcessingState(StrEnum):
-    """States implemented by the M0.0 lexical processing lifecycle."""
+    """Canonical states shared by lexical-only and dense-indexed processing."""
 
     CAPTURED = "CAPTURED"
     PARSING = "PARSING"
     LEXICAL_READY = "LEXICAL_READY"
+    INDEXING = "INDEXING"
+    SEARCHABLE = "SEARCHABLE"
     FAILED = "FAILED"
 
 
@@ -126,16 +130,35 @@ class ProcessingRun(ImmutableProcessingModel):
         if has_partial_lease:
             raise ValueError("lease_id and lease_expires_at must be set together")
 
+        embedding_disabled = self.embedding_config_version == M0_DISABLED_EMBEDDING_CONFIG_VERSION
+        dense_index_disabled = (
+            self.dense_index_config_version == M0_DISABLED_DENSE_INDEX_CONFIG_VERSION
+        )
+        if embedding_disabled != dense_index_disabled:
+            raise ValueError("embedding and dense-index configuration must be enabled together")
+        if self.state in {ProcessingState.INDEXING, ProcessingState.SEARCHABLE} and not (
+            self.dense_indexing_enabled
+        ):
+            raise ValueError(f"{self.state.value} requires dense indexing configuration")
+        if (
+            self.state is ProcessingState.LEXICAL_READY
+            and has_complete_lease
+            and not self.dense_indexing_enabled
+        ):
+            raise ValueError("active LEXICAL_READY requires dense indexing configuration")
+
         if self.state is ProcessingState.CAPTURED:
             if self.started_at is not None or self.completed_at is not None:
                 raise ValueError("CAPTURED run must not have processing timestamps")
             if self.attempt_count != 0 or has_complete_lease:
                 raise ValueError("CAPTURED run must not have execution-attempt metadata")
-        elif self.state is ProcessingState.PARSING:
+        elif self.state in {ProcessingState.PARSING, ProcessingState.INDEXING} or (
+            self.state is ProcessingState.LEXICAL_READY and has_complete_lease
+        ):
             if self.started_at is None or self.completed_at is not None:
-                raise ValueError("PARSING run requires only started_at")
+                raise ValueError(f"{self.state.value} run requires only started_at")
             if self.attempt_count < 1 or self.lease_id is None or self.lease_expires_at is None:
-                raise ValueError("PARSING run requires an attempt and complete lease")
+                raise ValueError(f"{self.state.value} run requires an attempt and complete lease")
             if self.lease_expires_at <= self.started_at:
                 raise ValueError("lease_expires_at must be later than started_at")
         elif self.started_at is None or self.completed_at is None:
@@ -149,6 +172,12 @@ class ProcessingRun(ImmutableProcessingModel):
         elif self.error_summary is not None:
             raise ValueError("only FAILED run may contain error_summary")
         return self
+
+    @property
+    def dense_indexing_enabled(self) -> bool:
+        """Return whether this immutable run requires the M1 dense-index stages."""
+
+        return self.embedding_config_version != M0_DISABLED_EMBEDDING_CONFIG_VERSION
 
     def claim_for_processing(
         self,
@@ -194,7 +223,7 @@ class ProcessingRun(ImmutableProcessingModel):
         )
 
     def mark_lexical_ready(self, *, lease_id: UUID, completed_at: datetime) -> Self:
-        """Complete parsing after canonical blocks and chunks are ready to commit."""
+        """Complete a lexical-only run after canonical blocks and chunks are ready."""
 
         self._require_state(ProcessingState.PARSING, ProcessingState.LEXICAL_READY)
         self._require_lease_owner(lease_id)
@@ -208,6 +237,86 @@ class ProcessingRun(ImmutableProcessingModel):
             }
         )
 
+    def mark_lexical_ready_for_indexing(self, *, lease_id: UUID) -> Self:
+        """Commit canonical chunks while retaining the M1 execution lease."""
+
+        self._require_state(ProcessingState.PARSING, ProcessingState.LEXICAL_READY)
+        self._require_dense_indexing_enabled()
+        self._require_lease_owner(lease_id)
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "state": ProcessingState.LEXICAL_READY,
+            }
+        )
+
+    def begin_indexing(self, *, lease_id: UUID) -> Self:
+        """Advance canonical chunks into provider-backed indexing under the same lease."""
+
+        self._require_state(ProcessingState.LEXICAL_READY, ProcessingState.INDEXING)
+        self._require_dense_indexing_enabled()
+        self._require_lease_owner(lease_id)
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "state": ProcessingState.INDEXING,
+            }
+        )
+
+    def mark_searchable(self, *, lease_id: UUID, completed_at: datetime) -> Self:
+        """Complete dense indexing only after every canonical vector is visible."""
+
+        self._require_state(ProcessingState.INDEXING, ProcessingState.SEARCHABLE)
+        self._require_dense_indexing_enabled()
+        self._require_lease_owner(lease_id)
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "state": ProcessingState.SEARCHABLE,
+                "lease_id": None,
+                "lease_expires_at": None,
+                "completed_at": completed_at,
+            }
+        )
+
+    def claim_for_indexing(
+        self,
+        *,
+        lease_id: UUID,
+        claimed_at: datetime,
+        lease_expires_at: datetime,
+        maximum_attempts: int,
+    ) -> Self:
+        """Reclaim an expired M1 lexical-ready or indexing stage without reparsing."""
+
+        self._require_dense_indexing_enabled()
+        claimed_at = self._aware_utc(claimed_at, name="claimed_at")
+        lease_expires_at = self._aware_utc(lease_expires_at, name="lease_expires_at")
+        if maximum_attempts < 1:
+            raise ValueError("maximum_attempts must be positive")
+        if lease_expires_at <= claimed_at:
+            raise ValueError("lease_expires_at must be later than claimed_at")
+        if self.state not in {ProcessingState.LEXICAL_READY, ProcessingState.INDEXING}:
+            raise InvalidProcessingTransitionError(
+                f"cannot claim indexing run in {self.state.value}"
+            )
+        if self.completed_at is not None:
+            raise InvalidProcessingTransitionError(
+                f"cannot claim completed indexing run in {self.state.value}"
+            )
+        if self.attempt_count >= maximum_attempts:
+            raise ProcessingAttemptLimitError("processing attempt limit reached")
+        if self.lease_expires_at is not None and self.lease_expires_at > claimed_at:
+            raise ProcessingLeaseActiveError("processing run already has an active lease")
+        return type(self).model_validate(
+            {
+                **self.model_dump(),
+                "attempt_count": self.attempt_count + 1,
+                "lease_id": lease_id,
+                "lease_expires_at": lease_expires_at,
+            }
+        )
+
     def mark_failed(
         self,
         *,
@@ -215,9 +324,9 @@ class ProcessingRun(ImmutableProcessingModel):
         completed_at: datetime,
         error_summary: str,
     ) -> Self:
-        """Terminate active parsing with one bounded, caller-sanitized summary."""
+        """Terminate active parsing or indexing with one bounded safe summary."""
 
-        self._require_state(ProcessingState.PARSING, ProcessingState.FAILED)
+        self._require_active_state(ProcessingState.FAILED)
         self._require_lease_owner(lease_id)
         return type(self).model_validate(
             {
@@ -233,7 +342,7 @@ class ProcessingRun(ImmutableProcessingModel):
     def expire_lease_for_retry(self, *, lease_id: UUID, expired_at: datetime) -> Self:
         """Make the owned lease immediately reclaimable after a transient failure."""
 
-        self._require_state(ProcessingState.PARSING, ProcessingState.PARSING)
+        self._require_active_state(self.state)
         self._require_lease_owner(lease_id)
         expired_at = self._aware_utc(expired_at, name="expired_at")
         return type(self).model_validate(
@@ -251,7 +360,7 @@ class ProcessingRun(ImmutableProcessingModel):
     ) -> Self:
         """Fail an abandoned run when its expired lease used the last attempt."""
 
-        self._require_state(ProcessingState.PARSING, ProcessingState.FAILED)
+        self._require_active_state(ProcessingState.FAILED)
         completed_at = self._aware_utc(completed_at, name="completed_at")
         if self.lease_expires_at is None or self.lease_expires_at > completed_at:
             raise ProcessingLeaseActiveError("processing run still has an active lease")
@@ -277,6 +386,28 @@ class ProcessingRun(ImmutableProcessingModel):
             raise InvalidProcessingTransitionError(
                 f"cannot transition processing run from {self.state.value} to {target.value}"
             )
+
+    def _require_active_state(self, target: ProcessingState) -> None:
+        """Require one leased non-terminal stage before retry or failure handling."""
+
+        if (
+            self.state
+            not in {
+                ProcessingState.PARSING,
+                ProcessingState.LEXICAL_READY,
+                ProcessingState.INDEXING,
+            }
+            or self.completed_at is not None
+        ):
+            raise InvalidProcessingTransitionError(
+                f"cannot transition processing run from {self.state.value} to {target.value}"
+            )
+
+    def _require_dense_indexing_enabled(self) -> None:
+        """Reject dense-index transitions for the retained lexical-only path."""
+
+        if not self.dense_indexing_enabled:
+            raise InvalidProcessingTransitionError("processing run has dense indexing disabled")
 
     def _require_lease_owner(self, lease_id: UUID) -> None:
         """Require the caller to own the current attempt before changing its state."""

@@ -636,11 +636,13 @@
         "type": "object"
       },
       "ProcessingState": {
-        "description": "States implemented by the M0.0 lexical processing lifecycle.",
+        "description": "Canonical states shared by lexical-only and dense-indexed processing.",
         "enum": [
           "CAPTURED",
           "PARSING",
           "LEXICAL_READY",
+          "INDEXING",
+          "SEARCHABLE",
           "FAILED"
         ],
         "title": "ProcessingState",

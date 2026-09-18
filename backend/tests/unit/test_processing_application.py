@@ -37,11 +37,20 @@ def make_run(state: ProcessingState = ProcessingState.PARSING) -> ProcessingRun:
     started_at = None if state is ProcessingState.CAPTURED else CREATED_AT + timedelta(seconds=1)
     completed_at = (
         OUTPUT_CREATED_AT
-        if state in {ProcessingState.LEXICAL_READY, ProcessingState.FAILED}
+        if state
+        in {
+            ProcessingState.LEXICAL_READY,
+            ProcessingState.SEARCHABLE,
+            ProcessingState.FAILED,
+        }
         else None
     )
     is_captured = state is ProcessingState.CAPTURED
-    is_parsing = state is ProcessingState.PARSING
+    is_active = state in {ProcessingState.PARSING, ProcessingState.INDEXING}
+    dense_indexing_enabled = state in {
+        ProcessingState.INDEXING,
+        ProcessingState.SEARCHABLE,
+    }
     return ProcessingRun(
         id=PROCESSING_RUN_ID,
         workspace_id=WORKSPACE_ID,
@@ -52,12 +61,20 @@ def make_run(state: ProcessingState = ProcessingState.PARSING) -> ProcessingRun:
         chunker_version="m0.0-structure-block-v1",
         chunking_config_version="m0.0-structure-block-config-v1",
         lexical_config_version="m0.0-english-lexical-v1",
-        embedding_config_version="m0.0-embedding-disabled-v1",
-        dense_index_config_version="m0.0-dense-index-disabled-v1",
+        embedding_config_version=(
+            "openai-text-embedding-3-small-1536-v1"
+            if dense_indexing_enabled
+            else "m0.0-embedding-disabled-v1"
+        ),
+        dense_index_config_version=(
+            "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
+            if dense_indexing_enabled
+            else "m0.0-dense-index-disabled-v1"
+        ),
         created_at=CREATED_AT,
         attempt_count=0 if is_captured else 1,
-        lease_id=LEASE_ID if is_parsing else None,
-        lease_expires_at=CREATED_AT + timedelta(seconds=46) if is_parsing else None,
+        lease_id=LEASE_ID if is_active else None,
+        lease_expires_at=CREATED_AT + timedelta(seconds=46) if is_active else None,
         started_at=started_at,
         completed_at=completed_at,
         error_summary="Synthetic failure" if state is ProcessingState.FAILED else None,
@@ -145,6 +162,8 @@ def test_build_lexical_output_preserves_visible_pages_and_run_provenance() -> No
     [
         ProcessingState.CAPTURED,
         ProcessingState.LEXICAL_READY,
+        ProcessingState.INDEXING,
+        ProcessingState.SEARCHABLE,
         ProcessingState.FAILED,
     ],
 )

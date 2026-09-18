@@ -512,10 +512,10 @@ export interface components {
         };
         /**
          * ProcessingState
-         * @description States implemented by the M0.0 lexical processing lifecycle.
+         * @description Canonical states shared by lexical-only and dense-indexed processing.
          * @enum {string}
          */
-        readonly ProcessingState: "CAPTURED" | "PARSING" | "LEXICAL_READY" | "FAILED";
+        readonly ProcessingState: "CAPTURED" | "PARSING" | "LEXICAL_READY" | "INDEXING" | "SEARCHABLE" | "FAILED";
         /**
          * ReadinessResponse
          * @description Public readiness result without dependency or failure details.

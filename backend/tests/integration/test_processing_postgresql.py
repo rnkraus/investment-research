@@ -37,6 +37,7 @@ from investment_research.modules.processing.domain import (
 from investment_research.modules.processing.persistence import (
     ChunkRow,
     ChunkSetRow,
+    ProcessingRunRow,
     SqlAlchemyProcessingRepository,
     StructureBlockRow,
 )
@@ -109,17 +110,27 @@ def make_run(
     *,
     run_id: UUID | None = None,
     state: ProcessingState = ProcessingState.CAPTURED,
+    dense_indexing_enabled: bool = False,
+    active_lexical_ready: bool = False,
 ) -> ProcessingRun:
     """Create a lifecycle-consistent processing snapshot."""
 
     started_at = None if state is ProcessingState.CAPTURED else FIXTURE_TIME + timedelta(seconds=1)
+    is_active = state in {ProcessingState.PARSING, ProcessingState.INDEXING} or (
+        state is ProcessingState.LEXICAL_READY and active_lexical_ready
+    )
     completed_at = (
         FIXTURE_TIME + timedelta(seconds=2)
-        if state in {ProcessingState.LEXICAL_READY, ProcessingState.FAILED}
+        if state
+        in {
+            ProcessingState.LEXICAL_READY,
+            ProcessingState.SEARCHABLE,
+            ProcessingState.FAILED,
+        }
+        and not active_lexical_ready
         else None
     )
     is_captured = state is ProcessingState.CAPTURED
-    is_parsing = state is ProcessingState.PARSING
     return ProcessingRun(
         id=run_id or uuid4(),
         workspace_id=context.workspace_id,
@@ -130,12 +141,20 @@ def make_run(
         chunker_version="structure-block-1",
         chunking_config_version="chunking-m0.0-v1",
         lexical_config_version="english-lexical-v1",
-        embedding_config_version="m0.0-embedding-disabled-v1",
-        dense_index_config_version="m0.0-dense-index-disabled-v1",
+        embedding_config_version=(
+            "openai-text-embedding-3-small-1536-v1"
+            if dense_indexing_enabled
+            else "m0.0-embedding-disabled-v1"
+        ),
+        dense_index_config_version=(
+            "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
+            if dense_indexing_enabled
+            else "m0.0-dense-index-disabled-v1"
+        ),
         created_at=FIXTURE_TIME,
         attempt_count=0 if is_captured else 1,
-        lease_id=uuid4() if is_parsing else None,
-        lease_expires_at=(FIXTURE_TIME + timedelta(seconds=46) if is_parsing else None),
+        lease_id=uuid4() if is_active else None,
+        lease_expires_at=(FIXTURE_TIME + timedelta(seconds=46) if is_active else None),
         started_at=started_at,
         completed_at=completed_at,
     )
@@ -256,6 +275,54 @@ def test_processing_lifecycle_and_lexical_output_are_scoped_and_searchable(
             )
         )
         assert lexical_match_count == 1
+
+
+def test_m1_dense_indexing_lifecycle_is_persisted_and_database_guarded(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    context, workspace = make_workspace()
+    capture = make_capture(context)
+    persist_workspace_and_capture(integration_database_engine, context, workspace, capture)
+
+    captured = make_run(
+        context,
+        capture[1].id,
+        dense_indexing_enabled=True,
+    )
+    lease_id = uuid4()
+    parsing = captured.claim_for_processing(
+        lease_id=lease_id,
+        claimed_at=FIXTURE_TIME + timedelta(seconds=1),
+        lease_expires_at=FIXTURE_TIME + timedelta(seconds=46),
+        maximum_attempts=3,
+    )
+    lexical_ready = parsing.mark_lexical_ready_for_indexing(lease_id=lease_id)
+    indexing = lexical_ready.begin_indexing(lease_id=lease_id)
+    searchable = indexing.mark_searchable(
+        lease_id=lease_id,
+        completed_at=FIXTURE_TIME + timedelta(seconds=2),
+    )
+
+    with transactional_session(session_factory) as session:
+        SqlAlchemyProcessingRepository(session).add_run(context, captured)
+    for snapshot in (parsing, lexical_ready, indexing, searchable):
+        with transactional_session(session_factory) as session:
+            assert SqlAlchemyProcessingRepository(session).update_run(context, snapshot) is True
+
+    with transactional_session(session_factory) as session:
+        stored = SqlAlchemyProcessingRepository(session).get_run_by_id(context, captured.id)
+    assert stored == searchable
+
+    invalid_row = ProcessingRunRow.from_domain(indexing)
+    invalid_row.id = uuid4()
+    invalid_row.embedding_config_version = "m0.0-embedding-disabled-v1"
+    invalid_row.dense_index_config_version = "m0.0-dense-index-disabled-v1"
+    with (
+        pytest.raises(IntegrityError),
+        transactional_session(session_factory) as session,
+    ):
+        session.add(invalid_row)
 
 
 def test_database_rejects_processing_run_linked_across_workspaces(
