@@ -8,7 +8,7 @@ This directory verifies deterministic application behavior and architectural bou
 | -------------- | ------------------------------------------------------------------------------------------------- |
 | `unit/`        | Fast tests for settings, health, identity, contracts, OpenAPI drift, and module dependency rules. |
 | `integration/` | Opt-in PostgreSQL tests for migrations, seeds, persistence, constraints, and isolation.           |
-| `acceptance/`  | Complete fixture journeys through explicitly activated disposable runtimes.                     |
+| `acceptance/`  | Complete fixture journeys through explicitly activated disposable runtimes.                       |
 
 ## Current coverage
 
@@ -19,8 +19,11 @@ flowchart TD
     TESTS --> CONTRACTS[API and stream validation]
     TESTS --> OPENAPI[Committed contract drift]
     TESTS --> ARCH[Module import rules]
+    TESTS --> M1INDEX[M1 fixture indexing gate]
     TESTS --> POSTGRES[Opt-in PostgreSQL integration]
     TESTS --> ACCEPTANCE[Opt-in complete M0 runtime]
+    M1INDEX --> MEDIA[PDF and pasted text]
+    MEDIA --> SEARCHABLE[SEARCHABLE with stable vector IDs]
     POSTGRES --> SEED[Deterministic workspace seed]
     POSTGRES --> TX[Commit and rollback]
     POSTGRES --> DOCS[Document workspace isolation]
@@ -38,6 +41,13 @@ flowchart TD
 ```
 
 Tests use application factories and explicit test settings. They must not read secret environment files, depend on private documents, contact paid providers, or weaken workspace and evidence rules merely to pass.
+
+The required M1 indexing gate reads both approved fixture files, parses them through the real
+media-aware parser, carries their canonical blocks and chunks through the production processing and
+indexing application services, and requires `SEARCHABLE`. It injects deterministic embeddings and
+an in-memory idempotent dense-index writer, then replays indexing to prove stable vector identities
+without credentials, network access, or provider spend. Complete browser-facing M1 runtime
+acceptance remains a separate Step 6 gate.
 
 The M0 acceptance test is inactive during normal unit and PostgreSQL suites. The
 `scripts.verify_m0_runtime` command activates it only inside a non-root, read-only verification
