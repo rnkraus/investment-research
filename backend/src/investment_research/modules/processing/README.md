@@ -11,6 +11,7 @@ historical M0.0 PDF runs and new media-aware M1 runs.
 | `application.py` | Creates and reads runs, builds lexical output, and orchestrates one bounded processing attempt.  |
 | `contracts.py`   | Defines immutable v1 page and v2 media-aware parser protocols, bounds, and exact block outputs.  |
 | `domain.py`      | Defines processing lifecycle snapshots, source blocks, chunk sets, chunks, and their invariants. |
+| `indexing.py`    | Orchestrates canonical claims, retries, and completion around derived dense indexing.            |
 | `ports.py`       | Defines parser, verified-original-provider, repository, and processing unit-of-work contracts.   |
 | `persistence.py` | Maps four PostgreSQL tables, generated lexical vectors, indexes, and scoped repository behavior. |
 
@@ -76,6 +77,15 @@ the maximum configurable 300-second processing timeout plus shutdown grace. The 
 `expire_lease_for_retry` only for classified transient infrastructure failures; permanent parser
 and protocol failures become terminal `FAILED` states.
 
+`IndexProcessingRunService` owns the database boundary around derived indexing. Its first short
+transaction locks the run, verifies or reclaims the lease, advances `LEXICAL_READY` to `INDEXING`,
+and loads the active canonical chunks. It then closes the transaction before invoking Search's
+provider-neutral `IndexActiveChunksService`. Only after every deterministic vector is visible does
+a second short transaction verify the unchanged leased snapshot and commit `SEARCHABLE`.
+Transient provider failures expire the owned lease and request bounded redelivery; permanent or
+exhausted failures store only a safe terminal summary. An expired `LEXICAL_READY` or `INDEXING` run
+reloads chunks from PostgreSQL and never reparses the original.
+
 Parser, parser configuration, chunker, chunking configuration, lexical configuration, embedding
 configuration, and dense-index configuration versions are immutable properties of a run.
 `update_run` changes only lifecycle fields. The processing service supplies a bounded, sanitized
@@ -89,11 +99,11 @@ The capture-time profile snapshots the complete processing intent before asynchr
 | M1      | `m1-english-lexical-v1`   | `openai-text-embedding-3-small-1536-v1` | `pinecone-serverless-cosine-1536-aws-us-east-1-v1` |
 
 These values describe which versioned behavior a run requires; storing them does not itself call an
-embedding or vector provider. The indexing application service consumes the M1 snapshots in the
-later indexing stage. The current processing service still selects the terminal M0 transition; the
-next orchestration block will route M1 profiles through the active indexing states. Migration
-`0005_m1_indexing_config` preserves historical lexical intent, backfills disabled values for M0-era
-runs, and backfills the fixed M1 values for M1 lexical runs.
+embedding or vector provider. The canonical indexing service now consumes the M1 snapshots, but the
+default worker remains on the earlier lexical completion path until the approved embedding adapter
+can be wired in the same complete change. Migration `0005_m1_indexing_config` preserves historical
+lexical intent, backfills disabled values for M0-era runs, and backfills the fixed M1 values for M1
+lexical runs.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the
 initial durable intent. The caller supplies the active versioned profile and trusted workspace
@@ -285,7 +295,7 @@ flowchart LR
 
 Composite foreign keys repeat workspace, run, and document-version identifiers so PostgreSQL can reject cross-workspace or cross-run relationships directly. A partial unique index permits only one active chunk set per document version and lexical configuration.
 
-`list_active_chunks` is the canonical handoff from processing persistence to the later embedding
+`list_active_chunks` is the canonical handoff from processing persistence to the embedding
 orchestrator. It requires trusted workspace context, joins the requested run to an active chunk set
 with the same lexical configuration, and returns immutable chunks ordered by ordinal and chunk ID.
 Unknown and foreign run identifiers both return an empty sequence. A resumed `LEXICAL_READY` or
