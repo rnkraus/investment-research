@@ -145,6 +145,11 @@ class PineconeDenseIndexWriter:
             )
         return tuple(vector_id for vector_id in requested_ids if vector_id in visible_ids)
 
+    def close(self) -> None:
+        """Release the SDK-owned gRPC channel."""
+
+        self.index.close()
+
 
 def create_pinecone_dense_index_writer(
     *,
