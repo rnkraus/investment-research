@@ -106,6 +106,30 @@ def test_freshly_parsed_dense_job_hands_its_owned_lease_to_indexing() -> None:
     )
 
 
+def test_dense_job_fails_closed_when_no_indexing_service_is_wired() -> None:
+    service, processing_service, _ = make_service()
+    service = ExecuteProcessingJobService(
+        processing_service=service.processing_service,
+        indexing_service=None,
+        identity_context_provider=service.identity_context_provider,
+    )
+    job = ProcessingJobV1.create(
+        workspace_id=WORKSPACE_ID,
+        processing_run_id=PROCESSING_RUN_ID,
+    )
+    ready_run = create_autospec(ProcessingRun, instance=True)
+    ready_run.dense_indexing_enabled = True
+    ready_run.state = ProcessingState.LEXICAL_READY
+    ready_run.id = PROCESSING_RUN_ID
+    processing_service.process_attempt.return_value = ProcessingAttemptResult(
+        run=ready_run,
+        owned_indexing_lease_id=LEASE_ID,
+    )
+
+    with pytest.raises(RuntimeError, match="dense indexing service is required"):
+        service.execute(job)
+
+
 @pytest.mark.parametrize(
     "state",
     [ProcessingState.LEXICAL_READY, ProcessingState.INDEXING],

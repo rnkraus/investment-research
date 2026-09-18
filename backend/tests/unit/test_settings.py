@@ -1107,6 +1107,18 @@ def test_worker_requires_parser_endpoint_only_for_isolated_execution() -> None:
         WorkerSettings().require_parser_endpoint_url()
 
 
+def test_worker_allows_m0_regression_profile_only_in_test_environment() -> None:
+    settings = WorkerSettings(
+        environment="test",
+        processing_profile="m0-regression",
+    )
+
+    assert settings.processing_profile == "m0-regression"
+
+    with pytest.raises(ValidationError, match="allowed only in the test environment"):
+        WorkerSettings(processing_profile="m0-regression")
+
+
 @pytest.mark.parametrize(
     "forbidden_name",
     [

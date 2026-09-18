@@ -596,7 +596,7 @@ class ExecuteProcessingJobService:
     """Execute a queue job only within server-controlled workspace scope."""
 
     processing_service: ProcessDocumentService
-    indexing_service: ProcessingRunIndexer
+    indexing_service: ProcessingRunIndexer | None
     identity_context_provider: IdentityContextProvider
 
     def execute(self, job: ProcessingJobV1) -> ProcessingRun:
@@ -615,6 +615,8 @@ class ExecuteProcessingJobService:
             ProcessingState.INDEXING,
         }:
             return processed_run
+        if self.indexing_service is None:
+            raise RuntimeError("dense indexing service is required for this processing profile")
         return self.indexing_service.index(
             context,
             processed_run.id,

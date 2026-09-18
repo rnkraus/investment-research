@@ -35,6 +35,7 @@ from investment_research.modules.documents.application import (
 )
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.processing.application import (
+    M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
     ExecuteProcessingJobService,
     GetProcessingRunService,
@@ -230,6 +231,31 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             assert not storage_root.exists()
         finally:
             session.close()
+    finally:
+        container.close()
+
+
+def test_build_worker_container_supports_credential_free_m0_regression(
+    tmp_path: Path,
+) -> None:
+    settings = WorkerSettings.model_validate(
+        {
+            "environment": "test",
+            "database_url": LOCAL_DATABASE_URL,
+            "object_storage_root": tmp_path / "objects",
+            "parser_endpoint_url": "http://127.0.0.1:8100",
+            "processing_profile": "m0-regression",
+        }
+    )
+    container = build_worker_container(settings)
+
+    try:
+        assert container.embedding_provider is None
+        assert container.dense_index_writer is None
+        assert container.index_active_chunks_service is None
+        assert container.index_processing_run_service is None
+        assert container.execute_processing_job_service.indexing_service is None
+        assert container.process_document_service._profile is M0_0_PROCESSING_PROFILE
     finally:
         container.close()
 
