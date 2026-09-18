@@ -50,6 +50,8 @@ class ProcessingProfile:
     chunker_version: ConfigurationVersion
     chunking_config_version: ConfigurationVersion
     lexical_config_version: ConfigurationVersion
+    embedding_config_version: ConfigurationVersion
+    dense_index_config_version: ConfigurationVersion
     maximum_attempts: int
     lease_duration: timedelta
 
@@ -68,6 +70,8 @@ M0_0_PROCESSING_PROFILE = ProcessingProfile(
     chunker_version="m0.0-structure-block-v1",
     chunking_config_version="m0.0-structure-block-config-v1",
     lexical_config_version="m0.0-english-lexical-v1",
+    embedding_config_version="m0.0-embedding-disabled-v1",
+    dense_index_config_version="m0.0-dense-index-disabled-v1",
     maximum_attempts=3,
     lease_duration=timedelta(seconds=360),
 )
@@ -78,6 +82,8 @@ M1_PROCESSING_PROFILE = ProcessingProfile(
     chunker_version="m1-source-block-v1",
     chunking_config_version="m1-source-block-config-v1",
     lexical_config_version="m1-english-lexical-v1",
+    embedding_config_version="openai-text-embedding-3-small-1536-v1",
+    dense_index_config_version="pinecone-serverless-cosine-1536-aws-us-east-1-v1",
     maximum_attempts=3,
     lease_duration=timedelta(seconds=360),
 )
@@ -168,6 +174,8 @@ def create_captured_processing_run(
         chunker_version=profile.chunker_version,
         chunking_config_version=profile.chunking_config_version,
         lexical_config_version=profile.lexical_config_version,
+        embedding_config_version=profile.embedding_config_version,
+        dense_index_config_version=profile.dense_index_config_version,
         created_at=created_at,
     )
 

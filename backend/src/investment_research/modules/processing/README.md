@@ -65,10 +65,22 @@ the maximum configurable 300-second processing timeout plus shutdown grace. The 
 `expire_lease_for_retry` only for classified transient infrastructure failures; permanent parser
 and protocol failures become terminal `FAILED` states.
 
-Parser, parser configuration, chunker, chunking configuration, and lexical configuration versions
-are immutable properties of a run. `update_run` changes only lifecycle fields. The processing
-service supplies a bounded, sanitized failure summary rather than storing an exception message or
-document content directly.
+Parser, parser configuration, chunker, chunking configuration, lexical configuration, embedding
+configuration, and dense-index configuration versions are immutable properties of a run.
+`update_run` changes only lifecycle fields. The processing service supplies a bounded, sanitized
+failure summary rather than storing an exception message or document content directly.
+
+The capture-time profile snapshots the complete processing intent before asynchronous work begins:
+
+| Profile | Lexical configuration     | Embedding configuration                 | Dense-index configuration                          |
+| ------- | ------------------------- | --------------------------------------- | -------------------------------------------------- |
+| M0.0    | `m0.0-english-lexical-v1` | `m0.0-embedding-disabled-v1`            | `m0.0-dense-index-disabled-v1`                     |
+| M1      | `m1-english-lexical-v1`   | `openai-text-embedding-3-small-1536-v1` | `pinecone-serverless-cosine-1536-aws-us-east-1-v1` |
+
+These values describe which versioned behavior a run requires; storing them does not itself call an
+embedding or vector provider. The indexing application service consumes the M1 snapshots in the
+later indexing stage. Migration `0005_m1_indexing_config` preserves historical lexical intent,
+backfills disabled values for M0-era runs, and backfills the fixed M1 values for M1 lexical runs.
 
 The capture use case asks this module's `create_captured_processing_run` factory to create the
 initial durable intent. The caller supplies the active versioned profile and trusted workspace

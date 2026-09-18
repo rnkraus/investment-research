@@ -22,21 +22,24 @@ examples below are the accepted target contract; generated files must never be e
 
 ## 2. Fixed M1 configuration
 
-| Concern                 | M1 value                                                                  |
-| ----------------------- | ------------------------------------------------------------------------- |
-| Pasted-text maximum     | 100,000 Unicode code points and the existing configured byte limit        |
-| Structure-block maximum | 4,000 Unicode code points                                                 |
-| Chunk mapping           | Exactly one chunk per structure block; chunk text equals block text       |
-| Embedding model         | OpenAI `text-embedding-3-small`, 1536 dimensions                          |
-| Embedding batch         | At most 16 inputs and 32,000 total Unicode code points                    |
-| Lane candidates         | At most 20 lexical and 20 dense candidates                                |
-| Selected context        | At most 8 unique chunks and 24,000 total Unicode code points              |
-| Generator               | OpenAI `gpt-5.6-terra`, low reasoning, strict structured output, no tools |
-| Generated answer        | At most 8 statements and 2 evidence references per statement              |
-| Dense index             | Pinecone Serverless BYOV, cosine, 1536 dimensions, `aws/us-east-1`        |
-| M1 selector             | Deterministic lexical-first round-robin with chunk-ID deduplication       |
-| Normal CI               | Deterministic adapters, no provider network, credentials, or spend        |
-| Live smoke              | Explicit opt-in and bounded by `fixtures/m1/manifest.yaml`                |
+| Concern                    | M1 value                                                                  |
+| -------------------------- | ------------------------------------------------------------------------- |
+| Pasted-text maximum        | 100,000 Unicode code points and the existing configured byte limit        |
+| Structure-block maximum    | 4,000 Unicode code points                                                 |
+| Chunk mapping              | Exactly one chunk per structure block; chunk text equals block text       |
+| Embedding model            | OpenAI `text-embedding-3-small`, 1536 dimensions                          |
+| Lexical config version     | `m1-english-lexical-v1`                                                   |
+| Embedding config version   | `openai-text-embedding-3-small-1536-v1`                                   |
+| Embedding batch            | At most 16 inputs and 32,000 total Unicode code points                    |
+| Lane candidates            | At most 20 lexical and 20 dense candidates                                |
+| Selected context           | At most 8 unique chunks and 24,000 total Unicode code points              |
+| Generator                  | OpenAI `gpt-5.6-terra`, low reasoning, strict structured output, no tools |
+| Generated answer           | At most 8 statements and 2 evidence references per statement              |
+| Dense index                | Pinecone Serverless BYOV, cosine, 1536 dimensions, `aws/us-east-1`        |
+| Dense-index config version | `pinecone-serverless-cosine-1536-aws-us-east-1-v1`                        |
+| M1 selector                | Deterministic lexical-first round-robin with chunk-ID deduplication       |
+| Normal CI                  | Deterministic adapters, no provider network, credentials, or spend        |
+| Live smoke                 | Explicit opt-in and bounded by `fixtures/m1/manifest.yaml`                |
 
 Each value is carried by an immutable application configuration version. Changing a value creates a
 new version; it never silently changes the meaning of an existing processing or retrieval record.
