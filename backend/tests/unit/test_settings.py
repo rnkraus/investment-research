@@ -20,7 +20,10 @@ from investment_research.settings import (
     PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES,
     PROJECT_ROOT,
     ApiSettings,
+    DenseProviderSettings,
+    EmbeddingProviderSettings,
     ParserSettings,
+    PineconeProviderSettings,
     S3Settings,
     WorkerSettings,
     load_api_settings,
@@ -58,6 +61,17 @@ QUEUE_SETTING_NAMES = (
     "REDIS_PASSWORD_FILE",
     "REDIS_PORT",
 )
+PROVIDER_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
+    "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY_FILE",
+    "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
+    "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY_FILE",
+    "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
+    "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY_FILE",
+    "INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY",
+    "INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY_FILE",
+    "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST",
+)
 type ObjectStorageSettingsFactory = type[ApiSettings] | type[WorkerSettings]
 type ObjectStorageSettingsLoader = Callable[..., ApiSettings | WorkerSettings]
 type ParserLimitSettingsFactory = type[WorkerSettings] | type[ParserSettings]
@@ -84,6 +98,7 @@ def clear_external_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         *POSTGRES_FILE_SETTING_NAMES,
         *S3_SETTING_NAMES,
         *QUEUE_SETTING_NAMES,
+        *PROVIDER_SETTING_NAMES,
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -841,6 +856,120 @@ def test_database_settings_require_url_for_database_access() -> None:
         ApiSettings().require_database_url()
 
 
+def test_dense_provider_settings_freeze_m1_contract_and_hide_secrets() -> None:
+    embedding_marker = "synthetic-query-embedding-secret"
+    pinecone_marker = "synthetic-query-pinecone-secret"
+    providers = DenseProviderSettings(
+        embedding=EmbeddingProviderSettings.model_validate({"api_key": embedding_marker}),
+        pinecone=PineconeProviderSettings.model_validate(
+            {
+                "api_key": pinecone_marker,
+                "index_host": "synthetic-index.example.svc.pinecone.io",
+            }
+        ),
+    )
+
+    assert providers.embedding.model == "text-embedding-3-small"
+    assert providers.embedding.dimensions == 1_536
+    assert providers.embedding.config_version == "openai-text-embedding-3-small-1536-v1"
+    assert providers.embedding.timeout_seconds == 30
+    assert providers.pinecone.config_version == ("pinecone-serverless-cosine-1536-aws-us-east-1-v1")
+    assert providers.pinecone.operation_timeout_seconds == 20
+    assert embedding_marker not in repr(providers)
+    assert pinecone_marker not in repr(providers)
+
+    with pytest.raises(ValidationError, match="model"):
+        EmbeddingProviderSettings.model_validate(
+            {"api_key": "synthetic-key", "model": "unapproved-model"}
+        )
+    with pytest.raises(ValidationError, match="index_host"):
+        PineconeProviderSettings.model_validate(
+            {
+                "api_key": "synthetic-key",
+                "index_host": "https://synthetic-index.example.svc.pinecone.io/path",
+            }
+        )
+
+
+def test_api_and_worker_load_distinct_least_privilege_provider_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST",
+        "synthetic-index.example.svc.pinecone.io",
+    )
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
+        "synthetic-query-embedding-secret",
+    )
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
+        "synthetic-query-pinecone-secret",
+    )
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
+        "synthetic-document-embedding-secret",
+    )
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY",
+        "synthetic-index-pinecone-secret",
+    )
+
+    api_settings = load_api_settings(env_file=None)
+    worker_settings = load_worker_settings(env_file=None)
+
+    query_providers = api_settings.require_query_providers()
+    indexing_providers = worker_settings.require_indexing_providers()
+    assert query_providers.embedding.api_key.get_secret_value() == (
+        "synthetic-query-embedding-secret"
+    )
+    assert query_providers.pinecone.api_key.get_secret_value() == (
+        "synthetic-query-pinecone-secret"
+    )
+    assert indexing_providers.embedding.api_key.get_secret_value() == (
+        "synthetic-document-embedding-secret"
+    )
+    assert indexing_providers.pinecone.api_key.get_secret_value() == (
+        "synthetic-index-pinecone-secret"
+    )
+
+
+@pytest.mark.parametrize(
+    ("loader", "configured_name", "missing_name"),
+    [
+        pytest.param(
+            load_api_settings,
+            "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
+            "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
+            id="api",
+        ),
+        pytest.param(
+            load_worker_settings,
+            "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
+            "INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY",
+            id="worker",
+        ),
+    ],
+)
+def test_provider_loader_rejects_partial_role_configuration_without_secret_values(
+    loader: Callable[..., ApiSettings | WorkerSettings],
+    configured_name: str,
+    missing_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-sensitive-provider-secret"
+    monkeypatch.setenv(configured_name, marker)
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST",
+        "synthetic-index.example.svc.pinecone.io",
+    )
+
+    with pytest.raises(ValueError, match=missing_name) as captured:
+        loader(env_file=None)
+
+    assert marker not in str(captured.value)
+
+
 def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "database_url" in ApiSettings.model_fields
     assert "database_url" in WorkerSettings.model_fields
@@ -859,6 +988,12 @@ def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "parser_endpoint_url" in WorkerSettings.model_fields
     assert "parser_endpoint_url" not in ApiSettings.model_fields
     assert "parser_endpoint_url" not in ParserSettings.model_fields
+    assert "query_providers" in ApiSettings.model_fields
+    assert "query_providers" not in WorkerSettings.model_fields
+    assert "query_providers" not in ParserSettings.model_fields
+    assert "indexing_providers" in WorkerSettings.model_fields
+    assert "indexing_providers" not in ApiSettings.model_fields
+    assert "indexing_providers" not in ParserSettings.model_fields
 
 
 @pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings, ParserSettings])
@@ -979,6 +1114,7 @@ def test_worker_requires_parser_endpoint_only_for_isolated_execution() -> None:
         "POSTGRES_PASSWORD",
         "MINIO_ROOT_PASSWORD",
         "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
+        "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
         "AWS_SECRET_ACCESS_KEY",
         "OPENAI_API_KEY",
         "LANGSMITH_API_KEY",
