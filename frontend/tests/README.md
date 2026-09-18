@@ -4,19 +4,22 @@ This directory contains deterministic tests for frontend-owned behavior and the 
 
 ## Current coverage
 
-| File or command        | Responsibility                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------- |
-| `api-client.test.mjs`  | Verifies multipart, safe errors, runtime contracts, SSE framing, and local API paths. |
-| `product.test.mjs`     | Verifies product identity, fixture boundaries, and automatic-processing copy.         |
-| `pnpm contracts:check` | Verifies that generated TypeScript declarations match the committed OpenAPI snapshot. |
+| File or command             | Responsibility                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| `api-client.test.mjs`       | Verifies multipart, safe errors, runtime contracts, SSE framing, and local API paths. |
+| `processing-state.test.mjs` | Verifies polling completion and fail-closed research admission.                       |
+| `product.test.mjs`          | Verifies product identity, fixture boundaries, and automatic-processing copy.         |
+| `pnpm contracts:check`      | Verifies that generated TypeScript declarations match the committed OpenAPI snapshot. |
 
 ```mermaid
 flowchart LR
     TEST[pnpm test] --> CONTRACT[Contract drift check]
     CONTRACT --> DISCOVERY[Node test discovery]
     DISCOVERY --> API[API client tests]
+    DISCOVERY --> PROCESSING[Processing-state tests]
     DISCOVERY --> PRODUCT[Product test]
     API --> RESULT[Pass or fail]
+    PROCESSING --> RESULT
     PRODUCT --> RESULT
 ```
 
