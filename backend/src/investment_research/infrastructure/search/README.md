@@ -5,11 +5,12 @@ query must read physical data owned by several business modules.
 
 ## Contents
 
-| File             | Responsibility                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| `__init__.py`    | Identifies the search-adapter package without exporting a concrete implementation. |
-| `postgresql.py`  | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.     |
-| `unavailable.py` | Rejects embedding, dense-retrieval, and reranking calls during M0.                 |
+| File             | Responsibility                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `__init__.py`    | Identifies the search-adapter package without exporting a concrete implementation.      |
+| `pinecone.py`    | Writes and verifies bounded vectors through a single-attempt Pinecone gRPC data client. |
+| `postgresql.py`  | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
+| `unavailable.py` | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
 
 ## Dependency direction
 
@@ -22,6 +23,8 @@ flowchart LR
     PG --> DB[(PostgreSQL)]
 
     FUTURE[Later application path] --> PROVIDER_PORTS[Embedding, dense, and reranking ports]
+    PINECONE[PineconeDenseIndexWriter] -. implements .-> PROVIDER_PORTS
+    PINECONE --> GRPC[Pinecone gRPC data plane]
     UNAVAILABLE[M0 unavailable adapters] -. implement .-> PROVIDER_PORTS
 ```
 
@@ -47,10 +50,29 @@ Only eligible rows are ranked with `ts_rank_cd`. Results use descending score an
 `chunk_id` as the final deterministic tie-breaker, then apply the validated candidate limit. The
 adapter returns immutable `LexicalSearchHit` values and never commits a transaction.
 
-## M0 provider behavior
+## Pinecone dense-index writer
 
-The unavailable adapters make the absence of later providers explicit. They import no Pinecone,
-embedding, reranking, or tracing SDK, hold no credentials, and perform no network access. Each call
-raises `SearchProviderUnavailableError` instead of returning an empty result that could be mistaken
-for a valid insufficient-evidence outcome. A later milestone replaces one adapter at a time behind
-the unchanged application-owned port after its provider, privacy, and evaluation decisions pass.
+`PineconeDenseIndexWriter` receives only validated `DenseIndexWriteRequest` values. It derives the
+namespace from trusted `WorkspaceContext`, converts vectors to one bounded provider batch, and sends
+only deterministic vector IDs plus chunk, document-version, chunk-set, embedding-configuration, and
+dense-index-configuration identifiers. Raw chunk text and user-facing metadata never enter Pinecone
+metadata.
+
+The factory constructs `GrpcIndex` directly from the configured index host, avoiding a control-plane
+lookup. TLS is mandatory, operation time is capped at 30 seconds, concurrency is one, and
+`RetryConfig(max_retries=0)` makes the application the only retry owner. A successful transport
+response is insufficient: the adapter requires complete item counts with no failed items or batch
+errors. Fetch-based readiness rejects unexpected IDs and preserves application request order.
+
+Pinecone connection, timeout, rate-limit, and service errors become bounded transient application
+errors. Authentication, configuration, and other deterministic SDK failures become bounded
+configuration errors. Partial or contradictory responses become contract errors. Provider exception
+messages and request details never cross the adapter boundary.
+
+## Unavailable provider behavior
+
+The unavailable embedding, dense-retrieval, and reranking adapters make the absence of their later
+implementations explicit. They hold no credentials and perform no network access. Each call raises
+`SearchProviderUnavailableError` instead of returning an empty result that could be mistaken for a
+valid insufficient-evidence outcome. Each provider is replaced separately behind the unchanged
+application-owned port after its implementation and evaluation gate passes.

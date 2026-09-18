@@ -114,8 +114,8 @@ authorization decision. The provider adapter derives the workspace namespace fro
 `WorkspaceContext`, never from a client-supplied value.
 
 Unavailable infrastructure adapters fail explicitly with `SearchProviderUnavailableError`, so an
-accidentally enabled path cannot masquerade as a valid empty result. The current block defines and
-validates the dense-index boundary but does not yet contact an embedding or vector provider. Dense
-retrieval begins in its assigned step, and reranking is activated only after its evaluation gate.
-Provider results remain candidates, never citation evidence, until canonical eligibility and
-evidence validation succeed.
+accidentally enabled path cannot masquerade as a valid empty result. The Pinecone infrastructure
+adapter now implements `DenseIndexWriter` through the provider's gRPC data plane while this module
+remains SDK-free. Embedding and dense retrieval begin in their assigned blocks, and reranking is
+activated only after its evaluation gate. Provider results remain candidates, never citation
+evidence, until canonical eligibility and evidence validation succeed.
