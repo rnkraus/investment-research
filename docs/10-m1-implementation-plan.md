@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Implementation-ready v1.0 — Step 0 complete; Step 1 implementation in progress \
+**Status:** Implementation-ready v1.0 — Steps 0–1 complete; Step 2 implementation in progress \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -70,19 +70,19 @@ M1 is complete only when:
 
 ## 3. Retained M0 contracts and M1 replacements
 
-| M0 component | M1 action | Contract or invariant retained |
-|---|---|---|
-| Fixed local identity | Retain for the loopback-only M1 API and worker; replace during M5 | Server-owned `WorkspaceContext`, non-disclosure, explicit workspace scope |
-| PDF-only capture | Extend with immutable UTF-8 pasted-text capture | `ObjectStorage`, checksum, version, compensation, workspace prefix |
-| PDF-only parser protocol | Extend the same isolated protocol with one allowlisted `text/plain` request | Credential-free parser, strict bounded typed output |
-| `LEXICAL_READY` terminal state | Extend to `LEXICAL_READY → INDEXING → SEARCHABLE` | Canonical processing state, execution lease, idempotent redelivery |
-| Unavailable embedding adapter | Replace with one approved versioned embedding adapter | `EmbeddingProvider` and bounded correlated vectors |
-| Unavailable dense retriever | Replace with Pinecone behind the existing port | `DenseRetriever`, namespace scope, canonical requalification |
-| Lexical-only research result | Generalize to lexical and dense canonical sources | `ResearchRequest`, `RetrievalRun`, evidence assembly |
-| Deterministic fixture generator | Retain for CI and add one opt-in approved live adapter | `AnswerGenerator`, typed untrusted proposal |
-| Deterministic fixture support rule | Retain for CI and add one bounded provider-backed evaluator | `StatementSupportEvaluator`, canonical validation authority |
-| No-op tracer | Retain as fallback and add application trace-context recording | `OperationTracer`, safe scalar attributes, no raw text |
-| M0 fixture | Retain as a regression fixture and add one pasted-text M1 fixture | Exact expected evidence and insufficient-answer behavior |
+| M0 component                       | M1 action                                                                   | Contract or invariant retained                                            |
+| ---------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Fixed local identity               | Retain for the loopback-only M1 API and worker; replace during M5           | Server-owned `WorkspaceContext`, non-disclosure, explicit workspace scope |
+| PDF-only capture                   | Extend with immutable UTF-8 pasted-text capture                             | `ObjectStorage`, checksum, version, compensation, workspace prefix        |
+| PDF-only parser protocol           | Extend the same isolated protocol with one allowlisted `text/plain` request | Credential-free parser, strict bounded typed output                       |
+| `LEXICAL_READY` terminal state     | Extend to `LEXICAL_READY → INDEXING → SEARCHABLE`                           | Canonical processing state, execution lease, idempotent redelivery        |
+| Unavailable embedding adapter      | Replace with one approved versioned embedding adapter                       | `EmbeddingProvider` and bounded correlated vectors                        |
+| Unavailable dense retriever        | Replace with Pinecone behind the existing port                              | `DenseRetriever`, namespace scope, canonical requalification              |
+| Lexical-only research result       | Generalize to lexical and dense canonical sources                           | `ResearchRequest`, `RetrievalRun`, evidence assembly                      |
+| Deterministic fixture generator    | Retain for CI and add one opt-in approved live adapter                      | `AnswerGenerator`, typed untrusted proposal                               |
+| Deterministic fixture support rule | Retain for CI and add one bounded provider-backed evaluator                 | `StatementSupportEvaluator`, canonical validation authority               |
+| No-op tracer                       | Retain as fallback and add application trace-context recording              | `OperationTracer`, safe scalar attributes, no raw text                    |
+| M0 fixture                         | Retain as a regression fixture and add one pasted-text M1 fixture           | Exact expected evidence and insufficient-answer behavior                  |
 
 M1 adapters must be selectable at the composition root. Deterministic and unavailable adapters
 remain first-class test and safe-failure implementations; provider SDK types must not enter module
@@ -710,24 +710,24 @@ measured results and M2 handoff.
 
 ## 9. Verification matrix
 
-| Risk | Required deterministic proof |
-|---|---|
-| Accidental unauthenticated exposure | Compose and runtime gates reject non-loopback host publication |
-| Client-selected scope | route and dependency tests prove context remains server-owned |
-| Cross-workspace access | API, repository, storage, queue, vector, evidence, usage, and trace negatives |
-| Text-original ambiguity | byte/checksum/newline/Unicode and media-aware locator tests |
-| Parser expansion | PDF and text secret/filesystem/network/resource negatives plus hard-timeout termination and recovery |
-| Lost or duplicate indexing | execution lease, resume, deterministic vector-ID, duplicate-upsert tests |
-| Stale or poisoned vector | canonical workspace/version/state/configuration/temporal qualification |
-| Retrieval nondeterminism | fixed lane limits, origin ranks, deduplication, and selected-order tests |
-| Provider schema drift | strict application contracts and malformed/extra/missing-field fixtures |
-| Unsupported answer | semantic support decision plus canonical evidence validation |
-| Premature streaming | event-sequence tests proving progress-only output before validation |
-| Provider outage or rate limit | bounded timeout/retry and safe canonical outcome |
-| Sensitive-data leakage | marker scans over logs, traces, errors, vector metadata, and CI artifacts |
-| Cost overrun | bounded units, concurrency, retries, opt-in smoke budget, and usage records |
-| Contract drift | checked OpenAPI snapshot and generated TypeScript declarations |
-| Container-only failure | complete-stack M1 CI plus retained M0 gates and cleanup inventory |
+| Risk                                | Required deterministic proof                                                                         |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Accidental unauthenticated exposure | Compose and runtime gates reject non-loopback host publication                                       |
+| Client-selected scope               | route and dependency tests prove context remains server-owned                                        |
+| Cross-workspace access              | API, repository, storage, queue, vector, evidence, usage, and trace negatives                        |
+| Text-original ambiguity             | byte/checksum/newline/Unicode and media-aware locator tests                                          |
+| Parser expansion                    | PDF and text secret/filesystem/network/resource negatives plus hard-timeout termination and recovery |
+| Lost or duplicate indexing          | execution lease, resume, deterministic vector-ID, duplicate-upsert tests                             |
+| Stale or poisoned vector            | canonical workspace/version/state/configuration/temporal qualification                               |
+| Retrieval nondeterminism            | fixed lane limits, origin ranks, deduplication, and selected-order tests                             |
+| Provider schema drift               | strict application contracts and malformed/extra/missing-field fixtures                              |
+| Unsupported answer                  | semantic support decision plus canonical evidence validation                                         |
+| Premature streaming                 | event-sequence tests proving progress-only output before validation                                  |
+| Provider outage or rate limit       | bounded timeout/retry and safe canonical outcome                                                     |
+| Sensitive-data leakage              | marker scans over logs, traces, errors, vector metadata, and CI artifacts                            |
+| Cost overrun                        | bounded units, concurrency, retries, opt-in smoke budget, and usage records                          |
+| Contract drift                      | checked OpenAPI snapshot and generated TypeScript declarations                                       |
+| Container-only failure              | complete-stack M1 CI plus retained M0 gates and cleanup inventory                                    |
 
 Deterministic correctness tests and live-provider compatibility tests remain separate. A live smoke
 pass cannot replace malformed-output, isolation, idempotency, evidence, or workspace tests.

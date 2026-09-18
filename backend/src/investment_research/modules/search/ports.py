@@ -21,7 +21,23 @@ from investment_research.modules.search.contracts import (
 from investment_research.modules.search.domain import RetrievalCandidate, RetrievalRun
 
 
-class SearchProviderUnavailableError(RuntimeError):
+class SearchProviderError(RuntimeError):
+    """Base error for safe application-owned provider failure categories."""
+
+
+class SearchProviderTransientError(SearchProviderError):
+    """Report a bounded provider failure that a later application attempt may retry."""
+
+
+class SearchProviderContractError(SearchProviderError):
+    """Report a malformed, partial, or contradictory provider response."""
+
+
+class SearchProviderConfigurationError(SearchProviderError):
+    """Report provider authentication or configuration that retries cannot repair."""
+
+
+class SearchProviderUnavailableError(SearchProviderError):
     """Raised when a later-milestone search provider is intentionally unavailable."""
 
 

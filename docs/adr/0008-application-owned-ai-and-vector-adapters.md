@@ -68,13 +68,13 @@ application retries must not combine into an undocumented attempt count.
 
 The selected M1 configuration is:
 
-| Capability | Selection | Required boundary |
-|---|---|---|
-| Document and query embeddings | OpenAI `text-embedding-3-small`, full 1536 dimensions | Ordered, finite, dimension-checked results; separate versioned document and query configurations |
-| Answer proposal | OpenAI `gpt-5.6-terra`, Responses API, low reasoning effort | Strict Structured Outputs, foreground stateless request, `store=false`, no tools |
-| Statement-support evaluation | OpenAI `gpt-5.6-terra` | Separate prompt, schema, timeout, usage, and configuration version |
-| Dense index | Pinecone Serverless on-demand BYOV in `aws/us-east-1` | 1536-dimensional cosine index; one server-derived namespace per workspace |
-| Trace context | OpenTelemetry Python API and SDK with W3C propagation | No exporter, Collector, hosted backend, or LangSmith in M1 |
+| Capability                    | Selection                                                   | Required boundary                                                                                |
+| ----------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Document and query embeddings | OpenAI `text-embedding-3-small`, full 1536 dimensions       | Ordered, finite, dimension-checked results; separate versioned document and query configurations |
+| Answer proposal               | OpenAI `gpt-5.6-terra`, Responses API, low reasoning effort | Strict Structured Outputs, foreground stateless request, `store=false`, no tools                 |
+| Statement-support evaluation  | OpenAI `gpt-5.6-terra`                                      | Separate prompt, schema, timeout, usage, and configuration version                               |
+| Dense index                   | Pinecone Serverless on-demand BYOV in `aws/us-east-1`       | 1536-dimensional cosine index; one server-derived namespace per workspace                        |
+| Trace context                 | OpenTelemetry Python API and SDK with W3C propagation       | No exporter, Collector, hosted backend, or LangSmith in M1                                       |
 
 Terra is selected over the flagship tier because the bounded RAG task does not justify flagship
 cost, and over Luna because evidence-sensitive financial answers favor the stronger balanced tier.
@@ -108,6 +108,13 @@ and `opentelemetry-api` plus `opentelemetry-sdk` 1.44.0 or a later compatible 1.
 locked in `backend/uv.lock` only after another release-age, provenance, Python 3.14, license,
 transitive-dependency, and vulnerability check. OpenAI 3.14.1 is not eligible before
 2026-09-22 23:12 UTC and receives no exception merely to start M1.
+
+Pinecone 10.0.0 was locked on 2026-09-18 after its release-age, PyPI Trusted Publishing
+provenance, Apache-2.0 license, CPython 3.14 import, ARM64 wheel availability, transitive dependency,
+malware, and vulnerability checks passed. The M1 data adapter uses the gRPC client directly with TLS,
+a 30-second deadline, concurrency one, and `RetryConfig(max_retries=0)`. The REST data client is not
+used because version 10.0.0 does not forward configurable retry policy to REST data-plane calls;
+using it would violate the single application-owned retry policy.
 
 OpenAI API data is not used for training by default, but default abuse-monitoring retention may
 contain content for up to 30 days. M1 therefore permits only approved public or synthetic content.
@@ -170,5 +177,6 @@ a measured multi-step workflow meets the M9 framework-admission criteria.
 - [Pinecone indexing and namespaces](https://docs.pinecone.io/guides/index-data/indexing-overview)
 - [Pinecone upsert semantics](https://docs.pinecone.io/guides/index-data/upsert-data)
 - [Pinecone Python SDK](https://pypi.org/project/pinecone/)
+- [Pinecone Python retry behavior](https://sdk.pinecone.io/python/guides/retries.html)
 - [OpenTelemetry Python](https://opentelemetry.io/docs/languages/python/)
 - [OpenTelemetry manual instrumentation](https://opentelemetry.io/docs/languages/python/instrumentation/)
