@@ -78,19 +78,24 @@ flowchart TD
     BOOT --> DB[(PostgreSQL resources)]
     BOOT --> STORAGE[ObjectStorage adapter]
     BOOT --> PARSER[HttpDocumentParser]
+    BOOT --> EMBED[OpenAIEmbeddingProvider]
+    BOOT --> DENSE[PineconeDenseIndexWriter]
     BOOT --> SERVICE[ExecuteProcessingJobService]
     DB --> SERVICE
     STORAGE --> SERVICE
     PARSER --> SERVICE
-    SERVICE --> TERMINAL[LEXICAL_READY, safe retry, or FAILED]
+    EMBED --> SERVICE
+    DENSE --> SERVICE
+    SERVICE --> TERMINAL[SEARCHABLE, safe retry, or FAILED]
     TERMINAL --> CLOSE[Dispose resources on worker-child shutdown]
 ```
 
 The queue payload uses the versioned `ProcessingJobV1` contract rather than accepting arbitrary
 database or session objects. `WorkerProcessingJobExecutor` creates the worker container only when a
 child handles its first task, reuses process-owned resources safely, and disposes them when that
-child shuts down. The application service revalidates canonical workspace and run state before it
-opens the original or commits derived output.
+child shuts down. Shutdown closes the Pinecone gRPC channel, OpenAI HTTP client, and database engine.
+The application service revalidates canonical workspace and run state before it opens the original,
+indexes active chunks, or commits derived output.
 
 `ApiSettings` and `WorkerSettings` may load the ignored root development file. The API requires an
 authenticated Redis broker URL when its container is built; host development may derive it from
@@ -98,8 +103,9 @@ authenticated Redis broker URL when its container is built; host development may
 partially configured: `ApiSettings.query_providers` accepts only query-embedding and Pinecone-query
 credentials, while `WorkerSettings.indexing_providers` accepts only document-embedding and
 Pinecone-index credentials. Both retain the frozen model, dimensions, configuration versions, and
-timeouts. These groups define the least-privilege configuration boundary but remain unused until
-their approved adapters are wired. `ParserSettings` loads only its allowlisted process variables,
+timeouts. The worker group is required when its container is built and is wired only to document
+indexing; the API query group remains unused until the M1 retrieval block wires its approved
+adapters. `ParserSettings` loads only its allowlisted process variables,
 exposes no database, queue, or provider field, and rejects known application credential variables.
 `runtime_location=host` restricts bind, database, object-storage, and broker targets to loopback;
 `runtime_location=container` permits only the fixed internal Compose service targets required by
