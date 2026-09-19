@@ -73,7 +73,7 @@ CMD []
 
 FROM runtime AS worker
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=6 \
     CMD ["/app/.venv/bin/python", "-m", "investment_research.worker_health"]
 
 ENTRYPOINT ["/app/.venv/bin/celery", "--app", "investment_research.worker:app", "worker"]
