@@ -1,6 +1,6 @@
 """Application-owned contracts for optional operational tracing."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Protocol
@@ -41,6 +41,9 @@ class OperationTracer(Protocol):
 class ProviderOperationRepository(Protocol):
     """Persist and read content-free provider accounting inside one workspace."""
 
+    def acquire_budget_lock(self, context: WorkspaceContext) -> None:
+        """Serialize one workspace's budget check until the transaction ends."""
+
     def add(self, context: WorkspaceContext, operation: ProviderOperation) -> None:
         """Stage one STARTED operation without committing the caller's transaction."""
 
@@ -69,3 +72,17 @@ class ProviderOperationRepository(Protocol):
         started_at_before: datetime,
     ) -> ProviderCostSummary:
         """Return actual terminal cost plus active reservations for a half-open window."""
+
+
+class ProviderOperationUnitOfWork(Protocol):
+    """Provider-operation repository participating in one short transaction."""
+
+    @property
+    def provider_operations(self) -> ProviderOperationRepository:
+        """Return the repository used for one accounting state change."""
+
+
+type ProviderOperationUnitOfWorkFactory = Callable[
+    [],
+    AbstractContextManager[ProviderOperationUnitOfWork],
+]

@@ -9,6 +9,7 @@ usage; traces add diagnostic context but never replace that canonical record.
 | File             | Responsibility                                                                 |
 | ---------------- | ------------------------------------------------------------------------------ |
 | `__init__.py`    | Marks the application-owned operations package.                                |
+| `application.py` | Reserves monthly budget and finalizes canonical usage in short transactions.   |
 | `domain.py`      | Defines provider-operation kinds, lifecycle rules, usage, and safe failures.   |
 | `ports.py`       | Defines the canonical repository and optional tracing contracts.               |
 | `persistence.py` | Maps provider operations to PostgreSQL and implements workspace-scoped access. |
@@ -29,7 +30,11 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    RESERVE[Commit STARTED with reserved cost] --> CALL[Call external provider]
+    REQUEST[Bounded operation] --> LOCK[Lock workspace budget]
+    LOCK --> SUM[Sum UTC-month actual cost and active reservations]
+    SUM -->|fits| RESERVE[Commit STARTED with reserved cost]
+    SUM -->|exceeds| REJECT[Reject before provider call]
+    RESERVE --> CALL[Call external provider outside transaction]
     CALL -->|valid result| SUCCESS[Finalize SUCCEEDED with actual usage]
     CALL -->|safe classified error| FAILURE[Finalize FAILED]
     RESERVE --> BUDGET[Count active reservation toward budget]
@@ -40,12 +45,13 @@ flowchart LR
 Each operation belongs to exactly one research request or processing run. The repository requires a
 `WorkspaceContext`, and PostgreSQL composite foreign keys reject cross-workspace ownership even if
 application code is wrong. Repositories participate in the caller's transaction and never commit
-independently.
+independently. A workspace-scoped PostgreSQL transaction lock makes the combined monthly check and
+reservation safe under concurrency without blocking unrelated workspaces.
 
 Provider-operation records and traces may contain identifiers, configuration versions, unit counts,
 costs, durations, trace IDs, and safe error categories. They must not contain document text, user
 questions, prompts, generated answers, credentials, complete URLs, or provider error messages.
 
-The canonical ledger and persistence boundary are present in this work block. A later Step 5 work
-block will reserve and finalize these records around the embedding and generation provider calls,
-then add OpenTelemetry/OpenInference without making trace export part of product correctness.
+The canonical ledger, atomic reservation, and safe finalization services are present. A later Step 5
+work block will place them around the embedding and generation provider calls, then add
+OpenTelemetry/OpenInference without making trace export part of product correctness.

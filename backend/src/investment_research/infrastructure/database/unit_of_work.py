@@ -34,6 +34,14 @@ from investment_research.modules.evidence.ports import (
     EvidenceReadUnitOfWorkFactory,
     EvidenceRepository,
 )
+from investment_research.modules.operations.persistence import (
+    SqlAlchemyProviderOperationRepository,
+)
+from investment_research.modules.operations.ports import (
+    ProviderOperationRepository,
+    ProviderOperationUnitOfWork,
+    ProviderOperationUnitOfWorkFactory,
+)
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
 from investment_research.modules.processing.ports import (
     ProcessingReadUnitOfWork,
@@ -92,6 +100,13 @@ class SqlAlchemyProcessingReadRepositories:
     """Processing repository bound to one short-lived read session."""
 
     processing: ProcessingRepository
+
+
+@dataclass(frozen=True, slots=True)
+class SqlAlchemyProviderOperationRepositories:
+    """Provider-operation repository bound to one short transaction."""
+
+    provider_operations: ProviderOperationRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +196,18 @@ def sqlalchemy_processing_read_unit_of_work(
 
 
 @contextmanager
+def sqlalchemy_provider_operation_unit_of_work(
+    session_factory: SessionFactory,
+) -> Iterator[ProviderOperationUnitOfWork]:
+    """Commit one canonical provider-accounting state change atomically."""
+
+    with transactional_session(session_factory) as session:
+        yield SqlAlchemyProviderOperationRepositories(
+            provider_operations=SqlAlchemyProviderOperationRepository(session),
+        )
+
+
+@contextmanager
 def sqlalchemy_research_retrieval_unit_of_work(
     session_factory: SessionFactory,
 ) -> Iterator[ResearchRetrievalUnitOfWork]:
@@ -261,6 +288,17 @@ def create_processing_read_unit_of_work_factory(
 
     def create_unit_of_work() -> AbstractContextManager[ProcessingReadUnitOfWork]:
         return sqlalchemy_processing_read_unit_of_work(session_factory)
+
+    return create_unit_of_work
+
+
+def create_provider_operation_unit_of_work_factory(
+    session_factory: SessionFactory,
+) -> ProviderOperationUnitOfWorkFactory:
+    """Bind provider-accounting transactions to one process-wide session factory."""
+
+    def create_unit_of_work() -> AbstractContextManager[ProviderOperationUnitOfWork]:
+        return sqlalchemy_provider_operation_unit_of_work(session_factory)
 
     return create_unit_of_work
 

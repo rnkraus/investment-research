@@ -1,6 +1,8 @@
 """PostgreSQL integration tests for canonical provider-operation accounting."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from threading import Barrier, Event
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,6 +12,14 @@ from sqlalchemy.exc import IntegrityError
 from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
+)
+from investment_research.infrastructure.database.unit_of_work import (
+    create_provider_operation_unit_of_work_factory,
+)
+from investment_research.modules.operations.application import (
+    ProviderBudgetExceededError,
+    ProviderBudgetPolicy,
+    ReserveProviderOperationService,
 )
 from investment_research.modules.operations.domain import (
     ProviderOperation,
@@ -200,3 +210,92 @@ def test_provider_operation_uses_the_caller_transaction_boundary(
             )
             is None
         )
+
+
+def test_concurrent_reservations_cannot_overspend_one_workspace_budget(
+    integration_database_engine: Engine,
+) -> None:
+    """Serialize competing reservations before either can use stale cost totals."""
+
+    session_factory = create_session_factory(integration_database_engine)
+    source = make_research_source(label="Concurrent Provider Budget Source")
+    persist_research_source(integration_database_engine, source)
+    correlation_id = uuid4()
+    operations = tuple(
+        make_started_operation(
+            source,
+            operation_id=uuid4(),
+            correlation_id=correlation_id,
+            operation=ProviderOperationKind.QUERY_EMBEDDING,
+            reserved_cost_micro_usd=40,
+            offset_seconds=offset,
+        )
+        for offset in (4, 5)
+    )
+    service = ReserveProviderOperationService(
+        unit_of_work_factory=create_provider_operation_unit_of_work_factory(session_factory),
+        budget_policy=ProviderBudgetPolicy(monthly_limit_micro_usd=50),
+    )
+    ready = Barrier(2)
+
+    def reserve(operation: ProviderOperation) -> bool:
+        ready.wait(timeout=5)
+        try:
+            service.reserve(source.context, operation)
+        except ProviderBudgetExceededError:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        accepted = tuple(executor.map(reserve, operations))
+
+    assert sorted(accepted) == [False, True]
+    with transactional_session(session_factory) as session:
+        repository = SqlAlchemyProviderOperationRepository(session)
+        stored = repository.list_by_correlation_id(source.context, correlation_id)
+        summary = repository.summarize_cost(
+            source.context,
+            started_at_from=FIXTURE_TIME,
+            started_at_before=FIXTURE_TIME + timedelta(days=1),
+        )
+
+    assert len(stored) == 1
+    assert summary.actual_cost_micro_usd == 0
+    assert summary.active_reserved_cost_micro_usd == 40
+
+
+def test_budget_locks_do_not_block_a_different_workspace(
+    integration_database_engine: Engine,
+) -> None:
+    """Keep unrelated workspaces concurrent while one budget transaction is open."""
+
+    session_factory = create_session_factory(integration_database_engine)
+    first = make_research_source(label="First Budget Lock Source")
+    second = make_research_source(label="Second Budget Lock Source")
+    first_locked = Event()
+    release_first = Event()
+    second_locked = Event()
+
+    def hold_first_lock() -> None:
+        with transactional_session(session_factory) as session:
+            SqlAlchemyProviderOperationRepository(session).acquire_budget_lock(first.context)
+            first_locked.set()
+            if not release_first.wait(timeout=5):
+                raise TimeoutError("test did not release first workspace lock")
+
+    def acquire_second_lock() -> None:
+        if not first_locked.wait(timeout=5):
+            raise TimeoutError("first workspace lock was not acquired")
+        with transactional_session(session_factory) as session:
+            SqlAlchemyProviderOperationRepository(session).acquire_budget_lock(second.context)
+            second_locked.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first_future = executor.submit(hold_first_lock)
+        second_future = executor.submit(acquire_second_lock)
+        try:
+            assert second_locked.wait(timeout=2)
+        finally:
+            release_first.set()
+        first_future.result(timeout=5)
+        second_future.result(timeout=5)
