@@ -55,8 +55,10 @@ flowchart LR
     SEARCH --> HITS[Ordered eligible hits]
     HITS --> CANDIDATES[Ranked RetrievalCandidates]
     CANDIDATES --> RUN[RetrievalRun plus candidates]
+    CANDIDATES --> SOURCES[Selected canonical candidate sources]
     UOW -->|one commit or rollback| PG[(PostgreSQL)]
     RUN --> RESULT[ResearchRetrievalResult]
+    SOURCES --> RESULT
     RESULT --> GENERATE[GenerateValidatedAnswerService]
     GENERATE --> OUTPUT[ValidatedAnswerResult]
 ```
@@ -64,8 +66,10 @@ flowchart LR
 The service creates all identifiers server-side, retains the exact question, normalizes only its
 search form, and maps each ordered hit to one persisted `LEXICAL` candidate. An empty hit sequence is
 a valid reproducible retrieval result and does not create invented candidates. The returned
-`ResearchRetrievalResult` keeps each persisted candidate aligned with the canonical hit data needed
-by the later generation and evidence path.
+`ResearchRetrievalResult` retains every persisted lane candidate separately from its selected
+`CanonicalCandidateSource` values. Each source resolves through one candidate ID and one canonical
+chunk ID. This keeps the current lexical behavior unchanged while allowing M1 to retain overlapping
+lexical and dense candidates without sending the same chunk to generation twice.
 
 `AnswerResearchRequestService` is the route-facing application use case. It passes the committed
 retrieval result directly to `GenerateValidatedAnswerService` and returns only the validated

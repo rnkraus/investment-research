@@ -24,6 +24,7 @@ from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
     AnswerGenerationSource,
+    CanonicalCandidateSource,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
     ValidatedAnswerResult,
@@ -150,12 +151,25 @@ class RetrieveResearchService:
                 for rank, hit in enumerate(hits, start=1)
             )
             unit_of_work.retrieval.add_result(context, run, candidates)
+            sources = tuple(
+                CanonicalCandidateSource(
+                    retrieval_candidate_id=candidate.id,
+                    chunk_id=hit.chunk_id,
+                    document_id=hit.document_id,
+                    document_version_id=hit.document_version_id,
+                    structure_block_id=hit.structure_block_id,
+                    source_locator_kind=hit.source_locator_kind,
+                    page_number=hit.page_number,
+                    text=hit.text,
+                )
+                for candidate, hit in zip(candidates, hits, strict=True)
+            )
 
         return ResearchRetrievalResult(
             request=request,
             retrieval_run=run,
             candidates=candidates,
-            hits=hits,
+            sources=sources,
         )
 
     def _aware_utc_now(self) -> datetime:
@@ -324,20 +338,16 @@ class GenerateValidatedAnswerService:
             question=retrieval_result.request.question,
             sources=tuple(
                 AnswerGenerationSource(
-                    retrieval_candidate_id=candidate.id,
-                    chunk_id=hit.chunk_id,
-                    document_id=hit.document_id,
-                    document_version_id=hit.document_version_id,
-                    structure_block_id=hit.structure_block_id,
-                    source_locator_kind=hit.source_locator_kind,
-                    page_number=hit.page_number,
-                    text=hit.text,
+                    retrieval_candidate_id=source.retrieval_candidate_id,
+                    chunk_id=source.chunk_id,
+                    document_id=source.document_id,
+                    document_version_id=source.document_version_id,
+                    structure_block_id=source.structure_block_id,
+                    source_locator_kind=source.source_locator_kind,
+                    page_number=source.page_number,
+                    text=source.text,
                 )
-                for candidate, hit in zip(
-                    retrieval_result.candidates,
-                    retrieval_result.hits,
-                    strict=True,
-                )
+                for source in retrieval_result.sources
             ),
         )
 
