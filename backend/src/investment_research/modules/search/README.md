@@ -12,6 +12,7 @@ This module owns reproducible retrieval records and ranked candidates from eligi
 | `indexing.py`    | Orchestrates bounded embedding, deterministic writes, and vector readiness.    |
 | `ports.py`       | Defines lexical, embedding, dense, reranking, and repository contracts.        |
 | `persistence.py` | Maps retrieval records and implements workspace-scoped repository behavior.    |
+| `selection.py`   | Applies deterministic lexical-first M1 context selection and deduplication.     |
 
 ## Ownership and relationships
 
@@ -138,6 +139,13 @@ qualifier preserves their provider order but returns canonical text only when wo
 document version, active lifecycle, active chunk set, `SEARCHABLE` processing state, explicit
 filters, and lexical, embedding, and dense-index configuration versions all match. Unknown,
 foreign, stale, and filtered identifiers are indistinguishable and absent from the result.
+
+`select_m1_context` receives only lexical hits and already-qualified dense hits. It alternates
+lexical rank 1, dense rank 1, lexical rank 2, dense rank 2, and so on without comparing their raw
+scores. The first interleaved occurrence of each chunk wins. Selection stops at the configured
+chunk limit, skips rather than truncates text that would exceed the remaining character budget, and
+records one contiguous `selection_rank` per chosen chunk. The fixed behavior is identified by
+`m1-lexical-first-round-robin-v1`.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders
