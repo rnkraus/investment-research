@@ -22,6 +22,7 @@ from investment_research.settings import (
     ApiSettings,
     DenseProviderSettings,
     EmbeddingProviderSettings,
+    GenerationProviderSettings,
     ParserSettings,
     PineconeProviderSettings,
     S3Settings,
@@ -66,6 +67,8 @@ PROVIDER_SETTING_NAMES = (
     "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY_FILE",
     "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
     "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY_FILE",
+    "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY",
+    "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY_FILE",
     "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
     "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY_FILE",
     "INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY",
@@ -907,6 +910,10 @@ def test_api_and_worker_load_distinct_least_privilege_provider_credentials(
         "synthetic-query-pinecone-secret",
     )
     monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY",
+        "synthetic-generation-secret",
+    )
+    monkeypatch.setenv(
         "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
         "synthetic-document-embedding-secret",
     )
@@ -919,6 +926,7 @@ def test_api_and_worker_load_distinct_least_privilege_provider_credentials(
     worker_settings = load_worker_settings(env_file=None)
 
     query_providers = api_settings.require_query_providers()
+    generation_provider = api_settings.require_generation_provider()
     indexing_providers = worker_settings.require_indexing_providers()
     assert query_providers.embedding.api_key.get_secret_value() == (
         "synthetic-query-embedding-secret"
@@ -926,12 +934,44 @@ def test_api_and_worker_load_distinct_least_privilege_provider_credentials(
     assert query_providers.pinecone.api_key.get_secret_value() == (
         "synthetic-query-pinecone-secret"
     )
+    assert generation_provider.api_key.get_secret_value() == "synthetic-generation-secret"
     assert indexing_providers.embedding.api_key.get_secret_value() == (
         "synthetic-document-embedding-secret"
     )
     assert indexing_providers.pinecone.api_key.get_secret_value() == (
         "synthetic-index-pinecone-secret"
     )
+
+
+def test_generation_provider_hides_and_normalizes_its_api_key() -> None:
+    marker = "synthetic-generation-secret"
+    settings = GenerationProviderSettings.model_validate({"api_key": marker})
+
+    assert settings.api_key.get_secret_value() == marker
+    assert marker not in repr(settings)
+
+    with pytest.raises(ValidationError, match="generation API key") as captured:
+        GenerationProviderSettings.model_validate({"api_key": f" {marker}"})
+
+    assert marker not in str(captured.value)
+
+
+def test_api_requires_query_and_generation_provider_groups_together() -> None:
+    providers = DenseProviderSettings(
+        embedding=EmbeddingProviderSettings.model_validate({"api_key": "synthetic-query-key"}),
+        pinecone=PineconeProviderSettings.model_validate(
+            {
+                "api_key": "synthetic-pinecone-key",
+                "index_host": "synthetic-index.example.svc.pinecone.io",
+            }
+        ),
+    )
+    generation = GenerationProviderSettings.model_validate({"api_key": "synthetic-generation-key"})
+
+    with pytest.raises(ValidationError, match="requires query and generation providers together"):
+        ApiSettings(query_providers=providers)
+    with pytest.raises(ValidationError, match="requires query and generation providers together"):
+        ApiSettings(generation_provider=generation)
 
 
 @pytest.mark.parametrize(
@@ -991,6 +1031,9 @@ def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "query_providers" in ApiSettings.model_fields
     assert "query_providers" not in WorkerSettings.model_fields
     assert "query_providers" not in ParserSettings.model_fields
+    assert "generation_provider" in ApiSettings.model_fields
+    assert "generation_provider" not in WorkerSettings.model_fields
+    assert "generation_provider" not in ParserSettings.model_fields
     assert "indexing_providers" in WorkerSettings.model_fields
     assert "indexing_providers" not in ApiSettings.model_fields
     assert "indexing_providers" not in ParserSettings.model_fields
@@ -1127,6 +1170,7 @@ def test_worker_allows_m0_regression_profile_only_in_test_environment() -> None:
         "MINIO_ROOT_PASSWORD",
         "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY",
         "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
+        "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY",
         "AWS_SECRET_ACCESS_KEY",
         "OPENAI_API_KEY",
         "LANGSMITH_API_KEY",
