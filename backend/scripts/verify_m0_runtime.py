@@ -30,6 +30,7 @@ POSTGRES_DATABASE = "investment_research"
 POSTGRES_USER = "investment_research"
 SECRET_LOG_MARKER = "m0-acceptance-secret-marker"
 REDACTED_LOG_VALUE = b"[REDACTED]"
+DOCKER_IMAGE_NOT_FOUND_MARKER = b"No such image:"
 
 
 class SensitiveRuntimeLogError(RuntimeError):
@@ -108,6 +109,28 @@ def sensitive_log_values(secret_values: Mapping[str, str]) -> tuple[bytes, ...]:
         *(value.encode() for value in secret_values.values()),
         M0_0_FIXTURE_ANSWER_CASE.evidence_text.encode(),
     )
+
+
+def remove_acceptance_image(
+    image: str,
+    environment: Mapping[str, str],
+) -> int:
+    """Remove one disposable image while accepting an already-absent result."""
+
+    result = run_command(
+        "Remove isolated M0 acceptance image",
+        ["docker", "image", "rm", "--force", image],
+        environment=environment,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return 0
+    if DOCKER_IMAGE_NOT_FOUND_MARKER in (result.stdout or b""):
+        print("Isolated M0 acceptance image was already absent.", flush=True)
+        return 0
+    print("Could not remove isolated M0 acceptance image.", file=sys.stderr, flush=True)
+    return result.returncode or 1
 
 
 def assert_runtime_logs_are_safe(log_output: bytes, secret_values: Mapping[str, str]) -> None:
@@ -249,14 +272,12 @@ def verify_m0_runtime() -> int:
             )
             if cleanup.returncode != 0 and exit_code == 0:
                 exit_code = cleanup.returncode
-            image_cleanup = run_command(
-                "Remove isolated M0 acceptance image",
-                ["docker", "image", "rm", "--force", acceptance_image],
-                environment=compose_environment,
-                check=False,
+            image_cleanup_code = remove_acceptance_image(
+                acceptance_image,
+                compose_environment,
             )
-            if image_cleanup.returncode != 0 and exit_code == 0:
-                exit_code = image_cleanup.returncode
+            if image_cleanup_code != 0 and exit_code == 0:
+                exit_code = image_cleanup_code
 
     return exit_code
 
