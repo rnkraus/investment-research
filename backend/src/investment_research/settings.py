@@ -903,6 +903,18 @@ def load_database_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Database
     return DatabaseSettings.model_validate(_database_runtime_values(_read_local_values(env_file)))
 
 
+def load_generation_provider_settings(
+    *,
+    env_file: Path | None = ROOT_ENV_FILE,
+) -> GenerationProviderSettings:
+    """Load only the API-role generation credential for an explicit provider operation."""
+
+    values = _generation_provider_runtime_values(_read_local_values(env_file))
+    if values is None:
+        raise ValueError("generation provider configuration is required")
+    return GenerationProviderSettings.model_validate(values)
+
+
 def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
     """Load only values required by the FastAPI process."""
 
