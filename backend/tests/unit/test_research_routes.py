@@ -26,7 +26,10 @@ from investment_research.modules.evidence.domain import (
     ValidationRule,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.research.application import AnswerResearchRequestService
+from investment_research.modules.research.application import (
+    AnswerResearchRequestService,
+    ResearchProviderUnavailableError,
+)
 from investment_research.modules.research.contracts import (
     ResearchRetrievalInput,
     ValidatedAnswerResult,
@@ -285,6 +288,28 @@ def test_research_route_hides_rejected_validation_details(
     assert events[0]["payload"]["error"]["code"] == "EVIDENCE_VALIDATION_FAILED"
     assert events[0]["payload"]["retriable"] is False
     assert "private validation detail" not in response.text
+    assert "answer.statement" not in response.text
+    assert "answer.citation" not in response.text
+
+
+@pytest.mark.parametrize("retriable", [True, False])
+def test_research_route_streams_one_safe_provider_failure(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+    retriable: bool,
+) -> None:
+    client, service = research_client
+    service.error = ResearchProviderUnavailableError(REQUEST_ID, retriable=retriable)
+
+    response = client.post("/api/v1/research-requests", json={"question": QUESTION})
+
+    events = parse_server_sent_events(response.text)
+    assert response.status_code == 200
+    assert [event["event_name"] for event in events] == ["research.failed"]
+    assert events[0]["payload"]["research_request_id"] == str(REQUEST_ID)
+    assert events[0]["payload"]["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert events[0]["payload"]["error"]["message"] == "research provider is unavailable"
+    assert events[0]["payload"]["error"]["request_id"] is not None
+    assert events[0]["payload"]["retriable"] is retriable
     assert "answer.statement" not in response.text
     assert "answer.citation" not in response.text
 

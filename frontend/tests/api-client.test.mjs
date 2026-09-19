@@ -245,6 +245,37 @@ test("streamResearch decodes validated events split across network chunks", asyn
   assert.equal(events[1].evidence_span_id, EVIDENCE_SPAN_ID);
 });
 
+test("streamResearch accepts the safe provider-unavailable terminal event", async () => {
+  const failure = {
+    event: "research.failed",
+    schema_version: "1.0",
+    research_request_id: RESEARCH_REQUEST_ID,
+    error: {
+      code: "PROVIDER_UNAVAILABLE",
+      message: "research provider is unavailable",
+      request_id: RESEARCH_REQUEST_ID,
+    },
+    retriable: true,
+  };
+  const body = `event: research.failed\ndata: ${JSON.stringify(failure)}\n\n`;
+  const client = createApiClient(
+    async () =>
+      new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      }),
+  );
+
+  const events = [];
+  for await (const event of client.streamResearch({
+    question: "What changed?",
+  })) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [failure]);
+});
+
 test("local API paths allow protected viewer fragments and reject external targets", () => {
   const viewerPath = `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original#page=2`;
 
