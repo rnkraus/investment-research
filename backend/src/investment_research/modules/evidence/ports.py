@@ -1,4 +1,4 @@
-"""Application-owned persistence contracts for evidence and validation."""
+"""Application-owned persistence and provider contracts for evidence validation."""
 
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
@@ -38,6 +38,26 @@ class CanonicalEvidenceSpanReader(Protocol):
         evidence_span_id: UUID,
     ) -> CanonicalEvidenceSpanSource | None:
         """Return scoped canonical state without disclosing unavailable identifiers."""
+
+
+class StatementSupportProviderError(RuntimeError):
+    """Base class for safe statement-support provider failures."""
+
+
+class StatementSupportProviderTransientError(StatementSupportProviderError):
+    """The support provider is temporarily unavailable and may be retried externally."""
+
+
+class StatementSupportProviderConfigurationError(StatementSupportProviderError):
+    """The support request or provider configuration was rejected."""
+
+
+class StatementSupportProviderContractError(StatementSupportProviderError):
+    """The support provider returned an invalid or unexpected response."""
+
+
+class StatementSupportProviderRefusalError(StatementSupportProviderError):
+    """The support provider explicitly refused to evaluate the statement."""
 
 
 class StatementSupportEvaluator(Protocol):
