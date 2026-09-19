@@ -234,7 +234,7 @@ class DenseRetrievalQuery(ImmutableSearchContract):
     )
     filters: RetrievalFilters
     embedding_config_version: ConfigurationVersion
-    dense_config_version: ConfigurationVersion
+    dense_index_config_version: ConfigurationVersion
     candidate_limit: int = Field(ge=1, le=100)
 
     @field_validator("query_vector")
@@ -252,6 +252,62 @@ class DenseRetrievalHit(ImmutableSearchContract):
 
     chunk_id: UUID
     raw_score: float = Field(allow_inf_nan=False)
+
+
+class DenseQualificationRequest(ImmutableSearchContract):
+    """Provider hits plus the canonical filters and versions they must still satisfy."""
+
+    provider_hits: tuple[DenseRetrievalHit, ...] = Field(max_length=100)
+    filters: RetrievalFilters
+    lexical_config_version: ConfigurationVersion
+    embedding_config_version: ConfigurationVersion
+    dense_index_config_version: ConfigurationVersion
+
+    @field_validator("provider_hits")
+    @classmethod
+    def require_unique_provider_chunk_ids(
+        cls,
+        value: tuple[DenseRetrievalHit, ...],
+    ) -> tuple[DenseRetrievalHit, ...]:
+        """Reject an ambiguous provider ranking before canonical reads."""
+
+        chunk_ids = [hit.chunk_id for hit in value]
+        if len(chunk_ids) != len(set(chunk_ids)):
+            raise ValueError("dense provider chunk IDs must be unique")
+        return value
+
+
+class QualifiedDenseHit(ImmutableSearchContract):
+    """One provider hit rehydrated from eligible canonical PostgreSQL state."""
+
+    chunk_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    structure_block_id: UUID
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
+    text: SearchableText
+    raw_score: float = Field(allow_inf_nan=False)
+
+    @field_validator("text")
+    @classmethod
+    def require_visible_text(cls, value: str) -> str:
+        """Reject whitespace-only canonical chunks without rewriting their text."""
+
+        if not value.strip():
+            raise ValueError("text must contain a non-whitespace character")
+        return value
+
+    @model_validator(mode="after")
+    def require_media_appropriate_locator(self) -> QualifiedDenseHit:
+        """Require a physical page only for PDF-backed qualified hits."""
+
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE qualified dense hit requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE qualified dense hit must not define page_number")
+        return self
 
 
 class RerankCandidate(ImmutableSearchContract):

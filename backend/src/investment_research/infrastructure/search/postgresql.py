@@ -1,4 +1,4 @@
-"""PostgreSQL full-text adapter for canonical lexical retrieval."""
+"""PostgreSQL adapters for canonical lexical retrieval and dense qualification."""
 
 from uuid import UUID
 
@@ -15,7 +15,12 @@ from investment_research.modules.processing.persistence import (
     ProcessingRunRow,
     StructureBlockRow,
 )
-from investment_research.modules.search.contracts import LexicalSearchHit, LexicalSearchQuery
+from investment_research.modules.search.contracts import (
+    DenseQualificationRequest,
+    LexicalSearchHit,
+    LexicalSearchQuery,
+    QualifiedDenseHit,
+)
 
 
 class PostgresLexicalSearch:
@@ -144,3 +149,151 @@ class PostgresLexicalSearch:
             )
 
         return statement.order_by(raw_score.desc(), ChunkRow.id.asc()).limit(query.candidate_limit)
+
+
+class PostgresDenseCandidateQualifier:
+    """Rehydrate dense provider hits only through eligible canonical state."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def qualify(
+        self,
+        context: WorkspaceContext,
+        request: DenseQualificationRequest,
+    ) -> tuple[QualifiedDenseHit, ...]:
+        """Return eligible hits in provider order without disclosing rejected IDs."""
+
+        if not request.provider_hits:
+            return ()
+        rows = self._session.execute(self._build_statement(context, request)).tuples()
+        canonical_by_chunk_id = {
+            chunk_id: (
+                document_id,
+                document_version_id,
+                structure_block_id,
+                source_locator_kind,
+                page_number,
+                text,
+            )
+            for (
+                chunk_id,
+                document_id,
+                document_version_id,
+                structure_block_id,
+                source_locator_kind,
+                page_number,
+                text,
+            ) in rows
+        }
+        qualified: list[QualifiedDenseHit] = []
+        for provider_hit in request.provider_hits:
+            canonical = canonical_by_chunk_id.get(provider_hit.chunk_id)
+            if canonical is None:
+                continue
+            (
+                document_id,
+                document_version_id,
+                structure_block_id,
+                source_locator_kind,
+                page_number,
+                text,
+            ) = canonical
+            qualified.append(
+                QualifiedDenseHit(
+                    chunk_id=provider_hit.chunk_id,
+                    document_id=document_id,
+                    document_version_id=document_version_id,
+                    structure_block_id=structure_block_id,
+                    source_locator_kind=source_locator_kind,
+                    page_number=page_number,
+                    text=text,
+                    raw_score=provider_hit.raw_score,
+                )
+            )
+        return tuple(qualified)
+
+    @staticmethod
+    def _build_statement(
+        context: WorkspaceContext,
+        request: DenseQualificationRequest,
+    ) -> Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str]]:
+        """Build one query that rejects stale, foreign, or misconfigured vector hits."""
+
+        statement = (
+            select(
+                ChunkRow.id,
+                DocumentVersionRow.document_id,
+                ChunkRow.document_version_id,
+                ChunkRow.structure_block_id,
+                StructureBlockRow.source_locator_kind,
+                StructureBlockRow.page_number,
+                ChunkRow.text,
+            )
+            .select_from(ChunkRow)
+            .join(
+                ChunkSetRow,
+                and_(
+                    ChunkSetRow.workspace_id == ChunkRow.workspace_id,
+                    ChunkSetRow.id == ChunkRow.chunk_set_id,
+                    ChunkSetRow.processing_run_id == ChunkRow.processing_run_id,
+                    ChunkSetRow.document_version_id == ChunkRow.document_version_id,
+                ),
+            )
+            .join(
+                ProcessingRunRow,
+                and_(
+                    ProcessingRunRow.workspace_id == ChunkRow.workspace_id,
+                    ProcessingRunRow.id == ChunkRow.processing_run_id,
+                    ProcessingRunRow.document_version_id == ChunkRow.document_version_id,
+                ),
+            )
+            .join(
+                StructureBlockRow,
+                and_(
+                    StructureBlockRow.workspace_id == ChunkRow.workspace_id,
+                    StructureBlockRow.id == ChunkRow.structure_block_id,
+                    StructureBlockRow.processing_run_id == ChunkRow.processing_run_id,
+                    StructureBlockRow.document_version_id == ChunkRow.document_version_id,
+                ),
+            )
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == ChunkRow.workspace_id,
+                    DocumentVersionRow.id == ChunkRow.document_version_id,
+                ),
+            )
+            .join(
+                DocumentRow,
+                and_(
+                    DocumentRow.workspace_id == DocumentVersionRow.workspace_id,
+                    DocumentRow.id == DocumentVersionRow.document_id,
+                    DocumentRow.current_version_id == DocumentVersionRow.id,
+                ),
+            )
+            .where(
+                ChunkRow.workspace_id == context.workspace_id,
+                ChunkRow.id.in_(hit.chunk_id for hit in request.provider_hits),
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                ChunkSetRow.is_active.is_(True),
+                ChunkSetRow.lexical_config_version == request.lexical_config_version,
+                ProcessingRunRow.state == ProcessingState.SEARCHABLE,
+                ProcessingRunRow.lexical_config_version == request.lexical_config_version,
+                ProcessingRunRow.embedding_config_version == request.embedding_config_version,
+                ProcessingRunRow.dense_index_config_version == request.dense_index_config_version,
+            )
+        )
+
+        if request.filters.document_ids:
+            statement = statement.where(DocumentRow.id.in_(request.filters.document_ids))
+        if request.filters.available_at_cutoff is not None:
+            statement = statement.where(
+                DocumentVersionRow.available_at.is_not(None),
+                DocumentVersionRow.available_at <= request.filters.available_at_cutoff,
+            )
+        if request.filters.captured_at_cutoff is not None:
+            statement = statement.where(
+                DocumentVersionRow.captured_at <= request.filters.captured_at_cutoff,
+            )
+        return statement
