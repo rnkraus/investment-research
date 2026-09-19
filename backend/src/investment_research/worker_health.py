@@ -9,7 +9,7 @@ from celery.exceptions import CeleryError  # type: ignore[import-untyped]
 from kombu.exceptions import KombuError  # type: ignore[import-untyped]
 from redis.exceptions import RedisError
 
-WORKER_HEALTH_TIMEOUT_SECONDS = 2.0
+WORKER_HEALTH_TIMEOUT_SECONDS = 5.0
 
 
 class WorkerInspector(Protocol):
