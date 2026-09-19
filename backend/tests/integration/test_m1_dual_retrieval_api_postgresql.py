@@ -24,6 +24,7 @@ from investment_research.infrastructure.search.pinecone import PineconeDenseRetr
 from investment_research.main import create_app
 from investment_research.modules.documents.domain import OriginalMediaType, SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import (
@@ -38,6 +39,7 @@ from investment_research.modules.search.contracts import (
     DenseRetrievalHit,
     DenseRetrievalQuery,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
 )
 from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
@@ -71,14 +73,17 @@ class FixedQueryEmbeddingProvider:
         self.requests: list[EmbeddingRequest] = []
         self.closed = False
 
-    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         self.requests.append(request)
-        return (
-            EmbeddingVector(
-                input_id=request.inputs[0].input_id,
-                values=VECTOR_VALUES,
-                embedding_config_version=request.embedding_config_version,
+        return EmbeddingResult(
+            vectors=(
+                EmbeddingVector(
+                    input_id=request.inputs[0].input_id,
+                    values=VECTOR_VALUES,
+                    embedding_config_version=request.embedding_config_version,
+                ),
             ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
 
     def close(self) -> None:

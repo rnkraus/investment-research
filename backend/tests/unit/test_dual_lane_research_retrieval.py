@@ -11,6 +11,7 @@ import pytest
 
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.application import (
     M1QueryRetrievalDependencies,
     RetrieveResearchService,
@@ -26,6 +27,7 @@ from investment_research.modules.search.contracts import (
     DenseRetrievalHit,
     DenseRetrievalProfile,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
     LexicalSearchHit,
     LexicalSearchProfile,
@@ -146,15 +148,18 @@ def make_provider_mocks(
     dense_retriever = create_autospec(DenseRetriever, instance=True)
     event_log = events if events is not None else []
 
-    def embed(request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+    def embed(request: EmbeddingRequest) -> EmbeddingResult:
         event_log.append("embedding")
         input_id = request.inputs[0].input_id
-        return (
-            EmbeddingVector(
-                input_id=input_id,
-                values=VECTOR_VALUES,
-                embedding_config_version=EMBEDDING_CONFIG_VERSION,
+        return EmbeddingResult(
+            vectors=(
+                EmbeddingVector(
+                    input_id=input_id,
+                    values=VECTOR_VALUES,
+                    embedding_config_version=EMBEDDING_CONFIG_VERSION,
+                ),
             ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
 
     def retrieve(*_: object) -> tuple[DenseRetrievalHit, ...]:
@@ -320,16 +325,20 @@ def test_dual_lane_retries_one_transient_provider_failure(operation: str) -> Non
         values=VECTOR_VALUES,
         embedding_config_version=EMBEDDING_CONFIG_VERSION,
     )
+    embedding_result = EmbeddingResult(
+        vectors=(embedding_vector,),
+        usage=ProviderUsage(input_units=0, output_units=0),
+    )
     if operation == "embedding":
         embedding_mock.embed.side_effect = [
             SearchProviderTransientError("temporary"),
-            (embedding_vector,),
+            embedding_result,
         ]
         dense_mock.retrieve.side_effect = None
         dense_mock.retrieve.return_value = ()
     else:
         embedding_mock.embed.side_effect = None
-        embedding_mock.embed.return_value = (embedding_vector,)
+        embedding_mock.embed.return_value = embedding_result
         dense_mock.retrieve.side_effect = [SearchProviderTransientError("temporary"), ()]
     sleeper = Mock()
     unit_of_work = RecordingUnitOfWork()

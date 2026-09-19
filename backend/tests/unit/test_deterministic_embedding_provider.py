@@ -66,10 +66,14 @@ def test_embed_preserves_order_ids_version_and_purpose_specific_vectors() -> Non
 
     result = provider.embed(request)
 
-    assert tuple(vector.input_id for vector in result) == (query_id, document_id)
-    assert result[0].values == QUERY_VECTOR
-    assert result[1].values == DOCUMENT_VECTOR
-    assert all(vector.embedding_config_version == EMBEDDING_CONFIG_VERSION for vector in result)
+    assert tuple(vector.input_id for vector in result.vectors) == (query_id, document_id)
+    assert result.vectors[0].values == QUERY_VECTOR
+    assert result.vectors[1].values == DOCUMENT_VECTOR
+    assert all(
+        vector.embedding_config_version == EMBEDDING_CONFIG_VERSION for vector in result.vectors
+    )
+    assert result.usage.input_units == 0
+    assert result.usage.output_units == 0
 
 
 def test_embed_rejects_unknown_input_without_fabricating_a_vector() -> None:

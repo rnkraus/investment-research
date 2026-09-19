@@ -1,6 +1,5 @@
 """Application helpers for deterministic bounded lexical retrieval."""
 
-from collections.abc import Sequence
 from hashlib import sha256
 from unicodedata import normalize
 from uuid import UUID
@@ -12,6 +11,7 @@ from investment_research.modules.search.contracts import (
     DenseIndexVector,
     DenseVectorId,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
     LexicalSearchQuery,
 )
@@ -63,11 +63,11 @@ def build_lexical_search_query(
 
 def validate_embedding_response(
     request: EmbeddingRequest,
-    vectors: Sequence[EmbeddingVector],
-) -> tuple[EmbeddingVector, ...]:
-    """Require exact ordered correlation and configuration before indexing."""
+    result: EmbeddingResult,
+) -> EmbeddingResult:
+    """Require exact ordered correlation and configuration before using one result."""
 
-    validated_vectors = tuple(vectors)
+    validated_vectors = result.vectors
     expected_input_ids = tuple(item.input_id for item in request.inputs)
     actual_input_ids = tuple(vector.input_id for vector in validated_vectors)
     if actual_input_ids != expected_input_ids:
@@ -81,7 +81,7 @@ def validate_embedding_response(
         raise EmbeddingResponseContractError(
             "embedding response configuration version does not match the request"
         )
-    return validated_vectors
+    return result
 
 
 def dense_index_namespace(context: WorkspaceContext) -> str:

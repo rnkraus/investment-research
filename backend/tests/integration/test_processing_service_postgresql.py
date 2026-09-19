@@ -46,6 +46,7 @@ from investment_research.modules.identity.domain import (
     WorkspaceType,
 )
 from investment_research.modules.identity.persistence import SqlAlchemyWorkspaceRepository
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
@@ -85,6 +86,7 @@ from investment_research.modules.search.contracts import (
     DenseIndexWriteResult,
     DenseVectorId,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
 )
 from investment_research.modules.search.indexing import IndexActiveChunksService
@@ -118,15 +120,18 @@ class RecordingEmbeddingProvider:
 
     calls: list[EmbeddingRequest] = field(default_factory=list)
 
-    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         self.calls.append(request)
-        return tuple(
-            EmbeddingVector(
-                input_id=item.input_id,
-                values=VECTOR_VALUES,
-                embedding_config_version=request.embedding_config_version,
-            )
-            for item in request.inputs
+        return EmbeddingResult(
+            vectors=tuple(
+                EmbeddingVector(
+                    input_id=item.input_id,
+                    values=VECTOR_VALUES,
+                    embedding_config_version=request.embedding_config_version,
+                )
+                for item in request.inputs
+            ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
 
 

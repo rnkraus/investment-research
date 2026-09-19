@@ -22,6 +22,7 @@ from investment_research.infrastructure.search.postgresql import (
     PostgresLexicalSearch,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.application import (
     M1QueryRetrievalDependencies,
@@ -39,6 +40,7 @@ from investment_research.modules.search.contracts import (
     DenseRetrievalProfile,
     DenseRetrievalQuery,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
     LexicalSearchProfile,
     M1SelectionProfile,
@@ -66,13 +68,16 @@ VECTOR_VALUES = (0.125,) * M1_EMBEDDING_DIMENSIONS
 class FixedQueryEmbeddingProvider:
     """Return one deterministic query vector without calling a live provider."""
 
-    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
-        return (
-            EmbeddingVector(
-                input_id=request.inputs[0].input_id,
-                values=VECTOR_VALUES,
-                embedding_config_version=request.embedding_config_version,
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        return EmbeddingResult(
+            vectors=(
+                EmbeddingVector(
+                    input_id=request.inputs[0].input_id,
+                    values=VECTOR_VALUES,
+                    embedding_config_version=request.embedding_config_version,
+                ),
             ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
 
 

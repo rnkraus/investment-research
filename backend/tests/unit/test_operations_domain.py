@@ -12,6 +12,7 @@ from investment_research.modules.operations.domain import (
     ProviderOperationErrorCode,
     ProviderOperationKind,
     ProviderOperationState,
+    ProviderUsage,
 )
 
 OPERATION_ID = UUID("00000000-0000-4000-8000-000000000001")
@@ -30,6 +31,16 @@ def test_cost_summary_counts_active_reservations_toward_the_budget() -> None:
     )
 
     assert summary.accounted_cost_micro_usd == 200
+
+
+def test_provider_usage_is_bounded_content_free_and_totals_units() -> None:
+    usage = ProviderUsage(input_units=420, output_units=12)
+
+    assert usage.total_units == 432
+    with pytest.raises(ValidationError):
+        ProviderUsage(input_units=-1, output_units=0)
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ProviderUsage.model_validate({"input_units": 1, "output_units": 0, "prompt": "raw content"})
 
 
 def operation_values(**overrides: object) -> dict[str, object]:

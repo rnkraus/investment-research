@@ -8,6 +8,7 @@ from uuid import UUID
 import pytest
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.domain import Chunk, ProcessingRun, ProcessingState
 from investment_research.modules.search.application import EmbeddingResponseContractError
 from investment_research.modules.search.contracts import (
@@ -17,6 +18,7 @@ from investment_research.modules.search.contracts import (
     DenseIndexWriteResult,
     DenseVectorId,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
 )
 from investment_research.modules.search.indexing import (
@@ -97,7 +99,7 @@ class RecordingEmbeddingProvider:
     reverse_response: bool = False
     calls: list[EmbeddingRequest] = field(default_factory=list)
 
-    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         self.calls.append(request)
         if self.transient_failures > 0:
             self.transient_failures -= 1
@@ -110,7 +112,10 @@ class RecordingEmbeddingProvider:
             )
             for item in request.inputs
         )
-        return tuple(reversed(vectors)) if self.reverse_response else vectors
+        return EmbeddingResult(
+            vectors=tuple(reversed(vectors)) if self.reverse_response else vectors,
+            usage=ProviderUsage(input_units=0, output_units=0),
+        )
 
 
 @dataclass(slots=True)

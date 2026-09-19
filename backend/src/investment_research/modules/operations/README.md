@@ -51,7 +51,10 @@ reservation safe under concurrency without blocking unrelated workspaces.
 Provider-operation records and traces may contain identifiers, configuration versions, unit counts,
 costs, durations, trace IDs, and safe error categories. They must not contain document text, user
 questions, prompts, generated answers, credentials, complete URLs, or provider error messages.
+`ProviderUsage` is the shared immutable input/output-unit result returned by provider adapters; it
+contains no SDK object or raw request or response content.
 
-The canonical ledger, atomic reservation, and safe finalization services are present. A later Step 5
-work block will place them around the embedding and generation provider calls, then add
-OpenTelemetry/OpenInference without making trace export part of product correctness.
+The canonical ledger, atomic reservation, safe finalization services, and usage-bearing embedding
+result contract are present. A later Step 5 work block will place accounting around the embedding
+and generation provider calls, then add OpenTelemetry/OpenInference without making trace export
+part of product correctness.

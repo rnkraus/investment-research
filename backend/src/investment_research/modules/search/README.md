@@ -104,14 +104,17 @@ The application owns `EmbeddingProvider`, `DenseIndexWriter`, `DenseRetriever`,
 contracts preserve input correlation, configuration versions, bounded batch and candidate sizes,
 canonical filters, and finite vectors and scores. The M1 embedding boundary accepts at most 16
 inputs and 32,000 total Unicode code points, and every returned vector must contain exactly 1536
-finite values.
+finite values. `EmbeddingResult` keeps those ordered vectors together with content-free
+provider-reported `ProviderUsage`; the deterministic adapter reports zero external usage.
 
 ```mermaid
 flowchart LR
     CHUNKS[Ordered active canonical chunks] --> BATCH[Bounded document batches]
     TEXT[Query text] --> EMBED[EmbeddingProvider]
     BATCH --> EMBED
-    EMBED --> VALIDATE[Ordered response validation]
+    EMBED --> RESULT[EmbeddingResult<br/>vectors plus usage]
+    RESULT --> VALIDATE[Ordered response validation]
+    RESULT --> USAGE[Canonical provider accounting]
     VALIDATE --> VECTOR[Correlated EmbeddingVector]
     VECTOR --> ID[Workspace-scoped deterministic vector ID]
     ID --> WRITER[DenseIndexWriter]

@@ -21,7 +21,7 @@ from investment_research.modules.search.contracts import (
     EmbeddingInput,
     EmbeddingPurpose,
     EmbeddingRequest,
-    EmbeddingVector,
+    EmbeddingResult,
 )
 from investment_research.modules.search.ports import (
     DenseIndexWriter,
@@ -99,10 +99,11 @@ class IndexActiveChunksService:
                 ),
                 embedding_config_version=run.embedding_config_version,
             )
-            embeddings = validate_embedding_response(
+            embedding_result = validate_embedding_response(
                 request,
                 self._embed_with_retry(request),
             )
+            embeddings = embedding_result.vectors
             vectors = tuple(
                 build_dense_index_vector(
                     context,
@@ -194,12 +195,12 @@ class IndexActiveChunksService:
             batches.append(tuple(current_batch))
         return tuple(batches)
 
-    def _embed_with_retry(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+    def _embed_with_retry(self, request: EmbeddingRequest) -> EmbeddingResult:
         """Own the two-attempt M1 embedding retry policy above a retry-free adapter."""
 
         for attempt in range(M1_PROVIDER_MAX_ATTEMPTS):
             try:
-                return tuple(self.embedding_provider.embed(request))
+                return self.embedding_provider.embed(request)
             except SearchProviderTransientError:
                 if attempt + 1 == M1_PROVIDER_MAX_ATTEMPTS:
                     raise

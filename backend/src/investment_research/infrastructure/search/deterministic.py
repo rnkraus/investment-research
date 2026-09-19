@@ -5,10 +5,12 @@ from math import isfinite
 
 from pydantic import TypeAdapter
 
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
     EmbeddingPurpose,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
 )
 from investment_research.modules.search.domain import ConfigurationVersion
@@ -61,8 +63,8 @@ class DeterministicEmbeddingProvider:
             vectors_by_input[key] = case.values
         self._vectors_by_input = vectors_by_input
 
-    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
-        """Return one fixed vector per input while preserving correlation and order."""
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        """Return fixed vectors and zero external usage in stable input order."""
 
         if request.embedding_config_version != self._embedding_config_version:
             raise SearchProviderConfigurationError(
@@ -83,4 +85,7 @@ class DeterministicEmbeddingProvider:
                     embedding_config_version=self._embedding_config_version,
                 )
             )
-        return tuple(vectors)
+        return EmbeddingResult(
+            vectors=tuple(vectors),
+            usage=ProviderUsage(input_units=0, output_units=0),
+        )
