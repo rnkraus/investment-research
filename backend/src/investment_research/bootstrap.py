@@ -24,10 +24,27 @@ from investment_research.infrastructure.evidence.deterministic import (
     DeterministicFixtureStatementSupportEvaluator,
     FixtureStatementSupportRule,
 )
+from investment_research.infrastructure.evidence.openai import (
+    OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+    OPENAI_STATEMENT_SUPPORT_MODEL,
+    OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
+    OpenAIStatementSupportEvaluator,
+    create_openai_statement_support_evaluator,
+)
 from investment_research.infrastructure.generation.deterministic import (
     M0_0_FIXTURE_ANSWER_CASE,
     M0_0_INSUFFICIENT_MESSAGE,
     DeterministicFixtureAnswerGenerator,
+)
+from investment_research.infrastructure.generation.openai import (
+    M1_ANSWER_GENERATION_CONFIG_VERSION,
+    M1_ANSWER_GENERATOR_VERSION,
+    M1_ANSWER_PROMPT_VERSION,
+    OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+    OPENAI_ANSWER_MODEL,
+    OPENAI_ANSWER_TIMEOUT_SECONDS,
+    OpenAIAnswerGenerator,
+    create_openai_answer_generator,
 )
 from investment_research.infrastructure.health import (
     CompositeReadinessProbe,
@@ -63,6 +80,7 @@ from investment_research.modules.documents.application import (
 from investment_research.modules.documents.ports import ObjectStorage
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.evidence.contracts import EvidenceValidationProfile
+from investment_research.modules.evidence.ports import StatementSupportEvaluator
 from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
     IdentityContextProvider,
@@ -85,6 +103,7 @@ from investment_research.modules.research.application import (
     RetrieveResearchService,
 )
 from investment_research.modules.research.contracts import AnswerGenerationProfile
+from investment_research.modules.research.ports import AnswerGenerator
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
     DenseRetrievalProfile,
@@ -106,6 +125,14 @@ M0_0_GENERATION_PROFILE = AnswerGenerationProfile(
 )
 M0_0_EVIDENCE_VALIDATION_PROFILE = EvidenceValidationProfile(
     validation_config_version="m0.0-evidence-v1"
+)
+M1_GENERATION_PROFILE = AnswerGenerationProfile(
+    generator_version=M1_ANSWER_GENERATOR_VERSION,
+    generation_config_version=M1_ANSWER_GENERATION_CONFIG_VERSION,
+    prompt_version=M1_ANSWER_PROMPT_VERSION,
+)
+M1_EVIDENCE_VALIDATION_PROFILE = EvidenceValidationProfile(
+    validation_config_version="m1-evidence-validation-v1"
 )
 
 
@@ -171,6 +198,8 @@ class ApiContainer:
     queue_application: Celery
     query_embedding_provider: OpenAIEmbeddingProvider | None
     dense_retriever: PineconeDenseRetriever | None
+    answer_generator_provider: OpenAIAnswerGenerator | None
+    statement_support_provider: OpenAIStatementSupportEvaluator | None
     processing_dispatcher: ProcessingDispatcher
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
@@ -184,17 +213,25 @@ class ApiContainer:
         """Release process-wide resources owned by the API container."""
 
         try:
-            if self.dense_retriever is not None:
-                self.dense_retriever.close()
+            if self.statement_support_provider is not None:
+                self.statement_support_provider.close()
         finally:
             try:
-                if self.query_embedding_provider is not None:
-                    self.query_embedding_provider.close()
+                if self.answer_generator_provider is not None:
+                    self.answer_generator_provider.close()
             finally:
                 try:
-                    self.queue_application.close()
+                    if self.dense_retriever is not None:
+                        self.dense_retriever.close()
                 finally:
-                    self.database_engine.dispose()
+                    try:
+                        if self.query_embedding_provider is not None:
+                            self.query_embedding_provider.close()
+                    finally:
+                        try:
+                            self.queue_application.close()
+                        finally:
+                            self.database_engine.dispose()
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,31 +280,73 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         readiness_probes.append(object_storage.readiness_probe)
     query_embedding_provider: OpenAIEmbeddingProvider | None = None
     dense_retriever: PineconeDenseRetriever | None = None
+    answer_generator_provider: OpenAIAnswerGenerator | None = None
+    statement_support_provider: OpenAIStatementSupportEvaluator | None = None
     m1_query_retrieval: M1QueryRetrievalDependencies | None = None
+    answer_generator: AnswerGenerator = DeterministicFixtureAnswerGenerator(
+        answerable_case=M0_0_FIXTURE_ANSWER_CASE,
+        insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
+    )
+    support_evaluator: StatementSupportEvaluator = DeterministicFixtureStatementSupportEvaluator(
+        [
+            FixtureStatementSupportRule(
+                statement=M0_0_FIXTURE_ANSWER_CASE.statement,
+                evidence_text=M0_0_FIXTURE_ANSWER_CASE.evidence_text,
+            )
+        ]
+    )
+    generation_profile = M0_0_GENERATION_PROFILE
+    validation_profile = M0_0_EVIDENCE_VALIDATION_PROFILE
     lexical_candidate_limit = 10
     if settings.query_providers is not None:
         provider_settings = settings.require_query_providers()
-        query_embedding_provider = create_openai_embedding_provider(
-            api_key=provider_settings.embedding.api_key.get_secret_value(),
-            embedding_config_version=provider_settings.embedding.config_version,
-            model=provider_settings.embedding.model,
-            dimensions=provider_settings.embedding.dimensions,
-            operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
-        )
+        generation_settings = settings.require_generation_provider()
         try:
+            query_embedding_provider = create_openai_embedding_provider(
+                api_key=provider_settings.embedding.api_key.get_secret_value(),
+                embedding_config_version=provider_settings.embedding.config_version,
+                model=provider_settings.embedding.model,
+                dimensions=provider_settings.embedding.dimensions,
+                operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
+            )
             dense_retriever = create_pinecone_dense_retriever(
                 api_key=provider_settings.pinecone.api_key.get_secret_value(),
                 index_host=provider_settings.pinecone.index_host,
                 operation_timeout_seconds=(provider_settings.pinecone.operation_timeout_seconds),
             )
+            answer_generator_provider = create_openai_answer_generator(
+                api_key=generation_settings.api_key.get_secret_value(),
+                model=OPENAI_ANSWER_MODEL,
+                operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
+                max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            )
+            statement_support_provider = create_openai_statement_support_evaluator(
+                api_key=generation_settings.api_key.get_secret_value(),
+                model=OPENAI_STATEMENT_SUPPORT_MODEL,
+                operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
+                max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+            )
         except Exception:
             try:
-                query_embedding_provider.close()
+                if statement_support_provider is not None:
+                    statement_support_provider.close()
             finally:
                 try:
-                    queue_application.close()
+                    if answer_generator_provider is not None:
+                        answer_generator_provider.close()
                 finally:
-                    database.engine.dispose()
+                    try:
+                        if dense_retriever is not None:
+                            dense_retriever.close()
+                    finally:
+                        try:
+                            if query_embedding_provider is not None:
+                                query_embedding_provider.close()
+                        finally:
+                            try:
+                                queue_application.close()
+                            finally:
+                                database.engine.dispose()
             raise
         lexical_candidate_limit = M1_LANE_CANDIDATE_LIMIT
         m1_query_retrieval = M1QueryRetrievalDependencies(
@@ -280,6 +359,10 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             ),
             selection_profile=M1SelectionProfile(),
         )
+        answer_generator = answer_generator_provider
+        support_evaluator = statement_support_provider
+        generation_profile = M1_GENERATION_PROFILE
+        validation_profile = M1_EVIDENCE_VALIDATION_PROFILE
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
             database.session_factory
@@ -294,20 +377,10 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         unit_of_work_factory=create_answer_validation_unit_of_work_factory(
             database.session_factory
         ),
-        answer_generator=DeterministicFixtureAnswerGenerator(
-            answerable_case=M0_0_FIXTURE_ANSWER_CASE,
-            insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
-        ),
-        support_evaluator=DeterministicFixtureStatementSupportEvaluator(
-            [
-                FixtureStatementSupportRule(
-                    statement=M0_0_FIXTURE_ANSWER_CASE.statement,
-                    evidence_text=M0_0_FIXTURE_ANSWER_CASE.evidence_text,
-                )
-            ]
-        ),
-        generation_profile=M0_0_GENERATION_PROFILE,
-        validation_profile=M0_0_EVIDENCE_VALIDATION_PROFILE,
+        answer_generator=answer_generator,
+        support_evaluator=support_evaluator,
+        generation_profile=generation_profile,
+        validation_profile=validation_profile,
         insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
     )
     open_original_service = OpenOriginalService(
@@ -324,6 +397,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         queue_application=queue_application,
         query_embedding_provider=query_embedding_provider,
         dense_retriever=dense_retriever,
+        answer_generator_provider=answer_generator_provider,
+        statement_support_provider=statement_support_provider,
         processing_dispatcher=processing_dispatcher,
         capture_document_service=CaptureDocumentService(
             object_storage=object_storage.adapter,

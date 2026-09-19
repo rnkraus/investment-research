@@ -6,10 +6,10 @@ but they cannot validate, persist, or publish them.
 
 ## Contents
 
-| File               | Responsibility                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------ |
-| `__init__.py`      | Identifies the generation-adapter package without exporting an implementation.       |
-| `deterministic.py` | Implements the bounded synthetic M0.0 fixture case without a model or network call.  |
+| File               | Responsibility                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `__init__.py`      | Identifies the generation-adapter package without exporting an implementation.          |
+| `deterministic.py` | Implements the bounded synthetic M0.0 fixture case without a model or network call.     |
 | `openai.py`        | Implements the bounded M1 typed Responses API adapter behind the same application port. |
 
 ## Trust boundary
@@ -71,6 +71,9 @@ treat the question and source text as untrusted data and forbid general-knowledg
 Provider connection, configuration, schema, incomplete-output, and refusal failures become safe
 application-owned errors without preserving provider messages as public details.
 
-The adapter does not yet select credentials or replace the deterministic generator by itself.
-Process settings and composition choose the implementation in a later work block. Normal CI keeps
-using recording or deterministic adapters and performs no provider network calls.
+The adapter never selects credentials by itself. `ApiSettings` loads the API-role generation
+credential, and the API composition root selects this adapter only when the complete M1 query and
+generation provider configuration is present. It then owns and closes the adapter for the process
+lifetime. When that configuration is absent, the deterministic fixture adapter remains selected.
+Normal CI therefore performs no provider network calls; a separate explicit live-provider smoke
+check owns any real-provider verification.

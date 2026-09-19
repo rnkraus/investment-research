@@ -34,8 +34,8 @@ flowchart TD
     CELERY --> DISPATCH[CeleryProcessingDispatcher]
     BOOT --> QUERYEMBED[Optional query OpenAIEmbeddingProvider]
     BOOT --> QUERYDENSE[Optional PineconeDenseRetriever]
-    BOOT --> GENERATOR[Deterministic answer generator]
-    BOOT --> SUPPORT[Independent statement-support evaluator]
+    BOOT --> GENERATOR[Selected answer generator]
+    BOOT --> SUPPORT[Selected statement-support evaluator]
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
     READUOW --> ORIGINAL[OpenOriginalService]
     STATUSUOW --> STATUS[GetProcessingRunService]
@@ -64,7 +64,7 @@ flowchart TD
     MAIN --> OPENAPI[OpenAPI contract]
     STATE --> ROUTES
     ROUTES --> ERRORS
-    LIFE -->|shutdown| CLOSE[Close query providers, Celery, and engine pool]
+    LIFE -->|shutdown| CLOSE[Close API providers, Celery, and engine pool]
 ```
 
 `main.py` and `bootstrap.py` are the outer composition layer. Module domain and application files must remain independent of this layer. Application startup must never create or mutate database schemas.
@@ -105,13 +105,17 @@ indexes active chunks, or commits derived output.
 authenticated Redis broker URL when its container is built; host development may derive it from
 `REDIS_PASSWORD` and `REDIS_PORT`. Optional M1 provider groups are role-specific and fail closed when
 partially configured: `ApiSettings.query_providers` accepts only query-embedding and Pinecone-query
-credentials, while `WorkerSettings.indexing_providers` accepts only document-embedding and
-Pinecone-index credentials. Both retain the frozen model, dimensions, configuration versions, and
-timeouts. The worker group is required when its container is built and is wired only to document
-indexing. When the optional API query group is complete, the API container constructs the separate
-query-role embedding provider and Pinecone reader and injects them into M1 retrieval; when absent,
-the credential-free lexical regression path remains active. `ParserSettings` loads only its
-allowlisted process variables,
+credentials, `ApiSettings.generation_provider` accepts only the API generation credential, and
+`WorkerSettings.indexing_providers` accepts only document-embedding and Pinecone-index credentials.
+The two optional API groups must either both be complete or both be absent. A complete API
+configuration constructs separate query-embedding, dense-retrieval, answer-generation, and
+statement-support clients, then injects them into the M1 retrieval and validated-answer services.
+The answer and support clients use the same API-role credential but remain independent clients with
+separate prompts, timeouts, token limits, and versioned profiles. When the API groups are absent,
+the credential-free lexical and deterministic-fixture regression path remains active. The worker
+group is required when its container is built and is wired only to document indexing. All provider
+models, dimensions, configuration versions, and limits remain frozen in application-owned code.
+`ParserSettings` loads only its allowlisted process variables,
 exposes no database, queue, or provider field, and rejects known application credential variables.
 `runtime_location=host` restricts bind, database, object-storage, and broker targets to loopback;
 `runtime_location=container` permits only the fixed internal Compose service targets required by

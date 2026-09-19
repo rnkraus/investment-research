@@ -87,6 +87,9 @@ output. A positive provider decision cannot authorize a citation, document, work
 answer. The application-owned `EvidenceValidator` combines the decision with all canonical checks
 and releases content only when the complete aggregate passes.
 
-`openai.py` is intentionally not wired into runtime settings or bootstrap in this work block.
-Provider selection, usage accounting, lifecycle ownership, and public error mapping are added by
-the later M1 generation-policy work.
+`openai.py` never loads credentials itself. `ApiSettings` supplies the API-role generation
+credential, and the API composition root selects this evaluator only together with the complete M1
+query and generation provider configuration. The container owns and closes its client separately
+from the answer generator. Without that configuration, the deterministic evaluator remains active.
+Provider failures are classified into application-owned categories before they reach the API, and
+normal CI performs no provider network calls.
