@@ -11,6 +11,7 @@ from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
 )
+from investment_research.modules.search.contracts import M1_SELECTOR_CONFIG_VERSION
 from investment_research.modules.search.domain import (
     LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
     RetrievalCandidate,
@@ -54,9 +55,7 @@ def make_retrieval_run(
         embedding_config_version="openai-text-embedding-3-small-v1" if is_dual_lane else None,
         dense_index_config_version="pinecone-dense-v1" if is_dual_lane else None,
         selector_config_version=(
-            "deterministic-round-robin-v1"
-            if is_dual_lane
-            else LEXICAL_ORDER_SELECTOR_CONFIG_VERSION
+            M1_SELECTOR_CONFIG_VERSION if is_dual_lane else LEXICAL_ORDER_SELECTOR_CONFIG_VERSION
         ),
         lexical_candidate_limit=10,
         dense_candidate_limit=10 if is_dual_lane else 0,

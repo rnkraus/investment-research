@@ -19,6 +19,7 @@ from investment_research.modules.search.domain import (
     ConfigurationVersion,
     NormalizedQuery,
     RetrievalFilters,
+    RetrievalOrigin,
 )
 
 SearchableText = Annotated[str, StringConstraints(min_length=1)]
@@ -30,6 +31,9 @@ DenseVectorId = Annotated[
 M1_EMBEDDING_BATCH_LIMIT = 16
 M1_EMBEDDING_CHARACTER_LIMIT = 32_000
 M1_EMBEDDING_DIMENSIONS = 1_536
+M1_SELECTOR_CONFIG_VERSION = "m1-lexical-first-round-robin-v1"
+M1_CONTEXT_CHUNK_LIMIT = 8
+M1_CONTEXT_CHARACTER_LIMIT = 24_000
 
 
 class EmbeddingPurpose(StrEnum):
@@ -307,6 +311,98 @@ class QualifiedDenseHit(ImmutableSearchContract):
                 raise ValueError("PDF_PAGE qualified dense hit requires page_number")
         elif self.page_number is not None:
             raise ValueError("TEXT_PASSAGE qualified dense hit must not define page_number")
+        return self
+
+
+class M1SelectionProfile(ImmutableSearchContract):
+    """Versioned limits for deterministic lexical-first context selection."""
+
+    selector_config_version: ConfigurationVersion = M1_SELECTOR_CONFIG_VERSION
+    context_chunk_limit: int = Field(default=M1_CONTEXT_CHUNK_LIMIT, ge=1, le=8)
+    context_character_limit: int = Field(
+        default=M1_CONTEXT_CHARACTER_LIMIT,
+        ge=1,
+        le=24_000,
+    )
+
+    @field_validator("selector_config_version")
+    @classmethod
+    def require_supported_selector_version(cls, value: str) -> str:
+        """Prevent a configuration label from silently changing selector behavior."""
+
+        if value != M1_SELECTOR_CONFIG_VERSION:
+            raise ValueError("unsupported M1 selector configuration version")
+        return value
+
+
+class SelectedRetrievalCandidate(ImmutableSearchContract):
+    """One canonical route candidate selected into final M1 context order."""
+
+    chunk_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    structure_block_id: UUID
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
+    text: SearchableText
+    origin: RetrievalOrigin
+    rank: int = Field(ge=1)
+    raw_score: float = Field(allow_inf_nan=False)
+    selection_rank: int = Field(ge=1, le=M1_CONTEXT_CHUNK_LIMIT)
+
+    @field_validator("text")
+    @classmethod
+    def require_visible_text(cls, value: str) -> str:
+        """Reject whitespace-only canonical chunks without rewriting their text."""
+
+        if not value.strip():
+            raise ValueError("text must contain a non-whitespace character")
+        return value
+
+    @field_validator("origin")
+    @classmethod
+    def require_m1_lane(cls, value: RetrievalOrigin) -> RetrievalOrigin:
+        """Keep the M1 selector limited to its lexical and dense lanes."""
+
+        if value not in {RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE}:
+            raise ValueError("M1 selection supports only lexical and dense candidates")
+        return value
+
+    @model_validator(mode="after")
+    def require_media_appropriate_locator(self) -> SelectedRetrievalCandidate:
+        """Require a physical page only for PDF-backed selected candidates."""
+
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE selected candidate requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE selected candidate must not define page_number")
+        return self
+
+
+class M1SelectionResult(ImmutableSearchContract):
+    """Bounded final context plus the exact selector profile that produced it."""
+
+    profile: M1SelectionProfile
+    candidates: tuple[SelectedRetrievalCandidate, ...] = Field(max_length=M1_CONTEXT_CHUNK_LIMIT)
+
+    @model_validator(mode="after")
+    def require_coherent_selection(self) -> M1SelectionResult:
+        """Require unique chunks, contiguous order, and the configured context bounds."""
+
+        chunk_ids = [candidate.chunk_id for candidate in self.candidates]
+        if len(chunk_ids) != len(set(chunk_ids)):
+            raise ValueError("selected chunk IDs must be unique")
+        if [candidate.selection_rank for candidate in self.candidates] != list(
+            range(1, len(self.candidates) + 1)
+        ):
+            raise ValueError("selection ranks must be contiguous and ordered")
+        if len(self.candidates) > self.profile.context_chunk_limit:
+            raise ValueError("selection exceeds the configured chunk limit")
+        if sum(len(candidate.text) for candidate in self.candidates) > (
+            self.profile.context_character_limit
+        ):
+            raise ValueError("selection exceeds the configured character limit")
         return self
 
 

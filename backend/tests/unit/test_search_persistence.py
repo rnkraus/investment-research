@@ -12,6 +12,7 @@ from sqlalchemy import ForeignKeyConstraint, Table
 from sqlalchemy.orm import Session
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.search.contracts import M1_SELECTOR_CONFIG_VERSION
 from investment_research.modules.search.domain import (
     LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
     RetrievalCandidate,
@@ -90,7 +91,7 @@ def make_dual_lane_run(*, context_chunk_limit: int = 8) -> RetrievalRun:
         lexical_config_version="english-lexical-v1",
         embedding_config_version="openai-text-embedding-3-small-v1",
         dense_index_config_version="pinecone-dense-v1",
-        selector_config_version="deterministic-round-robin-v1",
+        selector_config_version=M1_SELECTOR_CONFIG_VERSION,
         lexical_candidate_limit=10,
         dense_candidate_limit=10,
         context_chunk_limit=context_chunk_limit,
