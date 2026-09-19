@@ -1,6 +1,7 @@
 """Unit tests for application resource wiring and lifecycle ownership."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock, create_autospec
 
@@ -14,6 +15,18 @@ from investment_research.bootstrap import (
     ApiContainer,
     build_api_container,
     build_worker_container,
+)
+from investment_research.infrastructure.evidence.openai import (
+    OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+    OPENAI_STATEMENT_SUPPORT_MODEL,
+    OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
+    OpenAIStatementSupportEvaluator,
+)
+from investment_research.infrastructure.generation.openai import (
+    OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+    OPENAI_ANSWER_MODEL,
+    OPENAI_ANSWER_TIMEOUT_SECONDS,
+    OpenAIAnswerGenerator,
 )
 from investment_research.infrastructure.health import (
     CompositeReadinessProbe,
@@ -125,19 +138,38 @@ def make_m1_api_settings(object_storage_root: Path) -> ApiSettings:
             "redis_url": LOCAL_REDIS_URL,
             "object_storage_root": object_storage_root,
             "query_providers": indexing_provider_values(),
+            "generation_provider": {"api_key": "synthetic-generation-key"},
         }
     )
 
 
-def install_query_provider_fakes(
+@dataclass(frozen=True, slots=True)
+class ApiProviderFakes:
+    """Lifecycle-visible doubles for the complete M1 API provider group."""
+
+    embedding_provider: Mock
+    dense_retriever: Mock
+    answer_generator: Mock
+    support_evaluator: Mock
+    embedding_factory: Mock
+    dense_factory: Mock
+    answer_factory: Mock
+    support_factory: Mock
+
+
+def install_api_provider_fakes(
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[Mock, Mock, Mock, Mock]:
+) -> ApiProviderFakes:
     """Replace provider factories with lifecycle-visible, network-free test doubles."""
 
     embedding_provider = create_autospec(OpenAIEmbeddingProvider, instance=True)
     dense_retriever = create_autospec(PineconeDenseRetriever, instance=True)
+    answer_generator = create_autospec(OpenAIAnswerGenerator, instance=True)
+    support_evaluator = create_autospec(OpenAIStatementSupportEvaluator, instance=True)
     embedding_factory = Mock(return_value=embedding_provider)
     dense_factory = Mock(return_value=dense_retriever)
+    answer_factory = Mock(return_value=answer_generator)
+    support_factory = Mock(return_value=support_evaluator)
     monkeypatch.setattr(
         bootstrap_module,
         "create_openai_embedding_provider",
@@ -148,7 +180,22 @@ def install_query_provider_fakes(
         "create_pinecone_dense_retriever",
         dense_factory,
     )
-    return embedding_provider, dense_retriever, embedding_factory, dense_factory
+    monkeypatch.setattr(bootstrap_module, "create_openai_answer_generator", answer_factory)
+    monkeypatch.setattr(
+        bootstrap_module,
+        "create_openai_statement_support_evaluator",
+        support_factory,
+    )
+    return ApiProviderFakes(
+        embedding_provider=embedding_provider,
+        dense_retriever=dense_retriever,
+        answer_generator=answer_generator,
+        support_evaluator=support_evaluator,
+        embedding_factory=embedding_factory,
+        dense_factory=dense_factory,
+        answer_factory=answer_factory,
+        support_factory=support_factory,
+    )
 
 
 def s3_provider_values() -> dict[str, object]:
@@ -202,6 +249,8 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
             assert isinstance(container.retrieve_research_service, RetrieveResearchService)
             assert container.query_embedding_provider is None
             assert container.dense_retriever is None
+            assert container.answer_generator_provider is None
+            assert container.statement_support_provider is None
             assert container.retrieve_research_service._m1_query_retrieval is None
             assert (
                 container.retrieve_research_service._search_profile.lexical_config_version
@@ -231,17 +280,24 @@ def test_build_api_container_wires_m1_query_resources(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    embedding_provider, dense_retriever, embedding_factory, dense_factory = (
-        install_query_provider_fakes(monkeypatch)
-    )
+    fakes = install_api_provider_fakes(monkeypatch)
     settings = make_m1_api_settings(tmp_path / "objects")
     provider_settings = settings.require_query_providers()
     container = build_api_container(settings)
 
     try:
         dependencies = container.retrieve_research_service._m1_query_retrieval
-        assert container.query_embedding_provider is embedding_provider
-        assert container.dense_retriever is dense_retriever
+        assert container.query_embedding_provider is fakes.embedding_provider
+        assert container.dense_retriever is fakes.dense_retriever
+        assert container.answer_generator_provider is fakes.answer_generator
+        assert container.statement_support_provider is fakes.support_evaluator
+        assert (
+            container.generate_validated_answer_service._answer_generator is fakes.answer_generator
+        )
+        assert (
+            container.generate_validated_answer_service._support_evaluator
+            is fakes.support_evaluator
+        )
         assert dependencies is not None
         assert dependencies.embedding_provider is container.query_embedding_provider
         assert dependencies.dense_retriever is container.dense_retriever
@@ -258,20 +314,36 @@ def test_build_api_container_wires_m1_query_resources(
             dependencies.dense_profile.dense_index_config_version
             == M1_PROCESSING_PROFILE.dense_index_config_version
         )
-        embedding_factory.assert_called_once_with(
+        fakes.embedding_factory.assert_called_once_with(
             api_key="synthetic-openai-key",
             embedding_config_version=provider_settings.embedding.config_version,
             model=provider_settings.embedding.model,
             dimensions=provider_settings.embedding.dimensions,
             operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
         )
-        dense_factory.assert_called_once_with(
+        fakes.dense_factory.assert_called_once_with(
             api_key="synthetic-pinecone-key",
             index_host=provider_settings.pinecone.index_host,
             operation_timeout_seconds=provider_settings.pinecone.operation_timeout_seconds,
         )
+        fakes.answer_factory.assert_called_once_with(
+            api_key="synthetic-generation-key",
+            model=OPENAI_ANSWER_MODEL,
+            operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
+            max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+        )
+        fakes.support_factory.assert_called_once_with(
+            api_key="synthetic-generation-key",
+            model=OPENAI_STATEMENT_SUPPORT_MODEL,
+            operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
+            max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+        )
     finally:
         container.close()
+    fakes.support_evaluator.close.assert_called_once_with()
+    fakes.answer_generator.close.assert_called_once_with()
+    fakes.dense_retriever.close.assert_called_once_with()
+    fakes.embedding_provider.close.assert_called_once_with()
 
 
 def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) -> None:
@@ -438,21 +510,29 @@ def test_api_container_closes_query_provider_and_database_resources(
     tmp_path: Path,
 ) -> None:
     events: list[str] = []
-    embedding_provider, dense_retriever, _, _ = install_query_provider_fakes(monkeypatch)
+    fakes = install_api_provider_fakes(monkeypatch)
     original_database_dispose = Engine.dispose
 
     def dispose_database(engine: Engine) -> None:
         events.append("database")
         original_database_dispose(engine)
 
-    dense_retriever.close.side_effect = lambda: events.append("dense-query")
-    embedding_provider.close.side_effect = lambda: events.append("query-embedding")
+    fakes.support_evaluator.close.side_effect = lambda: events.append("statement-support")
+    fakes.answer_generator.close.side_effect = lambda: events.append("answer-generation")
+    fakes.dense_retriever.close.side_effect = lambda: events.append("dense-query")
+    fakes.embedding_provider.close.side_effect = lambda: events.append("query-embedding")
     monkeypatch.setattr(Engine, "dispose", dispose_database)
     container = build_api_container(make_m1_api_settings(tmp_path / "objects"))
 
     container.close()
 
-    assert events == ["dense-query", "query-embedding", "database"]
+    assert events == [
+        "statement-support",
+        "answer-generation",
+        "dense-query",
+        "query-embedding",
+        "database",
+    ]
 
 
 def test_api_container_releases_owned_resources_when_query_setup_fails(
@@ -460,12 +540,12 @@ def test_api_container_releases_owned_resources_when_query_setup_fails(
     tmp_path: Path,
 ) -> None:
     events: list[str] = []
-    embedding_provider, _, _, dense_factory = install_query_provider_fakes(monkeypatch)
-    dense_factory.side_effect = RuntimeError("simulated dense query setup failure")
+    fakes = install_api_provider_fakes(monkeypatch)
+    fakes.dense_factory.side_effect = RuntimeError("simulated dense query setup failure")
     original_queue_close = Celery.close
     original_database_dispose = Engine.dispose
 
-    embedding_provider.close.side_effect = lambda: events.append("query-embedding")
+    fakes.embedding_provider.close.side_effect = lambda: events.append("query-embedding")
 
     def close_queue(application: Celery) -> None:
         events.append("queue")
@@ -482,6 +562,43 @@ def test_api_container_releases_owned_resources_when_query_setup_fails(
         build_api_container(make_m1_api_settings(tmp_path / "objects"))
 
     assert events == ["query-embedding", "queue", "database"]
+
+
+def test_api_container_releases_all_prior_resources_when_support_setup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    fakes = install_api_provider_fakes(monkeypatch)
+    fakes.support_factory.side_effect = RuntimeError("simulated support setup failure")
+    original_queue_close = Celery.close
+    original_database_dispose = Engine.dispose
+
+    fakes.answer_generator.close.side_effect = lambda: events.append("answer-generation")
+    fakes.dense_retriever.close.side_effect = lambda: events.append("dense-query")
+    fakes.embedding_provider.close.side_effect = lambda: events.append("query-embedding")
+
+    def close_queue(application: Celery) -> None:
+        events.append("queue")
+        original_queue_close(application)
+
+    def dispose_database(engine: Engine) -> None:
+        events.append("database")
+        original_database_dispose(engine)
+
+    monkeypatch.setattr(Celery, "close", close_queue)
+    monkeypatch.setattr(Engine, "dispose", dispose_database)
+
+    with pytest.raises(RuntimeError, match="simulated support setup failure"):
+        build_api_container(make_m1_api_settings(tmp_path / "objects"))
+
+    assert events == [
+        "answer-generation",
+        "dense-query",
+        "query-embedding",
+        "queue",
+        "database",
+    ]
 
 
 def test_application_lifespan_owns_container(
