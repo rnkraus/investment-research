@@ -52,7 +52,9 @@ from investment_research.infrastructure.search.openai import (
 )
 from investment_research.infrastructure.search.pinecone import (
     PineconeDenseIndexWriter,
+    PineconeDenseRetriever,
     create_pinecone_dense_index_writer,
+    create_pinecone_dense_retriever,
 )
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -79,10 +81,16 @@ from investment_research.modules.processing.ports import DocumentParser, Process
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
+    M1QueryRetrievalDependencies,
     RetrieveResearchService,
 )
 from investment_research.modules.research.contracts import AnswerGenerationProfile
-from investment_research.modules.search.contracts import LexicalSearchProfile
+from investment_research.modules.search.contracts import (
+    M1_LANE_CANDIDATE_LIMIT,
+    DenseRetrievalProfile,
+    LexicalSearchProfile,
+    M1SelectionProfile,
+)
 from investment_research.modules.search.indexing import IndexActiveChunksService
 from investment_research.settings import (
     ApiSettings,
@@ -161,6 +169,8 @@ class ApiContainer:
     readiness_probe: ReadinessProbe
     object_storage: ObjectStorage
     queue_application: Celery
+    query_embedding_provider: OpenAIEmbeddingProvider | None
+    dense_retriever: PineconeDenseRetriever | None
     processing_dispatcher: ProcessingDispatcher
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
@@ -173,8 +183,18 @@ class ApiContainer:
     def close(self) -> None:
         """Release process-wide resources owned by the API container."""
 
-        self.queue_application.close()
-        self.database_engine.dispose()
+        try:
+            if self.dense_retriever is not None:
+                self.dense_retriever.close()
+        finally:
+            try:
+                if self.query_embedding_provider is not None:
+                    self.query_embedding_provider.close()
+            finally:
+                try:
+                    self.queue_application.close()
+                finally:
+                    self.database_engine.dispose()
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,14 +241,54 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     ]
     if object_storage.readiness_probe is not None:
         readiness_probes.append(object_storage.readiness_probe)
+    query_embedding_provider: OpenAIEmbeddingProvider | None = None
+    dense_retriever: PineconeDenseRetriever | None = None
+    m1_query_retrieval: M1QueryRetrievalDependencies | None = None
+    lexical_candidate_limit = 10
+    if settings.query_providers is not None:
+        provider_settings = settings.require_query_providers()
+        query_embedding_provider = create_openai_embedding_provider(
+            api_key=provider_settings.embedding.api_key.get_secret_value(),
+            embedding_config_version=provider_settings.embedding.config_version,
+            model=provider_settings.embedding.model,
+            dimensions=provider_settings.embedding.dimensions,
+            operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
+        )
+        try:
+            dense_retriever = create_pinecone_dense_retriever(
+                api_key=provider_settings.pinecone.api_key.get_secret_value(),
+                index_host=provider_settings.pinecone.index_host,
+                operation_timeout_seconds=(provider_settings.pinecone.operation_timeout_seconds),
+            )
+        except Exception:
+            try:
+                query_embedding_provider.close()
+            finally:
+                try:
+                    queue_application.close()
+                finally:
+                    database.engine.dispose()
+            raise
+        lexical_candidate_limit = M1_LANE_CANDIDATE_LIMIT
+        m1_query_retrieval = M1QueryRetrievalDependencies(
+            embedding_provider=query_embedding_provider,
+            dense_retriever=dense_retriever,
+            dense_profile=DenseRetrievalProfile(
+                embedding_config_version=provider_settings.embedding.config_version,
+                dense_index_config_version=provider_settings.pinecone.config_version,
+                candidate_limit=M1_LANE_CANDIDATE_LIMIT,
+            ),
+            selection_profile=M1SelectionProfile(),
+        )
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
             database.session_factory
         ),
         search_profile=LexicalSearchProfile(
             lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
-            candidate_limit=10,
+            candidate_limit=lexical_candidate_limit,
         ),
+        m1_query_retrieval=m1_query_retrieval,
     )
     generate_validated_answer_service = GenerateValidatedAnswerService(
         unit_of_work_factory=create_answer_validation_unit_of_work_factory(
@@ -262,6 +322,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         readiness_probe=CompositeReadinessProbe(tuple(readiness_probes)),
         object_storage=object_storage.adapter,
         queue_application=queue_application,
+        query_embedding_provider=query_embedding_provider,
+        dense_retriever=dense_retriever,
         processing_dispatcher=processing_dispatcher,
         capture_document_service=CaptureDocumentService(
             object_storage=object_storage.adapter,
