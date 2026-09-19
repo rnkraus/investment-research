@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Implementation-ready v1.0 — Steps 0–1 complete; Step 2 implementation in progress \
+**Status:** Active v1.1 — Steps 0–4 locally implemented; Step 5 next \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -562,7 +562,7 @@ evidence merely because it exists in Pinecone.
 **Suggested commits:** indexing states and migration; embedding adapter; Pinecone adapter; worker
 index orchestration; indexing CI; frontend status; docs.
 
-As of 2026-09-18, Step 2 is implementation-complete locally. Required CI exercises deterministic
+As of 2026-09-18, Step 2 is implementation-complete. Required CI exercises deterministic
 embedding, Pinecone, indexing-lifecycle, lease-recovery, workspace-scope, and PostgreSQL integration
 checks without provider credentials or spend. The deterministic Step 2 gate parses both approved
 fixture media types through the real media-aware parser, carries their canonical chunks through the
@@ -570,8 +570,8 @@ production application services to `SEARCHABLE`, and proves stable vector identi
 redelivery. The frontend keeps `LEXICAL_READY` and `INDEXING` active and exposes research only at
 `SEARCHABLE`. The separate manually dispatched `M1 provider smoke` workflow implements the frozen
 public-fixture allowlist, request and cost preflight, unique namespace, and verified cleanup
-contract; it has not yet been run against live providers. Hosted CI verification remains pending the
-next push, while complete-stack M1 acceptance remains the separate Step 6 gate.
+contract; it has not yet been run against live providers. Complete-stack M1 acceptance remains the
+separate Step 6 gate.
 
 ### Step 3 — Canonically qualified dual retrieval
 
@@ -609,6 +609,13 @@ runs with the same versions have the same selected order.
 **Suggested commits:** generic retrieval contracts; canonical dense qualification; M1 selector and
 persistence; retrieval CI; compatible frontend copy; docs.
 
+As of 2026-09-20, Step 3 is implementation-complete. Lexical and dense candidates pass through the
+same canonical workspace, active-version, deletion, temporal, and configuration checks before the
+versioned selector may admit them. Deterministic tests cover semantic paraphrase contribution,
+lexical exact wording, overlap deduplication, stable ordering, stale and foreign hit rejection, safe
+provider failure, API wiring, and the unchanged frontend stream contract. M1 deliberately retains
+round-robin selection rather than claiming M4 RRF or reranking behavior.
+
 ### Step 4 — Provider-backed generation and evidence support
 
 **Suggested branch:** `feat/m1-generation`
@@ -643,6 +650,20 @@ provider output emits no answer content.
 
 **Suggested commits:** provider generator; support evaluator; generation policy and error mapping;
 generation CI; frontend terminal behavior; docs.
+
+As of 2026-09-20, Step 4 is implementation-complete locally. Application-owned OpenAI adapters
+produce typed answer proposals and independent statement-support decisions behind the existing
+ports. The composition root selects them only when the required provider groups are complete;
+deterministic adapters remain the default for normal tests. Safe error mapping, complete-response
+validation before streaming, canonical evidence validation, answerable and insufficient fixture
+journeys, frontend terminal handling, and provider cleanup are covered by deterministic tests.
+
+The manually dispatched provider smoke now exercises one approved embedding, one temporary Pinecone
+vector, the approved answerable and unanswerable questions, exact source ranges, and independent
+statement support under frozen request, token, vector, and cost ceilings. It uses only the frozen
+public-synthetic fixture and separate least-privilege document-indexing and generation credentials.
+It has not yet been executed against live providers. Hosted CI verification remains pending the next
+push, and complete-stack M1 acceptance remains the Step 6 gate.
 
 ### Step 5 — Canonical usage and trace correlation
 
