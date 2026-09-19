@@ -1,7 +1,8 @@
 """Pinecone gRPC adapter for bounded workspace-scoped dense-index writes."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from uuid import UUID
 
 from pinecone import RetryConfig
 from pinecone.errors import (
@@ -13,16 +14,20 @@ from pinecone.errors import (
     ServiceError,
 )
 from pinecone.grpc import GrpcIndex
+from pydantic import ValidationError
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.application import (
     DENSE_VECTOR_ID_ADAPTER,
     dense_index_namespace,
+    dense_vector_id,
 )
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_BATCH_LIMIT,
     DenseIndexWriteRequest,
     DenseIndexWriteResult,
+    DenseRetrievalHit,
+    DenseRetrievalQuery,
     DenseVectorId,
 )
 from investment_research.modules.search.ports import (
@@ -151,6 +156,109 @@ class PineconeDenseIndexWriter:
         self.index.close()
 
 
+@dataclass(frozen=True, slots=True)
+class PineconeDenseRetriever:
+    """Read bounded candidate identities through one injected Pinecone gRPC client."""
+
+    index: GrpcIndex
+    operation_timeout_seconds: float = PINECONE_OPERATION_TIMEOUT_SECONDS
+
+    def __post_init__(self) -> None:
+        if not 0 < self.operation_timeout_seconds <= PINECONE_OPERATION_TIMEOUT_SECONDS:
+            raise ValueError("Pinecone operation timeout must be between 0 and 20 seconds")
+
+    def retrieve(
+        self,
+        context: WorkspaceContext,
+        query: DenseRetrievalQuery,
+    ) -> Sequence[DenseRetrievalHit]:
+        """Return ordered untrusted IDs only after validating the provider response shape."""
+
+        try:
+            response = self.index.query(
+                top_k=query.candidate_limit,
+                vector=list(query.query_vector),
+                namespace=dense_index_namespace(context),
+                filter={
+                    "embedding_config_version": {
+                        "$eq": query.embedding_config_version,
+                    },
+                    "dense_index_config_version": {
+                        "$eq": query.dense_index_config_version,
+                    },
+                },
+                include_values=False,
+                include_metadata=True,
+                timeout=self.operation_timeout_seconds,
+            )
+        except _TRANSIENT_PINECONE_ERRORS:
+            raise SearchProviderTransientError(
+                "dense retrieval provider is temporarily unavailable"
+            ) from None
+        except PineconeError:
+            raise SearchProviderConfigurationError(
+                "dense retrieval provider rejected the configured request"
+            ) from None
+
+        try:
+            matches = tuple(response.matches)
+        except AttributeError, TypeError:
+            raise SearchProviderContractError(
+                "dense retrieval provider returned a malformed response"
+            ) from None
+        if len(matches) > query.candidate_limit:
+            raise SearchProviderContractError(
+                "dense retrieval provider exceeded the candidate limit"
+            )
+
+        hits: list[DenseRetrievalHit] = []
+        seen_chunk_ids: set[UUID] = set()
+        for match in matches:
+            metadata = match.metadata
+            if not isinstance(metadata, Mapping):
+                raise SearchProviderContractError(
+                    "dense retrieval provider omitted required metadata"
+                )
+            chunk_id_value = metadata.get("chunk_id")
+            embedding_version = metadata.get("embedding_config_version")
+            dense_index_version = metadata.get("dense_index_config_version")
+            if (
+                not isinstance(chunk_id_value, str)
+                or embedding_version != query.embedding_config_version
+                or dense_index_version != query.dense_index_config_version
+            ):
+                raise SearchProviderContractError(
+                    "dense retrieval provider returned inconsistent metadata"
+                )
+            try:
+                chunk_id = UUID(chunk_id_value)
+                hit = DenseRetrievalHit(chunk_id=chunk_id, raw_score=match.score)
+            except TypeError, ValueError, ValidationError:
+                raise SearchProviderContractError(
+                    "dense retrieval provider returned a malformed match"
+                ) from None
+            if match.id != dense_vector_id(
+                context,
+                chunk_id=chunk_id,
+                embedding_config_version=query.embedding_config_version,
+            ):
+                raise SearchProviderContractError(
+                    "dense retrieval provider returned an inconsistent vector identity"
+                )
+            if chunk_id in seen_chunk_ids:
+                raise SearchProviderContractError(
+                    "dense retrieval provider returned duplicate chunk identities"
+                )
+            seen_chunk_ids.add(chunk_id)
+            hits.append(hit)
+        return tuple(hits)
+
+    def close(self) -> None:
+        """Release the SDK-owned gRPC channel."""
+
+        self.index.close()
+
+
 def create_pinecone_dense_index_writer(
     *,
     api_key: str,
@@ -159,6 +267,42 @@ def create_pinecone_dense_index_writer(
 ) -> PineconeDenseIndexWriter:
     """Build the least-privilege gRPC writer without a control-plane lookup."""
 
+    return PineconeDenseIndexWriter(
+        index=_create_pinecone_grpc_index(
+            api_key=api_key,
+            index_host=index_host,
+            operation_timeout_seconds=operation_timeout_seconds,
+        ),
+        operation_timeout_seconds=operation_timeout_seconds,
+    )
+
+
+def create_pinecone_dense_retriever(
+    *,
+    api_key: str,
+    index_host: str,
+    operation_timeout_seconds: float = PINECONE_OPERATION_TIMEOUT_SECONDS,
+) -> PineconeDenseRetriever:
+    """Build the least-privilege gRPC reader without a control-plane lookup."""
+
+    return PineconeDenseRetriever(
+        index=_create_pinecone_grpc_index(
+            api_key=api_key,
+            index_host=index_host,
+            operation_timeout_seconds=operation_timeout_seconds,
+        ),
+        operation_timeout_seconds=operation_timeout_seconds,
+    )
+
+
+def _create_pinecone_grpc_index(
+    *,
+    api_key: str,
+    index_host: str,
+    operation_timeout_seconds: float,
+) -> GrpcIndex:
+    """Construct one retry-free TLS data-plane client for an approved role."""
+
     if not api_key.strip():
         raise ValueError("Pinecone API key must not be empty")
     if not index_host.strip():
@@ -166,7 +310,7 @@ def create_pinecone_dense_index_writer(
     if not 0 < operation_timeout_seconds <= PINECONE_OPERATION_TIMEOUT_SECONDS:
         raise ValueError("Pinecone operation timeout must be between 0 and 20 seconds")
 
-    index = GrpcIndex(
+    return GrpcIndex(
         host=index_host,
         api_key=api_key,
         secure=True,
@@ -174,8 +318,4 @@ def create_pinecone_dense_index_writer(
         timeout=operation_timeout_seconds,
         connect_timeout=min(PINECONE_CONNECT_TIMEOUT_SECONDS, operation_timeout_seconds),
         retry_config=RetryConfig(max_retries=0),
-    )
-    return PineconeDenseIndexWriter(
-        index=index,
-        operation_timeout_seconds=operation_timeout_seconds,
     )
