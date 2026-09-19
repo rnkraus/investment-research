@@ -25,7 +25,7 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.domain import CoverageStatus
-from investment_research.modules.search.domain import RetrievalOrigin
+from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
 
 
 class EvidenceSpanUnavailableError(Exception):
@@ -186,13 +186,7 @@ class ValidateGeneratedAnswerService:
             source is not None and source.workspace_id == context.workspace_id for source in sources
         )
         candidate_valid = source_present and all(
-            source is not None
-            and source.retrieval_run_id == retrieval_run_id
-            and source.origin is RetrievalOrigin.LEXICAL
-            and source.chunk_set_is_active
-            and source.processing_state is ProcessingState.LEXICAL_READY
-            and source.chunk_set_lexical_config_version == source.retrieval_lexical_config_version
-            and source.processing_lexical_config_version == source.retrieval_lexical_config_version
+            source is not None and self._is_retrieval_candidate_eligible(source, retrieval_run_id)
             for source in sources
         )
         active_version_valid = source_present and all(
@@ -241,6 +235,42 @@ class ValidateGeneratedAnswerService:
                 "Canonical evidence does not support the complete statement.",
             ),
         )
+
+    @staticmethod
+    def _is_retrieval_candidate_eligible(
+        source: CanonicalEvidenceSource,
+        retrieval_run_id: UUID,
+    ) -> bool:
+        """Accept only canonical candidates eligible for their recorded retrieval mode."""
+
+        if (
+            source.retrieval_run_id != retrieval_run_id
+            or not source.chunk_set_is_active
+            or source.chunk_set_lexical_config_version != source.retrieval_lexical_config_version
+            or source.processing_lexical_config_version != source.retrieval_lexical_config_version
+        ):
+            return False
+
+        if source.retrieval_mode is RetrievalMode.LEXICAL:
+            return (
+                source.origin is RetrievalOrigin.LEXICAL
+                and source.processing_state is ProcessingState.LEXICAL_READY
+            )
+
+        if source.retrieval_mode is RetrievalMode.DUAL_LANE:
+            return (
+                source.origin in {RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE}
+                and source.selection_rank is not None
+                and source.processing_state is ProcessingState.SEARCHABLE
+                and source.retrieval_embedding_config_version is not None
+                and source.retrieval_dense_index_config_version is not None
+                and source.processing_embedding_config_version
+                == source.retrieval_embedding_config_version
+                and source.processing_dense_index_config_version
+                == source.retrieval_dense_index_config_version
+            )
+
+        return False
 
     @staticmethod
     def _validate_exact_reference(

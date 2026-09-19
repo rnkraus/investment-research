@@ -219,12 +219,15 @@ def make_canonical_source() -> CanonicalEvidenceSource:
         retrieval_candidate_id=CANDIDATE_ID,
         retrieval_run_id=RUN_ID,
         origin=RetrievalOrigin.LEXICAL,
+        selection_rank=None,
         chunk_id=CHUNK_ID,
         chunk_text=SOURCE_TEXT,
         chunk_set_is_active=True,
         chunk_set_lexical_config_version="m0.0-english-lexical-v1",
         processing_state=ProcessingState.LEXICAL_READY,
         processing_lexical_config_version="m0.0-english-lexical-v1",
+        processing_embedding_config_version="m0.0-embedding-disabled-v1",
+        processing_dense_index_config_version="m0.0-dense-index-disabled-v1",
         document_id=DOCUMENT_ID,
         document_lifecycle_state=DocumentLifecycleState.ACTIVE,
         document_current_version_id=VERSION_ID,
@@ -238,7 +241,10 @@ def make_canonical_source() -> CanonicalEvidenceSource:
         structure_block_start_character=0,
         structure_block_end_character=len(SOURCE_TEXT),
         retrieval_filters=RetrievalFilters(),
+        retrieval_mode=RetrievalMode.LEXICAL,
         retrieval_lexical_config_version="m0.0-english-lexical-v1",
+        retrieval_embedding_config_version=None,
+        retrieval_dense_index_config_version=None,
     )
 
 

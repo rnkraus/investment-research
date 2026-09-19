@@ -29,7 +29,11 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedStatement,
 )
 from investment_research.modules.research.domain import CoverageStatus
-from investment_research.modules.search.domain import RetrievalFilters, RetrievalOrigin
+from investment_research.modules.search.domain import (
+    RetrievalFilters,
+    RetrievalMode,
+    RetrievalOrigin,
+)
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -85,12 +89,15 @@ def make_source(**changes: object) -> CanonicalEvidenceSource:
         retrieval_candidate_id=CANDIDATE_ID,
         retrieval_run_id=RUN_ID,
         origin=RetrievalOrigin.LEXICAL,
+        selection_rank=None,
         chunk_id=CHUNK_ID,
         chunk_text=SOURCE_TEXT,
         chunk_set_is_active=True,
         chunk_set_lexical_config_version="english-lexical-v1",
         processing_state=ProcessingState.LEXICAL_READY,
         processing_lexical_config_version="english-lexical-v1",
+        processing_embedding_config_version="m0.0-embedding-disabled-v1",
+        processing_dense_index_config_version="m0.0-dense-index-disabled-v1",
         document_id=DOCUMENT_ID,
         document_lifecycle_state=DocumentLifecycleState.ACTIVE,
         document_current_version_id=VERSION_ID,
@@ -104,9 +111,27 @@ def make_source(**changes: object) -> CanonicalEvidenceSource:
         structure_block_start_character=0,
         structure_block_end_character=len(SOURCE_TEXT),
         retrieval_filters=RetrievalFilters(document_ids=(DOCUMENT_ID,)),
+        retrieval_mode=RetrievalMode.LEXICAL,
         retrieval_lexical_config_version="english-lexical-v1",
+        retrieval_embedding_config_version=None,
+        retrieval_dense_index_config_version=None,
     )
     return source.model_copy(update=changes)
+
+
+def make_dual_lane_source(**changes: object) -> CanonicalEvidenceSource:
+    """Build one selected M1 source with matching canonical index configuration."""
+
+    defaults: dict[str, object] = {
+        "selection_rank": 1,
+        "processing_state": ProcessingState.SEARCHABLE,
+        "processing_embedding_config_version": "openai-embedding-v1",
+        "processing_dense_index_config_version": "pinecone-index-v1",
+        "retrieval_mode": RetrievalMode.DUAL_LANE,
+        "retrieval_embedding_config_version": "openai-embedding-v1",
+        "retrieval_dense_index_config_version": "pinecone-index-v1",
+    }
+    return make_source(**(defaults | changes))
 
 
 def make_answer(
@@ -178,6 +203,18 @@ def test_valid_proposal_returns_only_canonical_exact_evidence() -> None:
     assert len(reference.text_sha256) == 64
     assert all(finding.passed for finding in decision.findings)
     assert reader.calls == [(make_context(), RUN_ID, CANDIDATE_ID)]
+
+
+@pytest.mark.parametrize("origin", [RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE])
+def test_valid_dual_lane_proposal_accepts_selected_searchable_candidate(
+    origin: RetrievalOrigin,
+) -> None:
+    service, _ = make_service(make_dual_lane_source(origin=origin))
+
+    decision = service.validate(make_context(), RUN_ID, make_answer())
+
+    assert decision.accepted is True
+    assert all(finding.passed for finding in decision.findings)
 
 
 def test_text_proposal_derives_absolute_original_range_from_canonical_block() -> None:
@@ -266,6 +303,24 @@ def test_generated_statement_rejects_duplicate_candidate_ranges() -> None:
             make_answer(),
             ValidationRule.RETRIEVAL_CANDIDATE,
             id="configuration-drift",
+        ),
+        pytest.param(
+            make_dual_lane_source(selection_rank=None),
+            make_answer(),
+            ValidationRule.RETRIEVAL_CANDIDATE,
+            id="unselected-dual-lane-candidate",
+        ),
+        pytest.param(
+            make_dual_lane_source(processing_embedding_config_version="other-v1"),
+            make_answer(),
+            ValidationRule.RETRIEVAL_CANDIDATE,
+            id="embedding-configuration-drift",
+        ),
+        pytest.param(
+            make_dual_lane_source(processing_dense_index_config_version="other-v1"),
+            make_answer(),
+            ValidationRule.RETRIEVAL_CANDIDATE,
+            id="dense-index-configuration-drift",
         ),
         pytest.param(
             make_source(retrieval_filters=RetrievalFilters(document_ids=(UUID(int=999),))),
