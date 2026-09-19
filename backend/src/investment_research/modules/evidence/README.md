@@ -94,6 +94,31 @@ flowchart TD
 
 Each `AnswerValidation` stores the rule, target answer and optional statement, pass/fail result, safe reason, configuration version, and validation time. Failed rules require a reason. Partial unique indexes allow one result per answer-level rule and one result per statement-level rule.
 
+## Retrieval-candidate eligibility
+
+| Retrieval mode | Eligible origin       | Required processing state | Additional proof                                      |
+| -------------- | --------------------- | ------------------------- | ----------------------------------------------------- |
+| `LEXICAL`      | `LEXICAL`             | `LEXICAL_READY`           | Active chunk set and matching lexical configuration   |
+| `DUAL_LANE`    | `LEXICAL` or `DENSE`  | `SEARCHABLE`              | Selected context rank and matching index configuration |
+
+```mermaid
+flowchart TD
+    SOURCE[Canonical candidate source] --> MODE{Retrieval mode}
+    MODE -->|LEXICAL| M0[Require lexical origin<br/>and LEXICAL_READY]
+    MODE -->|DUAL_LANE| M1[Require lexical or dense origin<br/>and SEARCHABLE]
+    M1 --> SELECTED[Require persisted selection_rank]
+    M0 --> COMMON[Verify active chunk set<br/>and lexical version]
+    SELECTED --> VERSIONS[Verify lexical, embedding,<br/>and dense-index versions]
+    VERSIONS --> COMMON
+    COMMON --> ELIGIBLE[Candidate may be validated as evidence]
+```
+
+M1 generation may cite only candidates chosen for its bounded context. A dense hit is never trusted
+because it came from the vector provider: PostgreSQL must resolve its candidate, chunk, active
+document version, processing run, selection rank, and exact configuration snapshots. Unknown,
+foreign, unselected, stale, or configuration-mismatched candidates fail the same canonical
+eligibility rule.
+
 ## Transaction and dependency boundary
 
 ```mermaid

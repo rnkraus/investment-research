@@ -18,7 +18,11 @@ from investment_research.modules.evidence.domain import (
 )
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.domain import CoverageStatus, StatementText
-from investment_research.modules.search.domain import RetrievalFilters, RetrievalOrigin
+from investment_research.modules.search.domain import (
+    RetrievalFilters,
+    RetrievalMode,
+    RetrievalOrigin,
+)
 
 
 class ImmutableEvidenceContract(BaseModel):
@@ -57,12 +61,15 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
     retrieval_candidate_id: UUID
     retrieval_run_id: UUID
     origin: RetrievalOrigin
+    selection_rank: int | None = Field(default=None, ge=1)
     chunk_id: UUID
     chunk_text: str = Field(min_length=1, max_length=100_000)
     chunk_set_is_active: bool
     chunk_set_lexical_config_version: ConfigurationVersion
     processing_state: ProcessingState
     processing_lexical_config_version: ConfigurationVersion
+    processing_embedding_config_version: ConfigurationVersion
+    processing_dense_index_config_version: ConfigurationVersion
     document_id: UUID
     document_lifecycle_state: DocumentLifecycleState
     document_current_version_id: UUID | None
@@ -76,7 +83,10 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
     structure_block_start_character: int = Field(ge=0)
     structure_block_end_character: int = Field(gt=0)
     retrieval_filters: RetrievalFilters
+    retrieval_mode: RetrievalMode
     retrieval_lexical_config_version: ConfigurationVersion
+    retrieval_embedding_config_version: ConfigurationVersion | None = None
+    retrieval_dense_index_config_version: ConfigurationVersion | None = None
 
     @field_validator("chunk_text", "structure_block_text")
     @classmethod
