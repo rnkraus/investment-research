@@ -23,11 +23,18 @@ from investment_research.modules.research.domain import (
     StatementText,
     TemporalMode,
 )
+from investment_research.modules.search.contracts import (
+    M1_CONTEXT_CHARACTER_LIMIT,
+    M1_CONTEXT_CHUNK_LIMIT,
+)
 from investment_research.modules.search.domain import (
     QueryText,
     RetrievalCandidate,
     RetrievalRun,
 )
+
+M1_GENERATED_STATEMENT_LIMIT = 8
+M1_STATEMENT_EVIDENCE_LIMIT = 2
 
 
 class ImmutableResearchContract(BaseModel):
@@ -200,7 +207,7 @@ class AnswerGenerationInput(ImmutableResearchContract):
 
     research_request_id: UUID
     question: QuestionText
-    sources: tuple[AnswerGenerationSource, ...] = Field(max_length=100)
+    sources: tuple[AnswerGenerationSource, ...] = Field(max_length=M1_CONTEXT_CHUNK_LIMIT)
 
     @field_validator("question")
     @classmethod
@@ -222,6 +229,8 @@ class AnswerGenerationInput(ImmutableResearchContract):
         candidate_ids = tuple(source.retrieval_candidate_id for source in value)
         if len(candidate_ids) != len(set(candidate_ids)):
             raise ValueError("generation sources must have unique retrieval_candidate_id values")
+        if sum(len(source.text) for source in value) > M1_CONTEXT_CHARACTER_LIMIT:
+            raise ValueError("generation sources exceed the M1 context character limit")
         return value
 
 
@@ -257,7 +266,10 @@ class UnvalidatedGeneratedStatement(ImmutableResearchContract):
     """One generator-proposed statement and its still-untrusted evidence references."""
 
     text: StatementText
-    evidence: tuple[UnvalidatedEvidenceReference, ...] = Field(min_length=1, max_length=10)
+    evidence: tuple[UnvalidatedEvidenceReference, ...] = Field(
+        min_length=1,
+        max_length=M1_STATEMENT_EVIDENCE_LIMIT,
+    )
 
     @field_validator("text")
     @classmethod
@@ -294,7 +306,9 @@ class UnvalidatedGeneratedAnswer(ImmutableResearchContract):
 
     coverage_status: CoverageStatus
     rendered_text: str = Field(min_length=1, max_length=100_000)
-    statements: tuple[UnvalidatedGeneratedStatement, ...] = Field(max_length=50)
+    statements: tuple[UnvalidatedGeneratedStatement, ...] = Field(
+        max_length=M1_GENERATED_STATEMENT_LIMIT
+    )
     missing_information: str | None = Field(default=None, min_length=1, max_length=1_000)
 
     @field_validator("rendered_text", "missing_information")
