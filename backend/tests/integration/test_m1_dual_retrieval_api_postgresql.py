@@ -1,7 +1,8 @@
-"""PostgreSQL API acceptance tests for deterministic M1 dual-lane retrieval."""
+"""PostgreSQL API acceptance tests for deterministic M1 retrieval and generation."""
 
 import json
-from dataclasses import replace
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -13,9 +14,11 @@ from sqlalchemy import Engine, select
 from investment_research import bootstrap as bootstrap_module
 from investment_research.api.dependencies import get_workspace_context
 from investment_research.infrastructure.database.session import create_session_factory
+from investment_research.infrastructure.evidence.openai import OpenAIStatementSupportEvaluator
 from investment_research.infrastructure.generation.deterministic import (
     M0_0_FIXTURE_ANSWER_CASE,
 )
+from investment_research.infrastructure.generation.openai import OpenAIAnswerGenerator
 from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
 from investment_research.infrastructure.search.pinecone import PineconeDenseRetriever
 from investment_research.main import create_app
@@ -23,6 +26,13 @@ from investment_research.modules.documents.domain import OriginalMediaType, Sour
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.research.contracts import (
+    AnswerGenerationInput,
+    UnvalidatedEvidenceReference,
+    UnvalidatedGeneratedAnswer,
+    UnvalidatedGeneratedStatement,
+)
+from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
     DenseRetrievalHit,
@@ -35,7 +45,11 @@ from investment_research.modules.search.persistence import (
     RetrievalCandidateRow,
     RetrievalRunRow,
 )
-from investment_research.settings import ApiSettings, DenseProviderSettings
+from investment_research.settings import (
+    ApiSettings,
+    DenseProviderSettings,
+    GenerationProviderSettings,
+)
 from tests.integration.factories import (
     ResearchSource,
     make_searchable_research_source,
@@ -47,6 +61,7 @@ SEMANTIC_PASSAGE = (
     "The primary constraint on new customer deployments is a shortage of high-voltage transformers."
 )
 VECTOR_VALUES = (0.125,) * M1_EMBEDDING_DIMENSIONS
+SAFE_MISSING_INFORMATION = "The selected archive sources do not answer this question."
 
 
 class FixedQueryEmbeddingProvider:
@@ -91,8 +106,75 @@ class FixedDenseRetriever:
         self.closed = True
 
 
+class FixedAnswerGenerator:
+    """Return one controlled typed proposal without contacting a model provider."""
+
+    def __init__(self, statement: str | None) -> None:
+        self._statement = statement
+        self.requests: list[AnswerGenerationInput] = []
+        self.closed = False
+
+    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
+        self.requests.append(generation_input)
+        if self._statement is None or not generation_input.sources:
+            return UnvalidatedGeneratedAnswer(
+                coverage_status=CoverageStatus.INSUFFICIENT,
+                rendered_text=SAFE_MISSING_INFORMATION,
+                statements=(),
+                missing_information=SAFE_MISSING_INFORMATION,
+            )
+
+        source = generation_input.sources[0]
+        return UnvalidatedGeneratedAnswer(
+            coverage_status=CoverageStatus.COMPLETE,
+            rendered_text="Untrusted provider rendering that must not be published directly.",
+            statements=(
+                UnvalidatedGeneratedStatement(
+                    text=self._statement,
+                    evidence=(
+                        UnvalidatedEvidenceReference(
+                            retrieval_candidate_id=source.retrieval_candidate_id,
+                            start_character=0,
+                            end_character=len(source.text),
+                            exact_text=source.text,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FixedStatementSupportEvaluator:
+    """Return one controlled independent support decision without provider access."""
+
+    def __init__(self, *, supported: bool) -> None:
+        self._supported = supported
+        self.requests: list[tuple[str, tuple[str, ...]]] = []
+        self.closed = False
+
+    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
+        self.requests.append((statement, tuple(evidence_texts)))
+        return self._supported
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@dataclass(frozen=True, slots=True)
+class M1ProviderFakes:
+    """The complete network-free M1 API provider group used by one test app."""
+
+    embedding: FixedQueryEmbeddingProvider
+    dense: FixedDenseRetriever
+    generator: FixedAnswerGenerator
+    support: FixedStatementSupportEvaluator
+
+
 def make_m1_api_settings(settings: ApiSettings, object_storage_root: Path) -> ApiSettings:
-    """Enable complete synthetic query-provider configuration for one test API."""
+    """Enable complete synthetic M1 provider configuration for one test API."""
 
     return settings.model_copy(
         update={
@@ -105,6 +187,9 @@ def make_m1_api_settings(settings: ApiSettings, object_storage_root: Path) -> Ap
                         "index_host": "synthetic-index.example.svc.pinecone.io",
                     },
                 }
+            ),
+            "generation_provider": GenerationProviderSettings.model_validate(
+                {"api_key": "synthetic-generation-key"}
             ),
         }
     )
@@ -162,11 +247,15 @@ def install_provider_fakes(
     monkeypatch: pytest.MonkeyPatch,
     *,
     hits: tuple[DenseRetrievalHit, ...],
-) -> tuple[FixedQueryEmbeddingProvider, FixedDenseRetriever]:
+    statement: str | None,
+    supported: bool = True,
+) -> M1ProviderFakes:
     """Install process-owned deterministic provider doubles at the composition root."""
 
     embedding_provider = FixedQueryEmbeddingProvider()
     dense_retriever = FixedDenseRetriever(hits)
+    answer_generator = FixedAnswerGenerator(statement)
+    support_evaluator = FixedStatementSupportEvaluator(supported=supported)
     monkeypatch.setattr(
         bootstrap_module,
         "create_openai_embedding_provider",
@@ -177,7 +266,31 @@ def install_provider_fakes(
         "create_pinecone_dense_retriever",
         lambda **_: cast(PineconeDenseRetriever, dense_retriever),
     )
-    return embedding_provider, dense_retriever
+    monkeypatch.setattr(
+        bootstrap_module,
+        "create_openai_answer_generator",
+        lambda **_: cast(OpenAIAnswerGenerator, answer_generator),
+    )
+    monkeypatch.setattr(
+        bootstrap_module,
+        "create_openai_statement_support_evaluator",
+        lambda **_: cast(OpenAIStatementSupportEvaluator, support_evaluator),
+    )
+    return M1ProviderFakes(
+        embedding=embedding_provider,
+        dense=dense_retriever,
+        generator=answer_generator,
+        support=support_evaluator,
+    )
+
+
+def assert_provider_fakes_closed(fakes: M1ProviderFakes) -> None:
+    """Require the API lifespan to release every process-owned provider client."""
+
+    assert fakes.embedding.closed
+    assert fakes.dense.closed
+    assert fakes.generator.closed
+    assert fakes.support.closed
 
 
 def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
@@ -240,7 +353,11 @@ def test_m1_api_selects_exact_lexical_evidence_in_dual_lane_mode(
         ),
     )
     persist_research_source(integration_database_engine, source)
-    embedding_provider, dense_retriever = install_provider_fakes(monkeypatch, hits=())
+    fakes = install_provider_fakes(
+        monkeypatch,
+        hits=(),
+        statement=M0_0_FIXTURE_ANSWER_CASE.statement,
+    )
     application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
     application.dependency_overrides[get_workspace_context] = lambda: source.context
 
@@ -270,9 +387,10 @@ def test_m1_api_selects_exact_lexical_evidence_in_dual_lane_mode(
     assert [
         (candidate.origin, candidate.chunk_id, candidate.selection_rank) for candidate in candidates
     ] == [(RetrievalOrigin.LEXICAL, source.chunks[0].id, 1)]
-    assert len(embedding_provider.requests) == len(dense_retriever.queries) == 1
-    assert embedding_provider.closed
-    assert dense_retriever.closed
+    assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 1
+    assert len(fakes.generator.requests) == len(fakes.support.requests) == 1
+    assert events[0]["payload"]["text"] == M0_0_FIXTURE_ANSWER_CASE.statement
+    assert_provider_fakes_closed(fakes)
 
 
 def test_m1_api_selects_only_canonical_dense_evidence_for_semantic_question(
@@ -293,13 +411,15 @@ def test_m1_api_selects_only_canonical_dense_evidence_for_semantic_question(
     )
     persist_research_source(integration_database_engine, source)
     persist_research_source(integration_database_engine, foreign)
-    embedding_provider, dense_retriever = install_provider_fakes(
+    statement = "Northstar's rollout is constrained by a shortage of high-voltage transformers."
+    fakes = install_provider_fakes(
         monkeypatch,
         hits=(
             DenseRetrievalHit(chunk_id=source.chunks[0].id, raw_score=0.93),
             DenseRetrievalHit(chunk_id=foreign.chunks[0].id, raw_score=0.92),
             DenseRetrievalHit(chunk_id=uuid4(), raw_score=0.91),
         ),
+        statement=statement,
     )
     application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
     application.dependency_overrides[get_workspace_context] = lambda: source.context
@@ -321,13 +441,96 @@ def test_m1_api_selects_only_canonical_dense_evidence_for_semantic_question(
         research_request_id=request_id,
     )
     assert response.status_code == 200
-    assert [event["event_name"] for event in events] == ["answer.insufficient"]
+    assert [event["event_name"] for event in events] == [
+        "answer.statement",
+        "answer.citation",
+        "answer.completed",
+    ]
     assert run.mode is RetrievalMode.DUAL_LANE
     assert [
         (candidate.origin, candidate.chunk_id, candidate.selection_rank) for candidate in candidates
     ] == [(RetrievalOrigin.DENSE, source.chunks[0].id, 1)]
-    assert len(embedding_provider.requests) == len(dense_retriever.queries) == 1
-    assert embedding_provider.requests[0].inputs[0].text == SEMANTIC_QUESTION
-    assert dense_retriever.queries[0].filters.document_ids == (source.document.id,)
-    assert embedding_provider.closed
-    assert dense_retriever.closed
+    assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 1
+    assert fakes.embedding.requests[0].inputs[0].text == SEMANTIC_QUESTION
+    assert fakes.dense.queries[0].filters.document_ids == (source.document.id,)
+    assert len(fakes.generator.requests) == len(fakes.support.requests) == 1
+    assert events[0]["payload"]["text"] == statement
+    assert_provider_fakes_closed(fakes)
+
+
+def test_m1_api_keeps_unanswerable_question_explicitly_insufficient(
+    integration_api_settings: ApiSettings,
+    integration_database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = make_searchable_source(
+        label="M1 API Insufficient Acceptance",
+        primary_text="Northstar reported no information about the requested Zephyr transaction.",
+    )
+    persist_research_source(integration_database_engine, source)
+    fakes = install_provider_fakes(monkeypatch, hits=(), statement=None)
+    application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/research-requests",
+            json={
+                "question": "What was the price of the Zephyr-991 acquisition?",
+                "context": {"document_ids": [str(source.document.id)]},
+            },
+        )
+
+    events = parse_server_sent_events(response.text)
+    assert response.status_code == 200
+    assert [event["event_name"] for event in events] == ["answer.insufficient"]
+    assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 1
+    assert len(fakes.generator.requests) == 1
+    assert fakes.generator.requests[0].sources == ()
+    assert fakes.support.requests == []
+    assert_provider_fakes_closed(fakes)
+
+
+def test_m1_api_emits_no_generated_content_when_support_is_rejected(
+    integration_api_settings: ApiSettings,
+    integration_database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = make_searchable_source(
+        label="M1 API Support Rejection",
+        primary_text=(
+            f"{M0_0_FIXTURE_ANSWER_CASE.question} {M0_0_FIXTURE_ANSWER_CASE.evidence_text}"
+        ),
+    )
+    persist_research_source(integration_database_engine, source)
+    fakes = install_provider_fakes(
+        monkeypatch,
+        hits=(),
+        statement=M0_0_FIXTURE_ANSWER_CASE.statement,
+        supported=False,
+    )
+    application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/research-requests",
+            json={
+                "question": M0_0_FIXTURE_ANSWER_CASE.question,
+                "context": {"document_ids": [str(source.document.id)]},
+            },
+        )
+
+    events = parse_server_sent_events(response.text)
+    assert response.status_code == 200
+    assert [event["event_name"] for event in events] == ["research.failed"]
+    assert events[0]["payload"]["error"] == {
+        "code": "EVIDENCE_VALIDATION_FAILED",
+        "message": "answer failed evidence validation",
+        "request_id": None,
+    }
+    assert events[0]["payload"]["retriable"] is False
+    assert len(fakes.generator.requests) == len(fakes.support.requests) == 1
+    assert_provider_fakes_closed(fakes)

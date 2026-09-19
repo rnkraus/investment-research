@@ -20,10 +20,13 @@ flowchart TD
     TESTS --> OPENAPI[Committed contract drift]
     TESTS --> ARCH[Module import rules]
     TESTS --> M1INDEX[M1 fixture indexing gate]
+    TESTS --> M1RAG[M1 retrieval and generation gate]
     TESTS --> POSTGRES[Opt-in PostgreSQL integration]
     TESTS --> ACCEPTANCE[Opt-in complete M0 runtime]
     M1INDEX --> MEDIA[PDF and pasted text]
     MEDIA --> SEARCHABLE[SEARCHABLE with stable vector IDs]
+    M1RAG --> LANES[Lexical and dense evidence]
+    LANES --> VALIDATED[Validated answer, insufficient, or safe rejection]
     POSTGRES --> SEED[Deterministic workspace seed]
     POSTGRES --> TX[Commit and rollback]
     POSTGRES --> DOCS[Document workspace isolation]
@@ -48,6 +51,15 @@ indexing application services, and requires `SEARCHABLE`. It injects determinist
 an in-memory idempotent dense-index writer, then replays indexing to prove stable vector identities
 without credentials, network access, or provider spend. Complete browser-facing M1 runtime
 acceptance remains a separate Step 6 gate.
+
+The deterministic M1 retrieval-and-generation gate runs through the real FastAPI composition root,
+PostgreSQL lexical search, canonical dense-hit qualification, answer orchestration, evidence
+validation, persistence, and server-sent event mapping. Network-free provider doubles replace only
+query embedding, Pinecone retrieval, answer generation, and statement-support evaluation. The gate
+proves completed answers from lexical and dense evidence, explicit insufficient coverage without a
+source, safe rejection without generated output when statement support fails, and process-owned
+provider cleanup. It is part of the required isolated PostgreSQL CI job and performs no paid
+provider calls.
 
 The M0 acceptance test is inactive during normal unit and PostgreSQL suites. The
 `scripts.verify_m0_runtime` command activates it only inside a non-root, read-only verification
