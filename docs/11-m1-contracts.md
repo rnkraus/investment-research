@@ -38,6 +38,7 @@ examples below are the accepted target contract; generated files must never be e
 | Dense index                | Pinecone Serverless BYOV, cosine, 1536 dimensions, `aws/us-east-1`        |
 | Dense-index config version | `pinecone-serverless-cosine-1536-aws-us-east-1-v1`                        |
 | M1 selector                | Deterministic lexical-first round-robin with chunk-ID deduplication       |
+| Selector config version    | `m1-lexical-first-round-robin-v1`                                         |
 | Normal CI                  | Deterministic adapters, no provider network, credentials, or spend        |
 | Live smoke                 | Explicit opt-in and bounded by `fixtures/m1/manifest.yaml`                |
 
