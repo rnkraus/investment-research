@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from hashlib import blake2b
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -222,6 +223,17 @@ class SqlAlchemyProviderOperationRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def acquire_budget_lock(self, context: WorkspaceContext) -> None:
+        """Serialize one workspace's budget check for the current transaction."""
+
+        digest = blake2b(
+            context.workspace_id.bytes,
+            digest_size=8,
+            person=b"m1-budget",
+        ).digest()
+        lock_key = int.from_bytes(digest, byteorder="big", signed=True)
+        self._session.execute(select(func.pg_advisory_xact_lock(lock_key)))
+
     def add(self, context: WorkspaceContext, operation: ProviderOperation) -> None:
         """Stage one STARTED provider operation inside the active workspace."""
 
@@ -257,10 +269,12 @@ class SqlAlchemyProviderOperationRepository:
             )
 
         row = self._session.scalar(
-            select(ProviderOperationRow).where(
+            select(ProviderOperationRow)
+            .where(
                 ProviderOperationRow.workspace_id == context.workspace_id,
                 ProviderOperationRow.id == operation.id,
             )
+            .with_for_update()
         )
         if row is None:
             return False

@@ -94,6 +94,24 @@ def test_repository_matches_application_owned_protocol() -> None:
     assert isinstance(repository, SqlAlchemyProviderOperationRepository)
 
 
+def test_budget_lock_is_stable_scoped_and_uses_a_signed_bigint() -> None:
+    """Derive one stable transaction lock without sharing it across workspaces."""
+
+    session = create_autospec(Session, instance=True)
+    repository = SqlAlchemyProviderOperationRepository(session)
+
+    repository.acquire_budget_lock(make_context())
+    repository.acquire_budget_lock(make_context())
+    repository.acquire_budget_lock(make_context(OTHER_WORKSPACE_ID))
+
+    statements = [call.args[0] for call in session.execute.call_args_list]
+    lock_keys = [next(iter(statement.compile().params.values())) for statement in statements]
+    assert lock_keys[0] == lock_keys[1]
+    assert lock_keys[0] != lock_keys[2]
+    assert all(-(2**63) <= key < 2**63 for key in lock_keys)
+    assert all("pg_advisory_xact_lock" in str(statement) for statement in statements)
+
+
 def test_repository_stages_only_started_operations_in_matching_scope() -> None:
     session = create_autospec(Session, instance=True)
     repository = SqlAlchemyProviderOperationRepository(session)
@@ -127,6 +145,7 @@ def test_repository_finalizes_one_started_operation() -> None:
 
     assert repository.finalize(make_context(), completed) is True
     assert stored_row.to_domain() == completed
+    assert "FOR UPDATE" in str(session.scalar.call_args.args[0])
 
 
 def test_repository_rejects_changed_identity_and_second_finalization() -> None:
