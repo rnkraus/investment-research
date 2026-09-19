@@ -12,6 +12,12 @@ from investment_research.modules.operations.ports import (
 class NoopOperationSpan:
     """Accept span events without storing or exporting them."""
 
+    @property
+    def trace_id(self) -> None:
+        """Report that this fallback owns no trace context."""
+
+        return None
+
     def set_attribute(self, name: str, value: TraceAttributeValue) -> None:
         """Ignore one safe scalar attribute."""
 

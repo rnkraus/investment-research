@@ -15,9 +15,53 @@ from investment_research.modules.operations.domain import (
 type TraceAttributeValue = str | bool | int | float
 type TraceAttributes = Mapping[str, TraceAttributeValue]
 
+APPROVED_OPERATION_SPAN_NAMES = frozenset(
+    {
+        "document.capture",
+        "embedding.document",
+        "embedding.query",
+        "evidence.evaluate_support",
+        "evidence.validate",
+        "pinecone.query",
+        "pinecone.upsert",
+        "processing.index",
+        "processing.parse",
+        "research.generate",
+        "research.retrieve",
+    }
+)
+APPROVED_TRACE_ATTRIBUTE_NAMES = frozenset(
+    {
+        "answer.id",
+        "candidate.count",
+        "chunk.count",
+        "configuration.version",
+        "correlation.id",
+        "cost.micro_usd",
+        "duration.ms",
+        "error.type",
+        "input.units",
+        "job.id",
+        "lifecycle.state",
+        "model.name",
+        "operation.kind",
+        "outcome",
+        "output.units",
+        "processing.run.id",
+        "provider.name",
+        "request.id",
+        "research.request.id",
+        "workspace.id",
+    }
+)
+
 
 class OperationSpan(Protocol):
     """Record bounded metadata for one application operation."""
+
+    @property
+    def trace_id(self) -> str | None:
+        """Return the active W3C trace ID, or none when tracing is unavailable."""
 
     def set_attribute(self, name: str, value: TraceAttributeValue) -> None:
         """Attach one safe scalar attribute without raw document or prompt content."""
