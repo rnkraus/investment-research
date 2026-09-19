@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from investment_research.infrastructure.logging import application_logger
 
-REQUIRED_DATABASE_REVISIONS = frozenset({"0007_m1_retrieval_selection"})
+REQUIRED_DATABASE_REVISIONS = frozenset({"0008_m1_provider_operations"})
 
 _logger = application_logger("health")
 
