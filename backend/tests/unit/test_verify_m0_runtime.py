@@ -96,6 +96,56 @@ def test_verification_runs_complete_journey_and_cleans_up(
     assert secret_paths and all(not path.exists() for path in secret_paths)
 
 
+def test_remove_acceptance_image_accepts_already_absent_image(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def report_missing_image(
+        label: str,
+        command: Sequence[str],
+        *,
+        environment: Mapping[str, str],
+        working_directory: Path = verify_m0_runtime.REPOSITORY_ROOT,
+        check: bool = True,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del label, environment, working_directory, check
+        assert capture_output is True
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout=b"Error response from daemon: No such image: synthetic:test\n",
+        )
+
+    monkeypatch.setattr(verify_m0_runtime, "run_command", report_missing_image)
+
+    assert verify_m0_runtime.remove_acceptance_image("synthetic:test", {}) == 0
+    assert "already absent" in capsys.readouterr().out
+
+
+def test_remove_acceptance_image_preserves_unexpected_docker_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def report_docker_failure(
+        label: str,
+        command: Sequence[str],
+        *,
+        environment: Mapping[str, str],
+        working_directory: Path = verify_m0_runtime.REPOSITORY_ROOT,
+        check: bool = True,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del label, environment, working_directory, check
+        assert capture_output is True
+        return subprocess.CompletedProcess(command, 7, stdout=b"synthetic Docker failure\n")
+
+    monkeypatch.setattr(verify_m0_runtime, "run_command", report_docker_failure)
+
+    assert verify_m0_runtime.remove_acceptance_image("synthetic:test", {}) == 7
+    assert "Could not remove" in capsys.readouterr().err
+
+
 def test_verification_reports_failure_and_still_cleans_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
