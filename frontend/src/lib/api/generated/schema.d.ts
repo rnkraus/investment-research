@@ -369,7 +369,7 @@ export interface components {
          * @description Stable public error categories without internal details.
          * @enum {string}
          */
-        readonly ErrorCode: "INVALID_REQUEST" | "NOT_FOUND" | "CONFLICT" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "PROCESSING_FAILED" | "EVIDENCE_VALIDATION_FAILED" | "INTERNAL_ERROR";
+        readonly ErrorCode: "INVALID_REQUEST" | "NOT_FOUND" | "CONFLICT" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "PROCESSING_FAILED" | "EVIDENCE_VALIDATION_FAILED" | "PROVIDER_UNAVAILABLE" | "INTERNAL_ERROR";
         /**
          * ErrorDetail
          * @description Safe machine-readable error detail.

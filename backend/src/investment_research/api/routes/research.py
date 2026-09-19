@@ -27,6 +27,8 @@ from investment_research.api.dependencies import (
     WorkspaceContextDependency,
 )
 from investment_research.api.errors import ApiError
+from investment_research.infrastructure.logging import current_request_id
+from investment_research.modules.research.application import ResearchProviderUnavailableError
 from investment_research.modules.research.contracts import (
     ResearchRetrievalInput,
     ValidatedAnswerResult,
@@ -152,14 +154,26 @@ def answer_research_request(
                 cutoff_at=request.context.cutoff_at,
             ),
         )
+    except ResearchProviderUnavailableError as error:
+        events: tuple[ResearchStreamEvent, ...] = (
+            ResearchFailedEvent(
+                research_request_id=error.research_request_id,
+                error=ErrorDetail(
+                    code=ErrorCode.PROVIDER_UNAVAILABLE,
+                    message="research provider is unavailable",
+                    request_id=current_request_id(),
+                ),
+                retriable=error.retriable,
+            ),
+        )
     except SQLAlchemyError as error:
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code=ErrorCode.INTERNAL_ERROR,
             message="research request could not be completed",
         ) from error
-
-    events = build_research_stream_events(result)
+    else:
+        events = build_research_stream_events(result)
     return StreamingResponse(
         encode_server_sent_events(events),
         media_type="text/event-stream",
