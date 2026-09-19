@@ -17,7 +17,9 @@ from investment_research.modules.evidence.domain import (
     ValidationRule,
 )
 from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.research.contracts import M1_STATEMENT_EVIDENCE_LIMIT
 from investment_research.modules.research.domain import CoverageStatus, StatementText
+from investment_research.modules.search.contracts import M1_CONTEXT_CHARACTER_LIMIT
 from investment_research.modules.search.domain import (
     RetrievalFilters,
     RetrievalMode,
@@ -35,6 +37,42 @@ class EvidenceValidationProfile(ImmutableEvidenceContract):
     """Versioned application-selected evidence-validation behavior."""
 
     validation_config_version: ConfigurationVersion
+
+
+class StatementSupportInput(ImmutableEvidenceContract):
+    """Bounded canonical text supplied to one semantic-support evaluation."""
+
+    statement: StatementText
+    evidence_texts: tuple[str, ...] = Field(
+        min_length=1,
+        max_length=M1_STATEMENT_EVIDENCE_LIMIT,
+    )
+
+    @field_validator("statement")
+    @classmethod
+    def require_visible_statement(cls, value: str) -> str:
+        """Reject whitespace-only statements before provider evaluation."""
+
+        if not value.strip():
+            raise ValueError("support statement must contain a non-whitespace character")
+        return value
+
+    @field_validator("evidence_texts")
+    @classmethod
+    def require_bounded_visible_evidence(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        """Reject empty or oversized evidence before it reaches a model provider."""
+
+        if any(not evidence_text.strip() for evidence_text in value):
+            raise ValueError("support evidence must contain a non-whitespace character")
+        if sum(len(evidence_text) for evidence_text in value) > M1_CONTEXT_CHARACTER_LIMIT:
+            raise ValueError("support evidence exceeds the M1 context character limit")
+        return value
+
+
+class StatementSupportDecision(ImmutableEvidenceContract):
+    """Typed provider decision that grants no citation or publication authority."""
+
+    supported: bool
 
 
 class CanonicalEvidenceSpanSource(ImmutableEvidenceContract):

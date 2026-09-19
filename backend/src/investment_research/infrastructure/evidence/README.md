@@ -1,8 +1,8 @@
 # Evidence Infrastructure
 
 This package contains technical adapters used by the Evidence module's application-owned ports.
-The adapters provide canonical source state and the bounded M0.0 statement-support rule; they do
-not persist or publish generated answer content.
+The adapters provide canonical source state and bounded statement-support decisions; they do not
+persist, authorize, or publish generated answer content.
 
 ## Contents
 
@@ -10,6 +10,7 @@ not persist or publish generated answer content.
 | ------------------ | -------------------------------------------------------------------------- |
 | `__init__.py`      | Identifies the evidence-adapter package without exporting implementations. |
 | `deterministic.py` | Implements the explicit synthetic M0.0 statement-to-evidence support rule. |
+| `openai.py`        | Implements the bounded, typed M1 semantic statement-support provider call. |
 | `postgresql.py`    | Reloads scoped candidate sources and already-persisted citation sources.   |
 
 ## Canonical reload
@@ -59,9 +60,33 @@ query to establish whether the span participates in a validated statement whose 
 does not make the authorization decision itself. A short-lived read unit of work owns the SQLAlchemy
 session and never commits.
 
-## M0.0 support evaluator
+## Statement-support evaluators
 
 The deterministic evaluator accepts only explicitly configured statement and exact-evidence pairs.
-It is independent from the answer generator, so a generator cannot approve its own output. A later
-support implementation may replace this fixture-only adapter behind `StatementSupportEvaluator`;
-the server-side validation flow and fail-closed output decision remain application-owned.
+It remains useful for the frozen local fixture and deterministic tests.
+
+The M1 OpenAI adapter independently evaluates one complete statement against one or two exact
+canonical evidence texts. Its input is limited to 24,000 code points, and its strict response schema
+contains only `supported: bool`. The request uses the approved model with low reasoning, a
+30-second timeout, provider storage disabled, no tools, no background execution, and SDK retries
+disabled. Its prompt, adapter, and configuration versions are separate from answer generation.
+
+```mermaid
+flowchart LR
+    STATEMENT[Generated complete statement] --> INPUT[Bounded StatementSupportInput]
+    EVIDENCE[Exact canonical evidence text] --> INPUT
+    INPUT --> ADAPTER[StatementSupportEvaluator adapter]
+    ADAPTER --> DECISION[StatementSupportDecision]
+    DECISION --> VALIDATOR[EvidenceValidator]
+    CANONICAL[Workspace, version, time, retrieval, and exact-span checks] --> VALIDATOR
+    VALIDATOR --> OUTPUT[Accept aggregate or fail closed]
+```
+
+The evaluator is independent from the answer generator, so a generator cannot approve its own
+output. A positive provider decision cannot authorize a citation, document, workspace, range, or
+answer. The application-owned `EvidenceValidator` combines the decision with all canonical checks
+and releases content only when the complete aggregate passes.
+
+`openai.py` is intentionally not wired into runtime settings or bootstrap in this work block.
+Provider selection, usage accounting, lifecycle ownership, and public error mapping are added by
+the later M1 generation-policy work.
