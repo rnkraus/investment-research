@@ -19,7 +19,12 @@ from investment_research.modules.evidence.domain import (
     StatementEvidence,
     ValidationRule,
 )
-from investment_research.modules.evidence.ports import EvidenceRepository, StatementSupportEvaluator
+from investment_research.modules.evidence.ports import (
+    EvidenceRepository,
+    StatementSupportEvaluator,
+    StatementSupportProviderError,
+    StatementSupportProviderTransientError,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -42,6 +47,8 @@ from investment_research.modules.research.domain import (
     TemporalMode,
 )
 from investment_research.modules.research.ports import (
+    AnswerGenerationProviderError,
+    AnswerGenerationProviderTransientError,
     AnswerGenerator,
     AnswerValidationUnitOfWorkFactory,
     ResearchRepository,
@@ -86,6 +93,15 @@ type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
 type Sleeper = Callable[[float], None]
 type CanonicalRetrievalHit = LexicalSearchHit | QualifiedDenseHit
+
+
+class ResearchProviderUnavailableError(RuntimeError):
+    """Safe application failure for one persisted request's provider operation."""
+
+    def __init__(self, research_request_id: UUID, *, retriable: bool) -> None:
+        super().__init__("research provider is unavailable")
+        self.research_request_id = research_request_id
+        self.retriable = retriable
 
 
 @dataclass(frozen=True, slots=True)
@@ -816,4 +832,17 @@ class AnswerResearchRequestService:
         """Return only the validated terminal result of one research request."""
 
         retrieval_result = self.retrieval_service.retrieve(context, retrieval_input)
-        return self.generation_service.generate(context, retrieval_result)
+        try:
+            return self.generation_service.generate(context, retrieval_result)
+        except (AnswerGenerationProviderError, StatementSupportProviderError) as error:
+            retriable = isinstance(
+                error,
+                (
+                    AnswerGenerationProviderTransientError,
+                    StatementSupportProviderTransientError,
+                ),
+            )
+            raise ResearchProviderUnavailableError(
+                retrieval_result.request.id,
+                retriable=retriable,
+            ) from error

@@ -1,6 +1,6 @@
 """Unit tests for atomic validated-answer generation orchestration."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from itertools import count
@@ -26,6 +26,8 @@ from investment_research.modules.evidence.contracts import (
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
     EvidenceRepository,
+    StatementSupportEvaluator,
+    StatementSupportProviderTransientError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
@@ -47,6 +49,7 @@ from investment_research.modules.research.domain import (
     TemporalMode,
 )
 from investment_research.modules.research.ports import (
+    AnswerGenerationProviderTransientError,
     AnswerGenerator,
     AnswerValidationUnitOfWork,
     AnswerValidationUnitOfWorkFactory,
@@ -88,16 +91,33 @@ class StaticAnswerGenerator:
         self,
         result: UnvalidatedGeneratedAnswer,
         unit_of_work: RecordingAnswerValidationUnitOfWork,
+        error: Exception | None = None,
     ) -> None:
         self._result = result
         self._unit_of_work = unit_of_work
+        self._error = error
         self.calls: list[AnswerGenerationInput] = []
         self.transaction_was_open = False
 
     def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
         self.calls.append(generation_input)
         self.transaction_was_open = self._unit_of_work.enter_count > 0
+        if self._error is not None:
+            raise self._error
         return self._result
+
+
+class FailingStatementSupportEvaluator:
+    """Raise one controlled provider error from inside canonical validation."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+        self.calls = 0
+
+    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
+        del statement, evidence_texts
+        self.calls += 1
+        raise self._error
 
 
 class RecordingSourceReader:
@@ -273,10 +293,13 @@ def make_answer_proposal(*, exact_text: str = EVIDENCE_TEXT) -> UnvalidatedGener
 def make_service(
     unit_of_work: RecordingAnswerValidationUnitOfWork,
     proposal: UnvalidatedGeneratedAnswer,
+    *,
+    generator_error: Exception | None = None,
+    support_evaluator: StatementSupportEvaluator | None = None,
 ) -> tuple[GenerateValidatedAnswerService, StaticAnswerGenerator]:
     """Build a deterministic service and its observable untrusted generator."""
 
-    generator = StaticAnswerGenerator(proposal, unit_of_work)
+    generator = StaticAnswerGenerator(proposal, unit_of_work, generator_error)
     generator_port: AnswerGenerator = generator
     unit_of_work_factory: AnswerValidationUnitOfWorkFactory = unit_of_work.open
     clock_values = iter((ANSWER_CREATED_AT, ANSWER_COMPLETED_AT))
@@ -284,8 +307,11 @@ def make_service(
     service = GenerateValidatedAnswerService(
         unit_of_work_factory=unit_of_work_factory,
         answer_generator=generator_port,
-        support_evaluator=DeterministicFixtureStatementSupportEvaluator(
-            [FixtureStatementSupportRule(statement=STATEMENT, evidence_text=EVIDENCE_TEXT)]
+        support_evaluator=(
+            support_evaluator
+            or DeterministicFixtureStatementSupportEvaluator(
+                [FixtureStatementSupportRule(statement=STATEMENT, evidence_text=EVIDENCE_TEXT)]
+            )
         ),
         generation_profile=AnswerGenerationProfile(
             generator_version="deterministic-fixture-v1",
@@ -298,6 +324,48 @@ def make_service(
         identifier_factory=lambda: UUID(int=next(identifier_values)),
     )
     return service, generator
+
+
+def test_generator_provider_failure_opens_no_answer_transaction() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    provider_error = AnswerGenerationProviderTransientError("safe generation failure")
+    service, generator = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        generator_error=provider_error,
+    )
+
+    with pytest.raises(AnswerGenerationProviderTransientError) as captured:
+        service.generate(make_context(), make_retrieval_result())
+
+    assert captured.value is provider_error
+    assert len(generator.calls) == 1
+    assert generator.transaction_was_open is False
+    assert unit_of_work.enter_count == 0
+    unit_of_work.research_mock.add_answer.assert_not_called()
+
+
+def test_support_provider_failure_rolls_back_without_partial_answer_content() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    provider_error = StatementSupportProviderTransientError("safe support failure")
+    support_evaluator = FailingStatementSupportEvaluator(provider_error)
+    service, _ = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        support_evaluator=support_evaluator,
+    )
+
+    with pytest.raises(StatementSupportProviderTransientError) as captured:
+        service.generate(make_context(), make_retrieval_result())
+
+    assert captured.value is provider_error
+    assert support_evaluator.calls == 1
+    assert unit_of_work.enter_count == 1
+    assert unit_of_work.committed is False
+    assert unit_of_work.rolled_back is True
+    unit_of_work.research_mock.add_statements.assert_not_called()
+    unit_of_work.evidence_mock.add_statement_evidence.assert_not_called()
+    unit_of_work.evidence_mock.add_answer_validations.assert_not_called()
 
 
 def test_valid_answer_persists_only_validated_content_in_one_unit_of_work() -> None:

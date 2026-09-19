@@ -86,6 +86,12 @@ retrieval result directly to `GenerateValidatedAnswerService` and returns only t
 terminal result. This small composition keeps HTTP code unaware of intermediate retrieval data and
 preserves the two focused services as independently testable boundaries.
 
+The same use case owns the public provider-failure policy. Generation and statement-support
+adapters retain their distinct internal safe error categories, while the route receives only
+`ResearchProviderUnavailableError` with the persisted research-request ID and a bounded
+`retriable` decision. Only classified transient failures are retriable; configuration, contract,
+and refusal failures are permanent. The policy never performs a hidden retry.
+
 ## Answer-generation boundary
 
 ```mermaid
@@ -93,14 +99,17 @@ flowchart LR
     RESULT[ResearchRetrievalResult] --> INPUT[AnswerGenerationInput]
     INPUT --> PORT[AnswerGenerator]
     PORT --> RAW[UnvalidatedGeneratedAnswer]
+    PORT -. safe provider failure .-> FAILED[PROVIDER_UNAVAILABLE]
     RAW --> UOW[AnswerValidationUnitOfWork]
     UOW --> VALIDATION[Canonical evidence validation]
+    VALIDATION -. support-provider failure .-> FAILED
     VALIDATION -->|accepted answer| STREAMED[STREAMED plus statements and evidence]
     VALIDATION -->|insufficient archive| INSUFFICIENT[INSUFFICIENT without statements]
     VALIDATION -->|failed rule| REJECTED[REJECTED without generated content]
     STREAMED --> PG[(One PostgreSQL transaction)]
     INSUFFICIENT --> PG
     REJECTED --> PG
+    FAILED --> EVENT[One terminal research.failed event]
 ```
 
 `AnswerGenerationInput` contains the exact question and a bounded, ordered snapshot of the selected
@@ -120,6 +129,13 @@ reloads every proposed source through the canonical Evidence reader and maps onl
 safe decision to domain records. Visible streamed text is rebuilt from accepted statements rather
 than copied from the generator's untrusted `rendered_text`. Insufficient output uses an
 application-owned message, and rejected output retains safe rule findings but no generated content.
+
+An answer-generator failure occurs before the answer unit of work opens. A statement-support
+provider failure occurs during canonical validation and therefore rolls that unit of work back.
+Neither path persists or emits partial generated content. The already committed research request,
+retrieval run, and candidates remain available for later audit and a deliberate new user attempt.
+The HTTP boundary exposes only `PROVIDER_UNAVAILABLE`; provider authentication, rate-limit,
+timeout, refusal, schema, prompt, and source details remain internal.
 
 ## Answer lifecycle
 
