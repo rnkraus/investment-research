@@ -13,7 +13,7 @@ from investment_research.modules.search.contracts import (
     DenseRetrievalQuery,
     DenseVectorId,
     EmbeddingRequest,
-    EmbeddingVector,
+    EmbeddingResult,
     LexicalSearchHit,
     LexicalSearchQuery,
     QualifiedDenseHit,
@@ -57,8 +57,8 @@ class LexicalSearch(Protocol):
 class EmbeddingProvider(Protocol):
     """Create correlated query or document vectors through an external provider."""
 
-    def embed(self, request: EmbeddingRequest) -> Sequence[EmbeddingVector]:
-        """Return one ordered vector for every input or raise a provider error."""
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        """Return ordered vectors and usage for one call or raise a provider error."""
 
 
 class DenseIndexWriter(Protocol):

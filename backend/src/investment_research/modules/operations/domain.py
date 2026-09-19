@@ -111,6 +111,21 @@ class ProviderCostSummary(BaseModel):
         return self.actual_cost_micro_usd + self.active_reserved_cost_micro_usd
 
 
+class ProviderUsage(BaseModel):
+    """Provider-reported bounded input and output units for one external call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    input_units: UsageUnits
+    output_units: UsageUnits
+
+    @property
+    def total_units(self) -> int:
+        """Return provider input and output units without floating-point arithmetic."""
+
+        return self.input_units + self.output_units
+
+
 class ProviderOperation(BaseModel):
     """Canonical, content-free accounting record for one external provider call."""
 

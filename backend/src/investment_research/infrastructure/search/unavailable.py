@@ -10,7 +10,7 @@ from investment_research.modules.search.contracts import (
     DenseRetrievalQuery,
     DenseVectorId,
     EmbeddingRequest,
-    EmbeddingVector,
+    EmbeddingResult,
     RerankRequest,
     RerankResult,
 )
@@ -20,7 +20,7 @@ from investment_research.modules.search.ports import SearchProviderUnavailableEr
 class UnavailableEmbeddingProvider:
     """Reject embedding calls until an approved provider is configured."""
 
-    def embed(self, request: EmbeddingRequest) -> Sequence[EmbeddingVector]:
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         """Fail explicitly without contacting a provider."""
 
         del request

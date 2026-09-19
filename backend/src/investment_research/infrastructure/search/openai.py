@@ -11,9 +11,11 @@ from openai import (
 )
 from pydantic import TypeAdapter, ValidationError
 
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
 )
 from investment_research.modules.search.domain import ConfigurationVersion
@@ -55,8 +57,8 @@ class OpenAIEmbeddingProvider:
         if not 0 < self.operation_timeout_seconds <= OPENAI_EMBEDDING_TIMEOUT_SECONDS:
             raise ValueError("OpenAI embedding timeout must be between 0 and 30 seconds")
 
-    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
-        """Return strictly correlated finite vectors or one safe provider error."""
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        """Return strictly correlated finite vectors and usage or one safe error."""
 
         if request.embedding_config_version != self.embedding_config_version:
             raise SearchProviderConfigurationError(
@@ -105,21 +107,29 @@ class OpenAIEmbeddingProvider:
             )
 
         try:
-            return tuple(
-                EmbeddingVector(
-                    input_id=request_item.input_id,
-                    values=tuple(response_item.embedding),
-                    embedding_config_version=self.embedding_config_version,
-                )
-                for request_item, response_item in zip(
-                    request.inputs,
-                    response.data,
-                    strict=True,
-                )
+            if response.usage.total_tokens != response.usage.prompt_tokens:
+                raise ValueError("embedding usage totals are inconsistent")
+            return EmbeddingResult(
+                vectors=tuple(
+                    EmbeddingVector(
+                        input_id=request_item.input_id,
+                        values=tuple(response_item.embedding),
+                        embedding_config_version=self.embedding_config_version,
+                    )
+                    for request_item, response_item in zip(
+                        request.inputs,
+                        response.data,
+                        strict=True,
+                    )
+                ),
+                usage=ProviderUsage(
+                    input_units=response.usage.prompt_tokens,
+                    output_units=0,
+                ),
             )
-        except ValidationError, ValueError:
+        except AttributeError, TypeError, ValidationError, ValueError:
             raise SearchProviderContractError(
-                "embedding provider returned invalid vector data"
+                "embedding provider returned invalid vector or usage data"
             ) from None
 
     def close(self) -> None:

@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.application import (
     DenseIndexRelationshipError,
     EmbeddingResponseContractError,
@@ -23,6 +24,7 @@ from investment_research.modules.search.contracts import (
     EmbeddingInput,
     EmbeddingPurpose,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
     LexicalSearchHit,
 )
@@ -134,16 +136,28 @@ def test_embedding_response_requires_exact_order_and_configuration() -> None:
         embedding_config_version="embedding-v1",
     )
 
-    assert validate_embedding_response(request, (first, second)) == (first, second)
+    result = EmbeddingResult(
+        vectors=(first, second),
+        usage=ProviderUsage(input_units=7, output_units=0),
+    )
+
+    assert validate_embedding_response(request, result) is result
 
     with pytest.raises(EmbeddingResponseContractError, match="exactly once and in order"):
-        validate_embedding_response(request, (second, first))
+        validate_embedding_response(request, result.model_copy(update={"vectors": (second, first)}))
     with pytest.raises(EmbeddingResponseContractError, match="exactly once and in order"):
-        validate_embedding_response(request, (first,))
+        validate_embedding_response(request, result.model_copy(update={"vectors": (first,)}))
     with pytest.raises(EmbeddingResponseContractError, match="configuration version"):
         validate_embedding_response(
             request,
-            (first, second.model_copy(update={"embedding_config_version": "embedding-v2"})),
+            result.model_copy(
+                update={
+                    "vectors": (
+                        first,
+                        second.model_copy(update={"embedding_config_version": "embedding-v2"}),
+                    )
+                }
+            ),
         )
 
 

@@ -17,6 +17,7 @@ from openai import (
     RateLimitError,
 )
 from openai.types import CreateEmbeddingResponse, Embedding
+from openai.types.create_embedding_response import Usage
 
 from investment_research.infrastructure.search import openai as openai_module
 from investment_research.infrastructure.search.openai import (
@@ -51,6 +52,8 @@ def make_response(
     vectors: tuple[tuple[float, ...], ...] = (FIRST_VECTOR, SECOND_VECTOR),
     indices: tuple[int, ...] = (0, 1),
     model: str = OPENAI_EMBEDDING_MODEL,
+    prompt_tokens: int = 7,
+    total_tokens: int = 7,
 ) -> CreateEmbeddingResponse:
     """Build the concrete SDK response shape consumed by the adapter."""
 
@@ -65,7 +68,10 @@ def make_response(
         ],
         model=model,
         object="list",
-        usage={"prompt_tokens": 7, "total_tokens": 7},
+        usage=Usage.model_construct(
+            prompt_tokens=prompt_tokens,
+            total_tokens=total_tokens,
+        ),
     )
 
 
@@ -148,10 +154,30 @@ def test_embed_sends_one_bounded_request_and_preserves_correlation() -> None:
             "timeout": OPENAI_EMBEDDING_TIMEOUT_SECONDS,
         }
     ]
-    assert tuple(vector.input_id for vector in result) == (FIRST_ID, SECOND_ID)
-    assert result[0].values == FIRST_VECTOR
-    assert result[1].values == SECOND_VECTOR
-    assert all(vector.embedding_config_version == EMBEDDING_CONFIG_VERSION for vector in result)
+    assert tuple(vector.input_id for vector in result.vectors) == (FIRST_ID, SECOND_ID)
+    assert result.vectors[0].values == FIRST_VECTOR
+    assert result.vectors[1].values == SECOND_VECTOR
+    assert all(
+        vector.embedding_config_version == EMBEDDING_CONFIG_VERSION for vector in result.vectors
+    )
+    assert result.usage.input_units == 7
+    assert result.usage.output_units == 0
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param(make_response(prompt_tokens=-1, total_tokens=-1), id="negative"),
+        pytest.param(make_response(prompt_tokens=7, total_tokens=8), id="inconsistent-total"),
+    ],
+)
+def test_embed_rejects_invalid_provider_usage(response: CreateEmbeddingResponse) -> None:
+    """Fail closed instead of estimating missing or contradictory provider usage."""
+
+    client = RecordingOpenAIClient(embeddings=RecordingEmbeddingsResource(response=response))
+
+    with pytest.raises(SearchProviderContractError, match="usage"):
+        make_provider(client).embed(make_request())
 
 
 @pytest.mark.parametrize(

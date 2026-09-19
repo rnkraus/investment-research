@@ -15,6 +15,7 @@ from investment_research.infrastructure.generation.openai import OpenAIAnswerGen
 from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
 from investment_research.infrastructure.search.pinecone import PineconeDenseIndexWriter
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     UnvalidatedEvidenceReference,
@@ -28,6 +29,7 @@ from investment_research.modules.search.contracts import (
     DenseIndexWriteResult,
     DenseVectorId,
     EmbeddingRequest,
+    EmbeddingResult,
     EmbeddingVector,
 )
 from investment_research.settings import GenerationProviderSettings, WorkerSettings
@@ -51,17 +53,20 @@ class RecordingEmbeddingProvider:
     calls: list[EmbeddingRequest] = field(default_factory=list)
     closed: bool = False
 
-    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         self.calls.append(request)
         if self.fail:
             raise RuntimeError("sensitive embedding failure")
-        return tuple(
-            EmbeddingVector(
-                input_id=item.input_id,
-                values=(0.125,) * M1_EMBEDDING_DIMENSIONS,
-                embedding_config_version=request.embedding_config_version,
-            )
-            for item in request.inputs
+        return EmbeddingResult(
+            vectors=tuple(
+                EmbeddingVector(
+                    input_id=item.input_id,
+                    values=(0.125,) * M1_EMBEDDING_DIMENSIONS,
+                    embedding_config_version=request.embedding_config_version,
+                )
+                for item in request.inputs
+            ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
 
     def close(self) -> None:

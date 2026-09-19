@@ -15,6 +15,7 @@ from pydantic import (
 )
 
 from investment_research.modules.documents.domain import SourceLocatorKind
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.domain import (
     ConfigurationVersion,
     NormalizedQuery,
@@ -161,6 +162,16 @@ class EmbeddingVector(ImmutableSearchContract):
         if any(not isfinite(item) for item in value):
             raise ValueError("embedding values must be finite")
         return value
+
+
+class EmbeddingResult(ImmutableSearchContract):
+    """Ordered embedding vectors plus provider-reported usage for one call."""
+
+    vectors: tuple[EmbeddingVector, ...] = Field(
+        min_length=1,
+        max_length=M1_EMBEDDING_BATCH_LIMIT,
+    )
+    usage: ProviderUsage
 
 
 class DenseIndexVector(ImmutableSearchContract):

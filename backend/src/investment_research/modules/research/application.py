@@ -291,13 +291,14 @@ class RetrieveResearchService:
             ),
             embedding_config_version=dependencies.dense_profile.embedding_config_version,
         )
-        embedding = validate_embedding_response(
+        embedding_result = validate_embedding_response(
             embedding_request,
             self._call_with_retry(
-                lambda: tuple(dependencies.embedding_provider.embed(embedding_request)),
+                lambda: dependencies.embedding_provider.embed(embedding_request),
                 dependencies,
             ),
-        )[0]
+        )
+        embedding = embedding_result.vectors[0]
         dense_query = DenseRetrievalQuery(
             query_vector=embedding.values,
             filters=query.filters,

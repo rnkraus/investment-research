@@ -406,13 +406,16 @@ def verify_m1_provider_smoke(
             ),
             embedding_config_version=providers.embedding.config_version,
         )
-        embeddings = validate_embedding_response(request, embedding_provider.embed(request))
+        embedding_result = validate_embedding_response(
+            request,
+            embedding_provider.embed(request),
+        )
         vector = build_dense_index_vector(
             context,
             chunk_id=input_id,
             document_version_id=document_version_id,
             chunk_set_id=chunk_set_id,
-            embedding=embeddings[0],
+            embedding=embedding_result.vectors[0],
             dense_index_config_version=providers.pinecone.config_version,
         )
         vector_id = vector.vector_id
