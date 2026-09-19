@@ -86,11 +86,12 @@ persisted retrieval run and `LEXICAL` candidates without importing Search persis
 
 ## Provider seams
 
-The application owns `EmbeddingProvider`, `DenseIndexWriter`, `DenseRetriever`, and `Reranker`; no
-provider SDK appears in this module. Their immutable contracts preserve input correlation,
-configuration versions, bounded batch and candidate sizes, canonical filters, and finite vectors
-and scores. The M1 embedding boundary accepts at most 16 inputs and 32,000 total Unicode code
-points, and every returned vector must contain exactly 1536 finite values.
+The application owns `EmbeddingProvider`, `DenseIndexWriter`, `DenseRetriever`,
+`DenseCandidateQualifier`, and `Reranker`; no provider SDK appears in this module. Their immutable
+contracts preserve input correlation, configuration versions, bounded batch and candidate sizes,
+canonical filters, and finite vectors and scores. The M1 embedding boundary accepts at most 16
+inputs and 32,000 total Unicode code points, and every returned vector must contain exactly 1536
+finite values.
 
 ```mermaid
 flowchart LR
@@ -106,9 +107,11 @@ flowchart LR
     VECTOR --> DENSE[DenseRetriever]
     FILTERS[Canonical RetrievalFilters] --> DENSE
     DENSE --> HITS[Untrusted dense hits]
-    HITS --> ELIGIBLE[Later canonical eligibility check]
-    ELIGIBLE --> RERANK[Reranker]
-    RERANK --> ORDERED[Versioned ranked results]
+    HITS --> QUALIFY[PostgreSQL DenseCandidateQualifier]
+    FILTERS --> QUALIFY
+    QUALIFY --> ELIGIBLE[Qualified canonical dense hits]
+    ELIGIBLE --> SELECT[M1 deterministic selector]
+    ELIGIBLE -. future M4 .-> RERANK[Reranker]
 ```
 
 The deterministic M1 vector identity hashes the trusted workspace ID, canonical chunk ID, and
@@ -116,6 +119,12 @@ embedding configuration version. Provider metadata contains only bounded canonic
 configuration versions; it contains no source text, title, filename, prompt, answer, or
 authorization decision. The provider adapter derives the workspace namespace from the trusted
 `WorkspaceContext`, never from a client-supplied value.
+
+Dense provider hits contain only an untrusted chunk ID and finite raw score. The PostgreSQL
+qualifier preserves their provider order but returns canonical text only when workspace, current
+document version, active lifecycle, active chunk set, `SEARCHABLE` processing state, explicit
+filters, and lexical, embedding, and dense-index configuration versions all match. Unknown,
+foreign, stale, and filtered identifiers are indistinguishable and absent from the result.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders
