@@ -96,7 +96,7 @@ the M0 lease does not prematurely create stage records.
 | `ResearchRequest` | Immutable user question and effective context | Question, company/document filters, temporal mode, cutoff time |
 | `ResearchRoute` | Routing decision for a request | Structured lookup, hybrid retrieval, or explicit combination; reason and version |
 | `RetrievalRun` | One reproducible search execution | Query forms, filters, retrieval configuration, timing |
-| `RetrievalCandidate` | Candidate from lexical, dense, or structured retrieval | Origin, rank, raw score, fused rank, reranker score |
+| `RetrievalCandidate` | Candidate from lexical, dense, or structured retrieval | Origin-local rank, raw score, final selection rank, later fused rank and reranker score |
 | `ContextBundle` | Bounded evidence input sent to generation | Ordered candidate references and token budget |
 
 Conversation context may populate explicit filters for a new request. It never becomes evidence by itself.

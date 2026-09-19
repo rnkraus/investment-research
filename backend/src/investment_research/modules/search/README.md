@@ -1,6 +1,6 @@
 # Search
 
-This module owns reproducible retrieval records and the ordered candidates selected from eligible chunks. It does not own chunk text, research questions, answers, or evidence validation.
+This module owns reproducible retrieval records and ranked candidates from eligible chunks. It does not own chunk text, research questions, answers, or evidence validation.
 
 ## Contents
 
@@ -66,13 +66,24 @@ flowchart LR
     SESSION -->|commit all or rollback all| PG[(PostgreSQL)]
 ```
 
-Zero candidates are valid and preserve the explicit insufficient-evidence path. For non-empty results, ranks start at one and remain contiguous within each retrieval origin. Stable UUID ordering is the final read tie-breaker.
+Zero candidates are valid and preserve the explicit insufficient-evidence path. For non-empty results,
+ranks start at one and remain contiguous within each retrieval origin. A `LEXICAL` run accepts only
+lexical candidates. A `DUAL_LANE` run accepts lexical and dense candidates under independently
+bounded route limits.
 
-`RetrievalOrigin` already defines the production vocabulary `LEXICAL`, `DENSE`, and `STRUCTURED`. M0.0 persists only lexical candidates; defining later origin names does not implement their retrieval paths. Dense retrieval begins in M1, while fusion and reranking begin only in their approved milestones.
+The same canonical chunk may appear once per origin, because that preserves which routes found it.
+Only the candidate chosen for context receives a `selection_rank`; selected chunks are unique and
+their ranks are contiguous. Reads return selected candidates in this final order, followed by any
+unselected candidates in stable origin and route-rank order. Fusion and reranking remain reserved
+for M4.
 
 ## Reproducibility and isolation
 
-A run preserves the exact query, its normalized form, typed filters, the lexical configuration version, candidate limit, and execution timing. Candidate rows preserve raw route rank and score, with nullable fields reserved for later fusion and reranking results.
+A run preserves the exact and normalized query, typed filters, retrieval mode, all applicable
+lexical, embedding, dense-index, and selector configuration versions, independent route limits,
+context limits, and execution timing. Candidate rows preserve origin-local rank and finite raw
+score without comparing unlike score scales. `selection_rank` records M1 context order, while
+nullable fusion and reranking fields remain reserved for M4.
 
 Every table and relationship carries `workspace_id`. Repository writes reject a mismatched trusted context before staging rows, and repository reads use the workspace in every query. Composite foreign keys let PostgreSQL reject cross-workspace links independently of application checks.
 
@@ -82,7 +93,9 @@ document and processing state, applies workspace, current-version, active-set, c
 document, and temporal filters before `ts_rank_cd` ranking, then uses `chunk_id` as the final stable
 tie-breaker before applying the candidate limit. The adapter only returns hits. Research's
 `RetrieveResearchService` invokes it through the port and maps those ordered hits to an atomically
-persisted retrieval run and `LEXICAL` candidates without importing Search persistence.
+persisted `LEXICAL` regression run without importing Search persistence. The M1 persistence contract
+already supports `DUAL_LANE` results; the versioned selector and research orchestration are the next
+application layer built on that contract.
 
 ## Provider seams
 
