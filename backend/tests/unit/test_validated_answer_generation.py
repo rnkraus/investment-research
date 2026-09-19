@@ -53,8 +53,10 @@ from investment_research.modules.research.ports import (
     ResearchRepository,
 )
 from investment_research.modules.search.domain import (
+    LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
     RetrievalCandidate,
     RetrievalFilters,
+    RetrievalMode,
     RetrievalOrigin,
     RetrievalRun,
 )
@@ -174,8 +176,10 @@ def make_retrieval_result() -> ResearchRetrievalResult:
         query_text=QUESTION,
         normalized_query="northstar grid analytics fy2025 revenue",
         filters=RetrievalFilters(),
+        mode=RetrievalMode.LEXICAL,
         lexical_config_version="m0.0-english-lexical-v1",
-        candidate_limit=10,
+        selector_config_version=LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
+        lexical_candidate_limit=10,
         started_at=RETRIEVED_AT,
         completed_at=RETRIEVED_AT,
     )

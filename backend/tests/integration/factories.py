@@ -46,8 +46,10 @@ from investment_research.modules.research.domain import (
 )
 from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
 from investment_research.modules.search.domain import (
+    LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
     RetrievalCandidate,
     RetrievalFilters,
+    RetrievalMode,
     RetrievalOrigin,
     RetrievalRun,
 )
@@ -318,8 +320,10 @@ def make_retrieval_result(source: ResearchSource) -> RetrievalResultFixture:
         query_text=source.request.question,
         normalized_query="fy2025 revenue",
         filters=RetrievalFilters(document_ids=(source.document.id,)),
+        mode=RetrievalMode.LEXICAL,
         lexical_config_version=source.processing_run.lexical_config_version,
-        candidate_limit=10,
+        selector_config_version=LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
+        lexical_candidate_limit=10,
         started_at=started_at,
         completed_at=completed_at,
     )

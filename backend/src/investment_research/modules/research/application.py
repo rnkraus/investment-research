@@ -49,8 +49,10 @@ from investment_research.modules.research.ports import (
 from investment_research.modules.search.application import build_lexical_search_query
 from investment_research.modules.search.contracts import LexicalSearchProfile
 from investment_research.modules.search.domain import (
+    LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
     RetrievalCandidate,
     RetrievalFilters,
+    RetrievalMode,
     RetrievalOrigin,
     RetrievalRun,
 )
@@ -132,8 +134,10 @@ class RetrieveResearchService:
                 query_text=request.question,
                 normalized_query=query.normalized_query,
                 filters=query.filters,
+                mode=RetrievalMode.LEXICAL,
                 lexical_config_version=query.lexical_config_version,
-                candidate_limit=query.candidate_limit,
+                selector_config_version=LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
+                lexical_candidate_limit=query.candidate_limit,
                 started_at=started_at,
                 completed_at=completed_at,
             )

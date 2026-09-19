@@ -1,7 +1,7 @@
 """Unit tests for retrieval domain values, mappings, and scoped persistence."""
 
 from datetime import UTC, datetime, timedelta
-from math import inf
+from math import inf, nan
 from typing import cast
 from unittest.mock import create_autospec
 from uuid import UUID
@@ -13,8 +13,10 @@ from sqlalchemy.orm import Session
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.domain import (
+    LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
     RetrievalCandidate,
     RetrievalFilters,
+    RetrievalMode,
     RetrievalOrigin,
     RetrievalRun,
     SearchRelationshipError,
@@ -51,7 +53,7 @@ def make_context() -> WorkspaceContext:
 def make_run(
     *,
     workspace_id: UUID = WORKSPACE_ID,
-    candidate_limit: int = 10,
+    lexical_candidate_limit: int = 10,
 ) -> RetrievalRun:
     """Build one reproducible completed lexical retrieval run."""
 
@@ -65,8 +67,34 @@ def make_run(
             document_ids=(DOCUMENT_ID,),
             available_at_cutoff=STARTED_AT - timedelta(days=1),
         ),
+        mode=RetrievalMode.LEXICAL,
         lexical_config_version="english-lexical-v1",
-        candidate_limit=candidate_limit,
+        selector_config_version=LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
+        lexical_candidate_limit=lexical_candidate_limit,
+        started_at=STARTED_AT,
+        completed_at=COMPLETED_AT,
+    )
+
+
+def make_dual_lane_run(*, context_chunk_limit: int = 8) -> RetrievalRun:
+    """Build one reproducible M1 lexical-plus-dense retrieval run."""
+
+    return RetrievalRun(
+        id=RETRIEVAL_RUN_ID,
+        workspace_id=WORKSPACE_ID,
+        research_request_id=RESEARCH_REQUEST_ID,
+        query_text="  What was FY2025 revenue?  ",
+        normalized_query="fy2025 revenue",
+        filters=RetrievalFilters(document_ids=(DOCUMENT_ID,)),
+        mode=RetrievalMode.DUAL_LANE,
+        lexical_config_version="english-lexical-v1",
+        embedding_config_version="openai-text-embedding-3-small-v1",
+        dense_index_config_version="pinecone-dense-v1",
+        selector_config_version="deterministic-round-robin-v1",
+        lexical_candidate_limit=10,
+        dense_candidate_limit=10,
+        context_chunk_limit=context_chunk_limit,
+        context_character_limit=24_000,
         started_at=STARTED_AT,
         completed_at=COMPLETED_AT,
     )
@@ -80,6 +108,8 @@ def make_candidate(
     chunk_id: UUID = CHUNK_ID,
     rank: int = 1,
     origin: RetrievalOrigin = RetrievalOrigin.LEXICAL,
+    raw_score: float = 0.75,
+    selection_rank: int | None = None,
 ) -> RetrievalCandidate:
     """Build one deterministic ranked retrieval candidate."""
 
@@ -90,7 +120,8 @@ def make_candidate(
         chunk_id=chunk_id,
         origin=origin,
         rank=rank,
-        raw_score=0.75,
+        raw_score=raw_score,
+        selection_rank=selection_rank,
         created_at=COMPLETED_AT,
     )
 
@@ -127,6 +158,16 @@ def test_retrieval_filters_reject_duplicate_document_ids() -> None:
             "must not precede",
             id="reversed-times",
         ),
+        pytest.param(
+            {"dense_candidate_limit": 1},
+            "LEXICAL retrieval must not define",
+            id="lexical-with-dense-settings",
+        ),
+        pytest.param(
+            {"mode": RetrievalMode.DUAL_LANE},
+            "DUAL_LANE retrieval requires",
+            id="dual-lane-without-dense-settings",
+        ),
     ],
 )
 def test_retrieval_run_rejects_invalid_snapshots(
@@ -139,12 +180,25 @@ def test_retrieval_run_rejects_invalid_snapshots(
         RetrievalRun.model_validate(payload)
 
 
-@pytest.mark.parametrize("raw_score", [-0.1, inf], ids=["negative", "infinite"])
+@pytest.mark.parametrize(
+    "raw_score",
+    [inf, -inf, nan],
+    ids=["positive-infinity", "negative-infinity", "not-a-number"],
+)
 def test_retrieval_candidate_rejects_invalid_raw_scores(raw_score: float) -> None:
     payload = {**make_candidate().model_dump(), "raw_score": raw_score}
 
     with pytest.raises(ValidationError):
         RetrievalCandidate.model_validate(payload)
+
+
+def test_retrieval_candidate_accepts_negative_finite_dense_score() -> None:
+    candidate = make_candidate(
+        origin=RetrievalOrigin.DENSE,
+        raw_score=-0.125,
+    )
+
+    assert candidate.raw_score == -0.125
 
 
 def test_repository_matches_application_owned_protocol() -> None:
@@ -174,6 +228,27 @@ def test_repository_stages_completed_run_and_candidates() -> None:
     assert len(candidate_rows) == 1
     assert isinstance(candidate_rows[0], RetrievalCandidateRow)
     assert candidate_rows[0].to_domain() == candidate
+
+
+def test_repository_stages_ranked_dual_lane_result() -> None:
+    session = create_autospec(Session, instance=True)
+    repository = SqlAlchemyRetrievalRepository(session)
+    run = make_dual_lane_run()
+    candidates = [
+        make_candidate(selection_rank=1),
+        make_candidate(
+            candidate_id=OTHER_CANDIDATE_ID,
+            chunk_id=OTHER_CHUNK_ID,
+            origin=RetrievalOrigin.DENSE,
+            raw_score=-0.125,
+            selection_rank=2,
+        ),
+    ]
+
+    repository.add_result(make_context(), run, candidates)
+
+    stored_candidates = [row.to_domain() for row in session.add_all.call_args.args[0]]
+    assert stored_candidates == candidates
 
 
 def test_repository_allows_empty_insufficient_result() -> None:
@@ -228,7 +303,7 @@ def test_repository_allows_empty_insufficient_result() -> None:
             id="duplicate-chunk",
         ),
         pytest.param(
-            make_run(candidate_limit=1),
+            make_run(lexical_candidate_limit=1),
             [
                 make_candidate(),
                 make_candidate(
@@ -240,6 +315,49 @@ def test_repository_allows_empty_insufficient_result() -> None:
             SearchRelationshipError,
             "exceeds",
             id="over-limit",
+        ),
+        pytest.param(
+            make_run(),
+            [make_candidate(origin=RetrievalOrigin.DENSE)],
+            SearchRelationshipError,
+            "origin is not enabled",
+            id="dense-candidate-in-lexical-run",
+        ),
+        pytest.param(
+            make_dual_lane_run(),
+            [make_candidate(selection_rank=2)],
+            SearchRelationshipError,
+            "selection ranks must be contiguous",
+            id="selection-rank-gap",
+        ),
+        pytest.param(
+            make_dual_lane_run(),
+            [
+                make_candidate(selection_rank=1),
+                make_candidate(
+                    candidate_id=OTHER_CANDIDATE_ID,
+                    origin=RetrievalOrigin.DENSE,
+                    selection_rank=2,
+                ),
+            ],
+            SearchRelationshipError,
+            "selected candidate chunks must be unique",
+            id="duplicate-selected-chunk",
+        ),
+        pytest.param(
+            make_dual_lane_run(context_chunk_limit=1),
+            [
+                make_candidate(selection_rank=1),
+                make_candidate(
+                    candidate_id=OTHER_CANDIDATE_ID,
+                    chunk_id=OTHER_CHUNK_ID,
+                    origin=RetrievalOrigin.DENSE,
+                    selection_rank=2,
+                ),
+            ],
+            SearchRelationshipError,
+            "selected candidate count exceeds",
+            id="over-context-limit",
         ),
     ],
 )
