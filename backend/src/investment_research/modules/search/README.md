@@ -159,7 +159,8 @@ service performs no database writes, so its provider work always remains outside
 
 Unavailable infrastructure adapters fail explicitly with `SearchProviderUnavailableError`, so an
 accidentally enabled path cannot masquerade as a valid empty result. The Pinecone infrastructure
-adapter now implements `DenseIndexWriter` through the provider's gRPC data plane while this module
-remains SDK-free. Embedding and dense retrieval begin in their assigned blocks, and reranking is
-activated only after its evaluation gate. Provider results remain candidates, never citation
-evidence, until canonical eligibility and evidence validation succeed.
+adapters implement separate `DenseIndexWriter` and `DenseRetriever` roles through the provider's
+gRPC data plane while this module remains SDK-free. The worker owns the writer credential and the
+API owns the reader credential; each process closes only its own client. Reranking is activated only
+after its evaluation gate. Provider results remain candidates, never citation evidence, until
+canonical eligibility and evidence validation succeed.

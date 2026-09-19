@@ -32,6 +32,8 @@ flowchart TD
     BOOT --> STORAGE[ObjectStorage adapter]
     BOOT --> CELERY[Celery application]
     CELERY --> DISPATCH[CeleryProcessingDispatcher]
+    BOOT --> QUERYEMBED[Optional query OpenAIEmbeddingProvider]
+    BOOT --> QUERYDENSE[Optional PineconeDenseRetriever]
     BOOT --> GENERATOR[Deterministic answer generator]
     BOOT --> SUPPORT[Independent statement-support evaluator]
     CAPTUREUOW --> CAPTURE[CaptureDocumentService]
@@ -39,6 +41,8 @@ flowchart TD
     STATUSUOW --> STATUS[GetProcessingRunService]
     RETRIEVALUOW --> RETRIEVE[RetrieveResearchService]
     RETRIEVALUOW --> LEXICAL[PostgreSQL LexicalSearch adapter]
+    QUERYEMBED --> RETRIEVE
+    QUERYDENSE --> RETRIEVE
     ANSWERUOW --> GENERATE[GenerateValidatedAnswerService]
     GENERATOR --> GENERATE
     SUPPORT --> GENERATE
@@ -60,7 +64,7 @@ flowchart TD
     MAIN --> OPENAPI[OpenAPI contract]
     STATE --> ROUTES
     ROUTES --> ERRORS
-    LIFE -->|shutdown| CLOSE[Close Celery resources and engine pool]
+    LIFE -->|shutdown| CLOSE[Close query providers, Celery, and engine pool]
 ```
 
 `main.py` and `bootstrap.py` are the outer composition layer. Module domain and application files must remain independent of this layer. Application startup must never create or mutate database schemas.
@@ -104,9 +108,10 @@ partially configured: `ApiSettings.query_providers` accepts only query-embedding
 credentials, while `WorkerSettings.indexing_providers` accepts only document-embedding and
 Pinecone-index credentials. Both retain the frozen model, dimensions, configuration versions, and
 timeouts. The worker group is required when its container is built and is wired only to document
-indexing. The retrieval service now accepts the approved query adapters, while the API query group
-remains unused until the following composition block constructs and injects them. `ParserSettings`
-loads only its allowlisted process variables,
+indexing. When the optional API query group is complete, the API container constructs the separate
+query-role embedding provider and Pinecone reader and injects them into M1 retrieval; when absent,
+the credential-free lexical regression path remains active. `ParserSettings` loads only its
+allowlisted process variables,
 exposes no database, queue, or provider field, and rejects known application credential variables.
 `runtime_location=host` restricts bind, database, object-storage, and broker targets to loopback;
 `runtime_location=container` permits only the fixed internal Compose service targets required by

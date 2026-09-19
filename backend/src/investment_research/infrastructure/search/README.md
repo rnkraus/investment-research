@@ -8,7 +8,7 @@ query must read physical data owned by several business modules.
 | File               | Responsibility                                                                          |
 | ------------------ | --------------------------------------------------------------------------------------- |
 | `__init__.py`      | Identifies the search-adapter package without exporting a concrete implementation.      |
-| `deterministic.py` | Returns explicitly configured fixed embeddings for credential-free correctness tests.  |
+| `deterministic.py` | Returns explicitly configured fixed embeddings for credential-free correctness tests.   |
 | `openai.py`        | Creates bounded, correlated embeddings through one retry-free OpenAI SDK call.          |
 | `pinecone.py`      | Writes, verifies, and queries bounded vectors through retry-free Pinecone gRPC clients. |
 | `postgresql.py`    | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
@@ -24,11 +24,12 @@ flowchart LR
     PG --> PROCESSING[Processing mappings]
     PG --> DB[(PostgreSQL)]
 
-    FUTURE[Later application path] --> PROVIDER_PORTS[Embedding, dense, and reranking ports]
+    M1[M1 indexing and retrieval paths] --> PROVIDER_PORTS[Embedding and dense ports]
+    FUTURE[Later M4 path] --> RERANK[Reranking port]
     DETERMINISTIC[DeterministicEmbeddingProvider] -. implements .-> PROVIDER_PORTS
     OPENAI[OpenAIEmbeddingProvider] -. implements .-> PROVIDER_PORTS
     OPENAI --> OPENAI_API[OpenAI embeddings API]
-    PINECONE[Pinecone writer and retriever] -. implement .-> PROVIDER_PORTS
+    PINECONE[Pinecone writer and retriever] -. implements .-> PROVIDER_PORTS
     PINECONE --> GRPC[Pinecone gRPC data plane]
     UNAVAILABLE[M0 unavailable adapters] -. implement .-> PROVIDER_PORTS
 ```
@@ -47,7 +48,8 @@ and document. Before ranking, it requires:
 - the trusted workspace on the chunk;
 - an active document whose `current_version_id` is the chunk's version;
 - an active chunk set with the requested lexical configuration version;
-- a `LEXICAL_READY` processing run with the same lexical configuration version;
+- a `LEXICAL_READY` regression run or `SEARCHABLE` M1 run with the same lexical configuration
+  version;
 - optional requested-document, public-availability, and archive-capture filters;
 - a positive match against PostgreSQL's English full-text query.
 
