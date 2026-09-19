@@ -22,6 +22,26 @@ from investment_research.modules.search.ports import (
 )
 
 
+class AnswerGenerationProviderError(Exception):
+    """Base class for safe answer-generation provider failures."""
+
+
+class AnswerGenerationProviderTransientError(AnswerGenerationProviderError):
+    """The configured generator is temporarily unavailable."""
+
+
+class AnswerGenerationProviderConfigurationError(AnswerGenerationProviderError):
+    """The provider rejected the configured generation request."""
+
+
+class AnswerGenerationProviderContractError(AnswerGenerationProviderError):
+    """The provider returned output outside the application contract."""
+
+
+class AnswerGenerationProviderRefusalError(AnswerGenerationProviderError):
+    """The provider refused to produce an answer proposal."""
+
+
 class AnswerGenerator(Protocol):
     """Produce schema-valid but untrusted answer proposals from bounded sources."""
 
