@@ -47,6 +47,20 @@ function completedEvent(requestId = REQUEST_ID) {
   };
 }
 
+function failedEvent(requestId = REQUEST_ID) {
+  return {
+    event: "research.failed",
+    schema_version: "1.0",
+    research_request_id: requestId,
+    error: {
+      code: "PROVIDER_UNAVAILABLE",
+      message: "The research provider is temporarily unavailable.",
+      request_id: requestId,
+    },
+    retriable: true,
+  };
+}
+
 test("a statement becomes complete only after its citation arrives", () => {
   const withStatement = applyResearchEvent(
     beginResearchSession(),
@@ -117,6 +131,27 @@ test("an insufficient result remains explicit and contains no statements", () =>
   assert.equal(result.status, "INSUFFICIENT");
   assert.equal(result.statements.length, 0);
   assert.match(result.message, /sufficient evidence/);
+});
+
+test("a safe provider failure becomes terminal without answer content", () => {
+  const result = applyResearchEvent(beginResearchSession(), failedEvent());
+
+  assert.equal(result.status, "FAILED");
+  assert.equal(result.researchRequestId, REQUEST_ID);
+  assert.equal(
+    result.message,
+    "The research provider is temporarily unavailable.",
+  );
+  assert.equal(result.statements.length, 0);
+});
+
+test("a failure cannot turn already streamed prose into a partial answer", () => {
+  const session = applyResearchEvent(beginResearchSession(), statementEvent());
+
+  assert.throws(
+    () => applyResearchEvent(session, failedEvent()),
+    ResearchSequenceError,
+  );
 });
 
 test("a citation cannot arrive before its answer statement", () => {
