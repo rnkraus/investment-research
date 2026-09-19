@@ -12,6 +12,7 @@ from investment_research.modules.search.contracts import (
     DenseIndexVector,
     DenseIndexWriteRequest,
     DenseIndexWriteResult,
+    DenseQualificationRequest,
     DenseRetrievalHit,
     DenseRetrievalQuery,
     EmbeddingInput,
@@ -151,11 +152,21 @@ def test_dense_retrieval_contracts_reject_non_finite_provider_values() -> None:
             query_vector=(float("inf"), *VECTOR_VALUES[1:]),
             filters=RetrievalFilters(),
             embedding_config_version="embedding-v1",
-            dense_config_version="dense-v1",
+            dense_index_config_version="dense-v1",
             candidate_limit=10,
         )
     with pytest.raises(ValidationError):
         DenseRetrievalHit(chunk_id=CHUNK_ID, raw_score=float("nan"))
+
+    provider_hit = DenseRetrievalHit(chunk_id=CHUNK_ID, raw_score=0.75)
+    with pytest.raises(ValidationError, match="dense provider chunk IDs must be unique"):
+        DenseQualificationRequest(
+            provider_hits=(provider_hit, provider_hit),
+            filters=RetrievalFilters(),
+            lexical_config_version="lexical-v1",
+            embedding_config_version="embedding-v1",
+            dense_index_config_version="dense-v1",
+        )
 
 
 def test_rerank_contracts_require_unique_candidates_and_finite_scores() -> None:

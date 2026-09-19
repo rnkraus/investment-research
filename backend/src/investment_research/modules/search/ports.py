@@ -8,6 +8,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.contracts import (
     DenseIndexWriteRequest,
     DenseIndexWriteResult,
+    DenseQualificationRequest,
     DenseRetrievalHit,
     DenseRetrievalQuery,
     DenseVectorId,
@@ -15,6 +16,7 @@ from investment_research.modules.search.contracts import (
     EmbeddingVector,
     LexicalSearchHit,
     LexicalSearchQuery,
+    QualifiedDenseHit,
     RerankRequest,
     RerankResult,
 )
@@ -86,6 +88,17 @@ class DenseRetriever(Protocol):
         query: DenseRetrievalQuery,
     ) -> Sequence[DenseRetrievalHit]:
         """Return provider hits that still require canonical eligibility checks."""
+
+
+class DenseCandidateQualifier(Protocol):
+    """Rehydrate provider hits only through eligible canonical PostgreSQL state."""
+
+    def qualify(
+        self,
+        context: WorkspaceContext,
+        request: DenseQualificationRequest,
+    ) -> Sequence[QualifiedDenseHit]:
+        """Preserve provider order while silently excluding ineligible identifiers."""
 
 
 class Reranker(Protocol):

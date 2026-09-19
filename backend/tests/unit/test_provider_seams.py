@@ -90,7 +90,7 @@ def test_unavailable_search_adapters_fail_without_provider_calls() -> None:
                 query_vector=VECTOR_VALUES,
                 filters=RetrievalFilters(),
                 embedding_config_version="embedding-v1",
-                dense_config_version="dense-v1",
+                dense_index_config_version="dense-v1",
                 candidate_limit=10,
             ),
         )
