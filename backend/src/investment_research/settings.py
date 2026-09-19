@@ -412,6 +412,24 @@ class DenseProviderSettings(BaseModel):
     pinecone: PineconeProviderSettings
 
 
+class GenerationProviderSettings(BaseModel):
+    """One API-only credential for M1 answer and statement-support calls."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    api_key: SecretStr
+
+    @field_validator("api_key")
+    @classmethod
+    def require_normalized_api_key(cls, value: SecretStr) -> SecretStr:
+        """Reject blank or padded credentials without exposing their values."""
+
+        secret = value.get_secret_value()
+        if not secret or secret != secret.strip():
+            raise ValueError("generation API key must be a non-empty normalized value")
+        return value
+
+
 class ApiSettings(ObjectStorageSettings):
     """Configuration available to the FastAPI process."""
 
@@ -424,6 +442,7 @@ class ApiSettings(ObjectStorageSettings):
         le=MAX_CONFIGURABLE_UPLOAD_BYTES,
     )
     query_providers: DenseProviderSettings | None = None
+    generation_provider: GenerationProviderSettings | None = None
 
     @model_validator(mode="after")
     def require_supported_api_host(self) -> ApiSettings:
@@ -437,12 +456,29 @@ class ApiSettings(ObjectStorageSettings):
             raise ValueError("api_host is not allowed for the selected runtime location")
         return self
 
+    @model_validator(mode="after")
+    def require_complete_m1_provider_configuration(self) -> ApiSettings:
+        """Enable the complete M1 query and generation path or neither path."""
+
+        if (self.query_providers is None) != (self.generation_provider is None):
+            raise ValueError(
+                "M1 API provider configuration requires query and generation providers together"
+            )
+        return self
+
     def require_query_providers(self) -> DenseProviderSettings:
         """Return complete query-provider values only when M1 dense retrieval is enabled."""
 
         if self.query_providers is None:
             raise RuntimeError("query provider configuration is required")
         return self.query_providers
+
+    def require_generation_provider(self) -> GenerationProviderSettings:
+        """Return the API-only generation credential when the M1 path is enabled."""
+
+        if self.generation_provider is None:
+            raise RuntimeError("generation provider configuration is required")
+        return self.generation_provider
 
 
 class WorkerSettings(ObjectStorageSettings):
@@ -849,6 +885,18 @@ def _dense_provider_runtime_values(
     }
 
 
+def _generation_provider_runtime_values(
+    file_values: dict[str, str | None],
+) -> dict[str, object] | None:
+    """Load the optional API-only generation credential."""
+
+    api_key = _secret_configuration_value(
+        "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY",
+        file_values,
+    )
+    return None if api_key is None else {"api_key": api_key}
+
+
 def load_database_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> DatabaseSettings:
     """Load only values required for a direct PostgreSQL maintenance process."""
 
@@ -885,6 +933,7 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
             embedding_key_name="INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
             pinecone_key_name="INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
         ),
+        "generation_provider": _generation_provider_runtime_values(file_values),
     }
     return ApiSettings.model_validate(values)
 
