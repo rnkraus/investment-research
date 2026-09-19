@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import timedelta
 from uuid import UUID, uuid4
 
@@ -16,19 +17,78 @@ from investment_research.infrastructure.database.unit_of_work import (
     SqlAlchemyResearchRetrievalRepositories,
     create_research_retrieval_unit_of_work_factory,
 )
-from investment_research.infrastructure.search.postgresql import PostgresLexicalSearch
+from investment_research.infrastructure.search.postgresql import (
+    PostgresDenseCandidateQualifier,
+    PostgresLexicalSearch,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.research.application import RetrieveResearchService
+from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.research.application import (
+    M1QueryRetrievalDependencies,
+    RetrieveResearchService,
+)
 from investment_research.modules.research.contracts import ResearchRetrievalInput
 from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
 from investment_research.modules.research.ports import (
     ResearchRetrievalUnitOfWork,
     ResearchRetrievalUnitOfWorkFactory,
 )
-from investment_research.modules.search.contracts import LexicalSearchProfile
-from investment_research.modules.search.domain import RetrievalCandidate, RetrievalRun
+from investment_research.modules.search.contracts import (
+    M1_EMBEDDING_DIMENSIONS,
+    DenseRetrievalHit,
+    DenseRetrievalProfile,
+    DenseRetrievalQuery,
+    EmbeddingRequest,
+    EmbeddingVector,
+    LexicalSearchProfile,
+    M1SelectionProfile,
+)
+from investment_research.modules.search.domain import (
+    RetrievalCandidate,
+    RetrievalMode,
+    RetrievalOrigin,
+    RetrievalRun,
+)
 from investment_research.modules.search.persistence import SqlAlchemyRetrievalRepository
-from tests.integration.factories import FIXTURE_TIME, make_research_source, persist_research_source
+from tests.integration.factories import (
+    FIXTURE_TIME,
+    make_research_source,
+    make_searchable_research_source,
+    persist_research_source,
+)
+
+LEXICAL_CONFIG_VERSION = "m1-english-lexical-v1"
+EMBEDDING_CONFIG_VERSION = "openai-text-embedding-3-small-1536-v1"
+DENSE_INDEX_CONFIG_VERSION = "pinecone-serverless-cosine-1536-v1"
+VECTOR_VALUES = (0.125,) * M1_EMBEDDING_DIMENSIONS
+
+
+class FixedQueryEmbeddingProvider:
+    """Return one deterministic query vector without calling a live provider."""
+
+    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+        return (
+            EmbeddingVector(
+                input_id=request.inputs[0].input_id,
+                values=VECTOR_VALUES,
+                embedding_config_version=request.embedding_config_version,
+            ),
+        )
+
+
+class FixedDenseRetriever:
+    """Return controlled provider hits while retaining the real qualification path."""
+
+    def __init__(self, hits: tuple[DenseRetrievalHit, ...]) -> None:
+        self._hits = hits
+
+    def retrieve(
+        self,
+        context: WorkspaceContext,
+        query: DenseRetrievalQuery,
+    ) -> tuple[DenseRetrievalHit, ...]:
+        del context, query
+        return self._hits
 
 
 class FailingRetrievalRepository:
@@ -112,6 +172,102 @@ def test_service_commits_request_run_and_ranked_candidates_together(
         )
 
 
+def test_dual_lane_service_qualifies_selects_and_commits_both_lanes(
+    integration_database_engine: Engine,
+) -> None:
+    source = make_searchable_research_source(
+        label="Dual Lane Research Retrieval",
+        primary_text="FY2025 revenue was $184.2 million.",
+        lexical_config_version=LEXICAL_CONFIG_VERSION,
+    )
+    source = replace(
+        source,
+        processing_run=source.processing_run.model_copy(
+            update={
+                "state": ProcessingState.SEARCHABLE,
+                "embedding_config_version": EMBEDDING_CONFIG_VERSION,
+                "dense_index_config_version": DENSE_INDEX_CONFIG_VERSION,
+            }
+        ),
+    )
+    persist_research_source(integration_database_engine, source)
+    unknown_chunk_id = uuid4()
+    request_id = uuid4()
+    retrieval_run_id = uuid4()
+    candidate_ids = (uuid4(), uuid4(), uuid4())
+    identifiers = iter((request_id, retrieval_run_id, *candidate_ids))
+    clock = iter(
+        (
+            FIXTURE_TIME + timedelta(seconds=10),
+            FIXTURE_TIME + timedelta(seconds=11),
+        )
+    )
+    service = RetrieveResearchService(
+        unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
+            create_session_factory(integration_database_engine)
+        ),
+        search_profile=LexicalSearchProfile(
+            lexical_config_version=LEXICAL_CONFIG_VERSION,
+            candidate_limit=10,
+        ),
+        m1_query_retrieval=M1QueryRetrievalDependencies(
+            embedding_provider=FixedQueryEmbeddingProvider(),
+            dense_retriever=FixedDenseRetriever(
+                (
+                    DenseRetrievalHit(chunk_id=source.chunks[0].id, raw_score=0.95),
+                    DenseRetrievalHit(chunk_id=source.chunks[1].id, raw_score=0.75),
+                    DenseRetrievalHit(chunk_id=unknown_chunk_id, raw_score=0.5),
+                )
+            ),
+            dense_profile=DenseRetrievalProfile(
+                embedding_config_version=EMBEDDING_CONFIG_VERSION,
+                dense_index_config_version=DENSE_INDEX_CONFIG_VERSION,
+                candidate_limit=10,
+            ),
+            selection_profile=M1SelectionProfile(),
+            retry_delay_seconds=0,
+        ),
+        clock=clock.__next__,
+        identifier_factory=identifiers.__next__,
+    )
+
+    result = service.retrieve(
+        source.context,
+        ResearchRetrievalInput(
+            question="What was FY2025 revenue?",
+            document_ids=(source.document.id,),
+        ),
+    )
+
+    assert result.retrieval_run.mode is RetrievalMode.DUAL_LANE
+    assert [(candidate.origin, candidate.chunk_id) for candidate in result.candidates] == [
+        (RetrievalOrigin.LEXICAL, source.chunks[0].id),
+        (RetrievalOrigin.DENSE, source.chunks[0].id),
+        (RetrievalOrigin.DENSE, source.chunks[1].id),
+    ]
+    assert [candidate.selection_rank for candidate in result.candidates] == [1, None, 2]
+    assert [selected.chunk_id for selected in result.sources] == [
+        source.chunks[0].id,
+        source.chunks[1].id,
+    ]
+    assert unknown_chunk_id not in {candidate.chunk_id for candidate in result.candidates}
+
+    session_factory = create_session_factory(integration_database_engine)
+    with session_factory() as session:
+        research_repository = SqlAlchemyResearchRepository(session)
+        retrieval_repository = SqlAlchemyRetrievalRepository(session)
+        assert research_repository.get_request_by_id(source.context, request_id) == result.request
+        assert (
+            retrieval_repository.get_run_by_id(source.context, retrieval_run_id)
+            == result.retrieval_run
+        )
+        assert tuple(retrieval_repository.list_candidates(source.context, retrieval_run_id)) == (
+            result.candidates[0],
+            result.candidates[2],
+            result.candidates[1],
+        )
+
+
 def test_failure_after_real_search_rolls_back_the_flushed_request(
     integration_database_engine: Engine,
 ) -> None:
@@ -135,6 +291,7 @@ def test_failure_after_real_search_rolls_back_the_flushed_request(
             yield SqlAlchemyResearchRetrievalRepositories(
                 research=SqlAlchemyResearchRepository(session),
                 lexical_search=PostgresLexicalSearch(session),
+                dense_qualifier=PostgresDenseCandidateQualifier(session),
                 retrieval=FailingRetrievalRepository(),
             )
 

@@ -25,7 +25,11 @@ from investment_research.modules.research.ports import (
 )
 from investment_research.modules.search.contracts import LexicalSearchHit, LexicalSearchProfile
 from investment_research.modules.search.domain import RetrievalOrigin
-from investment_research.modules.search.ports import LexicalSearch, RetrievalRepository
+from investment_research.modules.search.ports import (
+    DenseCandidateQualifier,
+    LexicalSearch,
+    RetrievalRepository,
+)
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -49,9 +53,11 @@ class RecordingUnitOfWork:
     def __init__(self, hits: tuple[LexicalSearchHit, ...] = ()) -> None:
         self.research_mock = create_autospec(ResearchRepository, instance=True)
         self.lexical_search_mock = create_autospec(LexicalSearch, instance=True)
+        self.dense_qualifier_mock = create_autospec(DenseCandidateQualifier, instance=True)
         self.retrieval_mock = create_autospec(RetrievalRepository, instance=True)
         self.research = cast(ResearchRepository, self.research_mock)
         self.lexical_search = cast(LexicalSearch, self.lexical_search_mock)
+        self.dense_qualifier = cast(DenseCandidateQualifier, self.dense_qualifier_mock)
         self.retrieval = cast(RetrievalRepository, self.retrieval_mock)
         self.lexical_search_mock.search.return_value = hits
         self.enter_count = 0

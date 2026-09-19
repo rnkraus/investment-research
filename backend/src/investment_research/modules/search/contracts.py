@@ -31,6 +31,8 @@ DenseVectorId = Annotated[
 M1_EMBEDDING_BATCH_LIMIT = 16
 M1_EMBEDDING_CHARACTER_LIMIT = 32_000
 M1_EMBEDDING_DIMENSIONS = 1_536
+M1_PROVIDER_MAX_ATTEMPTS = 2
+M1_PROVIDER_RETRY_DELAY_SECONDS = 0.25
 M1_SELECTOR_CONFIG_VERSION = "m1-lexical-first-round-robin-v1"
 M1_CONTEXT_CHUNK_LIMIT = 8
 M1_CONTEXT_CHARACTER_LIMIT = 24_000
@@ -249,6 +251,14 @@ class DenseRetrievalQuery(ImmutableSearchContract):
         if any(not isfinite(item) for item in value):
             raise ValueError("query vector values must be finite")
         return value
+
+
+class DenseRetrievalProfile(ImmutableSearchContract):
+    """Versioned and bounded configuration selected for dense query retrieval."""
+
+    embedding_config_version: ConfigurationVersion
+    dense_index_config_version: ConfigurationVersion
+    candidate_limit: int = Field(ge=1, le=100)
 
 
 class DenseRetrievalHit(ImmutableSearchContract):
