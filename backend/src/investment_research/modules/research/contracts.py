@@ -23,11 +23,9 @@ from investment_research.modules.research.domain import (
     StatementText,
     TemporalMode,
 )
-from investment_research.modules.search.contracts import LexicalSearchHit
 from investment_research.modules.search.domain import (
     QueryText,
     RetrievalCandidate,
-    RetrievalOrigin,
     RetrievalRun,
 )
 
@@ -82,17 +80,50 @@ class ResearchRetrievalInput(ImmutableResearchContract):
         return self
 
 
+class CanonicalCandidateSource(ImmutableResearchContract):
+    """One selected retrieval candidate rehydrated from canonical archive state."""
+
+    retrieval_candidate_id: UUID
+    chunk_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    structure_block_id: UUID
+    source_locator_kind: SourceLocatorKind
+    page_number: int | None = Field(default=None, ge=1)
+    text: str = Field(min_length=1, max_length=100_000)
+
+    @field_validator("text")
+    @classmethod
+    def require_visible_source_text(cls, value: str) -> str:
+        """Reject whitespace-only source text without changing canonical content."""
+
+        if not value.strip():
+            raise ValueError("text must contain a non-whitespace character")
+        return value
+
+    @model_validator(mode="after")
+    def require_media_appropriate_locator(self) -> Self:
+        """Keep the canonical locator consistent with the source medium."""
+
+        if self.source_locator_kind is SourceLocatorKind.PDF_PAGE:
+            if self.page_number is None:
+                raise ValueError("PDF_PAGE canonical source requires page_number")
+        elif self.page_number is not None:
+            raise ValueError("TEXT_PASSAGE canonical source must not define page_number")
+        return self
+
+
 class ResearchRetrievalResult(ImmutableResearchContract):
-    """Committed request, retrieval record, candidates, and their canonical hit data."""
+    """Committed retrieval records and the selected canonical generation sources."""
 
     request: ResearchRequest
     retrieval_run: RetrievalRun
     candidates: tuple[RetrievalCandidate, ...]
-    hits: tuple[LexicalSearchHit, ...]
+    sources: tuple[CanonicalCandidateSource, ...]
 
     @model_validator(mode="after")
     def require_consistent_result(self) -> Self:
-        """Keep persisted candidates aligned with the exact ordered adapter hits."""
+        """Keep every selected source aligned with one persisted scoped candidate."""
 
         if (
             self.retrieval_run.workspace_id != self.request.workspace_id
@@ -100,22 +131,26 @@ class ResearchRetrievalResult(ImmutableResearchContract):
             or self.retrieval_run.query_text != self.request.question
         ):
             raise ValueError("retrieval run does not belong to the research request")
-        if len(self.candidates) != len(self.hits):
-            raise ValueError("each retrieval candidate must retain one source hit")
-
-        for expected_rank, (candidate, hit) in enumerate(
-            zip(self.candidates, self.hits, strict=True),
-            start=1,
-        ):
+        candidate_by_id = {candidate.id: candidate for candidate in self.candidates}
+        if len(candidate_by_id) != len(self.candidates):
+            raise ValueError("retrieval candidates must have unique IDs")
+        for candidate in self.candidates:
             if (
                 candidate.workspace_id != self.request.workspace_id
                 or candidate.retrieval_run_id != self.retrieval_run.id
-                or candidate.origin is not RetrievalOrigin.LEXICAL
-                or candidate.rank != expected_rank
-                or candidate.chunk_id != hit.chunk_id
-                or candidate.raw_score != hit.raw_score
             ):
-                raise ValueError("retrieval candidate does not match its ordered lexical hit")
+                raise ValueError("retrieval candidate does not belong to the retrieval run")
+
+        source_candidate_ids = [source.retrieval_candidate_id for source in self.sources]
+        source_chunk_ids = [source.chunk_id for source in self.sources]
+        if len(source_candidate_ids) != len(set(source_candidate_ids)):
+            raise ValueError("canonical sources must have unique retrieval candidate IDs")
+        if len(source_chunk_ids) != len(set(source_chunk_ids)):
+            raise ValueError("canonical sources must have unique chunk IDs")
+        for source in self.sources:
+            source_candidate = candidate_by_id.get(source.retrieval_candidate_id)
+            if source_candidate is None or source_candidate.chunk_id != source.chunk_id:
+                raise ValueError("canonical source does not match its retrieval candidate")
         return self
 
 

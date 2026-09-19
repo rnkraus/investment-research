@@ -45,6 +45,7 @@ from investment_research.modules.research.application import GenerateValidatedAn
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
+    CanonicalCandidateSource,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
     UnvalidatedEvidenceReference,
@@ -62,7 +63,6 @@ from investment_research.modules.research.ports import (
     AnswerValidationUnitOfWork,
     AnswerValidationUnitOfWorkFactory,
 )
-from investment_research.modules.search.contracts import LexicalSearchHit
 from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     FIXTURE_TIME,
@@ -106,15 +106,16 @@ def make_application_result(
 ) -> ResearchRetrievalResult:
     """Restore the application result shape from the persisted integration graph."""
 
-    hits: list[LexicalSearchHit] = []
+    sources: list[CanonicalCandidateSource] = []
     for index, (chunk, candidate) in enumerate(
         zip(source.chunks, retrieval.candidates, strict=True)
     ):
         page_number = source.blocks[index].page_number
         if page_number is None:
             raise AssertionError("M0 regression source must use PDF page locators")
-        hits.append(
-            LexicalSearchHit(
+        sources.append(
+            CanonicalCandidateSource(
+                retrieval_candidate_id=candidate.id,
                 chunk_id=chunk.id,
                 document_id=source.document.id,
                 document_version_id=source.version.id,
@@ -122,14 +123,13 @@ def make_application_result(
                 source_locator_kind=SourceLocatorKind.PDF_PAGE,
                 page_number=page_number,
                 text=chunk.text,
-                raw_score=candidate.raw_score,
             )
         )
     return ResearchRetrievalResult(
         request=source.request,
         retrieval_run=retrieval.run,
         candidates=retrieval.candidates,
-        hits=tuple(hits),
+        sources=tuple(sources),
     )
 
 

@@ -13,7 +13,10 @@ from pydantic import ValidationError
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.application import RetrieveResearchService
-from investment_research.modules.research.contracts import ResearchRetrievalInput
+from investment_research.modules.research.contracts import (
+    ResearchRetrievalInput,
+    ResearchRetrievalResult,
+)
 from investment_research.modules.research.domain import TemporalMode
 from investment_research.modules.research.ports import (
     ResearchRepository,
@@ -21,6 +24,7 @@ from investment_research.modules.research.ports import (
     ResearchRetrievalUnitOfWorkFactory,
 )
 from investment_research.modules.search.contracts import LexicalSearchHit, LexicalSearchProfile
+from investment_research.modules.search.domain import RetrievalOrigin
 from investment_research.modules.search.ports import LexicalSearch, RetrievalRepository
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
@@ -127,7 +131,6 @@ def test_retrieve_preserves_request_and_maps_ordered_hits_to_candidates() -> Non
     assert result.retrieval_run.normalized_query == "what was fy2025 revenue?"
     assert result.retrieval_run.started_at == STARTED_AT
     assert result.retrieval_run.completed_at == COMPLETED_AT
-    assert result.hits == hits
     assert [candidate.id for candidate in result.candidates] == [
         FIRST_CANDIDATE_ID,
         SECOND_CANDIDATE_ID,
@@ -138,6 +141,16 @@ def test_retrieve_preserves_request_and_maps_ordered_hits_to_candidates() -> Non
         SECOND_CHUNK_ID,
     ]
     assert [candidate.raw_score for candidate in result.candidates] == [0.8, 0.4]
+    assert [source.retrieval_candidate_id for source in result.sources] == [
+        FIRST_CANDIDATE_ID,
+        SECOND_CANDIDATE_ID,
+    ]
+    assert [source.chunk_id for source in result.sources] == [
+        FIRST_CHUNK_ID,
+        SECOND_CHUNK_ID,
+    ]
+    assert [source.page_number for source in result.sources] == [2, 3]
+    assert [source.text for source in result.sources] == [hit.text for hit in hits]
 
     unit_of_work.research_mock.add_request.assert_called_once_with(make_context(), result.request)
     search_context, query = unit_of_work.lexical_search_mock.search.call_args.args
@@ -189,11 +202,62 @@ def test_retrieve_persists_an_empty_result_without_inventing_candidates() -> Non
         ResearchRetrievalInput(question="What dividend was declared?"),
     )
 
-    assert result.hits == ()
+    assert result.sources == ()
     assert result.candidates == ()
     unit_of_work.retrieval_mock.add_result.assert_called_once_with(
         make_context(), result.retrieval_run, ()
     )
+
+
+def test_retrieval_result_keeps_dual_lane_candidates_but_one_source_per_chunk() -> None:
+    unit_of_work = RecordingUnitOfWork(
+        (make_hit(chunk_id=FIRST_CHUNK_ID, raw_score=0.8, page_number=2),)
+    )
+    result = make_service(
+        unit_of_work,
+        identifiers=(REQUEST_ID, RUN_ID, FIRST_CANDIDATE_ID),
+    ).retrieve(
+        make_context(),
+        ResearchRetrievalInput(question="What was FY2025 revenue?"),
+    )
+    dense_candidate = result.candidates[0].model_copy(
+        update={
+            "id": SECOND_CANDIDATE_ID,
+            "origin": RetrievalOrigin.DENSE,
+            "raw_score": 0.9,
+        }
+    )
+
+    dual_lane_result = ResearchRetrievalResult(
+        request=result.request,
+        retrieval_run=result.retrieval_run,
+        candidates=(*result.candidates, dense_candidate),
+        sources=result.sources,
+    )
+
+    assert len(dual_lane_result.candidates) == 2
+    assert len(dual_lane_result.sources) == 1
+
+
+def test_retrieval_result_rejects_source_with_mismatched_chunk() -> None:
+    unit_of_work = RecordingUnitOfWork(
+        (make_hit(chunk_id=FIRST_CHUNK_ID, raw_score=0.8, page_number=2),)
+    )
+    result = make_service(
+        unit_of_work,
+        identifiers=(REQUEST_ID, RUN_ID, FIRST_CANDIDATE_ID),
+    ).retrieve(
+        make_context(),
+        ResearchRetrievalInput(question="What was FY2025 revenue?"),
+    )
+
+    with pytest.raises(ValidationError, match="does not match its retrieval candidate"):
+        ResearchRetrievalResult(
+            request=result.request,
+            retrieval_run=result.retrieval_run,
+            candidates=result.candidates,
+            sources=(result.sources[0].model_copy(update={"chunk_id": SECOND_CHUNK_ID}),),
+        )
 
 
 def test_retrieval_input_rejects_duplicate_or_excessive_document_filters() -> None:

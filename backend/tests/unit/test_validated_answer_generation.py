@@ -33,6 +33,7 @@ from investment_research.modules.research.application import GenerateValidatedAn
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
+    CanonicalCandidateSource,
     ResearchRetrievalResult,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
@@ -51,7 +52,6 @@ from investment_research.modules.research.ports import (
     AnswerValidationUnitOfWorkFactory,
     ResearchRepository,
 )
-from investment_research.modules.search.contracts import LexicalSearchHit
 from investment_research.modules.search.domain import (
     RetrievalCandidate,
     RetrievalFilters,
@@ -179,16 +179,6 @@ def make_retrieval_result() -> ResearchRetrievalResult:
         started_at=RETRIEVED_AT,
         completed_at=RETRIEVED_AT,
     )
-    hit = LexicalSearchHit(
-        chunk_id=CHUNK_ID,
-        document_id=DOCUMENT_ID,
-        document_version_id=VERSION_ID,
-        structure_block_id=BLOCK_ID,
-        source_locator_kind=SourceLocatorKind.PDF_PAGE,
-        page_number=2,
-        text=SOURCE_TEXT,
-        raw_score=0.75,
-    )
     candidate = RetrievalCandidate(
         id=CANDIDATE_ID,
         workspace_id=WORKSPACE_ID,
@@ -196,14 +186,24 @@ def make_retrieval_result() -> ResearchRetrievalResult:
         chunk_id=CHUNK_ID,
         origin=RetrievalOrigin.LEXICAL,
         rank=1,
-        raw_score=hit.raw_score,
+        raw_score=0.75,
         created_at=RETRIEVED_AT,
+    )
+    source = CanonicalCandidateSource(
+        retrieval_candidate_id=candidate.id,
+        chunk_id=CHUNK_ID,
+        document_id=DOCUMENT_ID,
+        document_version_id=VERSION_ID,
+        structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
+        page_number=2,
+        text=SOURCE_TEXT,
     )
     return ResearchRetrievalResult(
         request=request,
         retrieval_run=run,
         candidates=(candidate,),
-        hits=(hit,),
+        sources=(source,),
     )
 
 
