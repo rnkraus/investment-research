@@ -29,6 +29,7 @@ from investment_research.settings import (
     WorkerSettings,
     load_api_settings,
     load_database_settings,
+    load_generation_provider_settings,
     load_parser_settings,
     load_worker_settings,
 )
@@ -954,6 +955,24 @@ def test_generation_provider_hides_and_normalizes_its_api_key() -> None:
         GenerationProviderSettings.model_validate({"api_key": f" {marker}"})
 
     assert marker not in str(captured.value)
+
+
+def test_generation_provider_loader_is_role_specific(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-generation-secret"
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY", marker)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY", "unused-query-secret")
+
+    settings = load_generation_provider_settings(env_file=None)
+
+    assert settings.api_key.get_secret_value() == marker
+    assert marker not in repr(settings)
+
+
+def test_generation_provider_loader_requires_its_owned_credential() -> None:
+    with pytest.raises(ValueError, match="generation provider configuration is required"):
+        load_generation_provider_settings(env_file=None)
 
 
 def test_api_requires_query_and_generation_provider_groups_together() -> None:
