@@ -10,7 +10,7 @@ query must read physical data owned by several business modules.
 | `__init__.py`      | Identifies the search-adapter package without exporting a concrete implementation.      |
 | `deterministic.py` | Returns explicitly configured fixed embeddings for credential-free correctness tests.  |
 | `openai.py`        | Creates bounded, correlated embeddings through one retry-free OpenAI SDK call.          |
-| `pinecone.py`      | Writes and verifies bounded vectors through a single-attempt Pinecone gRPC data client. |
+| `pinecone.py`      | Writes, verifies, and queries bounded vectors through retry-free Pinecone gRPC clients. |
 | `postgresql.py`    | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
 | `unavailable.py`   | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
 
@@ -28,7 +28,7 @@ flowchart LR
     DETERMINISTIC[DeterministicEmbeddingProvider] -. implements .-> PROVIDER_PORTS
     OPENAI[OpenAIEmbeddingProvider] -. implements .-> PROVIDER_PORTS
     OPENAI --> OPENAI_API[OpenAI embeddings API]
-    PINECONE[PineconeDenseIndexWriter] -. implements .-> PROVIDER_PORTS
+    PINECONE[Pinecone writer and retriever] -. implement .-> PROVIDER_PORTS
     PINECONE --> GRPC[Pinecone gRPC data plane]
     UNAVAILABLE[M0 unavailable adapters] -. implement .-> PROVIDER_PORTS
 ```
@@ -92,6 +92,22 @@ errors. Authentication, configuration, and other deterministic SDK failures beco
 configuration errors. Partial or contradictory responses become contract errors. Provider exception
 messages and request details never cross the adapter boundary.
 
+## Pinecone dense retriever
+
+`PineconeDenseRetriever` receives one validated query vector and candidate limit. It derives the
+namespace only from trusted `WorkspaceContext`, filters by the exact embedding and dense-index
+configuration versions, requests no vector values, and asks only for the bounded metadata needed to
+recover a canonical chunk identifier. Raw source text is never returned from Pinecone.
+
+Every match remains untrusted. The adapter requires finite scores, unique parseable chunk IDs,
+matching configuration versions, and the deterministic vector identity derived from workspace,
+chunk, and embedding configuration. It preserves provider order but makes no authorization or
+canonical-eligibility decision. `PostgresDenseCandidateQualifier` performs that decision against
+current PostgreSQL state before a candidate can enter context.
+
+The reader uses the same TLS, 20-second timeout, zero-SDK-retry, and safe error-classification policy
+as the writer, but receives a separate query-role credential at process composition time.
+
 ## Deterministic embedding behavior
 
 `DeterministicEmbeddingProvider` is a credential-free correctness-test adapter, not a semantic
@@ -107,8 +123,9 @@ provider availability, or spend.
 
 ## Unavailable provider behavior
 
-The unavailable embedding, dense-retrieval, and reranking adapters make the absence of their later
-implementations explicit. They hold no credentials and perform no network access. Each call raises
+The unavailable embedding, dense-retrieval, and reranking adapters make a deliberately disabled
+provider explicit. They hold no credentials and perform no network access. Each call raises
 `SearchProviderUnavailableError` instead of returning an empty result that could be mistaken for a
-valid insufficient-evidence outcome. Each provider is replaced separately behind the unchanged
-application-owned port after its implementation and evaluation gate passes.
+valid insufficient-evidence outcome. Process composition replaces each fallback separately behind
+the unchanged application-owned port only when its provider configuration and milestone gate are
+active.
