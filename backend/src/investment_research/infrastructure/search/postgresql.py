@@ -129,7 +129,9 @@ class PostgresLexicalSearch:
                 DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
                 ChunkSetRow.is_active.is_(True),
                 ChunkSetRow.lexical_config_version == query.lexical_config_version,
-                ProcessingRunRow.state == ProcessingState.LEXICAL_READY,
+                ProcessingRunRow.state.in_(
+                    (ProcessingState.LEXICAL_READY, ProcessingState.SEARCHABLE)
+                ),
                 ProcessingRunRow.lexical_config_version == query.lexical_config_version,
                 ChunkRow.search_vector.bool_op("@@")(text_query),
                 raw_score > 0,

@@ -15,7 +15,11 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.domain import Answer, AnswerStatement, ResearchRequest
-from investment_research.modules.search.ports import LexicalSearch, RetrievalRepository
+from investment_research.modules.search.ports import (
+    DenseCandidateQualifier,
+    LexicalSearch,
+    RetrievalRepository,
+)
 
 
 class AnswerGenerator(Protocol):
@@ -77,6 +81,10 @@ class ResearchRetrievalUnitOfWork(Protocol):
     @property
     def lexical_search(self) -> LexicalSearch:
         """Return the adapter that selects eligible canonical chunks."""
+
+    @property
+    def dense_qualifier(self) -> DenseCandidateQualifier:
+        """Return the adapter that rechecks dense IDs against canonical state."""
 
     @property
     def retrieval(self) -> RetrievalRepository:

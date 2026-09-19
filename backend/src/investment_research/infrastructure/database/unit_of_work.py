@@ -14,7 +14,10 @@ from investment_research.infrastructure.evidence.postgresql import (
     PostgresCanonicalEvidenceSourceReader,
     PostgresCanonicalEvidenceSpanReader,
 )
-from investment_research.infrastructure.search.postgresql import PostgresLexicalSearch
+from investment_research.infrastructure.search.postgresql import (
+    PostgresDenseCandidateQualifier,
+    PostgresLexicalSearch,
+)
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.documents.ports import (
     CaptureUnitOfWork,
@@ -48,7 +51,11 @@ from investment_research.modules.research.ports import (
     ResearchRetrievalUnitOfWorkFactory,
 )
 from investment_research.modules.search.persistence import SqlAlchemyRetrievalRepository
-from investment_research.modules.search.ports import LexicalSearch, RetrievalRepository
+from investment_research.modules.search.ports import (
+    DenseCandidateQualifier,
+    LexicalSearch,
+    RetrievalRepository,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +100,7 @@ class SqlAlchemyResearchRetrievalRepositories:
 
     research: ResearchRepository
     lexical_search: LexicalSearch
+    dense_qualifier: DenseCandidateQualifier
     retrieval: RetrievalRepository
 
 
@@ -176,12 +184,13 @@ def sqlalchemy_processing_read_unit_of_work(
 def sqlalchemy_research_retrieval_unit_of_work(
     session_factory: SessionFactory,
 ) -> Iterator[ResearchRetrievalUnitOfWork]:
-    """Commit one research request and its lexical retrieval result atomically."""
+    """Commit one request and its canonically qualified retrieval result atomically."""
 
     with transactional_session(session_factory) as session:
         yield SqlAlchemyResearchRetrievalRepositories(
             research=SqlAlchemyResearchRepository(session),
             lexical_search=PostgresLexicalSearch(session),
+            dense_qualifier=PostgresDenseCandidateQualifier(session),
             retrieval=SqlAlchemyRetrievalRepository(session),
         )
 

@@ -13,6 +13,8 @@ from investment_research.modules.search.application import (
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_BATCH_LIMIT,
     M1_EMBEDDING_CHARACTER_LIMIT,
+    M1_PROVIDER_MAX_ATTEMPTS,
+    M1_PROVIDER_RETRY_DELAY_SECONDS,
     DenseIndexWriteRequest,
     DenseIndexWriteResult,
     DenseVectorId,
@@ -28,8 +30,6 @@ from investment_research.modules.search.ports import (
     SearchProviderTransientError,
 )
 
-M1_PROVIDER_MAX_ATTEMPTS = 2
-M1_PROVIDER_RETRY_DELAY_SECONDS = 0.25
 M1_DENSE_INDEX_READINESS_TIMEOUT_SECONDS = 30.0
 M1_DENSE_INDEX_POLL_INTERVAL_SECONDS = 0.5
 
