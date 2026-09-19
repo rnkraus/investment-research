@@ -54,7 +54,7 @@ questions, prompts, generated answers, credentials, complete URLs, or provider e
 `ProviderUsage` is the shared immutable input/output-unit result returned by provider adapters; it
 contains no SDK object or raw request or response content.
 
-The canonical ledger, atomic reservation, safe finalization services, and usage-bearing embedding
-result contract are present. A later Step 5 work block will place accounting around the embedding
-and generation provider calls, then add OpenTelemetry/OpenInference without making trace export
-part of product correctness.
+The canonical ledger, atomic reservation, safe finalization services, usage-bearing embedding result
+contract, and content-safe in-process OpenTelemetry adapter are present. The adapter produces W3C
+trace IDs without an exporter and degrades to no-op behavior when tracing fails. A later Step 5 work
+block will place accounting and trace spans around the embedding and generation provider calls.

@@ -113,6 +113,7 @@ def test_noop_tracer_accepts_events_without_changing_application_behavior() -> N
     tracer: OperationTracer = NoopOperationTracer()
 
     with tracer.start_span("research.retrieve", attributes={"candidate_limit": 10}) as span:
+        assert span.trace_id is None
         span.set_attribute("workspace_type", "sanitized_demo")
         span.record_error("provider_timeout")
 
