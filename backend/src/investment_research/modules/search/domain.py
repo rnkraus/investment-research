@@ -30,6 +30,8 @@ ConfigurationVersion = Annotated[
     ),
 ]
 
+LEXICAL_ORDER_SELECTOR_CONFIG_VERSION = "m0.0-lexical-order-v1"
+
 
 class RetrievalOrigin(StrEnum):
     """Candidate-producing routes in the target retrieval pipeline."""
@@ -37,6 +39,13 @@ class RetrievalOrigin(StrEnum):
     LEXICAL = "LEXICAL"
     DENSE = "DENSE"
     STRUCTURED = "STRUCTURED"
+
+
+class RetrievalMode(StrEnum):
+    """Versioned retrieval lane combinations supported by persisted runs."""
+
+    LEXICAL = "LEXICAL"
+    DUAL_LANE = "DUAL_LANE"
 
 
 class SearchScopeError(ValueError):
@@ -94,8 +103,15 @@ class RetrievalRun(ImmutableSearchModel):
     query_text: QueryText
     normalized_query: NormalizedQuery
     filters: RetrievalFilters
+    mode: RetrievalMode
     lexical_config_version: ConfigurationVersion
-    candidate_limit: int = Field(ge=1, le=100)
+    embedding_config_version: ConfigurationVersion | None = None
+    dense_index_config_version: ConfigurationVersion | None = None
+    selector_config_version: ConfigurationVersion
+    lexical_candidate_limit: int = Field(ge=1, le=100)
+    dense_candidate_limit: int = Field(default=0, ge=0, le=100)
+    context_chunk_limit: int | None = Field(default=None, ge=1, le=8)
+    context_character_limit: int | None = Field(default=None, ge=1, le=24_000)
     started_at: AwareDatetime
     completed_at: AwareDatetime
 
@@ -117,10 +133,27 @@ class RetrievalRun(ImmutableSearchModel):
 
     @model_validator(mode="after")
     def require_ordered_run_times(self) -> Self:
-        """Reject retrieval runs whose completion precedes their start."""
+        """Reject incoherent timing and lane-specific configuration snapshots."""
 
         if self.completed_at < self.started_at:
             raise ValueError("completed_at must not precede started_at")
+        if self.mode is RetrievalMode.LEXICAL:
+            if (
+                self.embedding_config_version is not None
+                or self.dense_index_config_version is not None
+                or self.dense_candidate_limit != 0
+                or self.context_chunk_limit is not None
+                or self.context_character_limit is not None
+            ):
+                raise ValueError("LEXICAL retrieval must not define dense or context settings")
+        elif (
+            self.embedding_config_version is None
+            or self.dense_index_config_version is None
+            or self.dense_candidate_limit == 0
+            or self.context_chunk_limit is None
+            or self.context_character_limit is None
+        ):
+            raise ValueError("DUAL_LANE retrieval requires dense and context settings")
         return self
 
 
@@ -133,7 +166,8 @@ class RetrievalCandidate(ImmutableSearchModel):
     chunk_id: UUID
     origin: RetrievalOrigin
     rank: int = Field(ge=1)
-    raw_score: float = Field(ge=0, allow_inf_nan=False)
+    raw_score: float = Field(allow_inf_nan=False)
+    selection_rank: int | None = Field(default=None, ge=1)
     fused_rank: int | None = Field(default=None, ge=1)
     reranker_score: float | None = Field(default=None, allow_inf_nan=False)
     created_at: AwareDatetime

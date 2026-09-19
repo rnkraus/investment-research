@@ -12,8 +12,10 @@ from investment_research.infrastructure.database.session import (
     transactional_session,
 )
 from investment_research.modules.search.domain import (
+    LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
     RetrievalCandidate,
     RetrievalFilters,
+    RetrievalMode,
     RetrievalOrigin,
     RetrievalRun,
 )
@@ -35,9 +37,11 @@ def make_retrieval_run(
     *,
     workspace_id: UUID | None = None,
     research_request_id: UUID | None = None,
+    mode: RetrievalMode = RetrievalMode.LEXICAL,
 ) -> RetrievalRun:
     """Build one completed retrieval run for a synthetic research source."""
 
+    is_dual_lane = mode is RetrievalMode.DUAL_LANE
     return RetrievalRun(
         id=uuid4(),
         workspace_id=workspace_id or source.context.workspace_id,
@@ -45,8 +49,19 @@ def make_retrieval_run(
         query_text="  What was FY2025 revenue?  ",
         normalized_query="fy2025 revenue",
         filters=RetrievalFilters(document_ids=(source.document.id,)),
+        mode=mode,
         lexical_config_version=source.processing_run.lexical_config_version,
-        candidate_limit=10,
+        embedding_config_version="openai-text-embedding-3-small-v1" if is_dual_lane else None,
+        dense_index_config_version="pinecone-dense-v1" if is_dual_lane else None,
+        selector_config_version=(
+            "deterministic-round-robin-v1"
+            if is_dual_lane
+            else LEXICAL_ORDER_SELECTOR_CONFIG_VERSION
+        ),
+        lexical_candidate_limit=10,
+        dense_candidate_limit=10 if is_dual_lane else 0,
+        context_chunk_limit=8 if is_dual_lane else None,
+        context_character_limit=24_000 if is_dual_lane else None,
         started_at=FIXTURE_TIME + timedelta(seconds=4),
         completed_at=FIXTURE_TIME + timedelta(seconds=5),
     )
@@ -58,20 +73,22 @@ def make_candidate(
     *,
     chunk_index: int,
     rank: int,
-    fused_rank: int | None = None,
     chunk_id: UUID | None = None,
+    origin: RetrievalOrigin = RetrievalOrigin.LEXICAL,
+    raw_score: float | None = None,
+    selection_rank: int | None = None,
 ) -> RetrievalCandidate:
-    """Build one ranked lexical candidate connected to a source chunk."""
+    """Build one ranked retrieval candidate connected to a source chunk."""
 
     return RetrievalCandidate(
         id=uuid4(),
         workspace_id=run.workspace_id,
         retrieval_run_id=run.id,
         chunk_id=chunk_id or source.chunks[chunk_index].id,
-        origin=RetrievalOrigin.LEXICAL,
+        origin=origin,
         rank=rank,
-        raw_score=0.75 / rank,
-        fused_rank=fused_rank,
+        raw_score=(0.75 / rank) if raw_score is None else raw_score,
+        selection_rank=selection_rank,
         created_at=run.completed_at,
     )
 
@@ -84,23 +101,37 @@ def test_retrieval_result_round_trips_in_stable_workspace_scoped_order(
     foreign_source = make_research_source(label="Foreign Search Source")
     persist_research_source(integration_database_engine, source)
     persist_research_source(integration_database_engine, foreign_source)
-    run = make_retrieval_run(source)
-    first_by_origin = make_candidate(source, run, chunk_index=0, rank=1, fused_rank=2)
-    first_by_fused_rank = make_candidate(source, run, chunk_index=1, rank=2, fused_rank=1)
+    run = make_retrieval_run(source, mode=RetrievalMode.DUAL_LANE)
+    first_lexical = make_candidate(
+        source,
+        run,
+        chunk_index=0,
+        rank=1,
+        selection_rank=2,
+    )
+    first_dense = make_candidate(
+        source,
+        run,
+        chunk_index=1,
+        rank=1,
+        origin=RetrievalOrigin.DENSE,
+        raw_score=-0.125,
+        selection_rank=1,
+    )
 
     with transactional_session(session_factory) as session:
         SqlAlchemyRetrievalRepository(session).add_result(
             source.context,
             run,
-            [first_by_origin, first_by_fused_rank],
+            [first_lexical, first_dense],
         )
 
     with transactional_session(session_factory) as session:
         repository = SqlAlchemyRetrievalRepository(session)
         assert repository.get_run_by_id(source.context, run.id) == run
         assert repository.list_candidates(source.context, run.id) == (
-            first_by_fused_rank,
-            first_by_origin,
+            first_dense,
+            first_lexical,
         )
         assert repository.get_run_by_id(foreign_source.context, run.id) is None
         assert repository.list_candidates(foreign_source.context, run.id) == ()
