@@ -14,7 +14,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_backend.py`           | Runs all deterministic backend static checks and unit tests.                             |
 | `verify_backend_images.py`    | Builds and exercises every backend image target in an isolated runtime.                  |
 | `verify_m0_runtime.py`        | Proves the complete fixture journey through the production-shaped M0 runtime.            |
-| `verify_m1_provider_smoke.py` | Runs one explicit, bounded embedding and Pinecone compatibility smoke.                   |
+| `verify_m1_provider_smoke.py` | Runs one explicit, bounded M1 external-provider compatibility smoke.                     |
 | `verify_object_storage.py`    | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
 | `verify_parser_isolation.py`  | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`             | Runs deterministic checks for explicitly selected backend Python files.                  |
@@ -338,10 +338,11 @@ check.
 `verify_m1_provider_smoke.py` is an optional live-provider compatibility check. It is never part of
 normal pull-request or push CI and never replaces deterministic correctness tests. Run it only with
 the approved public-synthetic fixture manifest, a Pinecone Starter index with the frozen M1
-configuration, and least-privilege document-indexing credentials:
+configuration, and separate least-privilege document-indexing and generation credentials:
 
 ```shell
 INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY='<configured outside the repository>' \
+INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY='<configured outside the repository>' \
 INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY='<configured outside the repository>' \
 INVESTMENT_RESEARCH_PINECONE_INDEX_HOST='<configured outside the repository>' \
 uv run --locked python -m scripts.verify_m1_provider_smoke \
@@ -350,15 +351,21 @@ uv run --locked python -m scripts.verify_m1_provider_smoke \
   --confirm-pinecone-starter
 ```
 
-The runner accepts only the exact repository manifest and frozen fixture digests. Before any
-provider call it proves that one embedding request and one vector remain below the manifest's
-request, token, vector, and USD ceilings. It writes no source text to Pinecone metadata, uses a
-unique workspace namespace, deletes that complete namespace in `finally`, verifies that the vector
-is absent, closes both provider clients, and prints only safe counts, estimated embedding spend, and
-cleanup status. Provider responses, fixture text, identifiers, hosts, and credentials are not
-logged.
+The runner accepts only the exact repository manifest and frozen fixture digests. It embeds one
+approved passage, writes one temporary vector, requires one supported answer for the approved
+answerable question, and requires an explicit insufficient-evidence result for the approved control
+question. Every generated statement must cite an exact range in the approved passage and pass a
+separate support-evaluation call. Before each provider call, the runner reserves a conservative
+request, token, vector, and USD allowance and stops before any frozen manifest ceiling would be
+exceeded.
+
+The runner writes no source text to Pinecone metadata, uses a unique workspace namespace, deletes
+that complete namespace in `finally`, verifies that the vector is absent, closes all provider
+clients, and prints only safe aggregate counts, maximum reserved spend, and cleanup status.
+Provider responses, fixture text, identifiers, hosts, and credentials are not logged.
 
 GitHub's separate `M1 provider smoke` workflow exposes the same operation only through manual
 dispatch with both confirmation inputs enabled. Configure repository secrets
-`M1_OPENAI_DOCUMENT_API_KEY`, `M1_PINECONE_INDEX_API_KEY`, and `M1_PINECONE_INDEX_HOST` before a
-run. Keep this workflow non-required for untrusted pull requests.
+`M1_OPENAI_DOCUMENT_API_KEY`, `M1_OPENAI_GENERATION_API_KEY`,
+`M1_PINECONE_INDEX_API_KEY`, and `M1_PINECONE_INDEX_HOST` before a run. Keep this workflow
+non-required for untrusted pull requests.
