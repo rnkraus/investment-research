@@ -12,7 +12,7 @@ This module owns reproducible retrieval records and ranked candidates from eligi
 | `indexing.py`    | Orchestrates bounded embedding, deterministic writes, and vector readiness.    |
 | `ports.py`       | Defines lexical, embedding, dense, reranking, and repository contracts.        |
 | `persistence.py` | Maps retrieval records and implements workspace-scoped repository behavior.    |
-| `selection.py`   | Applies deterministic lexical-first M1 context selection and deduplication.     |
+| `selection.py`   | Applies deterministic lexical-first M1 context selection and deduplication.    |
 
 ## Ownership and relationships
 
@@ -92,11 +92,10 @@ The outer `infrastructure/search/postgresql.py` adapter implements `LexicalSearc
 eligibility-first query over the existing English `tsvector` and GIN index. It joins canonical
 document and processing state, applies workspace, current-version, active-set, configuration,
 document, and temporal filters before `ts_rank_cd` ranking, then uses `chunk_id` as the final stable
-tie-breaker before applying the candidate limit. The adapter only returns hits. Research's
-`RetrieveResearchService` invokes it through the port and maps those ordered hits to an atomically
-persisted `LEXICAL` regression run without importing Search persistence. The M1 persistence contract
-already supports `DUAL_LANE` results; the versioned selector and research orchestration are the next
-application layer built on that contract.
+tie-breaker before applying the candidate limit. Both `LEXICAL_READY` regression sources and fully
+`SEARCHABLE` M1 sources remain eligible for this lane. The adapter only returns hits. Research's
+`RetrieveResearchService` invokes it through the port and preserves the lexical-only regression
+path without importing Search persistence.
 
 ## Provider seams
 
@@ -145,7 +144,10 @@ lexical rank 1, dense rank 1, lexical rank 2, dense rank 2, and so on without co
 scores. The first interleaved occurrence of each chunk wins. Selection stops at the configured
 chunk limit, skips rather than truncates text that would exceed the remaining character budget, and
 records one contiguous `selection_rank` per chosen chunk. The fixed behavior is identified by
-`m1-lexical-first-round-robin-v1`.
+`m1-lexical-first-round-robin-v1`. Research now orchestrates query embedding and dense retrieval
+before a short PostgreSQL unit of work, then runs lexical search, dense qualification, selection,
+and atomic result persistence inside that unit of work. All qualified lane candidates remain
+auditable even when overlap deduplication excludes one from generation context.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders

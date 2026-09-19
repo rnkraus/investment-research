@@ -104,8 +104,9 @@ partially configured: `ApiSettings.query_providers` accepts only query-embedding
 credentials, while `WorkerSettings.indexing_providers` accepts only document-embedding and
 Pinecone-index credentials. Both retain the frozen model, dimensions, configuration versions, and
 timeouts. The worker group is required when its container is built and is wired only to document
-indexing; the API query group remains unused until the M1 retrieval block wires its approved
-adapters. `ParserSettings` loads only its allowlisted process variables,
+indexing. The retrieval service now accepts the approved query adapters, while the API query group
+remains unused until the following composition block constructs and injects them. `ParserSettings`
+loads only its allowlisted process variables,
 exposes no database, queue, or provider field, and rejects known application credential variables.
 `runtime_location=host` restricts bind, database, object-storage, and broker targets to loopback;
 `runtime_location=container` permits only the fixed internal Compose service targets required by
@@ -147,11 +148,14 @@ For processing status, the route supplies the server-resolved workspace and one 
 `GetProcessingRunService`. A separate short-lived read session resolves the canonical snapshot; the
 API returns only its public state and sanitized failure summary and cannot invoke parsing.
 
-For research retrieval, `RetrieveResearchService` creates the immutable request, executes the
-eligible PostgreSQL lexical query, and stages the completed run and ordered candidates through one
-shared short-lived transaction. `GenerateValidatedAnswerService` is wired with the deterministic
-M0.0 generator, an independent support evaluator, and the answer-validation unit of work. It
-reloads canonical evidence and persists only a safe terminal aggregate.
+For research retrieval, `RetrieveResearchService` retains the credential-free lexical regression
+path and supports the M1 dual-lane path when query-provider dependencies are injected. The M1 path
+creates the query embedding and obtains bounded Pinecone identifiers before opening a database
+transaction. One short transaction then creates the immutable request, runs eligible PostgreSQL
+lexical search, canonically qualifies dense identifiers, applies deterministic selection, and
+stages the run plus every lane candidate. `GenerateValidatedAnswerService` is wired with the
+deterministic M0.0 generator, an independent support evaluator, and the answer-validation unit of
+work. It reloads canonical evidence and persists only a safe terminal aggregate.
 
 `AnswerResearchRequestService` composes those two focused services into the complete application
 use case. The research HTTP route calls this single boundary and receives only
