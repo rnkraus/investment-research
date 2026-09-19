@@ -40,20 +40,26 @@ separately records the normalized query and effective retrieval-filter snapshot 
 execution details needed to reproduce a specific run. `RetrieveResearchService` performs the mode
 translation once, so Search receives concrete predicates and does not depend on Research enums.
 
-## Lexical retrieval orchestration
+## Retrieval orchestration
 
 ```mermaid
-flowchart LR
+flowchart TD
     INPUT[ResearchRetrievalInput] --> USECASE[AnswerResearchRequestService]
     USECASE --> RETRIEVE[RetrieveResearchService]
     RETRIEVE --> REQUEST[ResearchRequest]
     INPUT --> FILTERS[Effective RetrievalFilters]
     FILTERS --> QUERY[LexicalSearchQuery]
-    REQUEST --> UOW[ResearchRetrievalUnitOfWork]
-    QUERY --> UOW
-    UOW --> SEARCH[LexicalSearch]
-    SEARCH --> HITS[Ordered eligible hits]
-    HITS --> CANDIDATES[Ranked RetrievalCandidates]
+    RETRIEVE --> EMBED[Query EmbeddingProvider]
+    EMBED --> DENSE[DenseRetriever]
+    DENSE --> PROVIDERHITS[Untrusted dense IDs and scores]
+    REQUEST --> UOW[Short ResearchRetrievalUnitOfWork]
+    QUERY --> LEXICAL[PostgreSQL LexicalSearch]
+    UOW --> LEXICAL
+    PROVIDERHITS --> QUALIFY[PostgreSQL DenseCandidateQualifier]
+    UOW --> QUALIFY
+    LEXICAL --> SELECT[Deterministic M1 selector]
+    QUALIFY --> SELECT
+    SELECT --> CANDIDATES[All lane RetrievalCandidates]
     CANDIDATES --> RUN[RetrievalRun plus candidates]
     CANDIDATES --> SOURCES[Selected canonical candidate sources]
     UOW -->|one commit or rollback| PG[(PostgreSQL)]
@@ -63,13 +69,17 @@ flowchart LR
     GENERATE --> OUTPUT[ValidatedAnswerResult]
 ```
 
-The service creates all identifiers server-side, retains the exact question, normalizes only its
-search form, and maps each ordered hit to one persisted `LEXICAL` candidate. An empty hit sequence is
-a valid reproducible retrieval result and does not create invented candidates. The returned
-`ResearchRetrievalResult` retains every persisted lane candidate separately from its selected
-`CanonicalCandidateSource` values. Each source resolves through one candidate ID and one canonical
-chunk ID. This keeps the current lexical behavior unchanged while allowing M1 to retain overlapping
-lexical and dense candidates without sending the same chunk to generation twice.
+The service creates all identifiers server-side, retains the exact question, and normalizes only
+its search form. Without M1 query dependencies it preserves the credential-free lexical regression
+path. With those dependencies it obtains one query embedding and bounded dense hits before opening
+the unit of work. Only classified transient provider failures receive one bounded retry; exhausted
+or permanent provider failures open no database transaction and persist no partial request.
+
+Inside one short transaction the service executes lexical search, reloads dense identifiers through
+canonical PostgreSQL state, applies the versioned selector, and persists every qualified lane
+candidate. A chunk found in both lanes retains one `LEXICAL` and one `DENSE` audit record, but only
+its first selected occurrence becomes a `CanonicalCandidateSource`. Empty lanes remain a valid,
+explicit retrieval result and never create invented candidates.
 
 `AnswerResearchRequestService` is the route-facing application use case. It passes the committed
 retrieval result directly to `GenerateValidatedAnswerService` and returns only the validated
@@ -149,9 +159,10 @@ answer, statements, and spans before adding their foreign-key dependents. This i
 boundary inside the same transaction, not an early commit, so any later failure still rolls back the
 complete aggregate.
 
-Step 6 creates and atomically persists the request, lexical retrieval run, and selected candidates.
-Step 7 now provides the typed generator boundary, canonical evidence validation, and atomic terminal
-answer persistence. `AnswerResearchRequestService` composes those operations as one complete use
-case. The HTTP route consumes only `ValidatedAnswerResult` and maps it to versioned terminal stream
-events; it never receives an `UnvalidatedGeneratedAnswer`. Resolving a citation identifier to an
-authorized source location remains a separate Evidence application and HTTP boundary.
+Retrieval provider calls occur before the database transaction. The transaction then atomically
+persists the request, reproducible run, all qualified lane candidates, and their final selection
+ranks. Answer generation also remains outside its later validation transaction.
+`AnswerResearchRequestService` composes retrieval and validated generation as one complete use case.
+The HTTP route consumes only `ValidatedAnswerResult` and maps it to versioned terminal stream events;
+it never receives an `UnvalidatedGeneratedAnswer`. Resolving a citation identifier to an authorized
+source location remains a separate Evidence application and HTTP boundary.
