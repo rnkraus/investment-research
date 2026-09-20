@@ -171,7 +171,6 @@ def make_query_embedding_attempt(
         provider="openai",
         model="text-embedding-3-small",
         configuration_version="openai-text-embedding-3-small-1536-v1",
-        span_name="embedding.query",
         maximum_usage=ProviderUsage(input_units=maximum_input_units, output_units=0),
         cost_policy=ProviderCostPolicy(
             input_micro_usd_per_million_units=20_000,
@@ -483,6 +482,74 @@ def test_execute_provider_operation_reserves_calls_and_finalizes_success() -> No
         "duration.ms": 125,
         "outcome": "succeeded",
     }
+
+
+@pytest.mark.parametrize(
+    ("operation", "research_request_id", "processing_run_id", "expected_span_name"),
+    [
+        pytest.param(
+            ProviderOperationKind.DOCUMENT_EMBEDDING,
+            None,
+            REQUEST_ID,
+            "embedding.document",
+            id="document-embedding",
+        ),
+        pytest.param(
+            ProviderOperationKind.QUERY_EMBEDDING,
+            REQUEST_ID,
+            None,
+            "embedding.query",
+            id="query-embedding",
+        ),
+        pytest.param(
+            ProviderOperationKind.ANSWER_GENERATION,
+            REQUEST_ID,
+            None,
+            "research.generate",
+            id="answer-generation",
+        ),
+        pytest.param(
+            ProviderOperationKind.STATEMENT_SUPPORT,
+            REQUEST_ID,
+            None,
+            "evidence.evaluate_support",
+            id="statement-support",
+        ),
+    ],
+)
+def test_execute_provider_operation_derives_approved_span_name(
+    operation: ProviderOperationKind,
+    research_request_id: UUID | None,
+    processing_run_id: UUID | None,
+    expected_span_name: str,
+) -> None:
+    """Map every paid operation to its canonical content-free tracing span."""
+
+    service, _, _, tracer = make_execute_service()
+    attempt = ProviderOperationAttempt(
+        correlation_id=CORRELATION_ID,
+        research_request_id=research_request_id,
+        processing_run_id=processing_run_id,
+        operation=operation,
+        provider="openai",
+        model="synthetic-model",
+        configuration_version="synthetic-config-v1",
+        maximum_usage=ProviderUsage(input_units=1, output_units=0),
+        cost_policy=ProviderCostPolicy(
+            input_micro_usd_per_million_units=20_000,
+            output_micro_usd_per_million_units=0,
+        ),
+    )
+
+    service.execute(
+        make_context(),
+        attempt,
+        lambda: ProviderUsage(input_units=1, output_units=0),
+        lambda returned: returned,
+        lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+    )
+
+    assert tracer.names == [expected_span_name]
 
 
 def test_execute_provider_operation_rejects_budget_before_provider_call() -> None:
