@@ -8,6 +8,8 @@ from hashlib import sha256
 from io import BytesIO
 from itertools import count
 from pathlib import Path
+from typing import cast
+from unittest.mock import Mock, create_autospec
 from uuid import UUID
 
 import pytest
@@ -19,6 +21,10 @@ from investment_research.infrastructure.search.deterministic import (
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    ProviderCostPolicy,
+)
 from investment_research.modules.processing.application import (
     M1_PROCESSING_PROFILE,
     ProcessDocumentService,
@@ -45,7 +51,10 @@ from investment_research.modules.search.contracts import (
     DenseVectorId,
     EmbeddingPurpose,
 )
-from investment_research.modules.search.indexing import IndexActiveChunksService
+from investment_research.modules.search.indexing import (
+    DocumentEmbeddingAccountingProfile,
+    IndexActiveChunksService,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 PDF_FIXTURE = (
@@ -62,6 +71,18 @@ LEASE_ID = UUID("30000000-0000-4000-8000-000000000001")
 CREATED_AT = datetime(2026, 9, 18, 12, tzinfo=UTC)
 PARSER_LIMITS = ParserLimits(max_pages=10, max_extracted_characters=20_000)
 VECTOR_VALUES = (0.125,) * M1_EMBEDDING_DIMENSIONS
+
+
+def make_provider_operation_executor() -> Mock:
+    """Run deterministic callbacks without adding persistence to the in-memory gate."""
+
+    executor = cast(Mock, create_autospec(ExecuteProviderOperationService, instance=True))
+    executor.execute.side_effect = (
+        lambda _context, _attempt, provider_call, _usage_from_result, _classify_error: (
+            provider_call()
+        )
+    )
+    return executor
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,6 +321,18 @@ def test_approved_fixture_reaches_searchable_with_idempotent_vectors(
     indexing_service = IndexActiveChunksService(
         embedding_provider=embedding_provider,
         dense_index_writer=dense_index_writer,
+        provider_operation_executor=cast(
+            ExecuteProviderOperationService,
+            make_provider_operation_executor(),
+        ),
+        embedding_accounting=DocumentEmbeddingAccountingProfile(
+            provider="openai",
+            model="text-embedding-3-small",
+            cost_policy=ProviderCostPolicy(
+                input_micro_usd_per_million_units=20_000,
+                output_micro_usd_per_million_units=0,
+            ),
+        ),
     )
     lifecycle_service = IndexProcessingRunService(
         indexing_service=indexing_service,

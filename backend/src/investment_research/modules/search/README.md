@@ -156,9 +156,11 @@ auditable even when overlap deduplication excludes one from generation context.
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders
 chunks deterministically, and packs requests under both the 16-item and 32,000-character limits.
 Embedding and upsert operations receive at most two application-owned attempts; adapters perform no
-nested retries. After every exact provider acknowledgement, the service polls fetch batches under
-one 30-second total deadline and succeeds only when every deterministic vector ID is visible. The
-service performs no database writes, so its provider work always remains outside a transaction.
+nested retries. Each document-embedding attempt reserves and finalizes canonical provider usage in
+separate short transactions linked to the processing run. No database transaction remains open
+during the provider call. After every exact provider acknowledgement, the service polls fetch
+batches under one 30-second total deadline and succeeds only when every deterministic vector ID is
+visible. Pinecone work remains outside database transactions.
 
 Unavailable infrastructure adapters fail explicitly with `SearchProviderUnavailableError`, so an
 accidentally enabled path cannot masquerade as a valid empty result. The Pinecone infrastructure
