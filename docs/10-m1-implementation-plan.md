@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Active v1.1 — Steps 0–4 locally implemented; Step 5 next \
+**Status:** Active v1.1 — Steps 0–4 locally implemented; Step 5 in progress \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -695,6 +695,11 @@ raw fixture text appears in operational output.
 
 **Suggested commits:** operations domain and migration; trace adapter; usage integration; operations
 CI; docs.
+
+As of 2026-09-20, the canonical ledger, atomic monthly budget, safe local OpenTelemetry adapter,
+query-embedding accounting, and document-embedding accounting are implemented and verified locally.
+Answer generation and statement-support calls still need to use the same reserve-call-finalize
+boundary before the Step 5 gate is complete.
 
 ### Step 6 — M1 acceptance and handoff
 

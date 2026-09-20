@@ -125,7 +125,10 @@ from investment_research.modules.search.contracts import (
     LexicalSearchProfile,
     M1SelectionProfile,
 )
-from investment_research.modules.search.indexing import IndexActiveChunksService
+from investment_research.modules.search.indexing import (
+    DocumentEmbeddingAccountingProfile,
+    IndexActiveChunksService,
+)
 from investment_research.settings import (
     ApiSettings,
     DatabaseSettings,
@@ -265,6 +268,8 @@ class WorkerContainer:
     object_storage: ObjectStorage
     embedding_provider: OpenAIEmbeddingProvider | None
     dense_index_writer: PineconeDenseIndexWriter | None
+    operation_tracer: OpenTelemetryOperationTracer
+    provider_operation_executor: ExecuteProviderOperationService | None
     open_original_service: OpenOriginalService
     process_document_service: ProcessDocumentService
     index_active_chunks_service: IndexActiveChunksService | None
@@ -282,7 +287,10 @@ class WorkerContainer:
                 if self.embedding_provider is not None:
                     self.embedding_provider.close()
             finally:
-                self.database_engine.dispose()
+                try:
+                    self.operation_tracer.close()
+                finally:
+                    self.database_engine.dispose()
 
 
 def build_api_container(settings: ApiSettings) -> ApiContainer:
@@ -496,8 +504,13 @@ def build_worker_container(
         else M1_PROCESSING_PROFILE
     )
     database = _build_database_resources(settings)
+    operation_tracer = create_operation_tracer(
+        service_name="investment-research-worker",
+        service_version=__version__,
+    )
     embedding_provider: OpenAIEmbeddingProvider | None = None
     dense_index_writer: PineconeDenseIndexWriter | None = None
+    provider_operation_executor: ExecuteProviderOperationService | None = None
     try:
         object_storage = _build_object_storage(settings)
         open_original_service = OpenOriginalService(
@@ -528,6 +541,23 @@ def build_worker_container(
         index_processing_run_service: IndexProcessingRunService | None = None
         if settings.processing_profile == "m1":
             provider_settings = settings.require_indexing_providers()
+            monthly_budget = settings.provider_monthly_budget_micro_usd
+            assert monthly_budget is not None
+            provider_operation_unit_of_work_factory = (
+                create_provider_operation_unit_of_work_factory(database.session_factory)
+            )
+            provider_operation_executor = ExecuteProviderOperationService(
+                reservation_service=ReserveProviderOperationService(
+                    unit_of_work_factory=provider_operation_unit_of_work_factory,
+                    budget_policy=ProviderBudgetPolicy(
+                        monthly_limit_micro_usd=monthly_budget,
+                    ),
+                ),
+                finalization_service=FinalizeProviderOperationService(
+                    unit_of_work_factory=provider_operation_unit_of_work_factory,
+                ),
+                tracer=operation_tracer,
+            )
             embedding_provider = create_openai_embedding_provider(
                 api_key=provider_settings.embedding.api_key.get_secret_value(),
                 embedding_config_version=provider_settings.embedding.config_version,
@@ -543,6 +573,17 @@ def build_worker_container(
             index_active_chunks_service = IndexActiveChunksService(
                 embedding_provider=embedding_provider,
                 dense_index_writer=dense_index_writer,
+                provider_operation_executor=provider_operation_executor,
+                embedding_accounting=DocumentEmbeddingAccountingProfile(
+                    provider="openai",
+                    model=provider_settings.embedding.model,
+                    cost_policy=ProviderCostPolicy(
+                        input_micro_usd_per_million_units=(
+                            OPENAI_EMBEDDING_INPUT_MICRO_USD_PER_MILLION_TOKENS
+                        ),
+                        output_micro_usd_per_million_units=0,
+                    ),
+                ),
             )
             index_processing_run_service = IndexProcessingRunService(
                 indexing_service=index_active_chunks_service,
@@ -559,6 +600,8 @@ def build_worker_container(
             object_storage=object_storage.adapter,
             embedding_provider=embedding_provider,
             dense_index_writer=dense_index_writer,
+            operation_tracer=operation_tracer,
+            provider_operation_executor=provider_operation_executor,
             open_original_service=open_original_service,
             process_document_service=process_document_service,
             index_active_chunks_service=index_active_chunks_service,
@@ -570,9 +613,16 @@ def build_worker_container(
             ),
         )
     except Exception:
-        if dense_index_writer is not None:
-            dense_index_writer.close()
-        if embedding_provider is not None:
-            embedding_provider.close()
-        database.engine.dispose()
+        try:
+            if dense_index_writer is not None:
+                dense_index_writer.close()
+        finally:
+            try:
+                if embedding_provider is not None:
+                    embedding_provider.close()
+            finally:
+                try:
+                    operation_tracer.close()
+                finally:
+                    database.engine.dispose()
         raise

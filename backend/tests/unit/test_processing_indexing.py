@@ -3,11 +3,18 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import cast
+from unittest.mock import Mock, create_autospec
 from uuid import UUID
 
 import pytest
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    ProviderBudgetExceededError,
+    ProviderCostPolicy,
+)
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.domain import Chunk, ProcessingRun, ProcessingState
 from investment_research.modules.search.application import EmbeddingResponseContractError
@@ -24,6 +31,7 @@ from investment_research.modules.search.contracts import (
 from investment_research.modules.search.indexing import (
     DenseIndexingInputError,
     DenseIndexReadinessTimeoutError,
+    DocumentEmbeddingAccountingProfile,
     IndexActiveChunksService,
 )
 from investment_research.modules.search.ports import (
@@ -174,27 +182,51 @@ class FakeTime:
         self.current += seconds
 
 
+def make_provider_operation_executor() -> Mock:
+    """Run provider callbacks while keeping accounting persistence outside indexing tests."""
+
+    executor = cast(Mock, create_autospec(ExecuteProviderOperationService, instance=True))
+    executor.execute.side_effect = (
+        lambda _context, _attempt, provider_call, _usage_from_result, _classify_error: (
+            provider_call()
+        )
+    )
+    return executor
+
+
 def make_service(
     *,
     embedding_provider: RecordingEmbeddingProvider | None = None,
     dense_index_writer: RecordingDenseIndexWriter | None = None,
     fake_time: FakeTime | None = None,
+    provider_operation_executor: Mock | None = None,
     readiness_timeout_seconds: float = 30.0,
 ) -> tuple[
     IndexActiveChunksService,
     RecordingEmbeddingProvider,
     RecordingDenseIndexWriter,
     FakeTime,
+    Mock,
 ]:
     """Build one service and return all observable collaborators."""
 
     provider = embedding_provider or RecordingEmbeddingProvider()
     writer = dense_index_writer or RecordingDenseIndexWriter()
     clock = fake_time or FakeTime()
+    executor = provider_operation_executor or make_provider_operation_executor()
     return (
         IndexActiveChunksService(
             embedding_provider=provider,
             dense_index_writer=writer,
+            provider_operation_executor=cast(ExecuteProviderOperationService, executor),
+            embedding_accounting=DocumentEmbeddingAccountingProfile(
+                provider="openai",
+                model="text-embedding-3-small",
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=20_000,
+                    output_micro_usd_per_million_units=0,
+                ),
+            ),
             readiness_timeout_seconds=readiness_timeout_seconds,
             monotonic_clock=clock.monotonic,
             sleeper=clock.sleep,
@@ -202,11 +234,12 @@ def make_service(
         provider,
         writer,
         clock,
+        executor,
     )
 
 
 def test_index_orders_chunks_batches_requests_and_waits_for_all_vectors() -> None:
-    service, provider, writer, _ = make_service()
+    service, provider, writer, _, executor = make_service()
     chunks = tuple(make_chunk(ordinal) for ordinal in reversed(range(17)))
 
     result = service.index(make_context(), make_run(), chunks)
@@ -224,10 +257,23 @@ def test_index_orders_chunks_batches_requests_and_waits_for_all_vectors() -> Non
     assert first_vector.chunk_set_id == CHUNK_SET_ID
     assert first_vector.embedding_config_version == EMBEDDING_CONFIG_VERSION
     assert first_vector.dense_index_config_version == DENSE_INDEX_CONFIG_VERSION
+    first_context, first_attempt = executor.execute.call_args_list[0].args[:2]
+    assert first_context == make_context()
+    assert first_attempt.correlation_id == PROCESSING_RUN_ID
+    assert first_attempt.processing_run_id == PROCESSING_RUN_ID
+    assert first_attempt.research_request_id is None
+    assert first_attempt.operation.value == "DOCUMENT_EMBEDDING"
+    assert first_attempt.maximum_usage == ProviderUsage(
+        input_units=sum(
+            len(make_chunk(ordinal).text.encode("utf-8"))
+            for ordinal in range(M1_EMBEDDING_BATCH_LIMIT)
+        ),
+        output_units=0,
+    )
 
 
 def test_index_splits_batches_at_total_character_limit() -> None:
-    service, provider, writer, _ = make_service()
+    service, provider, writer, _, _ = make_service()
     chunks = (make_chunk(0, text="a" * 20_000), make_chunk(1, text="b" * 20_000))
 
     result = service.index(make_context(), make_run(), chunks)
@@ -240,7 +286,7 @@ def test_index_splits_batches_at_total_character_limit() -> None:
 def test_index_retries_only_classified_transient_embedding_and_upsert_errors() -> None:
     provider = RecordingEmbeddingProvider(transient_failures=1)
     writer = RecordingDenseIndexWriter(transient_upsert_failures=1)
-    service, _, _, fake_time = make_service(
+    service, _, _, fake_time, executor = make_service(
         embedding_provider=provider,
         dense_index_writer=writer,
     )
@@ -248,24 +294,41 @@ def test_index_retries_only_classified_transient_embedding_and_upsert_errors() -
     service.index(make_context(), make_run(), (make_chunk(0),))
 
     assert len(provider.calls) == 2
+    assert executor.execute.call_count == 2
     assert len(writer.upsert_calls) == 2
     assert fake_time.sleeps == [0.25, 0.25]
 
 
 def test_index_stops_after_two_transient_embedding_attempts() -> None:
     provider = RecordingEmbeddingProvider(transient_failures=2)
-    service, _, writer, fake_time = make_service(embedding_provider=provider)
+    service, _, writer, fake_time, executor = make_service(embedding_provider=provider)
 
     with pytest.raises(SearchProviderTransientError, match="transient embedding"):
         service.index(make_context(), make_run(), (make_chunk(0),))
 
     assert len(provider.calls) == 2
+    assert executor.execute.call_count == 2
     assert writer.upsert_calls == []
     assert fake_time.sleeps == [0.25]
 
 
+def test_index_budget_rejection_does_not_call_embedding_or_index_providers() -> None:
+    executor = make_provider_operation_executor()
+    executor.execute.side_effect = ProviderBudgetExceededError("monthly provider budget exceeded")
+    service, provider, writer, _, _ = make_service(
+        provider_operation_executor=executor,
+    )
+
+    with pytest.raises(ProviderBudgetExceededError, match="monthly provider budget"):
+        service.index(make_context(), make_run(), (make_chunk(0),))
+
+    assert provider.calls == []
+    assert writer.upsert_calls == []
+    assert writer.fetch_calls == []
+
+
 def test_index_rejects_reordered_embedding_response_before_upsert() -> None:
-    service, _, writer, _ = make_service(
+    service, _, writer, _, _ = make_service(
         embedding_provider=RecordingEmbeddingProvider(reverse_response=True)
     )
 
@@ -277,7 +340,7 @@ def test_index_rejects_reordered_embedding_response_before_upsert() -> None:
 
 def test_index_rejects_unexpected_provider_acknowledgement() -> None:
     unexpected_id = "v1:" + "f" * 64
-    service, _, _, _ = make_service(
+    service, _, _, _, _ = make_service(
         dense_index_writer=RecordingDenseIndexWriter(acknowledgement_override=(unexpected_id,))
     )
 
@@ -287,7 +350,7 @@ def test_index_rejects_unexpected_provider_acknowledgement() -> None:
 
 def test_index_polls_visibility_within_one_total_deadline() -> None:
     writer = RecordingDenseIndexWriter(visibility_snapshots=[(), ()])
-    service, _, _, fake_time = make_service(
+    service, _, _, fake_time, _ = make_service(
         dense_index_writer=writer,
         readiness_timeout_seconds=0.5,
     )
@@ -301,7 +364,7 @@ def test_index_polls_visibility_within_one_total_deadline() -> None:
 
 def test_index_completes_when_vectors_become_visible_after_one_poll() -> None:
     writer = RecordingDenseIndexWriter(visibility_snapshots=[()])
-    service, _, _, fake_time = make_service(dense_index_writer=writer)
+    service, _, _, fake_time, _ = make_service(dense_index_writer=writer)
 
     result = service.index(make_context(), make_run(), (make_chunk(0),))
 
@@ -311,7 +374,7 @@ def test_index_completes_when_vectors_become_visible_after_one_poll() -> None:
 
 
 def test_index_rejects_foreign_or_incoherent_canonical_chunks() -> None:
-    service, provider, writer, _ = make_service()
+    service, provider, writer, _, _ = make_service()
     foreign_chunk = make_chunk(0).model_copy(update={"workspace_id": FOREIGN_WORKSPACE_ID})
 
     with pytest.raises(DenseIndexingInputError, match="do not belong"):

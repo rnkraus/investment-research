@@ -37,6 +37,9 @@ from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorage,
     S3ObjectStorageReadinessProbe,
 )
+from investment_research.infrastructure.operations.opentelemetry import (
+    OpenTelemetryOperationTracer,
+)
 from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
     CeleryProcessingDispatcher,
@@ -369,6 +372,8 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             assert isinstance(container.object_storage, LocalObjectStorage)
             assert isinstance(container.embedding_provider, OpenAIEmbeddingProvider)
             assert isinstance(container.dense_index_writer, PineconeDenseIndexWriter)
+            assert isinstance(container.operation_tracer, OpenTelemetryOperationTracer)
+            assert container.provider_operation_executor is not None
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.process_document_service, ProcessDocumentService)
             assert isinstance(
@@ -390,6 +395,14 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             assert (
                 container.index_active_chunks_service.dense_index_writer
                 is container.dense_index_writer
+            )
+            assert (
+                container.index_active_chunks_service.provider_operation_executor
+                is container.provider_operation_executor
+            )
+            assert (
+                container.provider_operation_executor.reservation_service.budget_policy.monthly_limit_micro_usd
+                == 5_000_000
             )
             assert (
                 container.index_processing_run_service._indexing_service
@@ -425,6 +438,7 @@ def test_build_worker_container_supports_credential_free_m0_regression(
     try:
         assert container.embedding_provider is None
         assert container.dense_index_writer is None
+        assert container.provider_operation_executor is None
         assert container.index_active_chunks_service is None
         assert container.index_processing_run_service is None
         assert container.execute_processing_job_service.indexing_service is None
@@ -491,6 +505,7 @@ def test_worker_container_closes_provider_and_database_resources(
     events: list[str] = []
     original_dense_close = PineconeDenseIndexWriter.close
     original_embedding_close = OpenAIEmbeddingProvider.close
+    original_tracer_close = OpenTelemetryOperationTracer.close
     original_database_dispose = Engine.dispose
 
     def close_dense(writer: PineconeDenseIndexWriter) -> None:
@@ -505,14 +520,19 @@ def test_worker_container_closes_provider_and_database_resources(
         events.append("database")
         original_database_dispose(engine)
 
+    def close_tracer(tracer: OpenTelemetryOperationTracer) -> None:
+        events.append("tracer")
+        original_tracer_close(tracer)
+
     monkeypatch.setattr(PineconeDenseIndexWriter, "close", close_dense)
     monkeypatch.setattr(OpenAIEmbeddingProvider, "close", close_embedding)
+    monkeypatch.setattr(OpenTelemetryOperationTracer, "close", close_tracer)
     monkeypatch.setattr(Engine, "dispose", dispose_database)
     container = build_worker_container(make_worker_settings(tmp_path / "objects"))
 
     container.close()
 
-    assert events == ["dense-index", "embedding", "database"]
+    assert events == ["dense-index", "embedding", "tracer", "database"]
 
 
 def test_api_container_closes_query_provider_and_database_resources(

@@ -5,8 +5,19 @@ from dataclasses import dataclass
 from time import monotonic, sleep
 
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    ProviderCostPolicy,
+    ProviderOperationAttempt,
+)
+from investment_research.modules.operations.domain import (
+    ProviderOperationErrorCode,
+    ProviderOperationKind,
+    ProviderUsage,
+)
 from investment_research.modules.processing.domain import Chunk, ProcessingRun, ProcessingState
 from investment_research.modules.search.application import (
+    EmbeddingResponseContractError,
     build_dense_index_vector,
     validate_embedding_response,
 )
@@ -26,6 +37,7 @@ from investment_research.modules.search.contracts import (
 from investment_research.modules.search.ports import (
     DenseIndexWriter,
     EmbeddingProvider,
+    SearchProviderConfigurationError,
     SearchProviderContractError,
     SearchProviderTransientError,
 )
@@ -54,11 +66,22 @@ class DocumentIndexingResult:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentEmbeddingAccountingProfile:
+    """Provider identity and reviewed unit pricing for document embeddings."""
+
+    provider: str
+    model: str
+    cost_policy: ProviderCostPolicy
+
+
+@dataclass(frozen=True, slots=True)
 class IndexActiveChunksService:
     """Embed and index one run's active canonical chunks outside database transactions."""
 
     embedding_provider: EmbeddingProvider
     dense_index_writer: DenseIndexWriter
+    provider_operation_executor: ExecuteProviderOperationService
+    embedding_accounting: DocumentEmbeddingAccountingProfile
     readiness_timeout_seconds: float = M1_DENSE_INDEX_READINESS_TIMEOUT_SECONDS
     poll_interval_seconds: float = M1_DENSE_INDEX_POLL_INTERVAL_SECONDS
     retry_delay_seconds: float = M1_PROVIDER_RETRY_DELAY_SECONDS
@@ -99,10 +122,7 @@ class IndexActiveChunksService:
                 ),
                 embedding_config_version=run.embedding_config_version,
             )
-            embedding_result = validate_embedding_response(
-                request,
-                self._embed_with_retry(request),
-            )
+            embedding_result = self._embed_with_retry(context, run, request)
             embeddings = embedding_result.vectors
             vectors = tuple(
                 build_dense_index_vector(
@@ -195,17 +215,59 @@ class IndexActiveChunksService:
             batches.append(tuple(current_batch))
         return tuple(batches)
 
-    def _embed_with_retry(self, request: EmbeddingRequest) -> EmbeddingResult:
+    def _embed_with_retry(
+        self,
+        context: WorkspaceContext,
+        run: ProcessingRun,
+        request: EmbeddingRequest,
+    ) -> EmbeddingResult:
         """Own the two-attempt M1 embedding retry policy above a retry-free adapter."""
 
         for attempt in range(M1_PROVIDER_MAX_ATTEMPTS):
             try:
-                return self.embedding_provider.embed(request)
+                return self.provider_operation_executor.execute(
+                    context,
+                    ProviderOperationAttempt(
+                        correlation_id=run.id,
+                        research_request_id=None,
+                        processing_run_id=run.id,
+                        operation=ProviderOperationKind.DOCUMENT_EMBEDDING,
+                        provider=self.embedding_accounting.provider,
+                        model=self.embedding_accounting.model,
+                        configuration_version=request.embedding_config_version,
+                        span_name="embedding.document",
+                        maximum_usage=ProviderUsage(
+                            input_units=sum(
+                                len(item.text.encode("utf-8")) for item in request.inputs
+                            ),
+                            output_units=0,
+                        ),
+                        cost_policy=self.embedding_accounting.cost_policy,
+                    ),
+                    lambda: validate_embedding_response(
+                        request,
+                        self.embedding_provider.embed(request),
+                    ),
+                    lambda result: result.usage,
+                    self._classify_embedding_error,
+                )
             except SearchProviderTransientError:
                 if attempt + 1 == M1_PROVIDER_MAX_ATTEMPTS:
                     raise
                 self.sleeper(self.retry_delay_seconds)
         raise RuntimeError("embedding retry loop terminated without a result")
+
+    @staticmethod
+    def _classify_embedding_error(error: Exception) -> ProviderOperationErrorCode:
+        """Map document-embedding failures to content-free canonical categories."""
+
+        if isinstance(error, SearchProviderTransientError):
+            return ProviderOperationErrorCode.UNAVAILABLE
+        if isinstance(error, (SearchProviderContractError, EmbeddingResponseContractError)):
+            return ProviderOperationErrorCode.CONTRACT
+        if isinstance(error, SearchProviderConfigurationError):
+            return ProviderOperationErrorCode.CONFIGURATION
+        return ProviderOperationErrorCode.UNAVAILABLE
 
     def _upsert_with_retry(
         self,

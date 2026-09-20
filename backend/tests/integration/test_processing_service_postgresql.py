@@ -23,8 +23,10 @@ from investment_research.infrastructure.database.unit_of_work import (
     create_capture_unit_of_work_factory,
     create_document_read_unit_of_work_factory,
     create_processing_unit_of_work_factory,
+    create_provider_operation_unit_of_work_factory,
 )
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
+from investment_research.infrastructure.operations.opentelemetry import create_operation_tracer
 from investment_research.infrastructure.parsing.client import HttpDocumentParser
 from investment_research.infrastructure.parsing.http_protocol import PARSER_RESPONSE_CONTENT_TYPE
 from investment_research.infrastructure.parsing.media import MediaAwareDocumentParser
@@ -46,7 +48,21 @@ from investment_research.modules.identity.domain import (
     WorkspaceType,
 )
 from investment_research.modules.identity.persistence import SqlAlchemyWorkspaceRepository
-from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    FinalizeProviderOperationService,
+    ProviderBudgetPolicy,
+    ProviderCostPolicy,
+    ReserveProviderOperationService,
+)
+from investment_research.modules.operations.domain import (
+    ProviderOperationKind,
+    ProviderOperationState,
+    ProviderUsage,
+)
+from investment_research.modules.operations.persistence import (
+    SqlAlchemyProviderOperationRepository,
+)
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
@@ -89,7 +105,10 @@ from investment_research.modules.search.contracts import (
     EmbeddingResult,
     EmbeddingVector,
 )
-from investment_research.modules.search.indexing import IndexActiveChunksService
+from investment_research.modules.search.indexing import (
+    DocumentEmbeddingAccountingProfile,
+    IndexActiveChunksService,
+)
 from tests.fakes import RecordingProcessingDispatcher
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -512,11 +531,39 @@ def test_m1_job_reaches_searchable_and_duplicate_delivery_is_a_noop(
     embedding_provider = RecordingEmbeddingProvider()
     dense_index_writer = ImmediatelyVisibleDenseIndexWriter()
     session_factory = create_session_factory(integration_database_engine)
+    provider_operation_unit_of_work_factory = create_provider_operation_unit_of_work_factory(
+        session_factory
+    )
+    operation_tracer = create_operation_tracer(
+        service_name="investment-research-processing-integration-test",
+        service_version="0.0.0",
+    )
+    operation_executor = ExecuteProviderOperationService(
+        reservation_service=ReserveProviderOperationService(
+            unit_of_work_factory=provider_operation_unit_of_work_factory,
+            budget_policy=ProviderBudgetPolicy(monthly_limit_micro_usd=5_000_000),
+        ),
+        finalization_service=FinalizeProviderOperationService(
+            unit_of_work_factory=provider_operation_unit_of_work_factory,
+        ),
+        tracer=operation_tracer,
+        clock=lambda: INDEXING_STARTED_AT,
+        monotonic_clock=iter((10.0, 10.125)).__next__,
+    )
     indexing_timestamps = iter((INDEXING_STARTED_AT, INDEXING_COMPLETED_AT))
     indexing_service = IndexProcessingRunService(
         indexing_service=IndexActiveChunksService(
             embedding_provider=embedding_provider,
             dense_index_writer=dense_index_writer,
+            provider_operation_executor=operation_executor,
+            embedding_accounting=DocumentEmbeddingAccountingProfile(
+                provider="openai",
+                model="text-embedding-3-small",
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=20_000,
+                    output_micro_usd_per_million_units=0,
+                ),
+            ),
         ),
         unit_of_work_factory=create_processing_unit_of_work_factory(session_factory),
         profile=M1_PROCESSING_PROFILE,
@@ -553,8 +600,20 @@ def test_m1_job_reaches_searchable_and_duplicate_delivery_is_a_noop(
             context,
             capture.processing_run_id,
         )
+        operations = SqlAlchemyProviderOperationRepository(session).list_by_correlation_id(
+            context,
+            capture.processing_run_id,
+        )
 
     assert persisted_run == first_result
+    assert len(operations) == 1
+    assert operations[0].operation is ProviderOperationKind.DOCUMENT_EMBEDDING
+    assert operations[0].state is ProviderOperationState.SUCCEEDED
+    assert operations[0].processing_run_id == capture.processing_run_id
+    assert operations[0].research_request_id is None
+    assert operations[0].input_units == 0
+    assert operations[0].actual_cost_micro_usd == 0
+    assert len(operations[0].trace_id) == 32
 
 
 def test_parser_limit_failure_preserves_original_and_records_failed_state(
