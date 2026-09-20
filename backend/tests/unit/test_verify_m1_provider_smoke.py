@@ -199,6 +199,7 @@ def make_settings() -> WorkerSettings:
     return WorkerSettings.model_validate(
         {
             "environment": "test",
+            "provider_monthly_budget_micro_usd": 5_000_000,
             "indexing_providers": {
                 "embedding": {"api_key": "synthetic-openai-key"},
                 "pinecone": {

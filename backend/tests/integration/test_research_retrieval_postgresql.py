@@ -15,17 +15,33 @@ from investment_research.infrastructure.database.session import (
 )
 from investment_research.infrastructure.database.unit_of_work import (
     SqlAlchemyResearchRetrievalRepositories,
+    create_provider_operation_unit_of_work_factory,
     create_research_retrieval_unit_of_work_factory,
 )
+from investment_research.infrastructure.operations.opentelemetry import create_operation_tracer
 from investment_research.infrastructure.search.postgresql import (
     PostgresDenseCandidateQualifier,
     PostgresLexicalSearch,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    FinalizeProviderOperationService,
+    ProviderBudgetPolicy,
+    ProviderCostPolicy,
+    ReserveProviderOperationService,
+)
+from investment_research.modules.operations.domain import (
+    ProviderOperationState,
+    ProviderUsage,
+)
+from investment_research.modules.operations.persistence import (
+    SqlAlchemyProviderOperationRepository,
+)
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.application import (
     M1QueryRetrievalDependencies,
+    QueryEmbeddingAccountingProfile,
     RetrieveResearchService,
 )
 from investment_research.modules.research.contracts import ResearchRetrievalInput
@@ -137,10 +153,9 @@ def test_service_commits_request_run_and_ranked_candidates_together(
             FIXTURE_TIME + timedelta(seconds=11),
         )
     )
+    session_factory = create_session_factory(integration_database_engine)
     service = RetrieveResearchService(
-        unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
-            create_session_factory(integration_database_engine)
-        ),
+        unit_of_work_factory=create_research_retrieval_unit_of_work_factory(session_factory),
         search_profile=LexicalSearchProfile(
             lexical_config_version=source.processing_run.lexical_config_version,
             candidate_limit=10,
@@ -207,10 +222,28 @@ def test_dual_lane_service_qualifies_selects_and_commits_both_lanes(
             FIXTURE_TIME + timedelta(seconds=11),
         )
     )
-    service = RetrieveResearchService(
-        unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
-            create_session_factory(integration_database_engine)
+    session_factory = create_session_factory(integration_database_engine)
+    provider_operation_unit_of_work_factory = create_provider_operation_unit_of_work_factory(
+        session_factory
+    )
+    operation_tracer = create_operation_tracer(
+        service_name="investment-research-integration-test",
+        service_version="0.0.0",
+    )
+    operation_executor = ExecuteProviderOperationService(
+        reservation_service=ReserveProviderOperationService(
+            unit_of_work_factory=provider_operation_unit_of_work_factory,
+            budget_policy=ProviderBudgetPolicy(monthly_limit_micro_usd=5_000_000),
         ),
+        finalization_service=FinalizeProviderOperationService(
+            unit_of_work_factory=provider_operation_unit_of_work_factory,
+        ),
+        tracer=operation_tracer,
+        clock=lambda: FIXTURE_TIME + timedelta(seconds=10),
+        monotonic_clock=iter((10.0, 10.125)).__next__,
+    )
+    service = RetrieveResearchService(
+        unit_of_work_factory=create_research_retrieval_unit_of_work_factory(session_factory),
         search_profile=LexicalSearchProfile(
             lexical_config_version=LEXICAL_CONFIG_VERSION,
             candidate_limit=10,
@@ -230,19 +263,31 @@ def test_dual_lane_service_qualifies_selects_and_commits_both_lanes(
                 candidate_limit=10,
             ),
             selection_profile=M1SelectionProfile(),
+            provider_operation_executor=operation_executor,
+            embedding_accounting=QueryEmbeddingAccountingProfile(
+                provider="openai",
+                model="text-embedding-3-small",
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=20_000,
+                    output_micro_usd_per_million_units=0,
+                ),
+            ),
             retry_delay_seconds=0,
         ),
         clock=clock.__next__,
         identifier_factory=identifiers.__next__,
     )
 
-    result = service.retrieve(
-        source.context,
-        ResearchRetrievalInput(
-            question="What was FY2025 revenue?",
-            document_ids=(source.document.id,),
-        ),
-    )
+    try:
+        result = service.retrieve(
+            source.context,
+            ResearchRetrievalInput(
+                question="What was FY2025 revenue?",
+                document_ids=(source.document.id,),
+            ),
+        )
+    finally:
+        operation_tracer.close()
 
     assert result.retrieval_run.mode is RetrievalMode.DUAL_LANE
     assert [(candidate.origin, candidate.chunk_id) for candidate in result.candidates] == [
@@ -257,10 +302,13 @@ def test_dual_lane_service_qualifies_selects_and_commits_both_lanes(
     ]
     assert unknown_chunk_id not in {candidate.chunk_id for candidate in result.candidates}
 
-    session_factory = create_session_factory(integration_database_engine)
     with session_factory() as session:
         research_repository = SqlAlchemyResearchRepository(session)
         retrieval_repository = SqlAlchemyRetrievalRepository(session)
+        operations = SqlAlchemyProviderOperationRepository(session).list_by_correlation_id(
+            source.context,
+            request_id,
+        )
         assert research_repository.get_request_by_id(source.context, request_id) == result.request
         assert (
             retrieval_repository.get_run_by_id(source.context, retrieval_run_id)
@@ -271,6 +319,12 @@ def test_dual_lane_service_qualifies_selects_and_commits_both_lanes(
             result.candidates[2],
             result.candidates[1],
         )
+        assert len(operations) == 1
+        assert operations[0].state is ProviderOperationState.SUCCEEDED
+        assert operations[0].research_request_id == request_id
+        assert operations[0].input_units == 0
+        assert operations[0].actual_cost_micro_usd == 0
+        assert len(operations[0].trace_id) == 32
 
 
 def test_failure_after_real_search_rolls_back_the_flushed_request(

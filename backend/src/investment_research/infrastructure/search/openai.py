@@ -27,6 +27,7 @@ from investment_research.modules.search.ports import (
 
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDING_TIMEOUT_SECONDS = 30.0
+OPENAI_EMBEDDING_INPUT_MICRO_USD_PER_MILLION_TOKENS = 20_000
 
 _CONFIGURATION_VERSION_ADAPTER = TypeAdapter(ConfigurationVersion)
 _TRANSIENT_STATUS_CODES = frozenset({408, 409, 429})

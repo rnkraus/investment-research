@@ -254,7 +254,14 @@ Minimum operational views:
 - vector-index drift and reconciliation repairs;
 - deletion backlog and backup/restore status after hosting.
 
-The provisional combined cloud and AI-provider budget is **EUR 100 per month**. Record attributable usage for each AI operation and configure provider spending limits where available. Add hosted alerts before public release; avoid building a complex alerting stack for local-only development.
+The provisional M1 AI-provider budget target is **EUR 5 per month**. Because the approved provider
+prices and canonical ledger use US dollars, the local M1 runtime enforces a fixed hard ceiling of
+**USD 5 per workspace and UTC month** (`5,000,000` micro-USD). This fixed ceiling deliberately avoids
+runtime foreign-exchange dependencies and must be reviewed before the provider billing currency,
+workspace model, or deployment scope changes. It does not claim that later hosted infrastructure can
+fit inside the same amount. Record attributable usage for each AI operation and configure matching
+provider-side spending limits where available. Add hosted alerts before public release; avoid
+building a complex alerting stack for local-only development.
 
 ## 11. Delivery and change safety
 

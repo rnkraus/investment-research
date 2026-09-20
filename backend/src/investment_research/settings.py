@@ -50,6 +50,7 @@ DEFAULT_DENSE_INDEX_CONFIG_VERSION: Literal["pinecone-serverless-cosine-1536-aws
 )
 DEFAULT_PINECONE_OPERATION_TIMEOUT_SECONDS = 20
 MAX_PINECONE_OPERATION_TIMEOUT_SECONDS = 20
+M1_MAX_PROVIDER_MONTHLY_BUDGET_MICRO_USD = 5_000_000
 DOCKER_SECRETS_ROOT = Path("/run/secrets")
 POSTGRES_SETTING_NAMES = (
     "POSTGRES_DB",
@@ -281,6 +282,11 @@ class ObjectStorageSettings(QueueSettings):
     object_storage_provider: ObjectStorageProvider = "local"
     object_storage_root: Path = DEFAULT_OBJECT_STORAGE_ROOT
     s3: S3Settings | None = None
+    provider_monthly_budget_micro_usd: int | None = Field(
+        default=None,
+        ge=1,
+        le=M1_MAX_PROVIDER_MONTHLY_BUDGET_MICRO_USD,
+    )
 
     @field_validator("object_storage_root")
     @classmethod
@@ -458,12 +464,16 @@ class ApiSettings(ObjectStorageSettings):
 
     @model_validator(mode="after")
     def require_complete_m1_provider_configuration(self) -> ApiSettings:
-        """Enable the complete M1 query and generation path or neither path."""
+        """Enable the complete M1 API provider and budget group or none of it."""
 
         if (self.query_providers is None) != (self.generation_provider is None):
             raise ValueError(
                 "M1 API provider configuration requires query and generation providers together"
             )
+        providers_enabled = self.query_providers is not None
+        budget_configured = self.provider_monthly_budget_micro_usd is not None
+        if providers_enabled != budget_configured:
+            raise ValueError("M1 API provider configuration requires the monthly provider budget")
         return self
 
     def require_query_providers(self) -> DenseProviderSettings:
@@ -515,6 +525,18 @@ class WorkerSettings(ObjectStorageSettings):
         if self.processing_profile == "m0-regression" and self.environment != "test":
             raise ValueError(
                 "m0-regression processing_profile is allowed only in the test environment"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def require_complete_m1_provider_budget(self) -> WorkerSettings:
+        """Enable document-index providers and their shared budget together."""
+
+        providers_enabled = self.indexing_providers is not None
+        budget_configured = self.provider_monthly_budget_micro_usd is not None
+        if providers_enabled != budget_configured:
+            raise ValueError(
+                "M1 worker provider configuration requires the monthly provider budget"
             )
         return self
 
@@ -897,6 +919,17 @@ def _generation_provider_runtime_values(
     return None if api_key is None else {"api_key": api_key}
 
 
+def _provider_budget_runtime_values(file_values: dict[str, str | None]) -> dict[str, object]:
+    """Load the shared workspace budget applied by every paid-provider process."""
+
+    return {
+        "provider_monthly_budget_micro_usd": _configuration_value(
+            "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
+            file_values,
+        )
+    }
+
+
 def load_database_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> DatabaseSettings:
     """Load only values required for a direct PostgreSQL maintenance process."""
 
@@ -924,6 +957,7 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
         **database_values,
         **_queue_runtime_values(file_values, database_values.get("runtime_location")),
         **_object_storage_runtime_values(file_values),
+        **_provider_budget_runtime_values(file_values),
         "app_name": _configuration_value(
             "INVESTMENT_RESEARCH_APP_NAME",
             file_values,
@@ -959,6 +993,7 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
         **database_values,
         **_queue_runtime_values(file_values, database_values.get("runtime_location")),
         **_object_storage_runtime_values(file_values),
+        **_provider_budget_runtime_values(file_values),
         "processing_profile": _configuration_value(
             "INVESTMENT_RESEARCH_PROCESSING_PROFILE",
             file_values,
