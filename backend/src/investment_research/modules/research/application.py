@@ -374,7 +374,6 @@ class RetrieveResearchService:
             provider=dependencies.embedding_accounting.provider,
             model=dependencies.embedding_accounting.model,
             configuration_version=dependencies.dense_profile.embedding_config_version,
-            span_name="embedding.query",
             maximum_usage=ProviderUsage(
                 input_units=sum(
                     len(item.text.encode("utf-8")) for item in embedding_request.inputs
@@ -602,7 +601,6 @@ class _AccountedStatementSupportEvaluator:
                 provider=self.accounting.provider,
                 model=self.accounting.model,
                 configuration_version=self.accounting.configuration_version,
-                span_name="evidence.statement_support",
                 maximum_usage=ProviderUsage(
                     input_units=maximum_input_units,
                     output_units=self.accounting.maximum_output_units,
@@ -814,7 +812,6 @@ class GenerateValidatedAnswerService:
                 provider=accounting.provider,
                 model=accounting.model,
                 configuration_version=self._generation_profile.generation_config_version,
-                span_name="generation.answer",
                 maximum_usage=ProviderUsage(
                     input_units=maximum_input_units,
                     output_units=accounting.maximum_output_units,

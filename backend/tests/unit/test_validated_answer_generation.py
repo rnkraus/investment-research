@@ -463,7 +463,6 @@ def test_m1_statement_support_accounts_usage_inside_answer_transaction() -> None
     assert attempt.research_request_id == REQUEST_ID
     assert attempt.processing_run_id is None
     assert attempt.configuration_version == "openai-gpt-5.6-terra-low-support-v1"
-    assert attempt.span_name == "evidence.statement_support"
     assert attempt.maximum_usage == ProviderUsage(
         input_units=(16_000 + len(STATEMENT.encode("utf-8")) + len(EVIDENCE_TEXT.encode("utf-8"))),
         output_units=1_000,

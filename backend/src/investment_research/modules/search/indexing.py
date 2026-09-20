@@ -235,7 +235,6 @@ class IndexActiveChunksService:
                         provider=self.embedding_accounting.provider,
                         model=self.embedding_accounting.model,
                         configuration_version=request.embedding_config_version,
-                        span_name="embedding.document",
                         maximum_usage=ProviderUsage(
                             input_units=sum(
                                 len(item.text.encode("utf-8")) for item in request.inputs

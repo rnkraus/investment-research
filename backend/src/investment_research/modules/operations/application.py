@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import monotonic
-from typing import Final
+from typing import Final, assert_never
 from uuid import UUID, uuid4
 
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -17,6 +17,7 @@ from investment_research.modules.operations.domain import (
     ProviderUsage,
 )
 from investment_research.modules.operations.ports import (
+    OperationSpanName,
     OperationTracer,
     ProviderOperationUnitOfWorkFactory,
 )
@@ -29,6 +30,21 @@ type MonotonicClock = Callable[[], float]
 type OperationIdentifierFactory = Callable[[], UUID]
 type TraceIdentifierFactory = Callable[[], str]
 type ProviderErrorClassifier = Callable[[Exception], ProviderOperationErrorCode]
+
+
+def _provider_operation_span_name(operation: ProviderOperationKind) -> OperationSpanName:
+    """Map every paid operation to one centrally approved content-safe span name."""
+
+    match operation:
+        case ProviderOperationKind.DOCUMENT_EMBEDDING:
+            return "embedding.document"
+        case ProviderOperationKind.QUERY_EMBEDDING:
+            return "embedding.query"
+        case ProviderOperationKind.ANSWER_GENERATION:
+            return "research.generate"
+        case ProviderOperationKind.STATEMENT_SUPPORT:
+            return "evidence.evaluate_support"
+    assert_never(operation)
 
 
 class ProviderBudgetExceededError(Exception):
@@ -104,7 +120,6 @@ class ProviderOperationAttempt:
     provider: str
     model: str
     configuration_version: str
-    span_name: str
     maximum_usage: ProviderUsage
     cost_policy: ProviderCostPolicy
 
@@ -242,7 +257,10 @@ class ExecuteProviderOperationService:
             "operation.kind": attempt.operation.value,
             **self._relationship_trace_attribute(attempt),
         }
-        with self.tracer.start_span(attempt.span_name, attributes=span_attributes) as span:
+        with self.tracer.start_span(
+            _provider_operation_span_name(attempt.operation),
+            attributes=span_attributes,
+        ) as span:
             trace_id = span.trace_id or self.trace_identifier_factory()
             started_at = self._aware_utc_now()
             reserved_cost = attempt.cost_policy.cost_for(attempt.maximum_usage)

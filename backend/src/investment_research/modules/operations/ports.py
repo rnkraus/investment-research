@@ -3,7 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -14,8 +14,21 @@ from investment_research.modules.operations.domain import (
 
 type TraceAttributeValue = str | bool | int | float
 type TraceAttributes = Mapping[str, TraceAttributeValue]
+type OperationSpanName = Literal[
+    "document.capture",
+    "embedding.document",
+    "embedding.query",
+    "evidence.evaluate_support",
+    "evidence.validate",
+    "pinecone.query",
+    "pinecone.upsert",
+    "processing.index",
+    "processing.parse",
+    "research.generate",
+    "research.retrieve",
+]
 
-APPROVED_OPERATION_SPAN_NAMES = frozenset(
+APPROVED_OPERATION_SPAN_NAMES: frozenset[OperationSpanName] = frozenset(
     {
         "document.capture",
         "embedding.document",

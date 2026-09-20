@@ -58,5 +58,7 @@ The canonical ledger, atomic reservation, safe finalization services, usage-bear
 contracts, and content-safe in-process OpenTelemetry adapter are present. The adapter produces W3C
 trace IDs without an exporter and degrades to no-op behavior when tracing fails. M1 query embedding,
 document embedding, answer generation, and statement support use the complete
-reserve-call-finalize path. Every application-owned retry creates a separate canonical operation.
-Unknown failure usage conservatively consumes the full reservation.
+reserve-call-finalize path. The operations service derives each approved provider span name from
+the typed operation kind, so callers cannot introduce arbitrary or misspelled names. Every
+application-owned retry creates a separate canonical operation. Unknown failure usage
+conservatively consumes the full reservation.
