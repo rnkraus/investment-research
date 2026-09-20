@@ -23,6 +23,10 @@ from investment_research.infrastructure.search.openai import OpenAIEmbeddingProv
 from investment_research.infrastructure.search.pinecone import PineconeDenseRetriever
 from investment_research.main import create_app
 from investment_research.modules.documents.domain import OriginalMediaType, SourceLocatorKind
+from investment_research.modules.evidence.contracts import (
+    StatementSupportDecision,
+    StatementSupportResult,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.domain import (
     ProviderOperation,
@@ -175,9 +179,16 @@ class FixedStatementSupportEvaluator:
         self.requests: list[tuple[str, tuple[str, ...]]] = []
         self.closed = False
 
-    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
+    def evaluate(
+        self,
+        statement: str,
+        evidence_texts: Sequence[str],
+    ) -> StatementSupportResult:
         self.requests.append((statement, tuple(evidence_texts)))
-        return self._supported
+        return StatementSupportResult(
+            decision=StatementSupportDecision(supported=self._supported),
+            usage=ProviderUsage(input_units=90, output_units=10),
+        )
 
     def close(self) -> None:
         self.closed = True
@@ -379,13 +390,13 @@ def load_provider_operations(
         )
 
 
-def assert_accounted_query_and_generation(
+def assert_accounted_query_generation_and_support(
     engine: Engine,
     *,
     context: WorkspaceContext,
     research_request_id: UUID,
 ) -> None:
-    """Require one successful query embedding and one successful answer generation."""
+    """Require successful query, generation, and independent support accounting."""
 
     operations = load_provider_operations(
         engine,
@@ -395,6 +406,7 @@ def assert_accounted_query_and_generation(
     assert {operation.operation for operation in operations} == {
         ProviderOperationKind.QUERY_EMBEDDING,
         ProviderOperationKind.ANSWER_GENERATION,
+        ProviderOperationKind.STATEMENT_SUPPORT,
     }
     assert all(operation.state is ProviderOperationState.SUCCEEDED for operation in operations)
     generation = next(
@@ -406,6 +418,15 @@ def assert_accounted_query_and_generation(
     assert generation.output_units == 30
     assert generation.actual_cost_micro_usd == 600
     assert len(generation.trace_id) == 32
+    support = next(
+        operation
+        for operation in operations
+        if operation.operation is ProviderOperationKind.STATEMENT_SUPPORT
+    )
+    assert support.input_units == 90
+    assert support.output_units == 10
+    assert support.actual_cost_micro_usd == 300
+    assert len(support.trace_id) == 32
 
 
 def test_m1_api_selects_exact_lexical_evidence_in_dual_lane_mode(
@@ -458,7 +479,7 @@ def test_m1_api_selects_exact_lexical_evidence_in_dual_lane_mode(
     assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 1
     assert len(fakes.generator.requests) == len(fakes.support.requests) == 1
     assert events[0]["payload"]["text"] == M0_0_FIXTURE_ANSWER_CASE.statement
-    assert_accounted_query_and_generation(
+    assert_accounted_query_generation_and_support(
         integration_database_engine,
         context=source.context,
         research_request_id=request_id,
@@ -528,7 +549,7 @@ def test_m1_api_selects_only_canonical_dense_evidence_for_semantic_question(
     assert fakes.dense.queries[0].filters.document_ids == (source.document.id,)
     assert len(fakes.generator.requests) == len(fakes.support.requests) == 1
     assert events[0]["payload"]["text"] == statement
-    assert_accounted_query_and_generation(
+    assert_accounted_query_generation_and_support(
         integration_database_engine,
         context=source.context,
         research_request_id=request_id,

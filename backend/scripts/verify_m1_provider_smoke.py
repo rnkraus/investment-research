@@ -182,6 +182,27 @@ class ProviderSmokeBudget:
         self.generation_evaluation_output_tokens += SMOKE_SUPPORT_MAX_OUTPUT_TOKENS
         self._require_limits()
 
+    @staticmethod
+    def verify_support_usage(
+        statement: str,
+        evidence_texts: Sequence[str],
+        usage: ProviderUsage,
+    ) -> None:
+        """Reject provider-reported support usage outside the approved reservation."""
+
+        maximum_input_tokens = (
+            SUPPORT_INPUT_ENVELOPE_RESERVE
+            + len(statement.encode("utf-8"))
+            + sum(len(text.encode("utf-8")) for text in evidence_texts)
+        )
+        if (
+            usage.input_units > maximum_input_tokens
+            or usage.output_units > SMOKE_SUPPORT_MAX_OUTPUT_TOKENS
+        ):
+            raise ProviderSmokeVerificationError(
+                "reported support-evaluation usage exceeds the approved reservation"
+            )
+
     def _require_limits(self) -> None:
         """Fail before a reservation would exceed any frozen manifest ceiling."""
 
@@ -314,7 +335,9 @@ def _verify_answerable_proposal(
             evidence_texts.append(reference.exact_text)
 
         budget.reserve_support(statement.text, evidence_texts)
-        if not support_evaluator.supports(statement.text, evidence_texts):
+        support_result = support_evaluator.evaluate(statement.text, evidence_texts)
+        budget.verify_support_usage(statement.text, evidence_texts, support_result.usage)
+        if not support_result.decision.supported:
             raise ProviderSmokeVerificationError(
                 "answerable provider smoke statement was not independently supported"
             )

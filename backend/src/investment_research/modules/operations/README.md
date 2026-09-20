@@ -54,10 +54,9 @@ questions, prompts, generated answers, credentials, complete URLs, or provider e
 `ProviderUsage` is the shared immutable input/output-unit result returned by provider adapters; it
 contains no SDK object or raw request or response content.
 
-The canonical ledger, atomic reservation, safe finalization services, usage-bearing embedding result
-contract, and content-safe in-process OpenTelemetry adapter are present. The adapter produces W3C
-trace IDs without an exporter and degrades to no-op behavior when tracing fails. M1 query embedding
-document embedding, and answer generation now use the complete reserve-call-finalize path. Every
-application-owned retry creates a separate canonical operation. Unknown failure usage
-conservatively consumes the full reservation. The remaining Step 5 provider integration applies
-the same executor to statement-support calls.
+The canonical ledger, atomic reservation, safe finalization services, usage-bearing provider result
+contracts, and content-safe in-process OpenTelemetry adapter are present. The adapter produces W3C
+trace IDs without an exporter and degrades to no-op behavior when tracing fails. M1 query embedding,
+document embedding, answer generation, and statement support use the complete
+reserve-call-finalize path. Every application-owned retry creates a separate canonical operation.
+Unknown failure usage conservatively consumes the full reservation.

@@ -16,6 +16,7 @@ from investment_research.modules.evidence.domain import (
     ValidationReason,
     ValidationRule,
 )
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import M1_STATEMENT_EVIDENCE_LIMIT
 from investment_research.modules.research.domain import CoverageStatus, StatementText
@@ -73,6 +74,13 @@ class StatementSupportDecision(ImmutableEvidenceContract):
     """Typed provider decision that grants no citation or publication authority."""
 
     supported: bool
+
+
+class StatementSupportResult(ImmutableEvidenceContract):
+    """Schema-valid support decision plus content-free provider usage."""
+
+    decision: StatementSupportDecision
+    usage: ProviderUsage
 
 
 class CanonicalEvidenceSpanSource(ImmutableEvidenceContract):

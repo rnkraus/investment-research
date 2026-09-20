@@ -33,10 +33,20 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderRefusalError,
     StatementSupportProviderTransientError,
 )
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.contracts import M1_CONTEXT_CHARACTER_LIMIT
 
 STATEMENT = "A transformer shortage constrained new customer deployments."
 EVIDENCE_TEXTS = ("A shortage of high-voltage transformers constrained new customer deployments.",)
+
+
+@dataclass(slots=True)
+class StubResponseUsage:
+    """Expose the bounded token totals consumed from an OpenAI response."""
+
+    input_tokens: int = 90
+    output_tokens: int = 10
+    total_tokens: int = 100
 
 
 @dataclass(slots=True)
@@ -49,6 +59,7 @@ class StubParsedResponse:
         default_factory=lambda: StatementSupportDecision(supported=True)
     )
     output: tuple[object, ...] = ()
+    usage: StubResponseUsage | None = field(default_factory=StubResponseUsage)
 
 
 @dataclass(slots=True)
@@ -100,9 +111,10 @@ def test_supports_sends_one_bounded_stateless_request(supported: bool) -> None:
         )
     )
 
-    result = make_evaluator(client).supports(STATEMENT, EVIDENCE_TEXTS)
+    result = make_evaluator(client).evaluate(STATEMENT, EVIDENCE_TEXTS)
 
-    assert result is supported
+    assert result.decision.supported is supported
+    assert result.usage == ProviderUsage(input_units=90, output_units=10)
     assert len(client.responses.calls) == 1
     call = client.responses.calls[0]
     assert call["model"] == OPENAI_STATEMENT_SUPPORT_MODEL
@@ -143,7 +155,7 @@ def test_invalid_input_is_rejected_before_the_provider_call(
     client = RecordingOpenAIClient()
 
     with pytest.raises(ValidationError):
-        make_evaluator(client).supports(statement, evidence_texts)
+        make_evaluator(client).evaluate(statement, evidence_texts)
 
     assert client.responses.calls == []
 
@@ -184,6 +196,27 @@ def test_invalid_input_is_rejected_before_the_provider_call(
             StatementSupportProviderRefusalError,
             id="refusal",
         ),
+        pytest.param(
+            StubParsedResponse(usage=None),
+            StatementSupportProviderContractError,
+            id="missing-usage",
+        ),
+        pytest.param(
+            StubParsedResponse(usage=StubResponseUsage(total_tokens=101)),
+            StatementSupportProviderContractError,
+            id="contradictory-usage",
+        ),
+        pytest.param(
+            StubParsedResponse(
+                usage=StubResponseUsage(
+                    input_tokens=9_223_372_036_854_775_808,
+                    output_tokens=0,
+                    total_tokens=9_223_372_036_854_775_808,
+                )
+            ),
+            StatementSupportProviderContractError,
+            id="usage-out-of-range",
+        ),
     ],
 )
 def test_supports_rejects_non_completed_or_untyped_responses(
@@ -193,7 +226,7 @@ def test_supports_rejects_non_completed_or_untyped_responses(
     client = RecordingOpenAIClient(responses=RecordingResponsesResource(response=response))
 
     with pytest.raises(application_error):
-        make_evaluator(client).supports(STATEMENT, EVIDENCE_TEXTS)
+        make_evaluator(client).evaluate(STATEMENT, EVIDENCE_TEXTS)
 
 
 @pytest.mark.parametrize(
@@ -252,7 +285,7 @@ def test_provider_errors_are_translated_without_exposing_details(
     client = RecordingOpenAIClient(responses=RecordingResponsesResource(error=provider_error))
 
     with pytest.raises(application_error) as captured:
-        make_evaluator(client).supports(STATEMENT, EVIDENCE_TEXTS)
+        make_evaluator(client).evaluate(STATEMENT, EVIDENCE_TEXTS)
 
     assert "sensitive" not in str(captured.value)
     assert captured.value.__cause__ is None
@@ -264,7 +297,7 @@ def test_application_abort_is_not_translated_or_retried() -> None:
     client = RecordingOpenAIClient(responses=RecordingResponsesResource(error=abort))
 
     with pytest.raises(SoftTimeLimitExceeded) as captured:
-        make_evaluator(client).supports(STATEMENT, EVIDENCE_TEXTS)
+        make_evaluator(client).evaluate(STATEMENT, EVIDENCE_TEXTS)
 
     assert captured.value is abort
     assert len(client.responses.calls) == 1

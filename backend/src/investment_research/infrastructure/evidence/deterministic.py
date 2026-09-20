@@ -3,6 +3,12 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from investment_research.modules.evidence.contracts import (
+    StatementSupportDecision,
+    StatementSupportResult,
+)
+from investment_research.modules.operations.domain import ProviderUsage
+
 
 @dataclass(frozen=True, slots=True)
 class FixtureStatementSupportRule:
@@ -28,11 +34,16 @@ class DeterministicFixtureStatementSupportEvaluator:
             raise ValueError("at least one fixture statement support rule is required")
         self._rules = tuple(rules)
 
-    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
-        """Return whether one configured pair occurs in the canonical evidence set."""
+    def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        """Return the fixture decision with zero external-provider usage."""
 
         evidence_set = set(evidence_texts)
-        return any(
-            statement == rule.statement and rule.evidence_text in evidence_set
-            for rule in self._rules
+        return StatementSupportResult(
+            decision=StatementSupportDecision(
+                supported=any(
+                    statement == rule.statement and rule.evidence_text in evidence_set
+                    for rule in self._rules
+                )
+            ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
