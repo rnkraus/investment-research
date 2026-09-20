@@ -697,9 +697,9 @@ raw fixture text appears in operational output.
 CI; docs.
 
 As of 2026-09-20, the canonical ledger, atomic monthly budget, safe local OpenTelemetry adapter,
-query-embedding accounting, and document-embedding accounting are implemented and verified locally.
-Answer generation and statement-support calls still need to use the same reserve-call-finalize
-boundary before the Step 5 gate is complete.
+query-embedding accounting, document-embedding accounting, and answer-generation accounting are
+implemented and verified locally. Statement-support calls still need to use the same
+reserve-call-finalize boundary before the Step 5 gate is complete.
 
 ### Step 6 — M1 acceptance and handoff
 

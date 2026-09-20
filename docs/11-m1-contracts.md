@@ -339,6 +339,8 @@ Generation receives only:
 
 The OpenAI request uses `gpt-5.6-terra`, low reasoning, `store=false`, no tools, no background mode,
 and a strict structured-output schema. Provider output remains an `UnvalidatedGeneratedAnswer`.
+The application adapter returns it inside `AnswerGenerationResult` together with validated,
+content-free `ProviderUsage`; no SDK response object crosses the provider boundary.
 
 An answered proposal contains no more than 8 statements and 2 evidence references per statement.
 Each reference names only a supplied retrieval-candidate ID and a block-local half-open range. An

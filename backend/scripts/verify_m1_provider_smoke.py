@@ -32,6 +32,7 @@ from investment_research.infrastructure.search.pinecone import (
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
@@ -148,6 +149,26 @@ class ProviderSmokeBudget:
         )
         self.generation_evaluation_output_tokens += SMOKE_ANSWER_MAX_OUTPUT_TOKENS
         self._require_limits()
+
+    @staticmethod
+    def verify_generation_usage(
+        generation_input: AnswerGenerationInput,
+        usage: ProviderUsage,
+    ) -> None:
+        """Require reported usage to fit inside the reservation made before the call."""
+
+        maximum_input_tokens = (
+            GENERATION_INPUT_ENVELOPE_RESERVE
+            + len(generation_input.question.encode("utf-8"))
+            + sum(len(source.text.encode("utf-8")) for source in generation_input.sources)
+        )
+        if (
+            usage.input_units > maximum_input_tokens
+            or usage.output_units > SMOKE_ANSWER_MAX_OUTPUT_TOKENS
+        ):
+            raise ProviderSmokeVerificationError(
+                "reported generation usage exceeds the approved reservation"
+            )
 
     def reserve_support(self, statement: str, evidence_texts: Sequence[str]) -> None:
         """Reserve one statement-support call before sending its bounded payload."""
@@ -444,9 +465,10 @@ def verify_m1_provider_smoke(
             source=source,
         )
         budget.reserve_generation(answerable_input)
-        answerable_proposal = answer_generator.generate(answerable_input)
+        answerable_result = answer_generator.generate(answerable_input)
+        budget.verify_generation_usage(answerable_input, answerable_result.usage)
         _verify_answerable_proposal(
-            answerable_proposal,
+            answerable_result.answer,
             source=source,
             support_evaluator=support_evaluator,
             budget=budget,
@@ -457,7 +479,9 @@ def verify_m1_provider_smoke(
             source=source,
         )
         budget.reserve_generation(unanswerable_input)
-        _verify_unanswerable_proposal(answer_generator.generate(unanswerable_input))
+        unanswerable_result = answer_generator.generate(unanswerable_input)
+        budget.verify_generation_usage(unanswerable_input, unanswerable_result.usage)
+        _verify_unanswerable_proposal(unanswerable_result.answer)
     except Exception as error:
         primary_error = error
     finally:

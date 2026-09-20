@@ -12,7 +12,7 @@ from investment_research.modules.evidence.ports import (
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
-    UnvalidatedGeneratedAnswer,
+    AnswerGenerationResult,
 )
 from investment_research.modules.research.domain import Answer, AnswerStatement, ResearchRequest
 from investment_research.modules.search.ports import (
@@ -45,8 +45,8 @@ class AnswerGenerationProviderRefusalError(AnswerGenerationProviderError):
 class AnswerGenerator(Protocol):
     """Produce schema-valid but untrusted answer proposals from bounded sources."""
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
-        """Return a typed proposal that still requires server-side evidence validation."""
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
+        """Return a typed proposal and usage that still require application validation."""
 
 
 class ResearchRepository(Protocol):

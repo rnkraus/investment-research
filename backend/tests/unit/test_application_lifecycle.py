@@ -23,8 +23,11 @@ from investment_research.infrastructure.evidence.openai import (
     OpenAIStatementSupportEvaluator,
 )
 from investment_research.infrastructure.generation.openai import (
+    OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+    OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS,
     OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
     OPENAI_ANSWER_MODEL,
+    OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS,
     OPENAI_ANSWER_TIMEOUT_SECONDS,
     OpenAIAnswerGenerator,
 )
@@ -257,6 +260,8 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
             assert container.answer_generator_provider is None
             assert container.statement_support_provider is None
             assert container.provider_operation_executor is None
+            assert container.generate_validated_answer_service._provider_operation_executor is None
+            assert container.generate_validated_answer_service._generation_accounting is None
             assert container.retrieve_research_service._m1_query_retrieval is None
             assert (
                 container.retrieve_research_service._search_profile.lexical_config_version
@@ -298,6 +303,27 @@ def test_build_api_container_wires_m1_query_resources(
         assert container.answer_generator_provider is fakes.answer_generator
         assert container.statement_support_provider is fakes.support_evaluator
         assert container.provider_operation_executor is not None
+        assert (
+            container.generate_validated_answer_service._provider_operation_executor
+            is container.provider_operation_executor
+        )
+        generation_accounting = container.generate_validated_answer_service._generation_accounting
+        assert generation_accounting is not None
+        assert generation_accounting.provider == "openai"
+        assert generation_accounting.model == OPENAI_ANSWER_MODEL
+        assert (
+            generation_accounting.input_overhead_units
+            == OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS
+        )
+        assert generation_accounting.maximum_output_units == OPENAI_ANSWER_MAX_OUTPUT_TOKENS
+        assert (
+            generation_accounting.cost_policy.input_micro_usd_per_million_units
+            == OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS
+        )
+        assert (
+            generation_accounting.cost_policy.output_micro_usd_per_million_units
+            == OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS
+        )
         assert (
             container.generate_validated_answer_service._answer_generator is fakes.answer_generator
         )

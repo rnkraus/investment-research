@@ -27,6 +27,7 @@ from investment_research.infrastructure.generation.openai import (
     create_openai_answer_generator,
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
@@ -96,6 +97,15 @@ def make_proposal() -> UnvalidatedGeneratedAnswer:
 
 
 @dataclass(slots=True)
+class StubResponseUsage:
+    """Expose the bounded token totals consumed from an OpenAI response."""
+
+    input_tokens: int = 120
+    output_tokens: int = 30
+    total_tokens: int = 150
+
+
+@dataclass(slots=True)
 class StubParsedResponse:
     """Expose the parsed response fields consumed by the adapter."""
 
@@ -103,6 +113,7 @@ class StubParsedResponse:
     status: str = "completed"
     output_parsed: UnvalidatedGeneratedAnswer | None = field(default_factory=make_proposal)
     output: tuple[object, ...] = ()
+    usage: StubResponseUsage | None = field(default_factory=StubResponseUsage)
 
 
 @dataclass(slots=True)
@@ -151,7 +162,8 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
 
     result = make_generator(client).generate(make_generation_input())
 
-    assert result == make_proposal()
+    assert result.answer == make_proposal()
+    assert result.usage == ProviderUsage(input_units=120, output_units=30)
     assert len(client.responses.calls) == 1
     call = client.responses.calls[0]
     assert call["model"] == OPENAI_ANSWER_MODEL
@@ -217,6 +229,27 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
             ),
             AnswerGenerationProviderRefusalError,
             id="refusal",
+        ),
+        pytest.param(
+            StubParsedResponse(usage=None),
+            AnswerGenerationProviderContractError,
+            id="missing-usage",
+        ),
+        pytest.param(
+            StubParsedResponse(usage=StubResponseUsage(total_tokens=151)),
+            AnswerGenerationProviderContractError,
+            id="contradictory-usage",
+        ),
+        pytest.param(
+            StubParsedResponse(
+                usage=StubResponseUsage(
+                    input_tokens=9_223_372_036_854_775_808,
+                    output_tokens=0,
+                    total_tokens=9_223_372_036_854_775_808,
+                )
+            ),
+            AnswerGenerationProviderContractError,
+            id="usage-out-of-range",
         ),
     ],
 )

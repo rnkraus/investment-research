@@ -3,8 +3,10 @@
 from dataclasses import dataclass
 from unicodedata import normalize
 
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
+    AnswerGenerationResult,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
     UnvalidatedGeneratedStatement,
@@ -58,7 +60,7 @@ class DeterministicFixtureAnswerGenerator:
         self._answerable_case = answerable_case
         self._insufficient_message = insufficient_message
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         """Return a reproducible proposal without treating it as validated evidence."""
 
         if self._normalize_question(generation_input.question) != self._normalize_question(
@@ -71,34 +73,40 @@ class DeterministicFixtureAnswerGenerator:
             if start_character < 0:
                 continue
             end_character = start_character + len(self._answerable_case.evidence_text)
-            return UnvalidatedGeneratedAnswer(
-                coverage_status=CoverageStatus.COMPLETE,
-                rendered_text=self._answerable_case.statement,
-                statements=(
-                    UnvalidatedGeneratedStatement(
-                        text=self._answerable_case.statement,
-                        evidence=(
-                            UnvalidatedEvidenceReference(
-                                retrieval_candidate_id=source.retrieval_candidate_id,
-                                start_character=start_character,
-                                end_character=end_character,
-                                exact_text=self._answerable_case.evidence_text,
+            return AnswerGenerationResult(
+                answer=UnvalidatedGeneratedAnswer(
+                    coverage_status=CoverageStatus.COMPLETE,
+                    rendered_text=self._answerable_case.statement,
+                    statements=(
+                        UnvalidatedGeneratedStatement(
+                            text=self._answerable_case.statement,
+                            evidence=(
+                                UnvalidatedEvidenceReference(
+                                    retrieval_candidate_id=source.retrieval_candidate_id,
+                                    start_character=start_character,
+                                    end_character=end_character,
+                                    exact_text=self._answerable_case.evidence_text,
+                                ),
                             ),
                         ),
                     ),
                 ),
+                usage=ProviderUsage(input_units=0, output_units=0),
             )
 
         return self._insufficient_result()
 
-    def _insufficient_result(self) -> UnvalidatedGeneratedAnswer:
+    def _insufficient_result(self) -> AnswerGenerationResult:
         """Return the single safe result used when the configured evidence is unavailable."""
 
-        return UnvalidatedGeneratedAnswer(
-            coverage_status=CoverageStatus.INSUFFICIENT,
-            rendered_text=self._insufficient_message,
-            statements=(),
-            missing_information=self._insufficient_message,
+        return AnswerGenerationResult(
+            answer=UnvalidatedGeneratedAnswer(
+                coverage_status=CoverageStatus.INSUFFICIENT,
+                rendered_text=self._insufficient_message,
+                statements=(),
+                missing_information=self._insufficient_message,
+            ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
 
     @staticmethod

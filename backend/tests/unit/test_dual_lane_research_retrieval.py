@@ -1,6 +1,6 @@
 """Unit tests for M1 dual-lane research retrieval orchestration."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import cast
@@ -15,6 +15,7 @@ from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
     ProviderBudgetExceededError,
     ProviderCostPolicy,
+    ProviderUsageCostExceededReservationError,
 )
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.application import (
@@ -468,6 +469,47 @@ def test_budget_rejection_keeps_persisted_request_and_is_not_retriable() -> None
     assert isinstance(captured.value.__cause__, ProviderBudgetExceededError)
     assert unit_of_work.enter_count == 1
     embedding_mock.embed.assert_not_called()
+    dense_mock.retrieve.assert_not_called()
+    unit_of_work.retrieval_mock.add_result.assert_not_called()
+
+
+def test_usage_above_reservation_is_not_retriable_and_stops_before_dense_search() -> None:
+    embedding_mock, dense_mock = make_provider_mocks()
+    executor = make_provider_operation_executor()
+
+    def fail_after_provider(
+        _context: object,
+        _attempt: object,
+        provider_call: Callable[[], object],
+        _usage_from_result: object,
+        _classify_error: object,
+    ) -> object:
+        provider_call()
+        raise ProviderUsageCostExceededReservationError(
+            "provider usage cost exceeded its reservation"
+        )
+
+    executor.execute.side_effect = fail_after_provider
+    unit_of_work = RecordingUnitOfWork()
+    service = make_service(
+        unit_of_work,
+        embedding_provider=cast(EmbeddingProvider, embedding_mock),
+        dense_retriever=cast(DenseRetriever, dense_mock),
+        provider_operation_executor=executor,
+    )
+
+    with pytest.raises(ResearchProviderUnavailableError) as captured:
+        service.retrieve(
+            make_context(),
+            ResearchRetrievalInput(question="What was FY2025 revenue?"),
+        )
+
+    assert captured.value.retriable is False
+    assert isinstance(
+        captured.value.__cause__,
+        ProviderUsageCostExceededReservationError,
+    )
+    embedding_mock.embed.assert_called_once()
     dense_mock.retrieve.assert_not_called()
     unit_of_work.retrieval_mock.add_result.assert_not_called()
 

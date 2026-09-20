@@ -57,7 +57,7 @@ contains no SDK object or raw request or response content.
 The canonical ledger, atomic reservation, safe finalization services, usage-bearing embedding result
 contract, and content-safe in-process OpenTelemetry adapter are present. The adapter produces W3C
 trace IDs without an exporter and degrades to no-op behavior when tracing fails. M1 query embedding
-and document embedding now use the complete reserve-call-finalize path. Every application-owned
-retry creates a separate canonical operation. Unknown failure usage conservatively consumes the
-full reservation. Later Step 5 blocks apply the same executor to answer generation and
-statement-support calls.
+document embedding, and answer generation now use the complete reserve-call-finalize path. Every
+application-owned retry creates a separate canonical operation. Unknown failure usage
+conservatively consumes the full reservation. The remaining Step 5 provider integration applies
+the same executor to statement-support calls.

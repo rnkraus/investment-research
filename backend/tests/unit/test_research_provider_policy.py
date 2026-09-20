@@ -12,6 +12,10 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.application import (
+    ProviderBudgetExceededError,
+    ProviderUsageCostExceededReservationError,
+)
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
@@ -135,6 +139,18 @@ class FailingGenerationService:
             StatementSupportProviderContractError("safe support contract failure"),
             False,
             id="support-permanent",
+        ),
+        pytest.param(
+            ProviderBudgetExceededError("monthly provider budget exceeded"),
+            False,
+            id="budget-exceeded",
+        ),
+        pytest.param(
+            ProviderUsageCostExceededReservationError(
+                "provider usage cost exceeded its reservation"
+            ),
+            False,
+            id="usage-exceeded-reservation",
         ),
     ],
 )

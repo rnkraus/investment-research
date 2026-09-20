@@ -31,6 +31,7 @@ from investment_research.modules.operations.application import (
     ProviderBudgetExceededError,
     ProviderCostPolicy,
     ProviderOperationAttempt,
+    ProviderUsageCostExceededReservationError,
 )
 from investment_research.modules.operations.domain import (
     ProviderOperationErrorCode,
@@ -44,6 +45,7 @@ from investment_research.modules.research.contracts import (
     CanonicalCandidateSource,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
+    UnvalidatedGeneratedAnswer,
     ValidatedAnswerResult,
 )
 from investment_research.modules.research.domain import (
@@ -58,7 +60,10 @@ from investment_research.modules.research.domain import (
     TemporalMode,
 )
 from investment_research.modules.research.ports import (
+    AnswerGenerationProviderConfigurationError,
+    AnswerGenerationProviderContractError,
     AnswerGenerationProviderError,
+    AnswerGenerationProviderRefusalError,
     AnswerGenerationProviderTransientError,
     AnswerGenerator,
     AnswerValidationUnitOfWorkFactory,
@@ -126,6 +131,24 @@ class QueryEmbeddingAccountingProfile:
     provider: str
     model: str
     cost_policy: ProviderCostPolicy
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerGenerationAccountingProfile:
+    """Provider identity, unit bounds, and reviewed pricing for answer generation."""
+
+    provider: str
+    model: str
+    input_overhead_units: int
+    maximum_output_units: int
+    cost_policy: ProviderCostPolicy
+
+    def __post_init__(self) -> None:
+        """Require positive integer bounds without accepting booleans as integers."""
+
+        for value in (self.input_overhead_units, self.maximum_output_units):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError("answer-generation accounting bounds must be positive integers")
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,6 +376,8 @@ class RetrieveResearchService:
             )
         except ProviderBudgetExceededError as error:
             raise ResearchProviderUnavailableError(request.id, retriable=False) from error
+        except ProviderUsageCostExceededReservationError as error:
+            raise ResearchProviderUnavailableError(request.id, retriable=False) from error
         except SearchProviderError as error:
             raise ResearchProviderUnavailableError(
                 request.id,
@@ -534,17 +559,25 @@ class GenerateValidatedAnswerService:
         generation_profile: AnswerGenerationProfile,
         validation_profile: EvidenceValidationProfile,
         insufficient_message: str,
+        provider_operation_executor: ExecuteProviderOperationService | None = None,
+        generation_accounting: AnswerGenerationAccountingProfile | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
         if not insufficient_message.strip():
             raise ValueError("insufficient_message must contain a non-whitespace character")
+        if (provider_operation_executor is None) != (generation_accounting is None):
+            raise ValueError(
+                "answer-generation accounting requires an executor and profile together"
+            )
         self._unit_of_work_factory = unit_of_work_factory
         self._answer_generator = answer_generator
         self._support_evaluator = support_evaluator
         self._generation_profile = generation_profile
         self._validation_profile = validation_profile
         self._insufficient_message = insufficient_message
+        self._provider_operation_executor = provider_operation_executor
+        self._generation_accounting = generation_accounting
         self._clock = clock
         self._identifier_factory = identifier_factory
 
@@ -571,7 +604,7 @@ class GenerateValidatedAnswerService:
             created_at=created_at,
         )
         generation_input = self._build_generation_input(retrieval_result)
-        generated_answer = self._answer_generator.generate(generation_input)
+        generated_answer = self._generate_answer(context, generation_input)
 
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.research.add_answer(context, answer)
@@ -640,6 +673,60 @@ class GenerateValidatedAnswerService:
             )
 
         return result
+
+    def _generate_answer(
+        self,
+        context: WorkspaceContext,
+        generation_input: AnswerGenerationInput,
+    ) -> UnvalidatedGeneratedAnswer:
+        """Run deterministic generation directly or one accounted paid-provider call."""
+
+        executor = self._provider_operation_executor
+        accounting = self._generation_accounting
+        if executor is None or accounting is None:
+            return self._answer_generator.generate(generation_input).answer
+
+        maximum_input_units = (
+            accounting.input_overhead_units
+            + len(generation_input.question.encode("utf-8"))
+            + sum(len(source.text.encode("utf-8")) for source in generation_input.sources)
+        )
+        result = executor.execute(
+            context,
+            ProviderOperationAttempt(
+                correlation_id=generation_input.research_request_id,
+                research_request_id=generation_input.research_request_id,
+                processing_run_id=None,
+                operation=ProviderOperationKind.ANSWER_GENERATION,
+                provider=accounting.provider,
+                model=accounting.model,
+                configuration_version=self._generation_profile.generation_config_version,
+                span_name="generation.answer",
+                maximum_usage=ProviderUsage(
+                    input_units=maximum_input_units,
+                    output_units=accounting.maximum_output_units,
+                ),
+                cost_policy=accounting.cost_policy,
+            ),
+            lambda: self._answer_generator.generate(generation_input),
+            lambda generation_result: generation_result.usage,
+            self._classify_answer_generation_error,
+        )
+        return result.answer
+
+    @staticmethod
+    def _classify_answer_generation_error(error: Exception) -> ProviderOperationErrorCode:
+        """Map answer-generation failures to content-free canonical categories."""
+
+        if isinstance(error, AnswerGenerationProviderTransientError):
+            return ProviderOperationErrorCode.UNAVAILABLE
+        if isinstance(error, AnswerGenerationProviderRefusalError):
+            return ProviderOperationErrorCode.REFUSAL
+        if isinstance(error, AnswerGenerationProviderContractError):
+            return ProviderOperationErrorCode.CONTRACT
+        if isinstance(error, AnswerGenerationProviderConfigurationError):
+            return ProviderOperationErrorCode.CONFIGURATION
+        return ProviderOperationErrorCode.UNAVAILABLE
 
     @staticmethod
     def _reuse_canonical_evidence_spans(
@@ -912,7 +999,12 @@ class AnswerResearchRequestService:
         retrieval_result = self.retrieval_service.retrieve(context, retrieval_input)
         try:
             return self.generation_service.generate(context, retrieval_result)
-        except (AnswerGenerationProviderError, StatementSupportProviderError) as error:
+        except (
+            AnswerGenerationProviderError,
+            StatementSupportProviderError,
+            ProviderBudgetExceededError,
+            ProviderUsageCostExceededReservationError,
+        ) as error:
             retriable = isinstance(
                 error,
                 (

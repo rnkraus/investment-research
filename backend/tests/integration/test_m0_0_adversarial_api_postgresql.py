@@ -31,6 +31,7 @@ from investment_research.infrastructure.generation.deterministic import (
 )
 from investment_research.main import create_app
 from investment_research.modules.evidence.persistence import EvidenceSpanRow
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
@@ -38,6 +39,7 @@ from investment_research.modules.research.application import (
 )
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
+    AnswerGenerationResult,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
     UnvalidatedGeneratedStatement,
@@ -59,7 +61,7 @@ class AdversarialAnswerGenerator:
 
     case: AdversarialCase
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         source = generation_input.sources[0]
         expected_text = M0_0_FIXTURE_ANSWER_CASE.evidence_text
         start_character = source.text.index(expected_text)
@@ -71,22 +73,25 @@ class AdversarialAnswerGenerator:
             if self.case == "unsupported-statement"
             else M0_0_FIXTURE_ANSWER_CASE.statement
         )
-        return UnvalidatedGeneratedAnswer(
-            coverage_status=CoverageStatus.COMPLETE,
-            rendered_text="Untrusted answer content must not reach the API.",
-            statements=(
-                UnvalidatedGeneratedStatement(
-                    text=statement,
-                    evidence=(
-                        UnvalidatedEvidenceReference(
-                            retrieval_candidate_id=source.retrieval_candidate_id,
-                            start_character=start_character,
-                            end_character=start_character + len(proposed_text),
-                            exact_text=proposed_text,
+        return AnswerGenerationResult(
+            answer=UnvalidatedGeneratedAnswer(
+                coverage_status=CoverageStatus.COMPLETE,
+                rendered_text="Untrusted answer content must not reach the API.",
+                statements=(
+                    UnvalidatedGeneratedStatement(
+                        text=statement,
+                        evidence=(
+                            UnvalidatedEvidenceReference(
+                                retrieval_candidate_id=source.retrieval_candidate_id,
+                                start_character=start_character,
+                                end_character=start_character + len(proposed_text),
+                                exact_text=proposed_text,
+                            ),
                         ),
                     ),
                 ),
             ),
+            usage=ProviderUsage(input_units=0, output_units=0),
         )
 
 

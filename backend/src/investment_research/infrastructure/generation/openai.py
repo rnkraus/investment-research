@@ -14,8 +14,10 @@ from openai import (
 )
 from pydantic import ValidationError
 
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
+    AnswerGenerationResult,
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.ports import (
@@ -28,6 +30,9 @@ from investment_research.modules.research.ports import (
 OPENAI_ANSWER_MODEL = "gpt-5.6-terra"
 OPENAI_ANSWER_TIMEOUT_SECONDS = 60.0
 OPENAI_ANSWER_MAX_OUTPUT_TOKENS = 2_000
+OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS = 16_000
+OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS = 2_000_000
+OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS = 12_000_000
 M1_ANSWER_GENERATOR_VERSION = "openai-responses-structured-v1"
 M1_ANSWER_GENERATION_CONFIG_VERSION = "openai-gpt-5.6-terra-low-answer-v1"
 M1_ANSWER_PROMPT_VERSION = "m1-grounded-answer-prompt-v1"
@@ -64,8 +69,8 @@ class OpenAIAnswerGenerator:
         if not 1 <= self.max_output_tokens <= OPENAI_ANSWER_MAX_OUTPUT_TOKENS:
             raise ValueError("OpenAI answer output must be between 1 and 2000 tokens")
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
-        """Return one schema-valid proposal or raise a safe provider error."""
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
+        """Return one schema-valid proposal and usage or raise a safe provider error."""
 
         try:
             response = self.client.responses.parse(
@@ -124,7 +129,38 @@ class OpenAIAnswerGenerator:
             if self._contains_refusal(response):
                 raise AnswerGenerationProviderRefusalError("answer provider refused the request")
             raise AnswerGenerationProviderContractError("answer provider returned no typed answer")
-        return parsed
+        usage = response.usage
+        if usage is None:
+            raise AnswerGenerationProviderContractError(
+                "answer provider returned no usage metadata"
+            )
+        input_tokens = usage.input_tokens
+        output_tokens = usage.output_tokens
+        total_tokens = usage.total_tokens
+        if (
+            isinstance(input_tokens, bool)
+            or not isinstance(input_tokens, int)
+            or input_tokens < 0
+            or isinstance(output_tokens, bool)
+            or not isinstance(output_tokens, int)
+            or output_tokens < 0
+            or isinstance(total_tokens, bool)
+            or not isinstance(total_tokens, int)
+            or total_tokens != input_tokens + output_tokens
+        ):
+            raise AnswerGenerationProviderContractError(
+                "answer provider returned invalid usage metadata"
+            )
+        try:
+            provider_usage = ProviderUsage(
+                input_units=input_tokens,
+                output_units=output_tokens,
+            )
+        except ValidationError:
+            raise AnswerGenerationProviderContractError(
+                "answer provider returned invalid usage metadata"
+            ) from None
+        return AnswerGenerationResult(answer=parsed, usage=provider_usage)
 
     @staticmethod
     def _serialize_input(generation_input: AnswerGenerationInput) -> str:
