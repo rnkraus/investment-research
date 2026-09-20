@@ -11,9 +11,16 @@ import pytest
 
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    ProviderBudgetExceededError,
+    ProviderCostPolicy,
+)
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.application import (
     M1QueryRetrievalDependencies,
+    QueryEmbeddingAccountingProfile,
+    ResearchProviderUnavailableError,
     RetrieveResearchService,
 )
 from investment_research.modules.research.contracts import ResearchRetrievalInput
@@ -174,6 +181,18 @@ def make_provider_mocks(
     return embedding_provider, dense_retriever
 
 
+def make_provider_operation_executor() -> Mock:
+    """Run provider callbacks while keeping accounting persistence outside retrieval tests."""
+
+    executor = cast(Mock, create_autospec(ExecuteProviderOperationService, instance=True))
+    executor.execute.side_effect = (
+        lambda _context, _attempt, provider_call, _usage_from_result, _classify_error: (
+            provider_call()
+        )
+    )
+    return executor
+
+
 def make_service(
     unit_of_work: RecordingUnitOfWork,
     *,
@@ -181,6 +200,7 @@ def make_service(
     dense_retriever: DenseRetriever,
     identifiers: tuple[UUID, ...] = (REQUEST_ID, RUN_ID),
     sleeper: Mock | None = None,
+    provider_operation_executor: Mock | None = None,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -202,6 +222,18 @@ def make_service(
                 candidate_limit=10,
             ),
             selection_profile=M1SelectionProfile(),
+            provider_operation_executor=cast(
+                ExecuteProviderOperationService,
+                provider_operation_executor or make_provider_operation_executor(),
+            ),
+            embedding_accounting=QueryEmbeddingAccountingProfile(
+                provider="openai",
+                model="text-embedding-3-small",
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=20_000,
+                    output_micro_usd_per_million_units=0,
+                ),
+            ),
             retry_delay_seconds=0,
             sleeper=sleeper or Mock(),
         ),
@@ -210,7 +242,7 @@ def make_service(
     )
 
 
-def test_dual_lane_retrieval_runs_providers_before_one_atomic_database_phase() -> None:
+def test_dual_lane_retrieval_persists_request_before_providers_and_result_afterward() -> None:
     events: list[str] = []
     embedding_mock, dense_mock = make_provider_mocks(events=events)
     lexical_hit = make_lexical_hit()
@@ -233,6 +265,7 @@ def test_dual_lane_retrieval_runs_providers_before_one_atomic_database_phase() -
         dense_hits=dense_hits,
         events=events,
     )
+    provider_operation_executor = make_provider_operation_executor()
     service = make_service(
         unit_of_work,
         embedding_provider=cast(EmbeddingProvider, embedding_mock),
@@ -244,6 +277,7 @@ def test_dual_lane_retrieval_runs_providers_before_one_atomic_database_phase() -
             DENSE_DUPLICATE_CANDIDATE_ID,
             DENSE_SELECTED_CANDIDATE_ID,
         ),
+        provider_operation_executor=provider_operation_executor,
     )
 
     result = service.retrieve(
@@ -254,8 +288,8 @@ def test_dual_lane_retrieval_runs_providers_before_one_atomic_database_phase() -
         ),
     )
 
-    assert events == ["embedding", "pinecone", "database"]
-    assert unit_of_work.enter_count == 1
+    assert events == ["database", "embedding", "pinecone", "database"]
+    assert unit_of_work.enter_count == 2
     assert result.retrieval_run.mode is RetrievalMode.DUAL_LANE
     assert result.retrieval_run.embedding_config_version == EMBEDDING_CONFIG_VERSION
     assert result.retrieval_run.dense_index_config_version == DENSE_INDEX_CONFIG_VERSION
@@ -278,11 +312,24 @@ def test_dual_lane_retrieval_runs_providers_before_one_atomic_database_phase() -
         result.retrieval_run,
         result.candidates,
     )
+    unit_of_work.research_mock.add_request.assert_called_once_with(
+        make_context(),
+        result.request,
+    )
 
     embedding_request = embedding_mock.embed.call_args.args[0]
     assert embedding_request.inputs[0].input_id == REQUEST_ID
     assert embedding_request.inputs[0].purpose.value == "QUERY"
     assert embedding_request.inputs[0].text == "How did sales and profitability develop?"
+    accounting_context, accounting_attempt = provider_operation_executor.execute.call_args.args[:2]
+    assert accounting_context == make_context()
+    assert accounting_attempt.correlation_id == REQUEST_ID
+    assert accounting_attempt.research_request_id == REQUEST_ID
+    assert accounting_attempt.operation.value == "QUERY_EMBEDDING"
+    assert accounting_attempt.maximum_usage == ProviderUsage(
+        input_units=len(b"How did sales and profitability develop?"),
+        output_units=0,
+    )
     dense_context, dense_query = dense_mock.retrieve.call_args.args
     assert dense_context == make_context()
     assert dense_query.filters.document_ids == (DOCUMENT_ID,)
@@ -357,7 +404,7 @@ def test_dual_lane_retries_one_transient_provider_failure(operation: str) -> Non
     retried_mock = embedding_mock.embed if operation == "embedding" else dense_mock.retrieve
     assert retried_mock.call_count == 2
     sleeper.assert_called_once_with(0)
-    assert unit_of_work.enter_count == 1
+    assert unit_of_work.enter_count == 2
 
 
 @pytest.mark.parametrize(
@@ -382,14 +429,46 @@ def test_provider_failure_does_not_open_database_transaction(
         dense_retriever=cast(DenseRetriever, dense_mock),
     )
 
-    with pytest.raises(type(provider_error)):
+    with pytest.raises(ResearchProviderUnavailableError) as captured:
         service.retrieve(
             make_context(),
             ResearchRetrievalInput(question="What was FY2025 revenue?"),
         )
 
-    assert unit_of_work.enter_count == 0
-    unit_of_work.research_mock.add_request.assert_not_called()
+    assert captured.value.research_request_id == REQUEST_ID
+    assert captured.value.retriable is isinstance(provider_error, SearchProviderTransientError)
+    assert captured.value.__cause__ is provider_error
+    assert unit_of_work.enter_count == 1
+    unit_of_work.research_mock.add_request.assert_called_once()
+    unit_of_work.retrieval_mock.add_result.assert_not_called()
+
+
+def test_budget_rejection_keeps_persisted_request_and_is_not_retriable() -> None:
+    """Expose the frozen safe provider error without contacting embedding or retrieval providers."""
+
+    embedding_mock, dense_mock = make_provider_mocks()
+    executor = make_provider_operation_executor()
+    executor.execute.side_effect = ProviderBudgetExceededError("monthly provider budget exceeded")
+    unit_of_work = RecordingUnitOfWork()
+    service = make_service(
+        unit_of_work,
+        embedding_provider=cast(EmbeddingProvider, embedding_mock),
+        dense_retriever=cast(DenseRetriever, dense_mock),
+        provider_operation_executor=executor,
+    )
+
+    with pytest.raises(ResearchProviderUnavailableError) as captured:
+        service.retrieve(
+            make_context(),
+            ResearchRetrievalInput(question="What was FY2025 revenue?"),
+        )
+
+    assert captured.value.research_request_id == REQUEST_ID
+    assert captured.value.retriable is False
+    assert isinstance(captured.value.__cause__, ProviderBudgetExceededError)
+    assert unit_of_work.enter_count == 1
+    embedding_mock.embed.assert_not_called()
+    dense_mock.retrieve.assert_not_called()
     unit_of_work.retrieval_mock.add_result.assert_not_called()
 
 
@@ -406,5 +485,17 @@ def test_query_dependencies_reject_retry_delay_above_frozen_policy() -> None:
                 candidate_limit=10,
             ),
             selection_profile=M1SelectionProfile(),
+            provider_operation_executor=cast(
+                ExecuteProviderOperationService,
+                make_provider_operation_executor(),
+            ),
+            embedding_accounting=QueryEmbeddingAccountingProfile(
+                provider="openai",
+                model="text-embedding-3-small",
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=20_000,
+                    output_micro_usd_per_million_units=0,
+                ),
+            ),
             retry_delay_seconds=0.5,
         )

@@ -56,5 +56,7 @@ contains no SDK object or raw request or response content.
 
 The canonical ledger, atomic reservation, safe finalization services, usage-bearing embedding result
 contract, and content-safe in-process OpenTelemetry adapter are present. The adapter produces W3C
-trace IDs without an exporter and degrades to no-op behavior when tracing fails. A later Step 5 work
-block will place accounting and trace spans around the embedding and generation provider calls.
+trace IDs without an exporter and degrades to no-op behavior when tracing fails. M1 query embedding
+now uses the complete reserve-call-finalize path. Unknown failure usage conservatively consumes the
+full reservation. Later Step 5 blocks apply the same executor to document embedding, answer
+generation, and statement-support calls.

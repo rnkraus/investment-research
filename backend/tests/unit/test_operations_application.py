@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from typing import cast
-from unittest.mock import call, create_autospec
+from unittest.mock import Mock, call, create_autospec
 from uuid import UUID
 
 import pytest
@@ -12,11 +12,15 @@ from pydantic import ValidationError
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
     FinalizeProviderOperationService,
     ProviderBudgetExceededError,
     ProviderBudgetPolicy,
+    ProviderCostPolicy,
+    ProviderOperationAttempt,
     ProviderOperationCompletion,
     ProviderOperationUnavailableError,
+    ProviderUsageCostExceededReservationError,
     ReserveProviderOperationService,
 )
 from investment_research.modules.operations.domain import (
@@ -26,11 +30,16 @@ from investment_research.modules.operations.domain import (
     ProviderOperationKind,
     ProviderOperationScopeError,
     ProviderOperationState,
+    ProviderUsage,
 )
 from investment_research.modules.operations.ports import (
+    OperationSpan,
+    OperationTracer,
     ProviderOperationRepository,
     ProviderOperationUnitOfWork,
     ProviderOperationUnitOfWorkFactory,
+    TraceAttributes,
+    TraceAttributeValue,
 )
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000101")
@@ -41,6 +50,7 @@ REQUEST_ID = UUID("00000000-0000-0000-0000-000000000505")
 CORRELATION_ID = UUID("00000000-0000-0000-0000-000000000606")
 STARTED_AT = datetime(2026, 9, 20, 12, 30, tzinfo=UTC)
 COMPLETED_AT = STARTED_AT + timedelta(milliseconds=125)
+TRACE_ID = "2" * 32
 
 
 class RecordingUnitOfWork:
@@ -60,6 +70,45 @@ class RecordingUnitOfWork:
 
         self.enter_count += 1
         yield self
+
+
+class RecordingSpan:
+    """Record safe attributes and categories emitted by the accounting service."""
+
+    def __init__(self, trace_id: str | None = TRACE_ID) -> None:
+        self._trace_id = trace_id
+        self.attributes: dict[str, TraceAttributeValue] = {}
+        self.error_types: list[str] = []
+
+    @property
+    def trace_id(self) -> str | None:
+        return self._trace_id
+
+    def set_attribute(self, name: str, value: TraceAttributeValue) -> None:
+        self.attributes[name] = value
+
+    def record_error(self, error_type: str) -> None:
+        self.error_types.append(error_type)
+
+
+class RecordingTracer:
+    """Return one recording span without an SDK dependency in application tests."""
+
+    def __init__(self, span: RecordingSpan | None = None) -> None:
+        self.span = span or RecordingSpan()
+        self.names: list[str] = []
+        self.initial_attributes: list[TraceAttributes | None] = []
+
+    @contextmanager
+    def start_span(
+        self,
+        name: str,
+        *,
+        attributes: TraceAttributes | None = None,
+    ) -> Iterator[OperationSpan]:
+        self.names.append(name)
+        self.initial_attributes.append(attributes)
+        yield self.span
 
 
 def make_context(workspace_id: UUID = WORKSPACE_ID) -> WorkspaceContext:
@@ -106,6 +155,52 @@ def make_reservation_service(
             monthly_limit_micro_usd=monthly_limit_micro_usd,
         ),
     )
+
+
+def make_query_embedding_attempt(
+    *,
+    maximum_input_units: int = 128_000,
+) -> ProviderOperationAttempt:
+    """Build one content-free query-embedding attempt under the M1 price."""
+
+    return ProviderOperationAttempt(
+        correlation_id=CORRELATION_ID,
+        research_request_id=REQUEST_ID,
+        processing_run_id=None,
+        operation=ProviderOperationKind.QUERY_EMBEDDING,
+        provider="openai",
+        model="text-embedding-3-small",
+        configuration_version="openai-text-embedding-3-small-1536-v1",
+        span_name="embedding.query",
+        maximum_usage=ProviderUsage(input_units=maximum_input_units, output_units=0),
+        cost_policy=ProviderCostPolicy(
+            input_micro_usd_per_million_units=20_000,
+            output_micro_usd_per_million_units=0,
+        ),
+    )
+
+
+def make_execute_service(
+    *,
+    span: RecordingSpan | None = None,
+) -> tuple[ExecuteProviderOperationService, Mock, Mock, RecordingTracer]:
+    """Build one deterministic executor with separately mocked writes."""
+
+    reservation = create_autospec(ReserveProviderOperationService, instance=True)
+    finalization = create_autospec(FinalizeProviderOperationService, instance=True)
+    tracer = RecordingTracer(span)
+    clock_values = iter((STARTED_AT, COMPLETED_AT))
+    monotonic_values = iter((10.0, 10.125))
+    service = ExecuteProviderOperationService(
+        reservation_service=reservation,
+        finalization_service=finalization,
+        tracer=cast(OperationTracer, tracer),
+        clock=lambda: next(clock_values),
+        monotonic_clock=lambda: next(monotonic_values),
+        identifier_factory=lambda: OPERATION_ID,
+        trace_identifier_factory=lambda: "3" * 32,
+    )
+    return service, reservation, finalization, tracer
 
 
 @pytest.mark.parametrize("invalid_limit", [-1, True, 9_223_372_036_854_775_808])
@@ -318,3 +413,173 @@ def test_finalize_rejects_actual_cost_above_the_reservation() -> None:
         )
 
     unit_of_work.repository_mock.finalize.assert_not_called()
+
+
+def test_cost_policy_rounds_fractional_micro_usd_upward() -> None:
+    """Never undercount a nonzero provider charge smaller than one micro-US dollar."""
+
+    policy = ProviderCostPolicy(
+        input_micro_usd_per_million_units=20_000,
+        output_micro_usd_per_million_units=0,
+    )
+
+    assert policy.cost_for(ProviderUsage(input_units=1, output_units=0)) == 1
+    assert policy.cost_for(ProviderUsage(input_units=50, output_units=0)) == 1
+    assert policy.cost_for(ProviderUsage(input_units=51, output_units=0)) == 2
+    assert policy.cost_for(ProviderUsage(input_units=0, output_units=0)) == 0
+
+
+@pytest.mark.parametrize("invalid_rate", [-1, True, 9_223_372_036_854_775_808])
+def test_cost_policy_rejects_invalid_rates(invalid_rate: object) -> None:
+    """Keep pricing arithmetic inside the canonical integer range."""
+
+    with pytest.raises(ValueError, match="non-negative micro-USD integers"):
+        ProviderCostPolicy(
+            input_micro_usd_per_million_units=cast(int, invalid_rate),
+            output_micro_usd_per_million_units=0,
+        )
+
+
+def test_execute_provider_operation_reserves_calls_and_finalizes_success() -> None:
+    """Persist one reservation before the call and actual reported usage after it."""
+
+    service, reservation, finalization, tracer = make_execute_service()
+    usage = ProviderUsage(input_units=80, output_units=0)
+    provider_call = Mock(return_value=usage)
+
+    result = service.execute(
+        make_context(),
+        make_query_embedding_attempt(),
+        provider_call,
+        lambda returned: returned,
+        lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+    )
+
+    assert result is usage
+    provider_call.assert_called_once_with()
+    reserved = reservation.reserve.call_args.args[1]
+    assert reserved.id == OPERATION_ID
+    assert reserved.trace_id == TRACE_ID
+    assert reserved.reserved_cost_micro_usd == 2_560
+    assert reserved.state is ProviderOperationState.STARTED
+    finalization.finalize.assert_called_once_with(
+        make_context(),
+        OPERATION_ID,
+        ProviderOperationCompletion(
+            state=ProviderOperationState.SUCCEEDED,
+            actual_cost_micro_usd=2,
+            input_units=80,
+            output_units=0,
+            completed_at=COMPLETED_AT,
+            duration_ms=125,
+        ),
+    )
+    assert tracer.names == ["embedding.query"]
+    assert tracer.span.attributes == {
+        "lifecycle.state": "SUCCEEDED",
+        "input.units": 80,
+        "output.units": 0,
+        "cost.micro_usd": 2,
+        "duration.ms": 125,
+        "outcome": "succeeded",
+    }
+
+
+def test_execute_provider_operation_rejects_budget_before_provider_call() -> None:
+    """Do not contact the provider when the canonical reservation cannot be committed."""
+
+    service, reservation, finalization, tracer = make_execute_service()
+    reservation.reserve.side_effect = ProviderBudgetExceededError(
+        "monthly provider budget exceeded"
+    )
+    provider_call = Mock()
+
+    with pytest.raises(ProviderBudgetExceededError, match="budget exceeded"):
+        service.execute(
+            make_context(),
+            make_query_embedding_attempt(),
+            provider_call,
+            lambda returned: cast(ProviderUsage, returned),
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+
+    provider_call.assert_not_called()
+    finalization.finalize.assert_not_called()
+    assert tracer.span.attributes == {"outcome": "budget_rejected"}
+    assert tracer.span.error_types == ["budget_exceeded"]
+
+
+def test_execute_provider_operation_books_full_reservation_on_unknown_failure_usage() -> None:
+    """Keep a failed paid attempt inside budget when the provider reports no units."""
+
+    service, _reservation, finalization, tracer = make_execute_service()
+    raw_marker = "raw provider error must not enter accounting"
+    provider_call = Mock(side_effect=RuntimeError(raw_marker))
+
+    with pytest.raises(RuntimeError, match=raw_marker):
+        service.execute(
+            make_context(),
+            make_query_embedding_attempt(maximum_input_units=100),
+            provider_call,
+            lambda returned: cast(ProviderUsage, returned),
+            lambda _error: ProviderOperationErrorCode.TIMEOUT,
+        )
+
+    completion = finalization.finalize.call_args.args[2]
+    assert completion == ProviderOperationCompletion(
+        state=ProviderOperationState.FAILED,
+        actual_cost_micro_usd=2,
+        input_units=None,
+        output_units=None,
+        completed_at=COMPLETED_AT,
+        duration_ms=125,
+        safe_error_code=ProviderOperationErrorCode.TIMEOUT,
+    )
+    assert raw_marker not in repr(completion)
+    assert raw_marker not in repr(tracer.span.attributes)
+    assert tracer.span.error_types == ["timeout"]
+
+
+def test_execute_provider_operation_uses_fallback_trace_id_when_tracing_is_unavailable() -> None:
+    """Keep canonical accounting available when optional tracing produces no context."""
+
+    service, reservation, _finalization, _tracer = make_execute_service(
+        span=RecordingSpan(trace_id=None)
+    )
+    usage = ProviderUsage(input_units=1, output_units=0)
+
+    service.execute(
+        make_context(),
+        make_query_embedding_attempt(maximum_input_units=1),
+        lambda: usage,
+        lambda returned: returned,
+        lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+    )
+
+    reserved = reservation.reserve.call_args.args[1]
+    assert reserved.trace_id == "3" * 32
+
+
+def test_execute_provider_operation_marks_usage_above_reservation_as_contract_failure() -> None:
+    """Reject contradictory provider usage while conservatively booking the reserved maximum."""
+
+    service, _reservation, finalization, tracer = make_execute_service()
+    usage = ProviderUsage(input_units=101, output_units=0)
+
+    with pytest.raises(
+        ProviderUsageCostExceededReservationError,
+        match="exceeded its reservation",
+    ):
+        service.execute(
+            make_context(),
+            make_query_embedding_attempt(maximum_input_units=50),
+            lambda: usage,
+            lambda returned: returned,
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+
+    completion = finalization.finalize.call_args.args[2]
+    assert completion.state is ProviderOperationState.FAILED
+    assert completion.actual_cost_micro_usd == 1
+    assert completion.safe_error_code is ProviderOperationErrorCode.CONTRACT
+    assert tracer.span.error_types == ["contract"]

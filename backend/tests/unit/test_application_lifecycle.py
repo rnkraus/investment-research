@@ -123,6 +123,7 @@ def make_worker_settings(object_storage_root: Path) -> WorkerSettings:
             "database_url": LOCAL_DATABASE_URL,
             "object_storage_root": object_storage_root,
             "parser_endpoint_url": "http://127.0.0.1:8100",
+            "provider_monthly_budget_micro_usd": 5_000_000,
             "indexing_providers": indexing_provider_values(),
         }
     )
@@ -137,6 +138,7 @@ def make_m1_api_settings(object_storage_root: Path) -> ApiSettings:
             "database_url": LOCAL_DATABASE_URL,
             "redis_url": LOCAL_REDIS_URL,
             "object_storage_root": object_storage_root,
+            "provider_monthly_budget_micro_usd": 5_000_000,
             "query_providers": indexing_provider_values(),
             "generation_provider": {"api_key": "synthetic-generation-key"},
         }
@@ -251,6 +253,7 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
             assert container.dense_retriever is None
             assert container.answer_generator_provider is None
             assert container.statement_support_provider is None
+            assert container.provider_operation_executor is None
             assert container.retrieve_research_service._m1_query_retrieval is None
             assert (
                 container.retrieve_research_service._search_profile.lexical_config_version
@@ -291,6 +294,7 @@ def test_build_api_container_wires_m1_query_resources(
         assert container.dense_retriever is fakes.dense_retriever
         assert container.answer_generator_provider is fakes.answer_generator
         assert container.statement_support_provider is fakes.support_evaluator
+        assert container.provider_operation_executor is not None
         assert (
             container.generate_validated_answer_service._answer_generator is fakes.answer_generator
         )
@@ -301,6 +305,11 @@ def test_build_api_container_wires_m1_query_resources(
         assert dependencies is not None
         assert dependencies.embedding_provider is container.query_embedding_provider
         assert dependencies.dense_retriever is container.dense_retriever
+        assert dependencies.provider_operation_executor is container.provider_operation_executor
+        assert (
+            dependencies.provider_operation_executor.reservation_service.budget_policy.monthly_limit_micro_usd
+            == 5_000_000
+        )
         assert (
             container.retrieve_research_service._search_profile.candidate_limit
             == M1_LANE_CANDIDATE_LIMIT
@@ -441,6 +450,7 @@ def test_s3_provider_wires_same_adapter_into_api_and_worker(
             {
                 **s3_provider_values(),
                 "parser_endpoint_url": "http://127.0.0.1:8100",
+                "provider_monthly_budget_micro_usd": 5_000_000,
                 "indexing_providers": indexing_provider_values(),
             }
         )

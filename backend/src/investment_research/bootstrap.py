@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from celery import Celery  # type: ignore[import-untyped]
 from sqlalchemy import Engine
 
+from investment_research import __version__
 from investment_research.infrastructure.database.metadata import get_model_metadata
 from investment_research.infrastructure.database.session import (
     SessionFactory,
@@ -18,6 +19,7 @@ from investment_research.infrastructure.database.unit_of_work import (
     create_evidence_read_unit_of_work_factory,
     create_processing_read_unit_of_work_factory,
     create_processing_unit_of_work_factory,
+    create_provider_operation_unit_of_work_factory,
     create_research_retrieval_unit_of_work_factory,
 )
 from investment_research.infrastructure.evidence.deterministic import (
@@ -57,6 +59,10 @@ from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorageReadinessProbe,
     create_s3_client,
 )
+from investment_research.infrastructure.operations.opentelemetry import (
+    OpenTelemetryOperationTracer,
+    create_operation_tracer,
+)
 from investment_research.infrastructure.parsing.client import HttpDocumentParser
 from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
@@ -64,6 +70,7 @@ from investment_research.infrastructure.queue.celery import (
     create_celery_app,
 )
 from investment_research.infrastructure.search.openai import (
+    OPENAI_EMBEDDING_INPUT_MICRO_USD_PER_MILLION_TOKENS,
     OpenAIEmbeddingProvider,
     create_openai_embedding_provider,
 )
@@ -85,6 +92,13 @@ from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
     IdentityContextProvider,
 )
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    FinalizeProviderOperationService,
+    ProviderBudgetPolicy,
+    ProviderCostPolicy,
+    ReserveProviderOperationService,
+)
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
@@ -100,6 +114,7 @@ from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
     M1QueryRetrievalDependencies,
+    QueryEmbeddingAccountingProfile,
     RetrieveResearchService,
 )
 from investment_research.modules.research.contracts import AnswerGenerationProfile
@@ -200,6 +215,8 @@ class ApiContainer:
     dense_retriever: PineconeDenseRetriever | None
     answer_generator_provider: OpenAIAnswerGenerator | None
     statement_support_provider: OpenAIStatementSupportEvaluator | None
+    operation_tracer: OpenTelemetryOperationTracer
+    provider_operation_executor: ExecuteProviderOperationService | None
     processing_dispatcher: ProcessingDispatcher
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
@@ -231,7 +248,10 @@ class ApiContainer:
                         try:
                             self.queue_application.close()
                         finally:
-                            self.database_engine.dispose()
+                            try:
+                                self.operation_tracer.close()
+                            finally:
+                                self.database_engine.dispose()
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +292,10 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     processing_dispatcher = CeleryProcessingDispatcher(queue_application)
     database = _build_database_resources(settings)
     object_storage = _build_object_storage(settings)
+    operation_tracer = create_operation_tracer(
+        service_name="investment-research-api",
+        service_version=__version__,
+    )
     readiness_probes: list[ReadinessProbe] = [
         PostgreSQLReadinessProbe(database.engine),
         CeleryBrokerReadinessProbe(queue_application),
@@ -282,6 +306,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     dense_retriever: PineconeDenseRetriever | None = None
     answer_generator_provider: OpenAIAnswerGenerator | None = None
     statement_support_provider: OpenAIStatementSupportEvaluator | None = None
+    provider_operation_executor: ExecuteProviderOperationService | None = None
     m1_query_retrieval: M1QueryRetrievalDependencies | None = None
     answer_generator: AnswerGenerator = DeterministicFixtureAnswerGenerator(
         answerable_case=M0_0_FIXTURE_ANSWER_CASE,
@@ -301,6 +326,23 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     if settings.query_providers is not None:
         provider_settings = settings.require_query_providers()
         generation_settings = settings.require_generation_provider()
+        monthly_budget = settings.provider_monthly_budget_micro_usd
+        assert monthly_budget is not None
+        provider_operation_unit_of_work_factory = create_provider_operation_unit_of_work_factory(
+            database.session_factory
+        )
+        provider_operation_executor = ExecuteProviderOperationService(
+            reservation_service=ReserveProviderOperationService(
+                unit_of_work_factory=provider_operation_unit_of_work_factory,
+                budget_policy=ProviderBudgetPolicy(
+                    monthly_limit_micro_usd=monthly_budget,
+                ),
+            ),
+            finalization_service=FinalizeProviderOperationService(
+                unit_of_work_factory=provider_operation_unit_of_work_factory,
+            ),
+            tracer=operation_tracer,
+        )
         try:
             query_embedding_provider = create_openai_embedding_provider(
                 api_key=provider_settings.embedding.api_key.get_secret_value(),
@@ -346,7 +388,10 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                             try:
                                 queue_application.close()
                             finally:
-                                database.engine.dispose()
+                                try:
+                                    operation_tracer.close()
+                                finally:
+                                    database.engine.dispose()
             raise
         lexical_candidate_limit = M1_LANE_CANDIDATE_LIMIT
         m1_query_retrieval = M1QueryRetrievalDependencies(
@@ -358,6 +403,17 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 candidate_limit=M1_LANE_CANDIDATE_LIMIT,
             ),
             selection_profile=M1SelectionProfile(),
+            provider_operation_executor=provider_operation_executor,
+            embedding_accounting=QueryEmbeddingAccountingProfile(
+                provider="openai",
+                model=provider_settings.embedding.model,
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=(
+                        OPENAI_EMBEDDING_INPUT_MICRO_USD_PER_MILLION_TOKENS
+                    ),
+                    output_micro_usd_per_million_units=0,
+                ),
+            ),
         )
         answer_generator = answer_generator_provider
         support_evaluator = statement_support_provider
@@ -399,6 +455,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         dense_retriever=dense_retriever,
         answer_generator_provider=answer_generator_provider,
         statement_support_provider=statement_support_provider,
+        operation_tracer=operation_tracer,
+        provider_operation_executor=provider_operation_executor,
         processing_dispatcher=processing_dispatcher,
         capture_document_service=CaptureDocumentService(
             object_storage=object_storage.adapter,

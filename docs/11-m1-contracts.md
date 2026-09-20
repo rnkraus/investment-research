@@ -387,6 +387,11 @@ bounded request. Budget checks include completed actual cost plus active reserva
 call it records provider-reported units where available, application-estimated cost, duration, and
 `SUCCEEDED` or a safe `FAILED` category in a separate short transaction.
 
+The local M1 runtime hard-caps all paid provider operations together at `5,000,000` micro-USD per
+workspace and UTC month. A deployment may configure a smaller value but not a larger one. If a
+failed attempt reports no trustworthy usage, its full reservation becomes actual cost so timeouts
+or malformed responses cannot silently release potentially spent budget.
+
 Costs are integer micro-US dollars, never binary floating point. Pricing inputs are versioned and
 time-stamped. Provider usage records contain no request body, response body, prompt, question,
 source text, exact evidence, filename, or credential. A failure to reserve budget prevents the

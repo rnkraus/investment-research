@@ -184,6 +184,7 @@ def make_m1_api_settings(settings: ApiSettings, object_storage_root: Path) -> Ap
     return settings.model_copy(
         update={
             "object_storage_root": object_storage_root,
+            "provider_monthly_budget_micro_usd": 5_000_000,
             "query_providers": DenseProviderSettings.model_validate(
                 {
                     "embedding": {"api_key": "synthetic-query-embedding-key"},

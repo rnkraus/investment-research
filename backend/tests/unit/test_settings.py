@@ -64,6 +64,7 @@ QUEUE_SETTING_NAMES = (
     "REDIS_PORT",
 )
 PROVIDER_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
     "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
     "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY_FILE",
     "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
@@ -899,6 +900,10 @@ def test_api_and_worker_load_distinct_least_privilege_provider_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
+        "5000000",
+    )
+    monkeypatch.setenv(
         "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST",
         "synthetic-index.example.svc.pinecone.io",
     )
@@ -929,6 +934,8 @@ def test_api_and_worker_load_distinct_least_privilege_provider_credentials(
     query_providers = api_settings.require_query_providers()
     generation_provider = api_settings.require_generation_provider()
     indexing_providers = worker_settings.require_indexing_providers()
+    assert api_settings.provider_monthly_budget_micro_usd == 5_000_000
+    assert worker_settings.provider_monthly_budget_micro_usd == 5_000_000
     assert query_providers.embedding.api_key.get_secret_value() == (
         "synthetic-query-embedding-secret"
     )
@@ -991,6 +998,39 @@ def test_api_requires_query_and_generation_provider_groups_together() -> None:
         ApiSettings(query_providers=providers)
     with pytest.raises(ValidationError, match="requires query and generation providers together"):
         ApiSettings(generation_provider=generation)
+
+
+def test_paid_provider_settings_require_the_shared_capped_monthly_budget() -> None:
+    providers = DenseProviderSettings(
+        embedding=EmbeddingProviderSettings.model_validate({"api_key": "synthetic-query-key"}),
+        pinecone=PineconeProviderSettings.model_validate(
+            {
+                "api_key": "synthetic-pinecone-key",
+                "index_host": "synthetic-index.example.svc.pinecone.io",
+            }
+        ),
+    )
+    generation = GenerationProviderSettings.model_validate({"api_key": "synthetic-generation-key"})
+
+    with pytest.raises(ValidationError, match="requires the monthly provider budget"):
+        ApiSettings(query_providers=providers, generation_provider=generation)
+    with pytest.raises(ValidationError, match="requires the monthly provider budget"):
+        WorkerSettings(indexing_providers=providers)
+    with pytest.raises(ValidationError, match="requires the monthly provider budget"):
+        ApiSettings(provider_monthly_budget_micro_usd=5_000_000)
+    with pytest.raises(ValidationError, match="less than or equal to 5000000"):
+        ApiSettings(
+            query_providers=providers,
+            generation_provider=generation,
+            provider_monthly_budget_micro_usd=5_000_001,
+        )
+
+    settings = ApiSettings(
+        query_providers=providers,
+        generation_provider=generation,
+        provider_monthly_budget_micro_usd=5_000_000,
+    )
+    assert settings.provider_monthly_budget_micro_usd == 5_000_000
 
 
 @pytest.mark.parametrize(
@@ -1056,6 +1096,9 @@ def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "indexing_providers" in WorkerSettings.model_fields
     assert "indexing_providers" not in ApiSettings.model_fields
     assert "indexing_providers" not in ParserSettings.model_fields
+    assert "provider_monthly_budget_micro_usd" in ApiSettings.model_fields
+    assert "provider_monthly_budget_micro_usd" in WorkerSettings.model_fields
+    assert "provider_monthly_budget_micro_usd" not in ParserSettings.model_fields
 
 
 @pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings, ParserSettings])

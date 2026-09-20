@@ -49,7 +49,8 @@ flowchart TD
     RETRIEVE --> REQUEST[ResearchRequest]
     INPUT --> FILTERS[Effective RetrievalFilters]
     FILTERS --> QUERY[LexicalSearchQuery]
-    RETRIEVE --> EMBED[Query EmbeddingProvider]
+    RETRIEVE --> REQUESTTX[Commit immutable ResearchRequest]
+    REQUESTTX --> EMBED[Accounted Query EmbeddingProvider]
     EMBED --> DENSE[DenseRetriever]
     DENSE --> PROVIDERHITS[Untrusted dense IDs and scores]
     REQUEST --> UOW[Short ResearchRetrievalUnitOfWork]
@@ -71,9 +72,12 @@ flowchart TD
 
 The service creates all identifiers server-side, retains the exact question, and normalizes only
 its search form. Without M1 query dependencies it preserves the credential-free lexical regression
-path. With those dependencies it obtains one query embedding and bounded dense hits before opening
-the unit of work. Only classified transient provider failures receive one bounded retry; exhausted
-or permanent provider failures open no database transaction and persist no partial request.
+path. With those dependencies it first commits the immutable research request in one short
+transaction. Each query-embedding attempt then reserves budget, calls the provider outside a
+transaction, and finalizes usage and cost before dense retrieval. Only classified transient
+provider failures receive one bounded retry, with a separate ledger record per paid attempt.
+Exhausted, permanent, or budget failures retain the request for safe correlation but persist no
+retrieval run or candidates.
 
 Inside one short transaction the service executes lexical search, reloads dense identifiers through
 canonical PostgreSQL state, applies the versioned selector, and persists every qualified lane

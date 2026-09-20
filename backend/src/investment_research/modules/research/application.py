@@ -26,6 +26,17 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    ProviderBudgetExceededError,
+    ProviderCostPolicy,
+    ProviderOperationAttempt,
+)
+from investment_research.modules.operations.domain import (
+    ProviderOperationErrorCode,
+    ProviderOperationKind,
+    ProviderUsage,
+)
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
@@ -55,6 +66,7 @@ from investment_research.modules.research.ports import (
     ResearchRetrievalUnitOfWorkFactory,
 )
 from investment_research.modules.search.application import (
+    EmbeddingResponseContractError,
     build_lexical_search_query,
     validate_embedding_response,
 )
@@ -85,6 +97,9 @@ from investment_research.modules.search.domain import (
 from investment_research.modules.search.ports import (
     DenseRetriever,
     EmbeddingProvider,
+    SearchProviderConfigurationError,
+    SearchProviderContractError,
+    SearchProviderError,
     SearchProviderTransientError,
 )
 from investment_research.modules.search.selection import select_m1_context
@@ -105,6 +120,15 @@ class ResearchProviderUnavailableError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class QueryEmbeddingAccountingProfile:
+    """Provider identity and reviewed unit pricing for M1 query embeddings."""
+
+    provider: str
+    model: str
+    cost_policy: ProviderCostPolicy
+
+
+@dataclass(frozen=True, slots=True)
 class M1QueryRetrievalDependencies:
     """Complete provider and policy bundle required by M1 dual-lane retrieval."""
 
@@ -112,6 +136,8 @@ class M1QueryRetrievalDependencies:
     dense_retriever: DenseRetriever
     dense_profile: DenseRetrievalProfile
     selection_profile: M1SelectionProfile
+    provider_operation_executor: ExecuteProviderOperationService
+    embedding_accounting: QueryEmbeddingAccountingProfile
     retry_delay_seconds: float = M1_PROVIDER_RETRY_DELAY_SECONDS
     sleeper: Sleeper = sleep
 
@@ -281,6 +307,9 @@ class RetrieveResearchService:
         if dependencies is None:
             raise RuntimeError("M1 query retrieval dependencies are required")
 
+        with self._unit_of_work_factory() as unit_of_work:
+            unit_of_work.research.add_request(context, request)
+
         embedding_request = EmbeddingRequest(
             inputs=(
                 EmbeddingInput(
@@ -291,13 +320,44 @@ class RetrieveResearchService:
             ),
             embedding_config_version=dependencies.dense_profile.embedding_config_version,
         )
-        embedding_result = validate_embedding_response(
-            embedding_request,
-            self._call_with_retry(
-                lambda: dependencies.embedding_provider.embed(embedding_request),
-                dependencies,
+        embedding_attempt = ProviderOperationAttempt(
+            correlation_id=request.id,
+            research_request_id=request.id,
+            processing_run_id=None,
+            operation=ProviderOperationKind.QUERY_EMBEDDING,
+            provider=dependencies.embedding_accounting.provider,
+            model=dependencies.embedding_accounting.model,
+            configuration_version=dependencies.dense_profile.embedding_config_version,
+            span_name="embedding.query",
+            maximum_usage=ProviderUsage(
+                input_units=sum(
+                    len(item.text.encode("utf-8")) for item in embedding_request.inputs
+                ),
+                output_units=0,
             ),
+            cost_policy=dependencies.embedding_accounting.cost_policy,
         )
+        try:
+            embedding_result = self._call_with_retry(
+                lambda: dependencies.provider_operation_executor.execute(
+                    context,
+                    embedding_attempt,
+                    lambda: validate_embedding_response(
+                        embedding_request,
+                        dependencies.embedding_provider.embed(embedding_request),
+                    ),
+                    lambda result: result.usage,
+                    self._classify_query_embedding_error,
+                ),
+                dependencies,
+            )
+        except ProviderBudgetExceededError as error:
+            raise ResearchProviderUnavailableError(request.id, retriable=False) from error
+        except SearchProviderError as error:
+            raise ResearchProviderUnavailableError(
+                request.id,
+                retriable=isinstance(error, SearchProviderTransientError),
+            ) from error
         embedding = embedding_result.vectors[0]
         dense_query = DenseRetrievalQuery(
             query_vector=embedding.values,
@@ -306,10 +366,16 @@ class RetrieveResearchService:
             dense_index_config_version=dependencies.dense_profile.dense_index_config_version,
             candidate_limit=dependencies.dense_profile.candidate_limit,
         )
-        provider_hits = self._call_with_retry(
-            lambda: tuple(dependencies.dense_retriever.retrieve(context, dense_query)),
-            dependencies,
-        )
+        try:
+            provider_hits = self._call_with_retry(
+                lambda: tuple(dependencies.dense_retriever.retrieve(context, dense_query)),
+                dependencies,
+            )
+        except SearchProviderError as error:
+            raise ResearchProviderUnavailableError(
+                request.id,
+                retriable=isinstance(error, SearchProviderTransientError),
+            ) from error
         qualification_request = DenseQualificationRequest(
             provider_hits=provider_hits,
             filters=query.filters,
@@ -319,7 +385,6 @@ class RetrieveResearchService:
         )
 
         with self._unit_of_work_factory() as unit_of_work:
-            unit_of_work.research.add_request(context, request)
             lexical_hits = tuple(unit_of_work.lexical_search.search(context, query))
             dense_hits = tuple(unit_of_work.dense_qualifier.qualify(context, qualification_request))
             selection = select_m1_context(
@@ -435,6 +500,18 @@ class RetrieveResearchService:
                     raise
                 dependencies.sleeper(dependencies.retry_delay_seconds)
         raise RuntimeError("query provider retry loop terminated without a result")
+
+    @staticmethod
+    def _classify_query_embedding_error(error: Exception) -> ProviderOperationErrorCode:
+        """Map query-embedding failures to content-free canonical categories."""
+
+        if isinstance(error, SearchProviderTransientError):
+            return ProviderOperationErrorCode.UNAVAILABLE
+        if isinstance(error, (SearchProviderContractError, EmbeddingResponseContractError)):
+            return ProviderOperationErrorCode.CONTRACT
+        if isinstance(error, SearchProviderConfigurationError):
+            return ProviderOperationErrorCode.CONFIGURATION
+        return ProviderOperationErrorCode.UNAVAILABLE
 
     def _aware_utc_now(self) -> datetime:
         """Require an aware clock and normalize its instant before any write."""
