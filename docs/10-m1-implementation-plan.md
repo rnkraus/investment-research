@@ -1,6 +1,6 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Active v1.1 — Steps 0–4 locally implemented; Step 5 in progress \
+**Status:** Active v1.2 — Steps 0–5 locally implemented; Step 6 pending \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -697,9 +697,13 @@ raw fixture text appears in operational output.
 CI; docs.
 
 As of 2026-09-20, the canonical ledger, atomic monthly budget, safe local OpenTelemetry adapter,
-query-embedding accounting, document-embedding accounting, and answer-generation accounting are
-implemented and verified locally. Statement-support calls still need to use the same
-reserve-call-finalize boundary before the Step 5 gate is complete.
+and reserve-call-finalize accounting for query embedding, document embedding, answer generation,
+and statement support are implemented and verified locally. Provider-operation kinds centrally
+select approved content-safe span names. Deterministic backend and PostgreSQL gates cover budget
+enforcement, cost attribution, trace propagation and failure, redaction, workspace isolation, and
+the absence of raw provider content from canonical operation records. No frontend observability UI
+was added. Hosted CI verification remains pending the next push, and complete-stack M1 acceptance
+remains the Step 6 gate.
 
 ### Step 6 — M1 acceptance and handoff
 

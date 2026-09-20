@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v0.9 — M0 complete; M1 Steps 0–4 locally implemented
+**Status:** Active v1.0 — M0 complete; M1 Steps 0–5 locally implemented
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md)
@@ -342,11 +342,11 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Implement M1 Step 5 canonical usage and trace correlation in backend, CI, then frontend order
-   without adding an artificial observability interface.
-2. Run the complete Step 5 gate and prove that provider use and cost remain attributable while
-   operational output contains no raw question, prompt, or document text.
-3. Complete the Step 6 clean-stack acceptance and browser journey before declaring M1 complete.
+1. Complete the Step 6 clean-stack acceptance and browser journey before declaring M1 complete.
+2. Prove the deterministic PDF and pasted-text journeys, exact citation opening, insufficient
+   answer, safe provider failure, isolation, recovery, and cleanup behavior from an empty state.
+3. Record measured observations and the remaining M2 lifecycle, outbox, receipt, and reconciliation
+   gaps without promoting them into M1 scope.
 4. Keep credentialed provider smoke tests bounded, manually triggered, non-required, and restricted
    to the frozen public-synthetic fixtures.
 5. Preserve the fixed local owner and loopback-only boundary through M1, then continue to M2 only
