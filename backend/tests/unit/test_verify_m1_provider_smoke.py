@@ -18,6 +18,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
+    AnswerGenerationResult,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
     UnvalidatedGeneratedStatement,
@@ -136,38 +137,44 @@ class RecordingAnswerGenerator:
     calls: list[AnswerGenerationInput] = field(default_factory=list)
     closed: bool = False
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         self.calls.append(generation_input)
         if self.fail:
             raise RuntimeError("sensitive generation failure")
         if generation_input.question == APPROVED_UNANSWERABLE_QUESTION:
-            return UnvalidatedGeneratedAnswer(
-                coverage_status=CoverageStatus.INSUFFICIENT,
-                rendered_text="The supplied source contains no dividend declaration.",
-                statements=(),
-                missing_information="The supplied source contains no dividend declaration.",
+            return AnswerGenerationResult(
+                answer=UnvalidatedGeneratedAnswer(
+                    coverage_status=CoverageStatus.INSUFFICIENT,
+                    rendered_text="The supplied source contains no dividend declaration.",
+                    statements=(),
+                    missing_information="The supplied source contains no dividend declaration.",
+                ),
+                usage=ProviderUsage(input_units=120, output_units=30),
             )
 
         source = generation_input.sources[0]
-        return UnvalidatedGeneratedAnswer(
-            coverage_status=CoverageStatus.COMPLETE,
-            rendered_text="Untrusted provider rendering.",
-            statements=(
-                UnvalidatedGeneratedStatement(
-                    text=(
-                        "A shortage of high-voltage transformers is the primary deployment "
-                        "constraint."
-                    ),
-                    evidence=(
-                        UnvalidatedEvidenceReference(
-                            retrieval_candidate_id=source.retrieval_candidate_id,
-                            start_character=0,
-                            end_character=len(source.text),
-                            exact_text=source.text,
+        return AnswerGenerationResult(
+            answer=UnvalidatedGeneratedAnswer(
+                coverage_status=CoverageStatus.COMPLETE,
+                rendered_text="Untrusted provider rendering.",
+                statements=(
+                    UnvalidatedGeneratedStatement(
+                        text=(
+                            "A shortage of high-voltage transformers is the primary deployment "
+                            "constraint."
+                        ),
+                        evidence=(
+                            UnvalidatedEvidenceReference(
+                                retrieval_candidate_id=source.retrieval_candidate_id,
+                                start_character=0,
+                                end_character=len(source.text),
+                                exact_text=source.text,
+                            ),
                         ),
                     ),
                 ),
             ),
+            usage=ProviderUsage(input_units=120, output_units=30),
         )
 
     def close(self) -> None:

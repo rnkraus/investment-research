@@ -123,12 +123,15 @@ block-relative text range; it is only a proposal until the server reloads and va
 data. For pasted text, the server derives the absolute original range from the canonical structure
 block rather than accepting one from the generator.
 
-The generator result is immutable and schema-valid but intentionally named `Unvalidated`. It may
-never be persisted as an accepted statement or emitted to a client merely because its Pydantic
-schema parsed successfully. The `AnswerGenerator` port lets M0.0 use a deterministic fixture adapter
-and later use an approved model adapter without changing this trust boundary.
+The generator returns an immutable `AnswerGenerationResult` containing the schema-valid but
+intentionally `Unvalidated` proposal plus content-free `ProviderUsage`. The proposal may never be
+persisted as an accepted statement or emitted to a client merely because its Pydantic schema parsed
+successfully. The `AnswerGenerator` port lets M0.0 use a deterministic fixture adapter and M1 use an
+approved model adapter without changing this trust boundary.
 
-`GenerateValidatedAnswerService` calls the generator before opening a database transaction. It then
+For M1, `GenerateValidatedAnswerService` reserves budget in one short transaction, calls the
+generator without an open database transaction, and finalizes reported usage and cost in another
+short transaction. M0.0 calls its zero-cost deterministic generator directly. The service then
 reloads every proposed source through the canonical Evidence reader and maps only the validator's
 safe decision to domain records. Visible streamed text is rebuilt from accepted statements rather
 than copied from the generator's untrusted `rendered_text`. Insufficient output uses an

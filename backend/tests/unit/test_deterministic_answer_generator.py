@@ -12,6 +12,7 @@ from investment_research.infrastructure.generation.deterministic import (
     FixtureAnswerCase,
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
@@ -81,10 +82,11 @@ def test_answerable_fixture_returns_the_same_exactly_anchored_proposal() -> None
     second_result = generator.generate(generation_input)
 
     assert first_result == second_result
-    assert first_result.coverage_status is CoverageStatus.COMPLETE
-    assert first_result.rendered_text == STATEMENT
-    assert len(first_result.statements) == 1
-    statement = first_result.statements[0]
+    assert first_result.answer.coverage_status is CoverageStatus.COMPLETE
+    assert first_result.answer.rendered_text == STATEMENT
+    assert first_result.usage == ProviderUsage(input_units=0, output_units=0)
+    assert len(first_result.answer.statements) == 1
+    statement = first_result.answer.statements[0]
     assert statement.text == STATEMENT
     assert len(statement.evidence) == 1
     reference = statement.evidence[0]
@@ -109,10 +111,11 @@ def test_unanswerable_or_unsupported_input_returns_explicit_insufficient_coverag
 ) -> None:
     result = make_generator().generate(generation_input)
 
-    assert result.coverage_status is CoverageStatus.INSUFFICIENT
-    assert result.rendered_text == INSUFFICIENT_MESSAGE
-    assert result.statements == ()
-    assert result.missing_information == INSUFFICIENT_MESSAGE
+    assert result.answer.coverage_status is CoverageStatus.INSUFFICIENT
+    assert result.answer.rendered_text == INSUFFICIENT_MESSAGE
+    assert result.answer.statements == ()
+    assert result.answer.missing_information == INSUFFICIENT_MESSAGE
+    assert result.usage == ProviderUsage(input_units=0, output_units=0)
 
 
 def test_generation_contract_rejects_statements_claimed_as_insufficient() -> None:
@@ -123,7 +126,7 @@ def test_generation_contract_rejects_statements_claimed_as_insufficient() -> Non
     ):
         UnvalidatedGeneratedAnswer.model_validate(
             {
-                **answered.model_dump(),
+                **answered.answer.model_dump(),
                 "coverage_status": CoverageStatus.INSUFFICIENT,
                 "missing_information": INSUFFICIENT_MESSAGE,
             }

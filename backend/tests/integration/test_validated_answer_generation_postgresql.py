@@ -40,11 +40,13 @@ from investment_research.modules.evidence.persistence import (
     StatementEvidenceRow,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.research.application import GenerateValidatedAnswerService
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
+    AnswerGenerationResult,
     CanonicalCandidateSource,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
@@ -84,8 +86,11 @@ class StaticAnswerGenerator:
     def __init__(self, proposal: UnvalidatedGeneratedAnswer) -> None:
         self._proposal = proposal
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
-        return self._proposal
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
+        return AnswerGenerationResult(
+            answer=self._proposal,
+            usage=ProviderUsage(input_units=120, output_units=30),
+        )
 
 
 class FailingValidationRepository(SqlAlchemyEvidenceRepository):

@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from itertools import count
 from typing import cast
-from unittest.mock import create_autospec
+from unittest.mock import Mock, create_autospec
 from uuid import UUID
 
 import pytest
@@ -30,11 +30,21 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    ProviderBudgetExceededError,
+    ProviderCostPolicy,
+)
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.domain import ProcessingState
-from investment_research.modules.research.application import GenerateValidatedAnswerService
+from investment_research.modules.research.application import (
+    AnswerGenerationAccountingProfile,
+    GenerateValidatedAnswerService,
+)
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
+    AnswerGenerationResult,
     CanonicalCandidateSource,
     ResearchRetrievalResult,
     UnvalidatedEvidenceReference,
@@ -99,12 +109,15 @@ class StaticAnswerGenerator:
         self.calls: list[AnswerGenerationInput] = []
         self.transaction_was_open = False
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         self.calls.append(generation_input)
         self.transaction_was_open = self._unit_of_work.enter_count > 0
         if self._error is not None:
             raise self._error
-        return self._result
+        return AnswerGenerationResult(
+            answer=self._result,
+            usage=ProviderUsage(input_units=120, output_units=30),
+        )
 
 
 class FailingStatementSupportEvaluator:
@@ -296,6 +309,7 @@ def make_service(
     *,
     generator_error: Exception | None = None,
     support_evaluator: StatementSupportEvaluator | None = None,
+    provider_operation_executor: Mock | None = None,
 ) -> tuple[GenerateValidatedAnswerService, StaticAnswerGenerator]:
     """Build a deterministic service and its observable untrusted generator."""
 
@@ -320,10 +334,41 @@ def make_service(
         ),
         validation_profile=EvidenceValidationProfile(validation_config_version="m0.0-evidence-v1"),
         insufficient_message=SAFE_INSUFFICIENT_MESSAGE,
+        provider_operation_executor=(
+            None
+            if provider_operation_executor is None
+            else cast(ExecuteProviderOperationService, provider_operation_executor)
+        ),
+        generation_accounting=(
+            None
+            if provider_operation_executor is None
+            else AnswerGenerationAccountingProfile(
+                provider="openai",
+                model="gpt-5.6-terra",
+                input_overhead_units=16_000,
+                maximum_output_units=2_000,
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=2_000_000,
+                    output_micro_usd_per_million_units=12_000_000,
+                ),
+            )
+        ),
         clock=clock_values.__next__,
         identifier_factory=lambda: UUID(int=next(identifier_values)),
     )
     return service, generator
+
+
+def make_provider_operation_executor() -> Mock:
+    """Run the provider callback while exposing the accounting attempt to unit tests."""
+
+    executor = cast(Mock, create_autospec(ExecuteProviderOperationService, instance=True))
+    executor.execute.side_effect = (
+        lambda _context, _attempt, provider_call, _usage_from_result, _classify_error: (
+            provider_call()
+        )
+    )
+    return executor
 
 
 def test_generator_provider_failure_opens_no_answer_transaction() -> None:
@@ -341,6 +386,49 @@ def test_generator_provider_failure_opens_no_answer_transaction() -> None:
     assert captured.value is provider_error
     assert len(generator.calls) == 1
     assert generator.transaction_was_open is False
+    assert unit_of_work.enter_count == 0
+    unit_of_work.research_mock.add_answer.assert_not_called()
+
+
+def test_m1_generation_accounts_provider_usage_before_answer_transaction() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    executor = make_provider_operation_executor()
+    service, generator = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        provider_operation_executor=executor,
+    )
+
+    service.generate(make_context(), make_retrieval_result())
+
+    accounting_context, attempt = executor.execute.call_args.args[:2]
+    assert accounting_context == make_context()
+    assert attempt.correlation_id == REQUEST_ID
+    assert attempt.research_request_id == REQUEST_ID
+    assert attempt.processing_run_id is None
+    assert attempt.operation.value == "ANSWER_GENERATION"
+    assert attempt.configuration_version == "m0.0-generation-v1"
+    assert attempt.maximum_usage == ProviderUsage(
+        input_units=(16_000 + len(QUESTION.encode("utf-8")) + len(SOURCE_TEXT.encode("utf-8"))),
+        output_units=2_000,
+    )
+    assert generator.transaction_was_open is False
+
+
+def test_m1_generation_budget_rejection_calls_neither_generator_nor_database() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    executor = make_provider_operation_executor()
+    executor.execute.side_effect = ProviderBudgetExceededError("monthly provider budget exceeded")
+    service, generator = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        provider_operation_executor=executor,
+    )
+
+    with pytest.raises(ProviderBudgetExceededError, match="monthly provider budget"):
+        service.generate(make_context(), make_retrieval_result())
+
+    assert generator.calls == []
     assert unit_of_work.enter_count == 0
     unit_of_work.research_mock.add_answer.assert_not_called()
 

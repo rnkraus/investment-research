@@ -24,11 +24,20 @@ from investment_research.infrastructure.search.pinecone import PineconeDenseRetr
 from investment_research.main import create_app
 from investment_research.modules.documents.domain import OriginalMediaType, SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.operations.domain import (
+    ProviderOperation,
+    ProviderOperationKind,
+    ProviderOperationState,
+    ProviderUsage,
+)
+from investment_research.modules.operations.persistence import (
+    SqlAlchemyProviderOperationRepository,
+)
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
+    AnswerGenerationResult,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
     UnvalidatedGeneratedStatement,
@@ -119,33 +128,39 @@ class FixedAnswerGenerator:
         self.requests: list[AnswerGenerationInput] = []
         self.closed = False
 
-    def generate(self, generation_input: AnswerGenerationInput) -> UnvalidatedGeneratedAnswer:
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         self.requests.append(generation_input)
         if self._statement is None or not generation_input.sources:
-            return UnvalidatedGeneratedAnswer(
-                coverage_status=CoverageStatus.INSUFFICIENT,
-                rendered_text=SAFE_MISSING_INFORMATION,
-                statements=(),
-                missing_information=SAFE_MISSING_INFORMATION,
+            return AnswerGenerationResult(
+                answer=UnvalidatedGeneratedAnswer(
+                    coverage_status=CoverageStatus.INSUFFICIENT,
+                    rendered_text=SAFE_MISSING_INFORMATION,
+                    statements=(),
+                    missing_information=SAFE_MISSING_INFORMATION,
+                ),
+                usage=ProviderUsage(input_units=120, output_units=30),
             )
 
         source = generation_input.sources[0]
-        return UnvalidatedGeneratedAnswer(
-            coverage_status=CoverageStatus.COMPLETE,
-            rendered_text="Untrusted provider rendering that must not be published directly.",
-            statements=(
-                UnvalidatedGeneratedStatement(
-                    text=self._statement,
-                    evidence=(
-                        UnvalidatedEvidenceReference(
-                            retrieval_candidate_id=source.retrieval_candidate_id,
-                            start_character=0,
-                            end_character=len(source.text),
-                            exact_text=source.text,
+        return AnswerGenerationResult(
+            answer=UnvalidatedGeneratedAnswer(
+                coverage_status=CoverageStatus.COMPLETE,
+                rendered_text="Untrusted provider rendering that must not be published directly.",
+                statements=(
+                    UnvalidatedGeneratedStatement(
+                        text=self._statement,
+                        evidence=(
+                            UnvalidatedEvidenceReference(
+                                retrieval_candidate_id=source.retrieval_candidate_id,
+                                start_character=0,
+                                end_character=len(source.text),
+                                exact_text=source.text,
+                            ),
                         ),
                     ),
                 ),
             ),
+            usage=ProviderUsage(input_units=120, output_units=30),
         )
 
     def close(self) -> None:
@@ -343,7 +358,54 @@ def load_retrieval_result(
                 )
             )
         )
-    return run, candidates
+        return run, candidates
+
+
+def load_provider_operations(
+    engine: Engine,
+    *,
+    context: WorkspaceContext,
+    research_request_id: UUID,
+) -> tuple[ProviderOperation, ...]:
+    """Load canonical paid-provider attempts for one completed API request."""
+
+    session_factory = create_session_factory(engine)
+    with session_factory() as session:
+        return tuple(
+            SqlAlchemyProviderOperationRepository(session).list_by_correlation_id(
+                context,
+                research_request_id,
+            )
+        )
+
+
+def assert_accounted_query_and_generation(
+    engine: Engine,
+    *,
+    context: WorkspaceContext,
+    research_request_id: UUID,
+) -> None:
+    """Require one successful query embedding and one successful answer generation."""
+
+    operations = load_provider_operations(
+        engine,
+        context=context,
+        research_request_id=research_request_id,
+    )
+    assert {operation.operation for operation in operations} == {
+        ProviderOperationKind.QUERY_EMBEDDING,
+        ProviderOperationKind.ANSWER_GENERATION,
+    }
+    assert all(operation.state is ProviderOperationState.SUCCEEDED for operation in operations)
+    generation = next(
+        operation
+        for operation in operations
+        if operation.operation is ProviderOperationKind.ANSWER_GENERATION
+    )
+    assert generation.input_units == 120
+    assert generation.output_units == 30
+    assert generation.actual_cost_micro_usd == 600
+    assert len(generation.trace_id) == 32
 
 
 def test_m1_api_selects_exact_lexical_evidence_in_dual_lane_mode(
@@ -396,6 +458,11 @@ def test_m1_api_selects_exact_lexical_evidence_in_dual_lane_mode(
     assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 1
     assert len(fakes.generator.requests) == len(fakes.support.requests) == 1
     assert events[0]["payload"]["text"] == M0_0_FIXTURE_ANSWER_CASE.statement
+    assert_accounted_query_and_generation(
+        integration_database_engine,
+        context=source.context,
+        research_request_id=request_id,
+    )
     assert_provider_fakes_closed(fakes)
 
 
@@ -461,6 +528,11 @@ def test_m1_api_selects_only_canonical_dense_evidence_for_semantic_question(
     assert fakes.dense.queries[0].filters.document_ids == (source.document.id,)
     assert len(fakes.generator.requests) == len(fakes.support.requests) == 1
     assert events[0]["payload"]["text"] == statement
+    assert_accounted_query_and_generation(
+        integration_database_engine,
+        context=source.context,
+        research_request_id=request_id,
+    )
     assert_provider_fakes_closed(fakes)
 
 

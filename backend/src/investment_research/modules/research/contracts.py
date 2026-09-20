@@ -12,6 +12,7 @@ from investment_research.modules.evidence.domain import (
     EvidenceSpan,
     StatementEvidence,
 )
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.domain import (
     Answer,
     AnswerState,
@@ -335,6 +336,13 @@ class UnvalidatedGeneratedAnswer(ImmutableResearchContract):
             if self.missing_information is not None:
                 raise ValueError("non-insufficient generation must not define missing_information")
         return self
+
+
+class AnswerGenerationResult(ImmutableResearchContract):
+    """Schema-valid proposal plus content-free usage reported by the provider."""
+
+    answer: UnvalidatedGeneratedAnswer
+    usage: ProviderUsage
 
 
 class ValidatedAnswerResult(ImmutableResearchContract):

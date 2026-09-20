@@ -42,8 +42,11 @@ from investment_research.infrastructure.generation.openai import (
     M1_ANSWER_GENERATION_CONFIG_VERSION,
     M1_ANSWER_GENERATOR_VERSION,
     M1_ANSWER_PROMPT_VERSION,
+    OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+    OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS,
     OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
     OPENAI_ANSWER_MODEL,
+    OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS,
     OPENAI_ANSWER_TIMEOUT_SECONDS,
     OpenAIAnswerGenerator,
     create_openai_answer_generator,
@@ -111,6 +114,7 @@ from investment_research.modules.processing.contracts import ParserLimits
 from investment_research.modules.processing.indexing import IndexProcessingRunService
 from investment_research.modules.processing.ports import DocumentParser, ProcessingDispatcher
 from investment_research.modules.research.application import (
+    AnswerGenerationAccountingProfile,
     AnswerResearchRequestService,
     GenerateValidatedAnswerService,
     M1QueryRetrievalDependencies,
@@ -329,6 +333,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         ]
     )
     generation_profile = M0_0_GENERATION_PROFILE
+    generation_accounting: AnswerGenerationAccountingProfile | None = None
     validation_profile = M0_0_EVIDENCE_VALIDATION_PROFILE
     lexical_candidate_limit = 10
     if settings.query_providers is not None:
@@ -426,6 +431,20 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         answer_generator = answer_generator_provider
         support_evaluator = statement_support_provider
         generation_profile = M1_GENERATION_PROFILE
+        generation_accounting = AnswerGenerationAccountingProfile(
+            provider="openai",
+            model=OPENAI_ANSWER_MODEL,
+            input_overhead_units=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+            maximum_output_units=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            cost_policy=ProviderCostPolicy(
+                input_micro_usd_per_million_units=(
+                    OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS
+                ),
+                output_micro_usd_per_million_units=(
+                    OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS
+                ),
+            ),
+        )
         validation_profile = M1_EVIDENCE_VALIDATION_PROFILE
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
@@ -446,6 +465,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         generation_profile=generation_profile,
         validation_profile=validation_profile,
         insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
+        provider_operation_executor=provider_operation_executor,
+        generation_accounting=generation_accounting,
     )
     open_original_service = OpenOriginalService(
         object_storage=object_storage.adapter,
