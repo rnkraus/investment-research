@@ -14,6 +14,10 @@ from investment_research.infrastructure.evidence.openai import OpenAIStatementSu
 from investment_research.infrastructure.generation.openai import OpenAIAnswerGenerator
 from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
 from investment_research.infrastructure.search.pinecone import PineconeDenseIndexWriter
+from investment_research.modules.evidence.contracts import (
+    StatementSupportDecision,
+    StatementSupportResult,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
@@ -190,9 +194,16 @@ class RecordingSupportEvaluator:
     calls: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
     closed: bool = False
 
-    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
+    def evaluate(
+        self,
+        statement: str,
+        evidence_texts: Sequence[str],
+    ) -> StatementSupportResult:
         self.calls.append((statement, tuple(evidence_texts)))
-        return self.supported
+        return StatementSupportResult(
+            decision=StatementSupportDecision(supported=self.supported),
+            usage=ProviderUsage(input_units=90, output_units=10),
+        )
 
     def close(self) -> None:
         self.closed = True

@@ -138,11 +138,13 @@ than copied from the generator's untrusted `rendered_text`. Insufficient output 
 application-owned message, and rejected output retains safe rule findings but no generated content.
 
 An answer-generator failure occurs before the answer unit of work opens. A statement-support
-provider failure occurs during canonical validation and therefore rolls that unit of work back.
-Neither path persists or emits partial generated content. The already committed research request,
-retrieval run, and candidates remain available for later audit and a deliberate new user attempt.
-The HTTP boundary exposes only `PROVIDER_UNAVAILABLE`; provider authentication, rate-limit,
-timeout, refusal, schema, prompt, and source details remain internal.
+provider call receives its own committed budget reservation and usage finalization, but occurs
+during canonical validation and therefore rolls the answer unit of work back on failure. Each
+statement produces a separately attributable `STATEMENT_SUPPORT` operation. Neither failure path
+persists or emits partial generated content. The already committed research request, retrieval run,
+and candidates remain available for later audit and a deliberate new user attempt. The HTTP
+boundary exposes only `PROVIDER_UNAVAILABLE`; provider authentication, rate-limit, timeout,
+refusal, schema, prompt, and source details remain internal.
 
 ## Answer lifecycle
 

@@ -199,9 +199,12 @@ class ValidateGeneratedAnswerService:
             source is not None and self._is_temporally_eligible(source) for source in sources
         )
         exact_span_valid = len(validated_references) == expected_reference_count
-        support_valid = exact_span_valid and self._support_evaluator.supports(
-            statement_text,
-            tuple(reference.exact_text for reference in validated_references),
+        support_valid = (
+            exact_span_valid
+            and self._support_evaluator.evaluate(
+                statement_text,
+                tuple(reference.exact_text for reference in validated_references),
+            ).decision.supported
         )
         return (
             (

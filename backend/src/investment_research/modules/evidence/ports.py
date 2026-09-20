@@ -8,6 +8,7 @@ from uuid import UUID
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
     CanonicalEvidenceSpanSource,
+    StatementSupportResult,
 )
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
@@ -63,8 +64,8 @@ class StatementSupportProviderRefusalError(StatementSupportProviderError):
 class StatementSupportEvaluator(Protocol):
     """Evaluate whether exact canonical source text supports one generated statement."""
 
-    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
-        """Return a deterministic support decision for one complete statement."""
+    def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        """Return one typed support decision and content-free provider usage."""
 
 
 class EvidenceRepository(Protocol):

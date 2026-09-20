@@ -92,6 +92,10 @@ flowchart TD
     COVERAGE -->|fail| REJECT
 ```
 
+`StatementSupportEvaluator` returns an application-owned `StatementSupportResult`: the typed
+support decision plus content-free provider usage. It cannot authorize a source, document version,
+workspace, or citation range; those decisions remain with the surrounding canonical checks.
+
 Each `AnswerValidation` stores the rule, target answer and optional statement, pass/fail result, safe reason, configuration version, and validation time. Failed rules require a reason. Partial unique indexes allow one result per answer-level rule and one result per statement-level rule.
 
 ## Retrieval-candidate eligibility

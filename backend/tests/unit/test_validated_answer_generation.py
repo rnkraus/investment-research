@@ -22,6 +22,7 @@ from investment_research.modules.documents.domain import (
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
     EvidenceValidationProfile,
+    StatementSupportResult,
 )
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
@@ -40,6 +41,7 @@ from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.application import (
     AnswerGenerationAccountingProfile,
     GenerateValidatedAnswerService,
+    StatementSupportAccountingProfile,
 )
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -127,7 +129,11 @@ class FailingStatementSupportEvaluator:
         self._error = error
         self.calls = 0
 
-    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
+    def evaluate(
+        self,
+        statement: str,
+        evidence_texts: Sequence[str],
+    ) -> StatementSupportResult:
         del statement, evidence_texts
         self.calls += 1
         raise self._error
@@ -353,6 +359,21 @@ def make_service(
                 ),
             )
         ),
+        statement_support_accounting=(
+            None
+            if provider_operation_executor is None
+            else StatementSupportAccountingProfile(
+                provider="openai",
+                model="gpt-5.6-terra",
+                configuration_version="openai-gpt-5.6-terra-low-support-v1",
+                input_overhead_units=16_000,
+                maximum_output_units=1_000,
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=2_000_000,
+                    output_micro_usd_per_million_units=12_000_000,
+                ),
+            )
+        ),
         clock=clock_values.__next__,
         identifier_factory=lambda: UUID(int=next(identifier_values)),
     )
@@ -401,7 +422,12 @@ def test_m1_generation_accounts_provider_usage_before_answer_transaction() -> No
 
     service.generate(make_context(), make_retrieval_result())
 
-    accounting_context, attempt = executor.execute.call_args.args[:2]
+    generation_call = next(
+        call
+        for call in executor.execute.call_args_list
+        if call.args[1].operation.value == "ANSWER_GENERATION"
+    )
+    accounting_context, attempt = generation_call.args[:2]
     assert accounting_context == make_context()
     assert attempt.correlation_id == REQUEST_ID
     assert attempt.research_request_id == REQUEST_ID
@@ -413,6 +439,36 @@ def test_m1_generation_accounts_provider_usage_before_answer_transaction() -> No
         output_units=2_000,
     )
     assert generator.transaction_was_open is False
+
+
+def test_m1_statement_support_accounts_usage_inside_answer_transaction() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    executor = make_provider_operation_executor()
+    service, _ = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        provider_operation_executor=executor,
+    )
+
+    service.generate(make_context(), make_retrieval_result())
+
+    support_call = next(
+        call
+        for call in executor.execute.call_args_list
+        if call.args[1].operation.value == "STATEMENT_SUPPORT"
+    )
+    accounting_context, attempt = support_call.args[:2]
+    assert accounting_context == make_context()
+    assert attempt.correlation_id == REQUEST_ID
+    assert attempt.research_request_id == REQUEST_ID
+    assert attempt.processing_run_id is None
+    assert attempt.configuration_version == "openai-gpt-5.6-terra-low-support-v1"
+    assert attempt.span_name == "evidence.statement_support"
+    assert attempt.maximum_usage == ProviderUsage(
+        input_units=(16_000 + len(STATEMENT.encode("utf-8")) + len(EVIDENCE_TEXT.encode("utf-8"))),
+        output_units=1_000,
+    )
+    assert unit_of_work.committed is True
 
 
 def test_m1_generation_budget_rejection_calls_neither_generator_nor_database() -> None:

@@ -1,6 +1,6 @@
 """Application services for research retrieval and validated answer generation."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import sleep
@@ -10,6 +10,7 @@ from investment_research.modules.evidence.application import ValidateGeneratedAn
 from investment_research.modules.evidence.contracts import (
     EvidenceValidationDecision,
     EvidenceValidationProfile,
+    StatementSupportResult,
     ValidationFinding,
 )
 from investment_research.modules.evidence.domain import (
@@ -22,7 +23,10 @@ from investment_research.modules.evidence.domain import (
 from investment_research.modules.evidence.ports import (
     EvidenceRepository,
     StatementSupportEvaluator,
+    StatementSupportProviderConfigurationError,
+    StatementSupportProviderContractError,
     StatementSupportProviderError,
+    StatementSupportProviderRefusalError,
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -149,6 +153,25 @@ class AnswerGenerationAccountingProfile:
         for value in (self.input_overhead_units, self.maximum_output_units):
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError("answer-generation accounting bounds must be positive integers")
+
+
+@dataclass(frozen=True, slots=True)
+class StatementSupportAccountingProfile:
+    """Provider identity, unit bounds, configuration, and pricing for statement support."""
+
+    provider: str
+    model: str
+    configuration_version: str
+    input_overhead_units: int
+    maximum_output_units: int
+    cost_policy: ProviderCostPolicy
+
+    def __post_init__(self) -> None:
+        """Require positive integer bounds without accepting booleans as integers."""
+
+        for value in (self.input_overhead_units, self.maximum_output_units):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError("statement-support accounting bounds must be positive integers")
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,6 +570,65 @@ class RetrieveResearchService:
         return current_time.astimezone(UTC)
 
 
+@dataclass(frozen=True, slots=True)
+class _AccountedStatementSupportEvaluator:
+    """Apply the canonical provider-operation boundary to one support evaluator."""
+
+    context: WorkspaceContext
+    research_request_id: UUID
+    evaluator: StatementSupportEvaluator
+    executor: ExecuteProviderOperationService
+    accounting: StatementSupportAccountingProfile
+
+    def evaluate(
+        self,
+        statement: str,
+        evidence_texts: Sequence[str],
+    ) -> StatementSupportResult:
+        """Reserve, call, and finalize one independently attributable support decision."""
+
+        maximum_input_units = (
+            self.accounting.input_overhead_units
+            + len(statement.encode("utf-8"))
+            + sum(len(evidence_text.encode("utf-8")) for evidence_text in evidence_texts)
+        )
+        return self.executor.execute(
+            self.context,
+            ProviderOperationAttempt(
+                correlation_id=self.research_request_id,
+                research_request_id=self.research_request_id,
+                processing_run_id=None,
+                operation=ProviderOperationKind.STATEMENT_SUPPORT,
+                provider=self.accounting.provider,
+                model=self.accounting.model,
+                configuration_version=self.accounting.configuration_version,
+                span_name="evidence.statement_support",
+                maximum_usage=ProviderUsage(
+                    input_units=maximum_input_units,
+                    output_units=self.accounting.maximum_output_units,
+                ),
+                cost_policy=self.accounting.cost_policy,
+            ),
+            lambda: self.evaluator.evaluate(statement, evidence_texts),
+            lambda result: result.usage,
+            self._classify_error,
+        )
+
+    @staticmethod
+    def _classify_error(error: Exception) -> ProviderOperationErrorCode:
+        """Map support-provider failures to content-free canonical categories."""
+
+        if isinstance(error, StatementSupportProviderTransientError):
+            return ProviderOperationErrorCode.UNAVAILABLE
+        if isinstance(error, StatementSupportProviderRefusalError):
+            return ProviderOperationErrorCode.REFUSAL
+        if isinstance(error, StatementSupportProviderContractError):
+            return ProviderOperationErrorCode.CONTRACT
+        if isinstance(error, StatementSupportProviderConfigurationError):
+            return ProviderOperationErrorCode.CONFIGURATION
+        return ProviderOperationErrorCode.UNAVAILABLE
+
+
 class GenerateValidatedAnswerService:
     """Generate outside a transaction, then validate and persist one answer atomically."""
 
@@ -561,14 +643,21 @@ class GenerateValidatedAnswerService:
         insufficient_message: str,
         provider_operation_executor: ExecuteProviderOperationService | None = None,
         generation_accounting: AnswerGenerationAccountingProfile | None = None,
+        statement_support_accounting: StatementSupportAccountingProfile | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
         if not insufficient_message.strip():
             raise ValueError("insufficient_message must contain a non-whitespace character")
-        if (provider_operation_executor is None) != (generation_accounting is None):
+        if provider_operation_executor is None and (
+            generation_accounting is not None or statement_support_accounting is not None
+        ):
+            raise ValueError("provider accounting profiles require an operation executor")
+        if provider_operation_executor is not None and (
+            generation_accounting is None or statement_support_accounting is None
+        ):
             raise ValueError(
-                "answer-generation accounting requires an executor and profile together"
+                "provider accounting requires generation and statement-support profiles"
             )
         self._unit_of_work_factory = unit_of_work_factory
         self._answer_generator = answer_generator
@@ -578,6 +667,7 @@ class GenerateValidatedAnswerService:
         self._insufficient_message = insufficient_message
         self._provider_operation_executor = provider_operation_executor
         self._generation_accounting = generation_accounting
+        self._statement_support_accounting = statement_support_accounting
         self._clock = clock
         self._identifier_factory = identifier_factory
 
@@ -605,6 +695,10 @@ class GenerateValidatedAnswerService:
         )
         generation_input = self._build_generation_input(retrieval_result)
         generated_answer = self._generate_answer(context, generation_input)
+        support_evaluator = self._accounted_support_evaluator(
+            context,
+            retrieval_result.request.id,
+        )
 
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.research.add_answer(context, answer)
@@ -629,7 +723,7 @@ class GenerateValidatedAnswerService:
             )
             decision = ValidateGeneratedAnswerService(
                 source_reader=unit_of_work.evidence_sources,
-                support_evaluator=self._support_evaluator,
+                support_evaluator=support_evaluator,
             ).validate(
                 context,
                 retrieval_result.retrieval_run.id,
@@ -673,6 +767,25 @@ class GenerateValidatedAnswerService:
             )
 
         return result
+
+    def _accounted_support_evaluator(
+        self,
+        context: WorkspaceContext,
+        research_request_id: UUID,
+    ) -> StatementSupportEvaluator:
+        """Decorate paid support evaluation without changing deterministic M0.0 behavior."""
+
+        executor = self._provider_operation_executor
+        accounting = self._statement_support_accounting
+        if executor is None or accounting is None:
+            return self._support_evaluator
+        return _AccountedStatementSupportEvaluator(
+            context=context,
+            research_request_id=research_request_id,
+            evaluator=self._support_evaluator,
+            executor=executor,
+            accounting=accounting,
+        )
 
     def _generate_answer(
         self,

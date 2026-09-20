@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from investment_research.modules.evidence.contracts import (
     StatementSupportDecision,
     StatementSupportInput,
+    StatementSupportResult,
 )
 from investment_research.modules.evidence.ports import (
     StatementSupportProviderConfigurationError,
@@ -25,10 +26,14 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderRefusalError,
     StatementSupportProviderTransientError,
 )
+from investment_research.modules.operations.domain import ProviderUsage
 
 OPENAI_STATEMENT_SUPPORT_MODEL = "gpt-5.6-terra"
 OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS = 30.0
 OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS = 1_000
+OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS = 16_000
+OPENAI_STATEMENT_SUPPORT_INPUT_MICRO_USD_PER_MILLION_TOKENS = 2_000_000
+OPENAI_STATEMENT_SUPPORT_OUTPUT_MICRO_USD_PER_MILLION_TOKENS = 12_000_000
 M1_STATEMENT_SUPPORT_EVALUATOR_VERSION = "openai-responses-structured-v1"
 M1_STATEMENT_SUPPORT_CONFIG_VERSION = "openai-gpt-5.6-terra-low-support-v1"
 M1_STATEMENT_SUPPORT_PROMPT_VERSION = "m1-statement-support-prompt-v1"
@@ -63,8 +68,12 @@ class OpenAIStatementSupportEvaluator:
         if not 1 <= self.max_output_tokens <= OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS:
             raise ValueError("OpenAI statement-support output must be between 1 and 1000 tokens")
 
-    def supports(self, statement: str, evidence_texts: Sequence[str]) -> bool:
-        """Return one typed support decision or raise a safe provider error."""
+    def evaluate(
+        self,
+        statement: str,
+        evidence_texts: Sequence[str],
+    ) -> StatementSupportResult:
+        """Return one typed support decision and usage or raise a safe provider error."""
 
         support_input = StatementSupportInput(
             statement=statement,
@@ -131,7 +140,38 @@ class OpenAIStatementSupportEvaluator:
             raise StatementSupportProviderContractError(
                 "statement-support provider returned no typed decision"
             )
-        return parsed.supported
+        usage = response.usage
+        if usage is None:
+            raise StatementSupportProviderContractError(
+                "statement-support provider returned no usage metadata"
+            )
+        input_tokens = usage.input_tokens
+        output_tokens = usage.output_tokens
+        total_tokens = usage.total_tokens
+        if (
+            isinstance(input_tokens, bool)
+            or not isinstance(input_tokens, int)
+            or input_tokens < 0
+            or isinstance(output_tokens, bool)
+            or not isinstance(output_tokens, int)
+            or output_tokens < 0
+            or isinstance(total_tokens, bool)
+            or not isinstance(total_tokens, int)
+            or total_tokens != input_tokens + output_tokens
+        ):
+            raise StatementSupportProviderContractError(
+                "statement-support provider returned invalid usage metadata"
+            )
+        try:
+            provider_usage = ProviderUsage(
+                input_units=input_tokens,
+                output_units=output_tokens,
+            )
+        except ValidationError:
+            raise StatementSupportProviderContractError(
+                "statement-support provider returned invalid usage metadata"
+            ) from None
+        return StatementSupportResult(decision=parsed, usage=provider_usage)
 
     @staticmethod
     def _serialize_input(support_input: StatementSupportInput) -> str:
