@@ -1,6 +1,6 @@
 """Unit tests for atomic validated-answer generation orchestration."""
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from itertools import count
@@ -113,7 +113,7 @@ class StaticAnswerGenerator:
 
     def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         self.calls.append(generation_input)
-        self.transaction_was_open = self._unit_of_work.enter_count > 0
+        self.transaction_was_open = self._unit_of_work.is_open
         if self._error is not None:
             raise self._error
         return AnswerGenerationResult(
@@ -142,6 +142,9 @@ class FailingStatementSupportEvaluator:
 class RecordingSourceReader:
     """Expose one eligible canonical source to the real validation service."""
 
+    def __init__(self) -> None:
+        self.active = True
+
     def get_source(
         self,
         context: WorkspaceContext,
@@ -154,7 +157,7 @@ class RecordingSourceReader:
             or retrieval_candidate_id != CANDIDATE_ID
         ):
             return None
-        return make_canonical_source()
+        return make_canonical_source().model_copy(update={"chunk_set_is_active": self.active})
 
 
 class RecordingAnswerValidationUnitOfWork:
@@ -167,8 +170,10 @@ class RecordingAnswerValidationUnitOfWork:
         self.evidence_mock.get_or_add_span.side_effect = lambda _context, span: span
         self.research = cast(ResearchRepository, self.research_mock)
         self.evidence = cast(EvidenceRepository, self.evidence_mock)
-        self.evidence_sources: CanonicalEvidenceSourceReader = RecordingSourceReader()
+        self.source_reader = RecordingSourceReader()
+        self.evidence_sources: CanonicalEvidenceSourceReader = self.source_reader
         self.enter_count = 0
+        self.is_open = False
         self.flush_count = 0
         self.committed = False
         self.rolled_back = False
@@ -183,13 +188,17 @@ class RecordingAnswerValidationUnitOfWork:
         """Model the success and failure semantics of the real transaction manager."""
 
         self.enter_count += 1
+        self.is_open = True
         try:
             yield self
         except BaseException:
             self.rolled_back = True
             raise
         else:
-            self.committed = True
+            if self.research_mock.add_answer.called:
+                self.committed = True
+        finally:
+            self.is_open = False
 
 
 def make_context() -> WorkspaceContext:
@@ -441,7 +450,7 @@ def test_m1_generation_accounts_provider_usage_before_answer_transaction() -> No
     assert generator.transaction_was_open is False
 
 
-def test_m1_statement_support_accounts_usage_inside_answer_transaction() -> None:
+def test_m1_statement_support_accounts_usage_outside_answer_transaction() -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     executor = make_provider_operation_executor()
     service, _ = make_service(
@@ -449,6 +458,15 @@ def test_m1_statement_support_accounts_usage_inside_answer_transaction() -> None
         make_answer_proposal(),
         provider_operation_executor=executor,
     )
+
+    transaction_states: list[bool] = []
+
+    def execute_provider_call(*args: object) -> object:
+        transaction_states.append(unit_of_work.is_open)
+        provider_call = cast(Callable[[], object], args[2])
+        return provider_call()
+
+    executor.execute.side_effect = execute_provider_call
 
     service.generate(make_context(), make_retrieval_result())
 
@@ -467,6 +485,8 @@ def test_m1_statement_support_accounts_usage_inside_answer_transaction() -> None
         input_units=(16_000 + len(STATEMENT.encode("utf-8")) + len(EVIDENCE_TEXT.encode("utf-8"))),
         output_units=1_000,
     )
+    assert transaction_states == [False, False]
+    assert unit_of_work.enter_count == 2
     assert unit_of_work.committed is True
 
 
@@ -488,7 +508,7 @@ def test_m1_generation_budget_rejection_calls_neither_generator_nor_database() -
     unit_of_work.research_mock.add_answer.assert_not_called()
 
 
-def test_support_provider_failure_rolls_back_without_partial_answer_content() -> None:
+def test_support_provider_failure_persists_no_partial_answer_content() -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     provider_error = StatementSupportProviderTransientError("safe support failure")
     support_evaluator = FailingStatementSupportEvaluator(provider_error)
@@ -505,7 +525,7 @@ def test_support_provider_failure_rolls_back_without_partial_answer_content() ->
     assert support_evaluator.calls == 1
     assert unit_of_work.enter_count == 1
     assert unit_of_work.committed is False
-    assert unit_of_work.rolled_back is True
+    assert unit_of_work.rolled_back is False
     unit_of_work.research_mock.add_statements.assert_not_called()
     unit_of_work.evidence_mock.add_statement_evidence.assert_not_called()
     unit_of_work.evidence_mock.add_answer_validations.assert_not_called()
@@ -518,6 +538,7 @@ def test_valid_answer_persists_only_validated_content_in_one_unit_of_work() -> N
     result = service.generate(make_context(), make_retrieval_result())
 
     assert generator.transaction_was_open is False
+    assert unit_of_work.enter_count == 2
     assert generator.calls[0].sources[0].text == SOURCE_TEXT
     assert unit_of_work.committed is True
     assert unit_of_work.rolled_back is False
@@ -547,6 +568,41 @@ def test_valid_answer_persists_only_validated_content_in_one_unit_of_work() -> N
     unit_of_work.evidence_mock.add_span.assert_not_called()
     unit_of_work.evidence_mock.add_statement_evidence.assert_called_once()
     unit_of_work.evidence_mock.add_answer_validations.assert_called_once()
+
+
+def test_source_becoming_inactive_during_support_check_rejects_answer() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    evaluator = DeterministicFixtureStatementSupportEvaluator(
+        [FixtureStatementSupportRule(statement=STATEMENT, evidence_text=EVIDENCE_TEXT)]
+    )
+    support_calls = 0
+
+    class DeactivatingSupportEvaluator:
+        def evaluate(
+            self,
+            statement: str,
+            evidence_texts: Sequence[str],
+        ) -> StatementSupportResult:
+            nonlocal support_calls
+            assert unit_of_work.is_open is False
+            support_calls += 1
+            unit_of_work.source_reader.active = False
+            return evaluator.evaluate(statement, evidence_texts)
+
+    service, _ = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        support_evaluator=DeactivatingSupportEvaluator(),
+    )
+
+    result = service.generate(make_context(), make_retrieval_result())
+
+    assert support_calls == 1
+    assert result.answer.state is AnswerState.REJECTED
+    assert result.statements == ()
+    assert result.evidence_spans == ()
+    assert any(not finding.passed for finding in result.validations)
+    unit_of_work.research_mock.add_statements.assert_not_called()
 
 
 def test_insufficient_answer_uses_application_message_without_evidence_records() -> None:

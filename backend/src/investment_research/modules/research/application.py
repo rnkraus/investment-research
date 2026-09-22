@@ -8,8 +8,10 @@ from uuid import UUID, uuid4
 
 from investment_research.modules.evidence.application import ValidateGeneratedAnswerService
 from investment_research.modules.evidence.contracts import (
+    CanonicalEvidenceSource,
     EvidenceValidationDecision,
     EvidenceValidationProfile,
+    StatementSupportDecision,
     StatementSupportResult,
     ValidationFinding,
 )
@@ -21,6 +23,7 @@ from investment_research.modules.evidence.domain import (
     ValidationRule,
 )
 from investment_research.modules.evidence.ports import (
+    CanonicalEvidenceSourceReader,
     EvidenceRepository,
     StatementSupportEvaluator,
     StatementSupportProviderConfigurationError,
@@ -117,6 +120,7 @@ type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
 type Sleeper = Callable[[float], None]
 type CanonicalRetrievalHit = LexicalSearchHit | QualifiedDenseHit
+type SupportKey = tuple[str, tuple[str, ...]]
 
 
 class ResearchProviderUnavailableError(RuntimeError):
@@ -126,6 +130,55 @@ class ResearchProviderUnavailableError(RuntimeError):
         super().__init__("research provider is unavailable")
         self.research_request_id = research_request_id
         self.retriable = retriable
+
+
+@dataclass(frozen=True, slots=True)
+class _SnapshotEvidenceSourceReader:
+    """Serve one detached, workspace-scoped snapshot during provider evaluation."""
+
+    workspace_id: UUID
+    retrieval_run_id: UUID
+    sources: dict[UUID, CanonicalEvidenceSource | None]
+
+    def get_source(
+        self,
+        context: WorkspaceContext,
+        retrieval_run_id: UUID,
+        retrieval_candidate_id: UUID,
+    ) -> CanonicalEvidenceSource | None:
+        if context.workspace_id != self.workspace_id or retrieval_run_id != self.retrieval_run_id:
+            return None
+        return self.sources.get(retrieval_candidate_id)
+
+
+class _RecordingStatementSupportEvaluator:
+    """Call the provider outside the answer transaction and retain typed decisions."""
+
+    def __init__(self, evaluator: StatementSupportEvaluator) -> None:
+        self._evaluator = evaluator
+        self.results: dict[SupportKey, StatementSupportResult] = {}
+
+    def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        key = (statement, tuple(evidence_texts))
+        result = self._evaluator.evaluate(statement, evidence_texts)
+        self.results[key] = result
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class _RecordedStatementSupportEvaluator:
+    """Fail closed when final canonical evidence lacks a matching paid decision."""
+
+    results: dict[SupportKey, StatementSupportResult]
+
+    def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        result = self.results.get((statement, tuple(evidence_texts)))
+        if result is not None:
+            return result
+        return StatementSupportResult(
+            decision=StatementSupportDecision(supported=False),
+            usage=ProviderUsage(input_units=0, output_units=0),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -693,10 +746,18 @@ class GenerateValidatedAnswerService:
         )
         generation_input = self._build_generation_input(retrieval_result)
         generated_answer = self._generate_answer(context, generation_input)
-        support_evaluator = self._accounted_support_evaluator(
+        source_snapshot = self._load_source_snapshot(
             context,
-            retrieval_result.request.id,
+            retrieval_result.retrieval_run.id,
+            generated_answer,
         )
+        support_evaluator = _RecordingStatementSupportEvaluator(
+            self._accounted_support_evaluator(context, retrieval_result.request.id)
+        )
+        initial_decision = ValidateGeneratedAnswerService(
+            source_reader=source_snapshot,
+            support_evaluator=support_evaluator,
+        ).validate(context, retrieval_result.retrieval_run.id, generated_answer)
 
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.research.add_answer(context, answer)
@@ -719,14 +780,16 @@ class GenerateValidatedAnswerService:
                 answer,
                 state=AnswerState.VALIDATING,
             )
-            decision = ValidateGeneratedAnswerService(
-                source_reader=unit_of_work.evidence_sources,
-                support_evaluator=support_evaluator,
-            ).validate(
-                context,
-                retrieval_result.retrieval_run.id,
-                generated_answer,
-            )
+            decision = initial_decision
+            if initial_decision.accepted and initial_decision.statements:
+                decision = ValidateGeneratedAnswerService(
+                    source_reader=unit_of_work.evidence_sources,
+                    support_evaluator=_RecordedStatementSupportEvaluator(support_evaluator.results),
+                ).validate(
+                    context,
+                    retrieval_result.retrieval_run.id,
+                    generated_answer,
+                )
             completed_at = self._aware_utc_now()
             result = self._build_terminal_result(
                 answer=answer,
@@ -765,6 +828,34 @@ class GenerateValidatedAnswerService:
             )
 
         return result
+
+    def _load_source_snapshot(
+        self,
+        context: WorkspaceContext,
+        retrieval_run_id: UUID,
+        generated_answer: UnvalidatedGeneratedAnswer,
+    ) -> CanonicalEvidenceSourceReader:
+        """Read proposed sources in one short transaction before any support call."""
+
+        candidate_ids = {
+            reference.retrieval_candidate_id
+            for statement in generated_answer.statements
+            for reference in statement.evidence
+        }
+        with self._unit_of_work_factory() as unit_of_work:
+            sources = {
+                candidate_id: unit_of_work.evidence_sources.get_source(
+                    context,
+                    retrieval_run_id,
+                    candidate_id,
+                )
+                for candidate_id in candidate_ids
+            }
+        return _SnapshotEvidenceSourceReader(
+            workspace_id=context.workspace_id,
+            retrieval_run_id=retrieval_run_id,
+            sources=sources,
+        )
 
     def _accounted_support_evaluator(
         self,

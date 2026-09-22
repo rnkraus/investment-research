@@ -347,9 +347,12 @@ Each reference names only a supplied retrieval-candidate ID and a block-local ha
 insufficient proposal contains no statements or citations and names the missing information.
 
 Statement support is evaluated separately with its own configuration, prompt, timeout, and usage
-record. The support evaluator cannot authorize a source. The server then re-runs all canonical
+record. The application first reads proposed canonical sources in a short transaction, then calls
+the support evaluator with no answer transaction open. The support evaluator cannot authorize a
+source. In a new answer transaction, the server reloads current sources and re-runs all canonical
 workspace, active-version, processing-state, temporal, retrieval-candidate, exact-span, support, and
-coverage checks.
+coverage checks. A recorded support decision may be reused only for the same statement and exact
+evidence texts; the provider is not called again inside that transaction.
 
 Only the accepted aggregate is persisted and mapped to public answer events. Model tokens or partial
 statements are never streamed before validation. Evidence locators and source-viewer behavior follow

@@ -6,7 +6,7 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, select, update
 
 from investment_research.bootstrap import build_api_container
 from investment_research.infrastructure.database.session import (
@@ -31,7 +31,10 @@ from investment_research.infrastructure.generation.deterministic import (
     FixtureAnswerCase,
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
-from investment_research.modules.evidence.contracts import EvidenceValidationProfile
+from investment_research.modules.evidence.contracts import (
+    EvidenceValidationProfile,
+    StatementSupportResult,
+)
 from investment_research.modules.evidence.domain import AnswerValidation
 from investment_research.modules.evidence.persistence import (
     AnswerValidationRow,
@@ -39,9 +42,11 @@ from investment_research.modules.evidence.persistence import (
     SqlAlchemyEvidenceRepository,
     StatementEvidenceRow,
 )
+from investment_research.modules.evidence.ports import StatementSupportEvaluator
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
+from investment_research.modules.processing.persistence import ChunkSetRow
 from investment_research.modules.research.application import GenerateValidatedAnswerService
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -144,6 +149,7 @@ def make_service(
     generator: AnswerGenerator,
     unit_of_work_factory: AnswerValidationUnitOfWorkFactory,
     identifier_factory: Callable[[], UUID] = uuid4,
+    support_evaluator: StatementSupportEvaluator | None = None,
 ) -> GenerateValidatedAnswerService:
     """Build the real orchestration service around deterministic test adapters."""
 
@@ -151,7 +157,8 @@ def make_service(
     return GenerateValidatedAnswerService(
         unit_of_work_factory=unit_of_work_factory,
         answer_generator=generator,
-        support_evaluator=DeterministicFixtureStatementSupportEvaluator(
+        support_evaluator=support_evaluator
+        or DeterministicFixtureStatementSupportEvaluator(
             [
                 FixtureStatementSupportRule(
                     statement=evidence_text,
@@ -302,6 +309,65 @@ def test_validated_answer_round_trips_as_one_complete_aggregate(
         assert {item.id: item for item in persisted_validations} == {
             item.id: item for item in result.validations
         }
+
+
+def test_source_deactivated_during_support_call_cannot_become_evidence(
+    integration_database_engine: Engine,
+) -> None:
+    source, retrieval_result = prepare_source(
+        integration_database_engine,
+        label="Source Deactivated During Support",
+    )
+    session_factory = create_session_factory(integration_database_engine)
+    delegate = DeterministicFixtureStatementSupportEvaluator(
+        [
+            FixtureStatementSupportRule(
+                statement=source.blocks[0].text,
+                evidence_text=source.blocks[0].text,
+            )
+        ]
+    )
+
+    class DeactivatingSupportEvaluator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def evaluate(
+            self,
+            statement: str,
+            evidence_texts: Sequence[str],
+        ) -> StatementSupportResult:
+            self.calls += 1
+            with transactional_session(session_factory) as session:
+                session.execute(
+                    update(ChunkSetRow)
+                    .where(
+                        ChunkSetRow.workspace_id == source.context.workspace_id,
+                        ChunkSetRow.id == source.chunk_set.id,
+                    )
+                    .values(is_active=False)
+                )
+            return delegate.evaluate(statement, evidence_texts)
+
+    support_evaluator = DeactivatingSupportEvaluator()
+    service = make_service(
+        source,
+        generator=make_complete_generator(source),
+        unit_of_work_factory=create_answer_validation_unit_of_work_factory(session_factory),
+        support_evaluator=support_evaluator,
+    )
+
+    result = service.generate(source.context, retrieval_result)
+
+    assert support_evaluator.calls == 1
+    assert result.answer.state is AnswerState.REJECTED
+    assert result.statements == ()
+    assert result.evidence_spans == ()
+    assert any(not validation.passed for validation in result.validations)
+    assert count_answer_records(
+        integration_database_engine,
+        source.context.workspace_id,
+    ) == (1, 0, 0, 0, 7)
 
 
 @pytest.mark.parametrize(
