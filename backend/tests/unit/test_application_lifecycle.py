@@ -47,6 +47,9 @@ from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
     CeleryProcessingDispatcher,
 )
+from investment_research.infrastructure.search.deterministic_index import (
+    DeterministicSqliteDenseIndex,
+)
 from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
 from investment_research.infrastructure.search.pinecone import (
     PineconeDenseIndexWriter,
@@ -147,6 +150,42 @@ def make_m1_api_settings(object_storage_root: Path) -> ApiSettings:
             "provider_monthly_budget_micro_usd": 5_000_000,
             "query_providers": indexing_provider_values(),
             "generation_provider": {"api_key": "synthetic-generation-key"},
+        }
+    )
+
+
+def make_m1_acceptance_api_settings(
+    object_storage_root: Path,
+    dense_index_path: Path,
+) -> ApiSettings:
+    """Build credential-free API settings for deterministic M1 acceptance."""
+
+    return ApiSettings.model_validate(
+        {
+            "environment": "test",
+            "database_url": LOCAL_DATABASE_URL,
+            "redis_url": LOCAL_REDIS_URL,
+            "object_storage_root": object_storage_root,
+            "provider_monthly_budget_micro_usd": 5_000_000,
+            "acceptance_dense_index_path": dense_index_path,
+        }
+    )
+
+
+def make_m1_acceptance_worker_settings(
+    object_storage_root: Path,
+    dense_index_path: Path,
+) -> WorkerSettings:
+    """Build credential-free worker settings for deterministic M1 acceptance."""
+
+    return WorkerSettings.model_validate(
+        {
+            "environment": "test",
+            "database_url": LOCAL_DATABASE_URL,
+            "object_storage_root": object_storage_root,
+            "parser_endpoint_url": "http://127.0.0.1:8100",
+            "provider_monthly_budget_micro_usd": 5_000_000,
+            "acceptance_dense_index_path": dense_index_path,
         }
     )
 
@@ -384,6 +423,45 @@ def test_build_api_container_wires_m1_query_resources(
     fakes.embedding_provider.close.assert_called_once_with()
 
 
+def test_build_api_container_wires_credential_free_m1_acceptance(
+    tmp_path: Path,
+) -> None:
+    dense_index_path = tmp_path / "dense-index.sqlite3"
+    container = build_api_container(
+        make_m1_acceptance_api_settings(tmp_path / "objects", dense_index_path)
+    )
+
+    try:
+        dependencies = container.retrieve_research_service._m1_query_retrieval
+        generation_accounting = container.generate_validated_answer_service._generation_accounting
+        support_accounting = (
+            container.generate_validated_answer_service._statement_support_accounting
+        )
+
+        assert isinstance(container.acceptance_dense_index, DeterministicSqliteDenseIndex)
+        assert container.acceptance_dense_index.database_path == dense_index_path
+        assert container.query_embedding_provider is None
+        assert container.dense_retriever is None
+        assert container.answer_generator_provider is None
+        assert container.statement_support_provider is None
+        assert container.provider_operation_executor is not None
+        assert dependencies is not None
+        assert dependencies.dense_retriever is container.acceptance_dense_index
+        assert dependencies.embedding_accounting.provider == "deterministic"
+        assert dependencies.embedding_accounting.cost_policy.input_micro_usd_per_million_units == 0
+        assert dependencies.embedding_accounting.cost_policy.output_micro_usd_per_million_units == 0
+        assert generation_accounting is not None
+        assert generation_accounting.provider == "deterministic"
+        assert generation_accounting.cost_policy.input_micro_usd_per_million_units == 0
+        assert generation_accounting.cost_policy.output_micro_usd_per_million_units == 0
+        assert support_accounting is not None
+        assert support_accounting.provider == "deterministic"
+        assert support_accounting.cost_policy.input_micro_usd_per_million_units == 0
+        assert support_accounting.cost_policy.output_micro_usd_per_million_units == 0
+    finally:
+        container.close()
+
+
 def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) -> None:
     storage_root = tmp_path / "objects"
     settings = make_worker_settings(storage_root)
@@ -443,6 +521,40 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             assert not storage_root.exists()
         finally:
             session.close()
+    finally:
+        container.close()
+
+
+def test_build_worker_container_wires_credential_free_m1_acceptance(
+    tmp_path: Path,
+) -> None:
+    dense_index_path = tmp_path / "dense-index.sqlite3"
+    container = build_worker_container(
+        make_m1_acceptance_worker_settings(tmp_path / "objects", dense_index_path)
+    )
+
+    try:
+        assert isinstance(container.acceptance_dense_index, DeterministicSqliteDenseIndex)
+        assert container.acceptance_dense_index.database_path == dense_index_path
+        assert container.embedding_provider is None
+        assert container.dense_index_writer is None
+        assert container.provider_operation_executor is not None
+        assert container.index_active_chunks_service is not None
+        assert (
+            container.index_active_chunks_service.dense_index_writer
+            is container.acceptance_dense_index
+        )
+        assert (
+            container.index_active_chunks_service.embedding_accounting.provider == "deterministic"
+        )
+        assert (
+            container.index_active_chunks_service.embedding_accounting.cost_policy.input_micro_usd_per_million_units
+            == 0
+        )
+        assert (
+            container.index_active_chunks_service.embedding_accounting.cost_policy.output_micro_usd_per_million_units
+            == 0
+        )
     finally:
         container.close()
 

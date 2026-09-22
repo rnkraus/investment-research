@@ -65,6 +65,7 @@ QUEUE_SETTING_NAMES = (
 )
 PROVIDER_SETTING_NAMES = (
     "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
+    "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
     "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
     "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY_FILE",
     "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
@@ -894,6 +895,112 @@ def test_dense_provider_settings_freeze_m1_contract_and_hide_secrets() -> None:
                 "index_host": "https://synthetic-index.example.svc.pinecone.io/path",
             }
         )
+
+
+def test_api_and_worker_accept_one_shared_m1_acceptance_index(tmp_path: Path) -> None:
+    index_path = tmp_path / "dense-index.sqlite3"
+
+    api = ApiSettings(
+        environment="test",
+        provider_monthly_budget_micro_usd=5_000_000,
+        acceptance_dense_index_path=index_path,
+    )
+    worker = WorkerSettings(
+        environment="test",
+        processing_profile="m1",
+        provider_monthly_budget_micro_usd=5_000_000,
+        acceptance_dense_index_path=index_path,
+    )
+
+    assert api.require_acceptance_dense_index_path() == index_path
+    assert worker.require_acceptance_dense_index_path() == index_path
+
+
+@pytest.mark.parametrize(
+    ("settings_type", "values", "expected_error"),
+    [
+        pytest.param(
+            ApiSettings,
+            {
+                "provider_monthly_budget_micro_usd": 5_000_000,
+                "acceptance_dense_index_path": "/tmp/dense-index.sqlite3",
+            },
+            "test environment",
+            id="api-development-environment",
+        ),
+        pytest.param(
+            WorkerSettings,
+            {
+                "environment": "test",
+                "provider_monthly_budget_micro_usd": 5_000_000,
+                "acceptance_dense_index_path": "relative/dense-index.sqlite3",
+            },
+            "must be absolute",
+            id="worker-relative-path",
+        ),
+        pytest.param(
+            ApiSettings,
+            {
+                "environment": "test",
+                "provider_monthly_budget_micro_usd": 5_000_000,
+                "acceptance_dense_index_path": "/run/secrets/dense-index.sqlite3",
+            },
+            "secrets directory",
+            id="api-secret-path",
+        ),
+        pytest.param(
+            WorkerSettings,
+            {
+                "environment": "test",
+                "processing_profile": "m0-regression",
+                "provider_monthly_budget_micro_usd": 5_000_000,
+                "acceptance_dense_index_path": "/tmp/dense-index.sqlite3",
+            },
+            "M1 processing profile",
+            id="worker-m0-profile",
+        ),
+        pytest.param(
+            ApiSettings,
+            {
+                "environment": "test",
+                "acceptance_dense_index_path": "/tmp/dense-index.sqlite3",
+            },
+            "monthly budget",
+            id="api-missing-budget",
+        ),
+    ],
+)
+def test_m1_acceptance_index_rejects_unsafe_configuration(
+    settings_type: type[ApiSettings] | type[WorkerSettings],
+    values: dict[str, object],
+    expected_error: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_error):
+        settings_type.model_validate(values)
+
+
+def test_api_and_worker_load_shared_m1_acceptance_index(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    for name in PROVIDER_SETTING_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    index_path = tmp_path / "dense-index.sqlite3"
+    monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", "test")
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
+        "5000000",
+    )
+    monkeypatch.setenv(
+        "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
+        str(index_path),
+    )
+
+    api = load_api_settings(env_file=None)
+    worker = load_worker_settings(env_file=None)
+
+    assert api.acceptance_dense_index_path == index_path
+    assert worker.acceptance_dense_index_path == index_path
 
 
 def test_api_and_worker_load_distinct_least_privilege_provider_credentials(

@@ -9,6 +9,7 @@ from investment_research.infrastructure.generation.deterministic import (
     M0_0_FIXTURE_ANSWER_CASE,
     M0_0_INSUFFICIENT_MESSAGE,
     DeterministicFixtureAnswerGenerator,
+    DeterministicFixtureSetAnswerGenerator,
     FixtureAnswerCase,
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
@@ -31,6 +32,17 @@ QUESTION = M0_0_FIXTURE_ANSWER_CASE.question
 EVIDENCE_TEXT = M0_0_FIXTURE_ANSWER_CASE.evidence_text
 STATEMENT = M0_0_FIXTURE_ANSWER_CASE.statement
 INSUFFICIENT_MESSAGE = M0_0_INSUFFICIENT_MESSAGE
+M1_TEXT_CASE = FixtureAnswerCase(
+    question="What is mainly holding back Northstar's rollout to new clients?",
+    statement=(
+        "Northstar identified a shortage of high-voltage transformers as the primary constraint "
+        "on new customer deployments."
+    ),
+    evidence_text=(
+        "The primary constraint on new customer deployments is a shortage of high-voltage "
+        "transformers."
+    ),
+)
 
 
 def make_generator() -> AnswerGenerator:
@@ -130,6 +142,39 @@ def test_generation_contract_rejects_statements_claimed_as_insufficient() -> Non
                 "coverage_status": CoverageStatus.INSUFFICIENT,
                 "missing_information": INSUFFICIENT_MESSAGE,
             }
+        )
+
+
+def test_fixture_set_generator_selects_the_matching_question_and_evidence() -> None:
+    generator = DeterministicFixtureSetAnswerGenerator(
+        answerable_cases=(M0_0_FIXTURE_ANSWER_CASE, M1_TEXT_CASE),
+        insufficient_message=INSUFFICIENT_MESSAGE,
+    )
+    source_text = f"Capacity update. {M1_TEXT_CASE.evidence_text} Outlook unchanged."
+
+    result = generator.generate(make_input(question=M1_TEXT_CASE.question, source_text=source_text))
+
+    assert result.answer.coverage_status is CoverageStatus.COMPLETE
+    assert result.answer.rendered_text == M1_TEXT_CASE.statement
+    assert result.answer.statements[0].evidence[0].exact_text == M1_TEXT_CASE.evidence_text
+
+
+def test_fixture_set_generator_rejects_empty_or_duplicate_questions() -> None:
+    with pytest.raises(ValueError, match="at least one"):
+        DeterministicFixtureSetAnswerGenerator(
+            answerable_cases=(),
+            insufficient_message=INSUFFICIENT_MESSAGE,
+        )
+
+    duplicate = FixtureAnswerCase(
+        question=f"  {QUESTION.upper()}  ",
+        statement="A duplicate statement.",
+        evidence_text="Duplicate evidence.",
+    )
+    with pytest.raises(ValueError, match="questions must be unique"):
+        DeterministicFixtureSetAnswerGenerator(
+            answerable_cases=(M0_0_FIXTURE_ANSWER_CASE, duplicate),
+            insufficient_message=INSUFFICIENT_MESSAGE,
         )
 
 

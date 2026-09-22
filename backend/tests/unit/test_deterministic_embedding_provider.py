@@ -9,6 +9,9 @@ from pydantic import ValidationError
 from investment_research.infrastructure.search.deterministic import (
     DeterministicEmbeddingCase,
     DeterministicEmbeddingProvider,
+    DeterministicEmbeddingRule,
+    DeterministicRuleEmbeddingProvider,
+    DeterministicTextMatch,
 )
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
@@ -22,6 +25,10 @@ EMBEDDING_CONFIG_VERSION = "openai-text-embedding-3-small-1536-v1"
 SHARED_TEXT = "A transformer shortage constrains customer deployments."
 QUERY_VECTOR = (1.0,) + (0.0,) * (M1_EMBEDDING_DIMENSIONS - 1)
 DOCUMENT_VECTOR = (0.0, 1.0) + (0.0,) * (M1_EMBEDDING_DIMENSIONS - 2)
+SEMANTIC_QUESTION = "What is mainly holding back Northstar's rollout to new clients?"
+SEMANTIC_PASSAGE = (
+    "The primary constraint on new customer deployments is a shortage of high-voltage transformers."
+)
 
 
 def make_provider() -> DeterministicEmbeddingProvider:
@@ -143,4 +150,95 @@ def test_provider_rejects_empty_duplicate_and_invalid_case_configuration() -> No
         DeterministicEmbeddingProvider(
             embedding_config_version="invalid version",
             cases=(valid_case,),
+        )
+
+
+def test_rule_provider_maps_one_explicit_semantic_alias_and_hashes_other_inputs() -> None:
+    provider = DeterministicRuleEmbeddingProvider(
+        embedding_config_version=EMBEDDING_CONFIG_VERSION,
+        rules=(
+            DeterministicEmbeddingRule(
+                purpose=EmbeddingPurpose.QUERY,
+                text=SEMANTIC_QUESTION,
+                match=DeterministicTextMatch.EXACT,
+                dimension=0,
+            ),
+            DeterministicEmbeddingRule(
+                purpose=EmbeddingPurpose.DOCUMENT,
+                text=SEMANTIC_PASSAGE,
+                match=DeterministicTextMatch.CONTAINS,
+                dimension=0,
+            ),
+        ),
+    )
+    request = EmbeddingRequest(
+        inputs=(
+            EmbeddingInput(
+                input_id=UUID(int=10),
+                text=SEMANTIC_QUESTION,
+                purpose=EmbeddingPurpose.QUERY,
+            ),
+            EmbeddingInput(
+                input_id=UUID(int=11),
+                text=f"Earlier context. {SEMANTIC_PASSAGE} Later context.",
+                purpose=EmbeddingPurpose.DOCUMENT,
+            ),
+            EmbeddingInput(
+                input_id=UUID(int=12),
+                text="An unrelated deterministic fixture input.",
+                purpose=EmbeddingPurpose.DOCUMENT,
+            ),
+        ),
+        embedding_config_version=EMBEDDING_CONFIG_VERSION,
+    )
+
+    first = provider.embed(request)
+    second = provider.embed(request)
+
+    assert first == second
+    assert first.vectors[0].values == first.vectors[1].values
+    assert first.vectors[0].values[0] == 1.0
+    assert first.vectors[2].values != first.vectors[0].values
+    assert sum(first.vectors[2].values) == 1.0
+    assert first.usage.input_units == 0
+
+
+def test_rule_provider_rejects_ambiguous_or_invalid_rules() -> None:
+    provider = DeterministicRuleEmbeddingProvider(
+        embedding_config_version=EMBEDDING_CONFIG_VERSION,
+        rules=(
+            DeterministicEmbeddingRule(
+                purpose=EmbeddingPurpose.DOCUMENT,
+                text="transformers",
+                match=DeterministicTextMatch.CONTAINS,
+                dimension=0,
+            ),
+            DeterministicEmbeddingRule(
+                purpose=EmbeddingPurpose.DOCUMENT,
+                text="high-voltage transformers",
+                match=DeterministicTextMatch.CONTAINS,
+                dimension=1,
+            ),
+        ),
+    )
+    request = EmbeddingRequest(
+        inputs=(
+            EmbeddingInput(
+                input_id=UUID(int=13),
+                text=SEMANTIC_PASSAGE,
+                purpose=EmbeddingPurpose.DOCUMENT,
+            ),
+        ),
+        embedding_config_version=EMBEDDING_CONFIG_VERSION,
+    )
+
+    with pytest.raises(SearchProviderConfigurationError, match="ambiguously"):
+        provider.embed(request)
+
+    with pytest.raises(ValueError, match="out of range"):
+        DeterministicEmbeddingRule(
+            purpose=EmbeddingPurpose.QUERY,
+            text=SEMANTIC_QUESTION,
+            match=DeterministicTextMatch.EXACT,
+            dimension=M1_EMBEDDING_DIMENSIONS,
         )
