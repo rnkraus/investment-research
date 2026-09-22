@@ -40,6 +40,13 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.domain import CoverageStatus
+from investment_research.modules.research.ports import (
+    AnswerGenerationProviderConfigurationError,
+    AnswerGenerationProviderContractError,
+    AnswerGenerationProviderOutputLimitError,
+    AnswerGenerationProviderRefusalError,
+    AnswerGenerationProviderTransientError,
+)
 from investment_research.modules.search.application import (
     build_dense_index_vector,
     dense_index_namespace,
@@ -106,14 +113,48 @@ type SmokeFailureStage = Literal[
     "unanswerable_validation",
     "cleanup",
 ]
+type SmokeFailureReason = Literal[
+    "provider_configuration",
+    "provider_contract",
+    "provider_output_limit",
+    "provider_refusal",
+    "provider_transient",
+    "verification",
+    "unexpected",
+]
 
 
 class ProviderSmokeVerificationError(RuntimeError):
     """Report one bounded smoke invariant without provider or fixture details."""
 
-    def __init__(self, message: str, *, stage: SmokeFailureStage = "preflight") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        stage: SmokeFailureStage = "preflight",
+        reason: SmokeFailureReason = "verification",
+    ) -> None:
         super().__init__(message)
         self.stage = stage
+        self.reason = reason
+
+
+def _safe_failure_reason(error: Exception) -> SmokeFailureReason:
+    """Classify only application-owned errors; never serialize provider exceptions."""
+
+    if isinstance(error, AnswerGenerationProviderOutputLimitError):
+        return "provider_output_limit"
+    if isinstance(error, AnswerGenerationProviderConfigurationError):
+        return "provider_configuration"
+    if isinstance(error, AnswerGenerationProviderTransientError):
+        return "provider_transient"
+    if isinstance(error, AnswerGenerationProviderRefusalError):
+        return "provider_refusal"
+    if isinstance(error, AnswerGenerationProviderContractError):
+        return "provider_contract"
+    if isinstance(error, ProviderSmokeVerificationError):
+        return "verification"
+    return "unexpected"
 
 
 @dataclass(slots=True)
@@ -578,7 +619,9 @@ def verify_m1_provider_smoke(
             ) from None
     if primary_error is not None:
         raise ProviderSmokeVerificationError(
-            "provider smoke request failed safely", stage=stage
+            "provider smoke request failed safely",
+            stage=stage,
+            reason=_safe_failure_reason(primary_error),
         ) from None
     return ProviderSmokeResult(
         embedding_requests=budget.embedding_requests,
@@ -620,7 +663,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except ProviderSmokeVerificationError as error:
         print(
-            f"M1 provider smoke failed at stage={error.stage}; provider details were withheld.",
+            "M1 provider smoke failed at "
+            f"stage={error.stage}, reason={error.reason}; provider details were withheld.",
             file=sys.stderr,
         )
         return 1

@@ -14,9 +14,11 @@ from openai import (
     APIResponseValidationError,
     AuthenticationError,
     InternalServerError,
+    LengthFinishReasonError,
     OpenAI,
     RateLimitError,
 )
+from openai.types.chat import ChatCompletion
 
 from investment_research.infrastructure.generation import openai as openai_module
 from investment_research.infrastructure.generation.openai import (
@@ -39,6 +41,7 @@ from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.research.ports import (
     AnswerGenerationProviderConfigurationError,
     AnswerGenerationProviderContractError,
+    AnswerGenerationProviderOutputLimitError,
     AnswerGenerationProviderRefusalError,
     AnswerGenerationProviderTransientError,
 )
@@ -113,6 +116,7 @@ class StubParsedResponse:
     status: str = "completed"
     output_parsed: UnvalidatedGeneratedAnswer | None = field(default_factory=make_proposal)
     output: tuple[object, ...] = ()
+    incomplete_details: object | None = None
     usage: StubResponseUsage | None = field(default_factory=StubResponseUsage)
 
 
@@ -205,7 +209,16 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
         pytest.param(
             StubParsedResponse(status="incomplete", output_parsed=None),
             AnswerGenerationProviderContractError,
-            id="truncated",
+            id="incomplete-without-output-limit",
+        ),
+        pytest.param(
+            StubParsedResponse(
+                status="incomplete",
+                output_parsed=None,
+                incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+            ),
+            AnswerGenerationProviderOutputLimitError,
+            id="output-limit",
         ),
         pytest.param(
             StubParsedResponse(status="failed", output_parsed=None),
@@ -309,6 +322,11 @@ def test_generate_rejects_non_completed_or_untyped_responses(
             ),
             AnswerGenerationProviderContractError,
             id="response-schema",
+        ),
+        pytest.param(
+            LengthFinishReasonError(completion=cast(ChatCompletion, SimpleNamespace(usage=None))),
+            AnswerGenerationProviderOutputLimitError,
+            id="length-finish-reason",
         ),
     ],
 )

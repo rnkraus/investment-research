@@ -29,6 +29,13 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedStatement,
 )
 from investment_research.modules.research.domain import CoverageStatus
+from investment_research.modules.research.ports import (
+    AnswerGenerationProviderConfigurationError,
+    AnswerGenerationProviderContractError,
+    AnswerGenerationProviderOutputLimitError,
+    AnswerGenerationProviderRefusalError,
+    AnswerGenerationProviderTransientError,
+)
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
     DenseIndexWriteRequest,
@@ -180,6 +187,7 @@ class RecordingAnswerGenerator:
     """Return typed answerable and insufficient proposals for the approved questions."""
 
     fail: bool = False
+    error: Exception | None = None
     calls: list[AnswerGenerationInput] = field(default_factory=list)
     closed: bool = False
 
@@ -187,6 +195,8 @@ class RecordingAnswerGenerator:
         self.calls.append(generation_input)
         if self.fail:
             raise RuntimeError("sensitive generation failure")
+        if self.error is not None:
+            raise self.error
         if generation_input.question == APPROVED_UNANSWERABLE_QUESTION:
             return AnswerGenerationResult(
                 answer=UnvalidatedGeneratedAnswer(
@@ -486,6 +496,45 @@ def test_smoke_reports_the_failing_provider_stage_without_details(
     assert writer.deleted is True
 
 
+@pytest.mark.parametrize(
+    ("provider_error", "expected_reason"),
+    [
+        (AnswerGenerationProviderConfigurationError("sensitive detail"), "provider_configuration"),
+        (AnswerGenerationProviderTransientError("sensitive detail"), "provider_transient"),
+        (AnswerGenerationProviderContractError("sensitive detail"), "provider_contract"),
+        (AnswerGenerationProviderOutputLimitError("sensitive detail"), "provider_output_limit"),
+        (AnswerGenerationProviderRefusalError("sensitive detail"), "provider_refusal"),
+    ],
+)
+def test_smoke_classifies_generation_failure_without_provider_details(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_error: Exception,
+    expected_reason: str,
+) -> None:
+    """Expose only a fixed diagnostic category and still remove the test vector."""
+
+    writer = RecordingDenseWriter()
+    install_provider_fakes(
+        monkeypatch,
+        embedding=RecordingEmbeddingProvider(),
+        writer=writer,
+        generator=RecordingAnswerGenerator(error=provider_error),
+        support=RecordingSupportEvaluator(),
+    )
+
+    with pytest.raises(ProviderSmokeVerificationError, match="failed safely") as captured:
+        verify_m1_provider_smoke(
+            manifest_path=APPROVED_MANIFEST,
+            settings=make_settings(),
+            generation_settings=make_generation_settings(),
+        )
+
+    assert captured.value.stage == "answer_generation"
+    assert captured.value.reason == expected_reason
+    assert "sensitive" not in str(captured.value)
+    assert writer.deleted is True
+
+
 def test_unsupported_generated_statement_fails_safely_and_cleans_everything(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -626,4 +675,5 @@ def test_main_reports_provider_stage_without_exception_details(
     assert result == 1
     assert output.out == ""
     assert "stage=pinecone_upsert" in output.err
+    assert "reason=verification" in output.err
     assert "sensitive" not in output.err
