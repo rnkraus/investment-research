@@ -85,10 +85,7 @@ class PineconeDenseIndexWriter:
             response = self.index.upsert(
                 vectors=vectors,
                 namespace=dense_index_namespace(context),
-                max_concurrency=1,
-                show_progress=False,
                 timeout=self.operation_timeout_seconds,
-                total_timeout=self.operation_timeout_seconds,
             )
         except _TRANSIENT_PINECONE_ERRORS:
             raise SearchProviderTransientError(
@@ -99,14 +96,9 @@ class PineconeDenseIndexWriter:
                 "dense index provider rejected the configured request"
             ) from None
 
-        if (
-            response.upserted_count != len(vector_ids)
-            or response.total_item_count != len(vector_ids)
-            or response.failed_item_count != 0
-            or response.errors
-        ):
+        if response.upserted_count != len(vector_ids):
             raise SearchProviderContractError(
-                "dense index provider did not acknowledge the complete batch"
+                "dense index provider did not acknowledge the complete write"
             )
         return DenseIndexWriteResult(vector_ids=vector_ids)
 
