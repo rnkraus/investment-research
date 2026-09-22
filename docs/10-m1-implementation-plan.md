@@ -758,6 +758,14 @@ checkout. Only then may M2 add lifecycle breadth and reliability mechanisms.
 **Suggested commits:** deterministic M1 acceptance; optional provider smoke gates; browser journey;
 measured results and M2 handoff.
 
+**Pre-acceptance review follow-up (2026-09-22):** Statement-support evaluation now runs after a
+short canonical source read has committed, with no answer transaction open. The answer transaction
+reloads current sources and revalidates every accepted statement before persisting the aggregate;
+recorded support decisions are reused only for matching statement and evidence text. Unit tests
+cover the transaction boundary and an intervening source-state change, and the isolated PostgreSQL
+gate passed with a real chunk-set deactivation during support evaluation. The separate dense-index
+visibility deadline finding remains open for the next work block. M1 is not yet accepted.
+
 **Local implementation record (2026-09-22, measured-results and handoff block):** The complete M1
 gate passed in one isolated Docker Desktop runtime. Building and reaching healthy state took 41.65
 seconds; idempotent workspace seeding took 1.57 seconds; and the cached acceptance-image build took

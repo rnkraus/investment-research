@@ -104,9 +104,11 @@ flowchart LR
     INPUT --> PORT[AnswerGenerator]
     PORT --> RAW[UnvalidatedGeneratedAnswer]
     PORT -. safe provider failure .-> FAILED[PROVIDER_UNAVAILABLE]
-    RAW --> UOW[AnswerValidationUnitOfWork]
-    UOW --> VALIDATION[Canonical evidence validation]
-    VALIDATION -. support-provider failure .-> FAILED
+    RAW --> SNAPSHOT[Short canonical source read]
+    SNAPSHOT --> SUPPORT[Evidence validation and support evaluation outside transaction]
+    SUPPORT -. support-provider failure .-> FAILED
+    SUPPORT --> UOW[AnswerValidationUnitOfWork]
+    UOW --> VALIDATION[Recheck current canonical evidence]
     VALIDATION -->|accepted answer| STREAMED[STREAMED plus statements and evidence]
     VALIDATION -->|insufficient archive| INSUFFICIENT[INSUFFICIENT without statements]
     VALIDATION -->|failed rule| REJECTED[REJECTED without generated content]
@@ -132,19 +134,23 @@ approved model adapter without changing this trust boundary.
 For M1, `GenerateValidatedAnswerService` reserves budget in one short transaction, calls the
 generator without an open database transaction, and finalizes reported usage and cost in another
 short transaction. M0.0 calls its zero-cost deterministic generator directly. The service then
-reloads every proposed source through the canonical Evidence reader and maps only the validator's
-safe decision to domain records. Visible streamed text is rebuilt from accepted statements rather
-than copied from the generator's untrusted `rendered_text`. Insufficient output uses an
-application-owned message, and rejected output retains safe rule findings but no generated content.
+reads the proposed canonical sources in a short transaction and evaluates statement support after
+that transaction closes. Its final answer transaction reloads eligible sources and rechecks the
+same evidence rules before saving the answer. Previously recorded support decisions are reused
+only for the same statement and exact evidence text; sources that became ineligible before the
+final recheck cannot become published citations. Visible streamed text is rebuilt from accepted
+statements rather than copied
+from the generator's untrusted `rendered_text`. Insufficient output uses an application-owned
+message, and rejected output retains safe rule findings but no generated content.
 
 An answer-generator failure occurs before the answer unit of work opens. A statement-support
-provider call receives its own committed budget reservation and usage finalization, but occurs
-during canonical validation and therefore rolls the answer unit of work back on failure. Each
-statement produces a separately attributable `STATEMENT_SUPPORT` operation. Neither failure path
-persists or emits partial generated content. The already committed research request, retrieval run,
-and candidates remain available for later audit and a deliberate new user attempt. The HTTP
-boundary exposes only `PROVIDER_UNAVAILABLE`; provider authentication, rate-limit, timeout,
-refusal, schema, prompt, and source details remain internal.
+provider call receives its own committed budget reservation and usage finalization while no answer
+transaction is open. A provider failure leaves no answer aggregate to roll back. Each statement
+produces a separately attributable `STATEMENT_SUPPORT` operation. Neither failure path persists or
+emits partial generated content. The already committed research request, retrieval run, and
+candidates remain available for later audit and a deliberate new user attempt. The HTTP boundary
+exposes only `PROVIDER_UNAVAILABLE`; provider authentication, rate-limit, timeout, refusal, schema,
+prompt, and source details remain internal.
 
 ## Answer lifecycle
 
