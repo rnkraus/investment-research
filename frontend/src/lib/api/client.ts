@@ -10,6 +10,16 @@ export type ResearchStreamEvent = components["schemas"]["ResearchStreamEvent"];
 export type EvidenceSpanResult = components["schemas"]["EvidenceSpanResult"];
 export type ApiErrorCode = components["schemas"]["ErrorCode"];
 
+export type OriginalSource =
+  | {
+      readonly kind: "PDF";
+      readonly content: Blob;
+    }
+  | {
+      readonly kind: "TEXT";
+      readonly content: string;
+    };
+
 export interface CaptureDocumentInput {
   readonly file: File;
   readonly title: string;
@@ -51,6 +61,7 @@ type JsonRecord = Readonly<Record<string, unknown>>;
 type JsonGuard<T> = (value: unknown) => value is T;
 
 const API_PATH_PREFIX = "/api/v1/";
+const SOURCE_PATH_PREFIX = "/sources/";
 const SAFE_API_BASE = "http://local.invalid";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -70,6 +81,8 @@ const PROCESSING_STATES = new Set([
   "CAPTURED",
   "PARSING",
   "LEXICAL_READY",
+  "INDEXING",
+  "SEARCHABLE",
   "FAILED",
 ]);
 const RESEARCH_EVENTS = new Set([
@@ -353,6 +366,26 @@ export function requireLocalApiPath(value: string): string {
   return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
+export function requireLocalSourcePath(value: string): string {
+  if (!value.startsWith(SOURCE_PATH_PREFIX) || value.includes("\\")) {
+    throw new ApiProtocolError("The API returned an unsafe source path.");
+  }
+
+  const parsed = new URL(value, SAFE_API_BASE);
+  const evidenceSpanId = parsed.pathname.slice(SOURCE_PATH_PREFIX.length);
+  if (
+    parsed.origin !== SAFE_API_BASE ||
+    parsed.search ||
+    parsed.hash ||
+    value !== parsed.pathname ||
+    parsed.pathname !== `${SOURCE_PATH_PREFIX}${evidenceSpanId}` ||
+    !isUuid(evidenceSpanId)
+  ) {
+    throw new ApiProtocolError("The API returned an unsafe source path.");
+  }
+  return parsed.pathname;
+}
+
 export function createApiClient(
   fetchImplementation: FetchImplementation = globalThis.fetch.bind(globalThis),
 ) {
@@ -441,6 +474,41 @@ export function createApiClient(
         isEvidenceSpanResult,
         { signal },
       );
+    },
+
+    async openOriginal(
+      documentId: string,
+      documentVersionId: string,
+      signal?: AbortSignal,
+    ): Promise<OriginalSource> {
+      if (!isUuid(documentId) || !isUuid(documentVersionId)) {
+        throw new ApiProtocolError("The source identifier is invalid.");
+      }
+
+      const response = await fetchImplementation(
+        `/api/v1/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(documentVersionId)}/original`,
+        { signal },
+      );
+      if (!response.ok) {
+        throw await requestError(response);
+      }
+
+      const mediaType = response.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        .trim()
+        .toLowerCase();
+      if (mediaType === "application/pdf") {
+        const content = await response.blob();
+        if (content.size === 0) {
+          throw new ApiProtocolError("The source document is empty.");
+        }
+        return { kind: "PDF", content };
+      }
+      if (mediaType === "text/plain") {
+        return { kind: "TEXT", content: await response.text() };
+      }
+      throw new ApiProtocolError("The source media type is invalid.");
     },
   } as const;
 }

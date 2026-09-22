@@ -74,6 +74,19 @@ export const archiveCopy = {
     textRangeLabel: "Characters",
     openOriginal: "Open original source",
   },
+  source: {
+    eyebrow: "Verified source",
+    heading: "Open the evidence in its immutable original.",
+    loading: "Resolving and verifying the cited source…",
+    pdfHeading: "Original PDF",
+    textHeading: "Original pasted text",
+    exactEvidence: "Exact cited evidence",
+    pageLabel: "Physical PDF page",
+    textRangeLabel: "Canonical character range",
+    backToArchive: "Back to research archive",
+    unavailable:
+      "This source could not be verified or is no longer available in this workspace.",
+  },
   errors: {
     missingFile: "Choose a PDF before importing.",
     missingText: "Paste research text before importing.",

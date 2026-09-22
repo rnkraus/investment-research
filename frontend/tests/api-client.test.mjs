@@ -6,6 +6,7 @@ import {
   ApiRequestError,
   createApiClient,
   requireLocalApiPath,
+  requireLocalSourcePath,
 } from "../src/lib/api/client.ts";
 
 const DOCUMENT_ID = "10000000-0000-4000-8000-000000000001";
@@ -139,6 +140,25 @@ test("successful JSON responses still require the runtime contract", async () =>
   );
 });
 
+test("processing status accepts the complete M1 indexing lifecycle", async () => {
+  for (const state of ["INDEXING", "SEARCHABLE"]) {
+    const client = createApiClient(async () =>
+      jsonResponse({
+        processing_run_id: PROCESSING_RUN_ID,
+        document_version_id: VERSION_ID,
+        state,
+        error_summary: null,
+      }),
+    );
+
+    const result = await client.getProcessingRun(
+      `/api/v1/processing-runs/${PROCESSING_RUN_ID}`,
+    );
+
+    assert.equal(result.state, state);
+  }
+});
+
 test("evidence spans accept PDF-page and text-passage locators", async () => {
   const locators = [
     { kind: "PDF_PAGE", page: 2 },
@@ -183,6 +203,71 @@ test("evidence spans reject unknown source locator kinds", async () => {
 
   await assert.rejects(
     client.resolveEvidenceSpan(EVIDENCE_SPAN_ID),
+    ApiProtocolError,
+  );
+});
+
+test("openOriginal loads only the two supported immutable source types", async () => {
+  const requestedPaths = [];
+  const client = createApiClient(async (path) => {
+    requestedPaths.push(path);
+    if (requestedPaths.length === 1) {
+      return new Response(
+        new Blob(["%PDF-1.7\n"], { type: "application/pdf" }),
+        {
+          headers: { "content-type": "application/pdf" },
+        },
+      );
+    }
+    return new Response("Revenue increased.\n", {
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  });
+
+  const pdf = await client.openOriginal(DOCUMENT_ID, VERSION_ID);
+  const text = await client.openOriginal(DOCUMENT_ID, VERSION_ID);
+
+  assert.equal(pdf.kind, "PDF");
+  assert.equal(pdf.content.size, 9);
+  assert.deepEqual(text, { kind: "TEXT", content: "Revenue increased.\n" });
+  assert.deepEqual(requestedPaths, [
+    `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original`,
+    `/api/v1/documents/${DOCUMENT_ID}/versions/${VERSION_ID}/original`,
+  ]);
+});
+
+test("openOriginal rejects unsafe identifiers and unsupported content", async () => {
+  let fetchCalls = 0;
+  const invalidIdentifierClient = createApiClient(async () => {
+    fetchCalls += 1;
+    return new Response();
+  });
+
+  await assert.rejects(
+    invalidIdentifierClient.openOriginal("../documents", VERSION_ID),
+    ApiProtocolError,
+  );
+  assert.equal(fetchCalls, 0);
+
+  const emptyPdfClient = createApiClient(
+    async () =>
+      new Response(new Blob([], { type: "application/pdf" }), {
+        headers: { "content-type": "application/pdf" },
+      }),
+  );
+  await assert.rejects(
+    emptyPdfClient.openOriginal(DOCUMENT_ID, VERSION_ID),
+    ApiProtocolError,
+  );
+
+  const htmlClient = createApiClient(
+    async () =>
+      new Response("<p>not an original</p>", {
+        headers: { "content-type": "text/html" },
+      }),
+  );
+  await assert.rejects(
+    htmlClient.openOriginal(DOCUMENT_ID, VERSION_ID),
     ApiProtocolError,
   );
 });
@@ -293,4 +378,21 @@ test("local API paths allow protected viewer fragments and reject external targe
     ApiProtocolError,
   );
   assert.throws(() => requireLocalApiPath("/not-the-api"), ApiProtocolError);
+});
+
+test("local source paths require exactly one opaque evidence identifier", () => {
+  const sourcePath = `/sources/${EVIDENCE_SPAN_ID}`;
+
+  assert.equal(requireLocalSourcePath(sourcePath), sourcePath);
+  for (const unsafePath of [
+    `https://example.com${sourcePath}`,
+    `//example.com${sourcePath}`,
+    `${sourcePath}?download=true`,
+    `${sourcePath}#page=2`,
+    "/sources/not-a-uuid",
+    `${sourcePath}/../${STATEMENT_ID}`,
+    `/sources\\${EVIDENCE_SPAN_ID}`,
+  ]) {
+    assert.throws(() => requireLocalSourcePath(unsafePath), ApiProtocolError);
+  }
 });
