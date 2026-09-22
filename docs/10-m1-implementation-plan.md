@@ -663,10 +663,13 @@ The manually dispatched provider smoke now exercises one approved embedding, one
 vector, the approved answerable and unanswerable questions, exact source ranges, and independent
 statement support under frozen request, token, vector, and cost ceilings. It uses only the frozen
 public-synthetic fixture and separate least-privilege document-indexing and generation credentials.
-Manually dispatched live attempts have not yet passed. The latest attempt returned only the generic
-safe failure message, so its failing operation is unknown. The runner now reports a fixed failure
-stage without printing provider exceptions, credentials, prompts, or source content; a new live run
-is required to identify the stage. Complete-stack M1 acceptance remains the Step 6 gate.
+Manually dispatched live attempts have not yet passed. The latest attempt reached `pinecone_upsert`.
+The pinned Pinecone SDK reports only `upserted_count` for a direct, non-batched write, but the adapter
+also required a batch-only `total_item_count`; this falsely rejected a successful acknowledgement.
+The adapter now checks the direct-write count, with a regression test using the SDK response type.
+The runner reports fixed failure stages without printing provider exceptions, credentials, prompts,
+or source content. A new live run is required to confirm the provider write and subsequent stages;
+complete-stack M1 acceptance remains the Step 6 gate.
 
 ### Step 5 — Canonical usage and trace correlation
 

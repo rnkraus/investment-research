@@ -8,6 +8,7 @@ import pytest
 from pinecone import RetryConfig
 from pinecone.errors import PineconeConnectionError, UnauthorizedError
 from pinecone.grpc import GrpcIndex
+from pinecone.models.vectors.responses import UpsertResponse
 
 from investment_research.infrastructure.search import pinecone as pinecone_module
 from investment_research.infrastructure.search.pinecone import (
@@ -40,16 +41,6 @@ DENSE_INDEX_CONFIG_VERSION = "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
 
 
 @dataclass(frozen=True, slots=True)
-class UpsertResponse:
-    """Minimal successful response shape consumed by the adapter."""
-
-    upserted_count: int
-    total_item_count: int
-    failed_item_count: int = 0
-    errors: tuple[object, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class FetchResponse:
     """Minimal fetch response shape consumed by the adapter."""
 
@@ -61,7 +52,7 @@ class RecordingGrpcIndex:
     """Record adapter calls or raise one configured SDK error."""
 
     upsert_response: UpsertResponse = field(
-        default_factory=lambda: UpsertResponse(upserted_count=1, total_item_count=1)
+        default_factory=lambda: UpsertResponse(upserted_count=1)
     )
     fetch_response: FetchResponse = field(default_factory=lambda: FetchResponse(vectors={}))
     error: Exception | None = None
@@ -149,10 +140,7 @@ def test_upsert_uses_workspace_namespace_and_bounded_metadata() -> None:
                 }
             ],
             "namespace": f"ws-{WORKSPACE_ID.hex}",
-            "max_concurrency": 1,
-            "show_progress": False,
             "timeout": PINECONE_OPERATION_TIMEOUT_SECONDS,
-            "total_timeout": PINECONE_OPERATION_TIMEOUT_SECONDS,
         }
     ]
 
@@ -193,17 +181,10 @@ def test_fetch_visible_caps_sdk_timeout_to_remaining_deadline() -> None:
     assert len(index.fetch_calls) == 2
 
 
-def test_upsert_rejects_partial_provider_acknowledgement() -> None:
-    index = RecordingGrpcIndex(
-        upsert_response=UpsertResponse(
-            upserted_count=0,
-            total_item_count=1,
-            failed_item_count=1,
-            errors=(object(),),
-        )
-    )
+def test_upsert_rejects_incomplete_direct_provider_acknowledgement() -> None:
+    index = RecordingGrpcIndex(upsert_response=UpsertResponse(upserted_count=0))
 
-    with pytest.raises(SearchProviderContractError, match="complete batch"):
+    with pytest.raises(SearchProviderContractError, match="complete write"):
         make_writer(index).upsert(make_context(), make_request())
 
 
