@@ -773,6 +773,13 @@ The optional live-provider smoke runner now applies the same deadline to its vec
 namespace-cleanup checks. Synthetic-clock unit tests reject confirmations arriving after 30
 seconds; no live provider call has been made for this follow-up.
 
+**Post-review local verification (2026-09-22):** The complete credential-free M1 runtime passed
+again after both review fixes. One API acceptance test and both visible Chromium citation journeys
+passed; the protected-content log check and removal of the uniquely named containers, volumes,
+networks, and acceptance image also succeeded. The PDF reached `SEARCHABLE` in 0.77 seconds and the
+pasted-text document in 0.51 seconds in this isolated run. These deterministic observations do not
+replace hosted CI confirmation or the separately approved live-provider smoke.
+
 **Local implementation record (2026-09-22, measured-results and handoff block):** The complete M1
 gate passed in one isolated Docker Desktop runtime. Building and reaching healthy state took 41.65
 seconds; idempotent workspace seeding took 1.57 seconds; and the cached acceptance-image build took
