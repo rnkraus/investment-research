@@ -1,6 +1,7 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Active v1.2 — Steps 0–5 locally implemented; Step 6 pending \
+**Status:** Active v1.3 — Steps 0–5 locally implemented; Step 6 deterministic acceptance and
+browser journey locally implemented \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -708,6 +709,14 @@ remains the Step 6 gate.
 ### Step 6 — M1 acceptance and handoff
 
 **Suggested branch:** `test/m1-acceptance`
+
+**Implementation status (2026-09-22):** The credential-free complete-stack API acceptance and both
+visible Chromium journeys pass locally through `python -m scripts.verify_m1_runtime`. The PDF
+journey opens the immutable original at the stored physical page, and the pasted-text journey
+verifies and highlights the exact Unicode-code-point range. The required `Complete M1 runtime` CI
+job now installs the pinned Chromium build and invokes the same runner. Hosted CI confirmation,
+bounded opt-in live-provider smoke results, measured handoff observations, compact-document review,
+and the explicit M2 handoff remain open; M1 is not yet marked complete.
 
 Backend and runtime:
 

@@ -283,6 +283,36 @@ upload-to-`LEXICAL_READY`, fixture-test, log-capture, and cleanup durations; the
 of that run, not performance guarantees. The unique Compose project, its volumes, generated
 secrets, and the uniquely tagged verification image are removed after success or failure.
 
+## Complete M1 runtime verification
+
+```mermaid
+flowchart LR
+    COMMAND[verify_m1_runtime.py] --> STACK[Fresh isolated M1 Compose stack]
+    STACK --> API[Credential-free PDF and text API acceptance]
+    API --> BROWSER[Playwright Chromium UI journeys]
+    BROWSER --> PDF[Open immutable PDF at stored page]
+    BROWSER --> TEXT[Verify and highlight exact text range]
+    PDF --> LOGS[Scan logs for protected values]
+    TEXT --> LOGS
+    LOGS --> CLEANUP[Remove project, volumes, and acceptance image]
+```
+
+Run the complete M1 gate from `backend/` after installing the repository-pinned Playwright Chromium
+build as documented in the root README:
+
+```shell
+uv run --locked python -m scripts.verify_m1_runtime
+```
+
+The command extends the complete runtime proof to both M1 media types and the visible browser
+contract. Its containerized acceptance client first proves processing, retrieval, validated answers,
+stable evidence identifiers, original bytes, repeatability, safe insufficiency, and prompt-injection
+refusal through the same-origin web proxy. The host Playwright process then receives only the random
+loopback web origin and operates the rendered interface; the disposable Compose secret-file paths
+are not added to its environment. The PDF journey verifies the stored physical page and the text
+journey verifies the Unicode-code-point range, exact text, and checksum before accepting the
+highlight. API, browser, or log-safety failures all enter the same scoped `finally` cleanup path.
+
 CI follows the parser-isolation, queue-recovery, and complete-runtime checks with:
 
 ```shell

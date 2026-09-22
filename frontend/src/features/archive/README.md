@@ -13,6 +13,8 @@ PostgreSQL, or parse document content.
 | `processing-state.ts`   | Defines polling completion and fail-closed research admission.                       |
 | `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.                |
 | `research-workflow.tsx` | Asks a bounded question and opens resolved PDF-page or text-passage evidence.        |
+| `source-anchor.ts`      | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
+| `source-viewer.tsx`     | Resolves and renders an authorized immutable PDF or pasted-text source.              |
 
 ## Capture and processing flow
 
@@ -75,10 +77,12 @@ flowchart LR
     STREAM --> SESSION[Research session reducer]
     SESSION -->|validated completion| IDS[Evidence span IDs]
     IDS --> RESOLVE[Authorized evidence endpoint]
-    RESOLVE --> SAFE[Verified local viewer path]
-    SAFE --> LOCATOR{Locator kind}
-    LOCATOR -->|PDF_PAGE| PAGE[Exact quote and original-page link]
-    LOCATOR -->|TEXT_PASSAGE| TEXT[Exact quote and original-text link]
+    RESOLVE --> SAFE[Verified stable source path]
+    SAFE --> SOURCE[SourceViewer route]
+    SOURCE --> ORIGINAL[Authorized immutable original]
+    ORIGINAL --> LOCATOR{Locator kind}
+    LOCATOR -->|PDF_PAGE| PAGE[PDF blob at stored physical page]
+    LOCATOR -->|TEXT_PASSAGE| TEXT[Verified exact-range highlight]
     SESSION -->|insufficient evidence| EMPTY[Explicit empty result]
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
@@ -86,8 +90,18 @@ flowchart LR
 `document-workflow.tsx` mounts the research UI only for the M1 `SEARCHABLE` state. The UI submits the
 current document ID as an explicit research filter and never treats streamed partial text as a
 usable answer. After a validated terminal event, each unique evidence span is resolved through the
-workspace-scoped API. The resulting viewer URL must still pass the frontend's local API-path check
+workspace-scoped API. The resulting viewer URL must still pass the frontend's stable local
+source-path check
 before it becomes an original-source link. The discriminated locator renders either the PDF page or
 the one-based visible text range without inventing pages for text. This avoids trusting an arbitrary
 URL returned over the network and keeps exact source text separate from the streamed answer
 contract.
+
+The stable `/sources/{evidence_span_id}` page resolves the evidence span again and requires the API
+to confirm that exact opaque route. It then loads the original through the authorized same-origin
+endpoint. PDF bytes are exposed only through a short-lived browser object URL with the stored
+physical page fragment. Pasted text is split with `Array.from`, so supplementary-plane characters
+count as one Unicode code point just as they do in Python. The stored range must reproduce
+`exact_text` and its SHA-256 checksum before the viewer renders the original with only that range
+inside a `<mark>` element. Unknown media, mismatched routes, invalid ranges, and changed text fail
+closed without rendering source content.
