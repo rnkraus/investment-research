@@ -8,6 +8,7 @@ from uuid import UUID
 import pytest
 
 from scripts import verify_m1_runtime
+from scripts.docker_secrets import COMPOSE_SECRET_FILES
 
 RUN_UUID = UUID("87654321-4321-4000-8000-cba987654321")
 TEST_CREDENTIAL = "synthetic-m1-disposable-credential"
@@ -20,6 +21,11 @@ def prepare_deterministic_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
         verify_m1_runtime,
         "find_docker_executable",
         lambda: "/usr/local/bin/docker",
+    )
+    monkeypatch.setattr(
+        verify_m1_runtime,
+        "find_pnpm_executable",
+        lambda: "/usr/local/bin/pnpm",
     )
     monkeypatch.setattr(verify_m1_runtime, "uuid4", lambda: RUN_UUID)
     available_ports = iter((55433, 58001, 53001))
@@ -63,6 +69,7 @@ def test_verification_runs_m1_journey_and_cleans_up(
         "Seed isolated M1 PostgreSQL through the internal tool container",
         "Build isolated M1 acceptance image",
         "Run automatic M1 PDF and text journey",
+        "Run visible M1 Chromium journey",
         "Capture isolated M1 runtime logs for sensitive-content verification",
         "Remove isolated M1 runtime and its volumes",
         "Remove isolated M1 acceptance image",
@@ -79,6 +86,16 @@ def test_verification_runs_m1_journey_and_cleans_up(
     assert calls[0][2]["M1_ACCEPTANCE_TEXT_FIXTURE_PATH"] == str(verify_m1_runtime.FIXTURE_TEXT)
     acceptance_command = calls[3][1]
     assert verify_m1_runtime.ACCEPTANCE_TEST in acceptance_command
+    browser_command = calls[4][1]
+    assert browser_command == (
+        "/usr/local/bin/pnpm",
+        "--filter",
+        "@investment-research/frontend",
+        "test:browser",
+    )
+    assert calls[4][2]["PLAYWRIGHT_BASE_URL"] == "http://127.0.0.1:53001"
+    secret_source_names = {source_name for source_name, _ in COMPOSE_SECRET_FILES.values()}
+    assert secret_source_names.isdisjoint(calls[4][2])
     assert calls[-2][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert calls[-1][1][-4:] == (
         "docker",

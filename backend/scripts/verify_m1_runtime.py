@@ -1,6 +1,7 @@
 """Verify the complete credential-free M1 journey through an isolated runtime."""
 
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -38,6 +39,12 @@ POSTGRES_DATABASE = "investment_research"
 POSTGRES_USER = "investment_research"
 SECRET_LOG_MARKER = "m1-acceptance-secret-marker"
 DOCKER_IMAGE_NOT_FOUND_MARKER = b"No such image:"
+
+
+def find_pnpm_executable() -> str | None:
+    """Locate the project-required frontend package manager."""
+
+    return shutil.which("pnpm")
 
 
 def sensitive_log_values(secret_values: Mapping[str, str]) -> tuple[bytes, ...]:
@@ -120,6 +127,10 @@ def verify_m1_runtime() -> int:
 
     if find_docker_executable() is None:
         print("Docker is required for M1 runtime verification.", file=sys.stderr)
+        return 127
+    pnpm_executable = find_pnpm_executable()
+    if pnpm_executable is None:
+        print("pnpm is required for M1 browser verification.", file=sys.stderr)
         return 127
     required_files = (
         COMPOSE_TEST_FILE,
@@ -210,6 +221,19 @@ def verify_m1_runtime() -> int:
                     ACCEPTANCE_TEST,
                 ],
                 environment=compose_environment,
+            )
+            browser_environment = os.environ.copy()
+            browser_environment["PLAYWRIGHT_BASE_URL"] = f"http://127.0.0.1:{web_port}"
+            run_command(
+                "Run visible M1 Chromium journey",
+                [
+                    pnpm_executable,
+                    "--filter",
+                    "@investment-research/frontend",
+                    "test:browser",
+                ],
+                environment=browser_environment,
+                working_directory=REPOSITORY_ROOT,
             )
             runtime_logs = capture_runtime_logs(compose_command, compose_environment)
             assert_runtime_logs_are_safe(runtime_logs, secret_values)
