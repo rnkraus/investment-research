@@ -1,3 +1,6 @@
 .next/
+blob-report/
 node_modules/
+playwright-report/
 src/lib/api/generated/
+test-results/

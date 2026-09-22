@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "start": "next start --hostname 127.0.0.1",
     "test": "pnpm contracts:check && node --test",
+    "test:browser": "playwright test --config playwright.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",

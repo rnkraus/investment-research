@@ -7,3 +7,6 @@ minimumReleaseAgeIgnoreMissingTime: false
 strictDepBuilds: true
 allowBuilds:
   unrs-resolver: false
+
+overrides:
+  "@redocly/openapi-core@1.34.19>js-yaml": "4.3.2"
