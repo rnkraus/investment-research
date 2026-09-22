@@ -257,6 +257,7 @@ jobs:
     timeout-minutes: 30
     env:
       COMPOSE_PROGRESS: quiet
+      NEXT_TELEMETRY_DISABLED: "1"
     defaults:
       run:
         working-directory: backend
@@ -265,6 +266,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Set up pnpm and Node.js
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@24
+          install: false
+          cache: false
+          require-lockfile: true
+
+      - name: Install frontend dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+
+      - name: Install Chromium for visible journey
+        working-directory: .
+        run: pnpm --filter @investment-research/frontend exec playwright install --with-deps chromium
 
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
