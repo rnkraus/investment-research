@@ -663,8 +663,10 @@ The manually dispatched provider smoke now exercises one approved embedding, one
 vector, the approved answerable and unanswerable questions, exact source ranges, and independent
 statement support under frozen request, token, vector, and cost ceilings. It uses only the frozen
 public-synthetic fixture and separate least-privilege document-indexing and generation credentials.
-It has not yet been executed against live providers. Hosted CI verification remains pending the next
-push, and complete-stack M1 acceptance remains the Step 6 gate.
+Manually dispatched live attempts have not yet passed. The latest attempt returned only the generic
+safe failure message, so its failing operation is unknown. The runner now reports a fixed failure
+stage without printing provider exceptions, credentials, prompts, or source content; a new live run
+is required to identify the stage. Complete-stack M1 acceptance remains the Step 6 gate.
 
 ### Step 5 — Canonical usage and trace correlation
 

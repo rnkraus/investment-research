@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from time import monotonic, sleep
+from typing import Literal
 from uuid import uuid4
 
 from investment_research.infrastructure.evidence.openai import (
@@ -92,9 +93,27 @@ SUPPORT_INPUT_ENVELOPE_RESERVE = 1_000
 READINESS_TIMEOUT_SECONDS = 30.0
 POLL_INTERVAL_SECONDS = 0.5
 
+type SmokeFailureStage = Literal[
+    "configuration",
+    "preflight",
+    "provider_setup",
+    "embedding",
+    "pinecone_upsert",
+    "pinecone_visibility",
+    "answer_generation",
+    "answer_validation_and_support",
+    "unanswerable_generation",
+    "unanswerable_validation",
+    "cleanup",
+]
+
 
 class ProviderSmokeVerificationError(RuntimeError):
     """Report one bounded smoke invariant without provider or fixture details."""
+
+    def __init__(self, message: str, *, stage: SmokeFailureStage = "preflight") -> None:
+        super().__init__(message)
+        self.stage = stage
 
 
 @dataclass(slots=True)
@@ -426,6 +445,7 @@ def verify_m1_provider_smoke(
     support_evaluator: OpenAIStatementSupportEvaluator | None = None
     vector_id: str | None = None
     primary_error: Exception | None = None
+    stage: SmokeFailureStage = "provider_setup"
 
     try:
         embedding_provider = create_openai_embedding_provider(
@@ -462,6 +482,7 @@ def verify_m1_provider_smoke(
             ),
             embedding_config_version=providers.embedding.config_version,
         )
+        stage = "embedding"
         embedding_result = validate_embedding_response(
             request,
             embedding_provider.embed(request),
@@ -475,6 +496,7 @@ def verify_m1_provider_smoke(
             dense_index_config_version=providers.pinecone.config_version,
         )
         vector_id = vector.vector_id
+        stage = "pinecone_upsert"
         result = writer.upsert(
             context,
             DenseIndexWriteRequest(
@@ -484,6 +506,7 @@ def verify_m1_provider_smoke(
         )
         if result.vector_ids != (vector_id,):
             raise ProviderSmokeVerificationError("provider smoke write was not acknowledged")
+        stage = "pinecone_visibility"
         _await_visible(writer, context, vector_id)
 
         source = AnswerGenerationSource(
@@ -499,9 +522,11 @@ def verify_m1_provider_smoke(
             question=APPROVED_ANSWERABLE_QUESTION,
             source=source,
         )
+        stage = "answer_generation"
         budget.reserve_generation(answerable_input)
         answerable_result = answer_generator.generate(answerable_input)
         budget.verify_generation_usage(answerable_input, answerable_result.usage)
+        stage = "answer_validation_and_support"
         _verify_answerable_proposal(
             answerable_result.answer,
             source=source,
@@ -513,9 +538,11 @@ def verify_m1_provider_smoke(
             question=APPROVED_UNANSWERABLE_QUESTION,
             source=source,
         )
+        stage = "unanswerable_generation"
         budget.reserve_generation(unanswerable_input)
         unanswerable_result = answer_generator.generate(unanswerable_input)
         budget.verify_generation_usage(unanswerable_input, unanswerable_result.usage)
+        stage = "unanswerable_validation"
         _verify_unanswerable_proposal(unanswerable_result.answer)
     except Exception as error:
         primary_error = error
@@ -546,9 +573,13 @@ def verify_m1_provider_smoke(
             except Exception as error:
                 cleanup_error = cleanup_error or error
         if cleanup_error is not None:
-            raise ProviderSmokeVerificationError("provider smoke cleanup failed") from None
+            raise ProviderSmokeVerificationError(
+                "provider smoke cleanup failed", stage="cleanup"
+            ) from None
     if primary_error is not None:
-        raise ProviderSmokeVerificationError("provider smoke request failed safely") from None
+        raise ProviderSmokeVerificationError(
+            "provider smoke request failed safely", stage=stage
+        ) from None
     return ProviderSmokeResult(
         embedding_requests=budget.embedding_requests,
         generation_requests=budget.generation_requests,
@@ -573,13 +604,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     arguments = build_argument_parser().parse_args(argv)
     try:
+        settings = load_worker_settings()
+        generation_settings = load_generation_provider_settings()
+    except Exception:
+        print(
+            "M1 provider smoke failed at stage=configuration; provider details were withheld.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
         result = verify_m1_provider_smoke(
             manifest_path=arguments.manifest,
-            settings=load_worker_settings(),
-            generation_settings=load_generation_provider_settings(),
+            settings=settings,
+            generation_settings=generation_settings,
         )
+    except ProviderSmokeVerificationError as error:
+        print(
+            f"M1 provider smoke failed at stage={error.stage}; provider details were withheld.",
+            file=sys.stderr,
+        )
+        return 1
     except Exception:
-        print("M1 provider smoke failed; provider details were withheld.", file=sys.stderr)
+        print(
+            "M1 provider smoke failed at stage=preflight; provider details were withheld.",
+            file=sys.stderr,
+        )
         return 1
     print(
         "M1 provider smoke passed: "

@@ -128,6 +128,7 @@ class RecordingDenseWriter:
     """Acknowledge one vector and expose it until namespace cleanup."""
 
     operation_timeout_seconds: float = 20.0
+    fail_upsert: bool = False
     deleted: bool = False
     closed: bool = False
     fail_close: bool = False
@@ -150,6 +151,8 @@ class RecordingDenseWriter:
         request: DenseIndexWriteRequest,
     ) -> DenseIndexWriteResult:
         self.upsert_calls.append((context, request))
+        if self.fail_upsert:
+            raise RuntimeError("sensitive Pinecone failure")
         return DenseIndexWriteResult(
             vector_ids=tuple(vector.vector_id for vector in request.vectors)
         )
@@ -438,11 +441,49 @@ def test_provider_failure_is_safe_and_still_cleans_namespace(
         )
 
     assert "sensitive" not in str(captured.value)
+    assert captured.value.stage == "embedding"
     assert writer.index.delete_calls[0]["delete_all"] is True
     assert writer.closed is True
     assert embedding.closed is True
     assert generator.closed is True
     assert support.closed is True
+
+
+@pytest.mark.parametrize(
+    ("fail_upsert", "fail_generation", "expected_stage"),
+    [
+        (True, False, "pinecone_upsert"),
+        (False, True, "answer_generation"),
+    ],
+)
+def test_smoke_reports_the_failing_provider_stage_without_details(
+    monkeypatch: pytest.MonkeyPatch,
+    fail_upsert: bool,
+    fail_generation: bool,
+    expected_stage: str,
+) -> None:
+    """Keep provider errors private while identifying the failed operation."""
+
+    writer = RecordingDenseWriter(fail_upsert=fail_upsert)
+    generator = RecordingAnswerGenerator(fail=fail_generation)
+    install_provider_fakes(
+        monkeypatch,
+        embedding=RecordingEmbeddingProvider(),
+        writer=writer,
+        generator=generator,
+        support=RecordingSupportEvaluator(),
+    )
+
+    with pytest.raises(ProviderSmokeVerificationError, match="failed safely") as captured:
+        verify_m1_provider_smoke(
+            manifest_path=APPROVED_MANIFEST,
+            settings=make_settings(),
+            generation_settings=make_generation_settings(),
+        )
+
+    assert captured.value.stage == expected_stage
+    assert "sensitive" not in str(captured.value)
+    assert writer.deleted is True
 
 
 def test_unsupported_generated_statement_fails_safely_and_cleans_everything(
@@ -468,6 +509,7 @@ def test_unsupported_generated_statement_fails_safely_and_cleans_everything(
         )
 
     assert "supported" not in str(captured.value)
+    assert captured.value.stage == "answer_validation_and_support"
     assert len(generator.calls) == 1
     assert len(support.calls) == 1
     assert writer.deleted is True
@@ -523,8 +565,65 @@ def test_cleanup_failure_is_safe_and_does_not_skip_other_client_close(
         )
 
     assert "sensitive" not in str(captured.value)
+    assert captured.value.stage == "cleanup"
     assert writer.deleted is True
     assert writer.closed is True
     assert embedding.closed is True
     assert generator.closed is True
     assert support.closed is True
+
+
+def test_main_reports_configuration_stage_without_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep misconfigured credentials out of CI output while naming the failing phase."""
+
+    def fail_configuration() -> WorkerSettings:
+        raise ValueError("sensitive configuration detail")
+
+    monkeypatch.setattr(smoke_module, "load_worker_settings", fail_configuration)
+
+    result = smoke_module.main(
+        [
+            "--manifest",
+            str(APPROVED_MANIFEST),
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+        ]
+    )
+
+    output = capsys.readouterr()
+    assert result == 1
+    assert output.out == ""
+    assert "stage=configuration" in output.err
+    assert "sensitive" not in output.err
+
+
+def test_main_reports_provider_stage_without_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Print only a fixed phase label for failures after provider setup."""
+
+    def fail_smoke(**_: object) -> None:
+        raise ProviderSmokeVerificationError("sensitive provider detail", stage="pinecone_upsert")
+
+    monkeypatch.setattr(smoke_module, "load_worker_settings", make_settings)
+    monkeypatch.setattr(smoke_module, "load_generation_provider_settings", make_generation_settings)
+    monkeypatch.setattr(smoke_module, "verify_m1_provider_smoke", fail_smoke)
+
+    result = smoke_module.main(
+        [
+            "--manifest",
+            str(APPROVED_MANIFEST),
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+        ]
+    )
+
+    output = capsys.readouterr()
+    assert result == 1
+    assert output.out == ""
+    assert "stage=pinecone_upsert" in output.err
+    assert "sensitive" not in output.err
