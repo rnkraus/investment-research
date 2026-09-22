@@ -114,6 +114,8 @@ class PineconeDenseIndexWriter:
         self,
         context: WorkspaceContext,
         vector_ids: Sequence[DenseVectorId],
+        *,
+        timeout_seconds: float | None = None,
     ) -> Sequence[DenseVectorId]:
         """Return visible requested IDs in request order and reject foreign response IDs."""
 
@@ -126,12 +128,18 @@ class PineconeDenseIndexWriter:
             raise ValueError("dense index visibility check exceeds the batch limit")
         if len(requested_ids) != len(set(requested_ids)):
             raise ValueError("dense index visibility check requires unique vector IDs")
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise ValueError("dense index visibility timeout must be positive")
+
+        operation_timeout = self.operation_timeout_seconds
+        if timeout_seconds is not None:
+            operation_timeout = min(operation_timeout, timeout_seconds)
 
         try:
             response = self.index.fetch(
                 ids=list(requested_ids),
                 namespace=dense_index_namespace(context),
-                timeout=self.operation_timeout_seconds,
+                timeout=operation_timeout,
             )
         except _TRANSIENT_PINECONE_ERRORS:
             raise SearchProviderTransientError(

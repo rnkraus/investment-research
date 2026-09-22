@@ -133,10 +133,12 @@ class RecordingDenseIndexWriter:
     transient_upsert_failures: int = 0
     acknowledgement_override: tuple[DenseVectorId, ...] | None = None
     visibility_snapshots: list[tuple[DenseVectorId, ...]] = field(default_factory=list)
+    fetch_delay_seconds: float = 0.0
+    fake_time: FakeTime | None = None
     upsert_calls: list[tuple[WorkspaceContext, DenseIndexWriteRequest]] = field(
         default_factory=list
     )
-    fetch_calls: list[tuple[WorkspaceContext, tuple[DenseVectorId, ...]]] = field(
+    fetch_calls: list[tuple[WorkspaceContext, tuple[DenseVectorId, ...], float | None]] = field(
         default_factory=list
     )
 
@@ -158,9 +160,13 @@ class RecordingDenseIndexWriter:
         self,
         context: WorkspaceContext,
         vector_ids: Sequence[DenseVectorId],
+        *,
+        timeout_seconds: float | None = None,
     ) -> tuple[DenseVectorId, ...]:
         requested_ids = tuple(vector_ids)
-        self.fetch_calls.append((context, requested_ids))
+        self.fetch_calls.append((context, requested_ids, timeout_seconds))
+        if self.fake_time is not None:
+            self.fake_time.current += self.fetch_delay_seconds
         if self.visibility_snapshots:
             visible = set(self.visibility_snapshots.pop(0))
             return tuple(vector_id for vector_id in requested_ids if vector_id in visible)
@@ -251,7 +257,7 @@ def test_index_orders_chunks_batches_requests_and_waits_for_all_vectors() -> Non
         make_chunk(ordinal).id for ordinal in range(17)
     ]
     assert [len(request.vectors) for _, request in writer.upsert_calls] == [16, 1]
-    assert [len(vector_ids) for _, vector_ids in writer.fetch_calls] == [16, 1]
+    assert [len(vector_ids) for _, vector_ids, _ in writer.fetch_calls] == [16, 1]
     first_vector = writer.upsert_calls[0][1].vectors[0]
     assert first_vector.document_version_id == DOCUMENT_VERSION_ID
     assert first_vector.chunk_set_id == CHUNK_SET_ID
@@ -358,7 +364,8 @@ def test_index_polls_visibility_within_one_total_deadline() -> None:
     with pytest.raises(DenseIndexReadinessTimeoutError, match="deadline"):
         service.index(make_context(), make_run(), (make_chunk(0),))
 
-    assert len(writer.fetch_calls) == 2
+    assert len(writer.fetch_calls) == 1
+    assert writer.fetch_calls[0][2] == 0.5
     assert fake_time.sleeps == [0.5]
 
 
@@ -371,6 +378,38 @@ def test_index_completes_when_vectors_become_visible_after_one_poll() -> None:
     assert len(result.vector_ids) == 1
     assert len(writer.fetch_calls) == 2
     assert fake_time.sleeps == [0.5]
+
+
+def test_index_rejects_visibility_reported_after_total_deadline() -> None:
+    fake_time = FakeTime()
+    writer = RecordingDenseIndexWriter(fetch_delay_seconds=0.6, fake_time=fake_time)
+    service, _, _, _, _ = make_service(
+        dense_index_writer=writer,
+        fake_time=fake_time,
+        readiness_timeout_seconds=0.5,
+    )
+
+    with pytest.raises(DenseIndexReadinessTimeoutError, match="deadline"):
+        service.index(make_context(), make_run(), (make_chunk(0),))
+
+    assert len(writer.fetch_calls) == 1
+    assert writer.fetch_calls[0][2] == 0.5
+
+
+def test_index_passes_remaining_deadline_to_each_fetch_batch() -> None:
+    fake_time = FakeTime()
+    writer = RecordingDenseIndexWriter(fetch_delay_seconds=0.1, fake_time=fake_time)
+    service, _, _, _, _ = make_service(
+        dense_index_writer=writer,
+        fake_time=fake_time,
+        readiness_timeout_seconds=0.5,
+    )
+
+    service.index(make_context(), make_run(), tuple(make_chunk(index) for index in range(17)))
+
+    assert len(writer.fetch_calls) == 2
+    assert writer.fetch_calls[0][2] == 0.5
+    assert writer.fetch_calls[1][2] == pytest.approx(0.4)
 
 
 def test_index_rejects_foreign_or_incoherent_canonical_chunks() -> None:

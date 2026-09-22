@@ -230,7 +230,7 @@ The retained M0 deterministic regression path may still exercise lexical-only re
 
 ```text
 DenseIndexWriter.upsert(context, request) -> DenseIndexWriteResult
-DenseIndexWriter.fetch_visible(context, vector_ids) -> visible_vector_ids
+DenseIndexWriter.fetch_visible(context, vector_ids, *, timeout_seconds=None) -> visible_vector_ids
 DenseRetriever.retrieve(context, query) -> DenseRetrievalHit[]
 ```
 
@@ -269,6 +269,9 @@ flag, or authorization decision. PostgreSQL remains authoritative for every retu
 After an upsert, the worker performs bounded fetch-based readiness checks for the deterministic IDs.
 It marks the run `SEARCHABLE` only when every active chunk ID is visible. A readiness deadline is a
 retryable indexing failure; redelivery safely overwrites the same vector IDs.
+The worker checks the shared deadline before and after every fetch batch, passes the remaining time
+as `timeout_seconds`, and rejects even a fully visible response that arrives after the deadline.
+The Pinecone adapter caps each fetch at both that remaining time and its 20-second operation limit.
 
 ### 6.3 Timeouts and retry ownership
 

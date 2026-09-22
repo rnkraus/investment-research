@@ -140,6 +140,8 @@ class DeterministicSqliteDenseIndex:
         self,
         context: WorkspaceContext,
         vector_ids: Sequence[DenseVectorId],
+        *,
+        timeout_seconds: float | None = None,
     ) -> Sequence[DenseVectorId]:
         """Return requested visible identities in request order and workspace scope."""
 
@@ -152,10 +154,12 @@ class DeterministicSqliteDenseIndex:
             raise ValueError("dense index visibility check exceeds the batch limit")
         if len(requested_ids) != len(set(requested_ids)):
             raise ValueError("dense index visibility check requires unique vector IDs")
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise ValueError("dense index visibility timeout must be positive")
 
         placeholders = ", ".join("?" for _ in requested_ids)
         try:
-            with self._connect() as connection:
+            with self._connect(timeout_seconds=timeout_seconds) as connection:
                 rows = connection.execute(
                     f"""
                     SELECT vector_id
@@ -229,11 +233,12 @@ class DeterministicSqliteDenseIndex:
     def close(self) -> None:
         """Match provider adapter lifecycle without retaining a process-local connection."""
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self, *, timeout_seconds: float | None = None) -> sqlite3.Connection:
         """Open one bounded connection so processes never share Python connection state."""
 
-        connection = sqlite3.connect(self.database_path, timeout=5.0)
-        connection.execute("PRAGMA busy_timeout = 5000")
+        bounded_timeout = min(5.0, timeout_seconds) if timeout_seconds is not None else 5.0
+        connection = sqlite3.connect(self.database_path, timeout=bounded_timeout)
+        connection.execute(f"PRAGMA busy_timeout = {max(1, int(bounded_timeout * 1000))}")
         return connection
 
     @staticmethod

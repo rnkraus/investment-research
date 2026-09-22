@@ -160,7 +160,9 @@ nested retries. Each document-embedding attempt reserves and finalizes canonical
 separate short transactions linked to the processing run. No database transaction remains open
 during the provider call. After every exact provider acknowledgement, the service polls fetch
 batches under one 30-second total deadline and succeeds only when every deterministic vector ID is
-visible. Pinecone work remains outside database transactions.
+visible. Before each fetch, it passes the remaining deadline to the adapter; after each fetch, it
+rejects a response that arrived too late, even if every ID is visible. Pinecone work remains outside
+database transactions.
 
 Unavailable infrastructure adapters fail explicitly with `SearchProviderUnavailableError`, so an
 accidentally enabled path cannot masquerade as a valid empty result. The Pinecone infrastructure

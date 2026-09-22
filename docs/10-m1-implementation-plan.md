@@ -764,7 +764,10 @@ reloads current sources and revalidates every accepted statement before persisti
 recorded support decisions are reused only for matching statement and evidence text. Unit tests
 cover the transaction boundary and an intervening source-state change, and the isolated PostgreSQL
 gate passed with a real chunk-set deactivation during support evaluation. The separate dense-index
-visibility deadline finding remains open for the next work block. M1 is not yet accepted.
+visibility deadline finding is also resolved: each fetch receives the remaining deadline, and a
+response arriving after it expires cannot complete indexing. Unit tests cover delayed visibility,
+batch-by-batch timeout reduction, and the Pinecone SDK timeout; the backend unit and isolated
+PostgreSQL gates passed. M1 is not yet accepted.
 
 **Local implementation record (2026-09-22, measured-results and handoff block):** The complete M1
 gate passed in one isolated Docker Desktop runtime. Building and reaching healthy state took 41.65
