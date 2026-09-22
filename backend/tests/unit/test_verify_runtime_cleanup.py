@@ -1,4 +1,4 @@
-"""Unit tests for the M0 runtime cleanup verification."""
+"""Unit tests for isolated runtime cleanup verification."""
 
 import subprocess
 from collections.abc import Sequence
@@ -24,7 +24,7 @@ def test_runtime_cleanup_verification_accepts_an_empty_scoped_inventory(
     assert verify_runtime_cleanup.verify_runtime_cleanup() == 0
     assert len(commands) == 4
     assert all(command[0] == "/usr/bin/docker" for command in commands)
-    assert "No isolated M0 verification resources remain." in capsys.readouterr().out
+    assert "No isolated runtime verification resources remain." in capsys.readouterr().out
 
 
 def test_runtime_cleanup_verification_reports_only_scoped_leaks(
@@ -33,10 +33,14 @@ def test_runtime_cleanup_verification_reports_only_scoped_leaks(
 ) -> None:
     outputs = iter(
         (
-            "investment-research-m0-check-deadbeef-api-1\nother-container\n",
+            "investment-research-m0-check-deadbeef-api-1\n"
+            "investment-research-m1-check-cafebabe-worker-1\n"
+            "other-container\n",
             "investment-research-parser-check-deadbeef_parser\nother-network\n",
             "investment-research-queue-check-deadbeef_postgres-data\nother-volume\n",
-            "investment-research-m0-acceptance:deadbeef\nother-image:latest\n",
+            "investment-research-m0-acceptance:deadbeef\n"
+            "investment-research-m1-acceptance:cafebabe\n"
+            "other-image:latest\n",
         )
     )
 
@@ -50,9 +54,11 @@ def test_runtime_cleanup_verification_reports_only_scoped_leaks(
     captured = capsys.readouterr()
     assert "other-" not in captured.err
     assert "container: investment-research-m0-check-deadbeef-api-1" in captured.err
+    assert "container: investment-research-m1-check-cafebabe-worker-1" in captured.err
     assert "network: investment-research-parser-check-deadbeef_parser" in captured.err
     assert "volume: investment-research-queue-check-deadbeef_postgres-data" in captured.err
     assert "image: investment-research-m0-acceptance:deadbeef" in captured.err
+    assert "image: investment-research-m1-acceptance:cafebabe" in captured.err
 
 
 def test_runtime_cleanup_verification_requires_docker(

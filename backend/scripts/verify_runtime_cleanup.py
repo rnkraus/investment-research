@@ -1,4 +1,4 @@
-"""Verify that M0 runtime checks left no scoped Docker resources behind."""
+"""Verify that isolated runtime checks left no scoped Docker resources behind."""
 
 from __future__ import annotations
 
@@ -11,8 +11,12 @@ PROJECT_PREFIXES = (
     "investment-research-parser-check-",
     "investment-research-queue-check-",
     "investment-research-m0-check-",
+    "investment-research-m1-check-",
 )
-ACCEPTANCE_IMAGE_PREFIXES = ("investment-research-m0-acceptance:",)
+ACCEPTANCE_IMAGE_PREFIXES = (
+    "investment-research-m0-acceptance:",
+    "investment-research-m1-acceptance:",
+)
 RESOURCE_COMMANDS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("container", ("container", "ls", "--all", "--format", "{{.Names}}"), PROJECT_PREFIXES),
     ("network", ("network", "ls", "--format", "{{.Name}}"), PROJECT_PREFIXES),
@@ -38,7 +42,7 @@ def run_command(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
 
 
 def matching_names(output: str, prefixes: Sequence[str]) -> tuple[str, ...]:
-    """Return sorted resource names owned by an M0 verification prefix."""
+    """Return sorted resource names owned by a runtime-verification prefix."""
 
     return tuple(
         sorted(
@@ -71,17 +75,17 @@ def verify_runtime_cleanup() -> int:
         )
 
     if leaked_resources:
-        print("M0 verification resources remain after cleanup:", file=sys.stderr)
+        print("Runtime verification resources remain after cleanup:", file=sys.stderr)
         for resource_type, name in leaked_resources:
             print(f"- {resource_type}: {name}", file=sys.stderr)
         return 1
 
-    print("No isolated M0 verification resources remain.", flush=True)
+    print("No isolated runtime verification resources remain.", flush=True)
     return 0
 
 
 def main() -> int:
-    """Run the M0 runtime cleanup verification."""
+    """Run the isolated runtime cleanup verification."""
 
     return verify_runtime_cleanup()
 
