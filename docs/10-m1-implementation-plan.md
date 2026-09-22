@@ -1,7 +1,7 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Active v1.3 — Steps 0–5 locally implemented; Step 6 deterministic acceptance and
-browser journey locally implemented \
+**Status:** Active v1.4 — Steps 0–5 locally implemented; Step 6 deterministic acceptance,
+browser journey, measurements, and M2 handoff locally implemented \
 **Active milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
@@ -714,9 +714,9 @@ remains the Step 6 gate.
 visible Chromium journeys pass locally through `python -m scripts.verify_m1_runtime`. The PDF
 journey opens the immutable original at the stored physical page, and the pasted-text journey
 verifies and highlights the exact Unicode-code-point range. The required `Complete M1 runtime` CI
-job now installs the pinned Chromium build and invokes the same runner. Hosted CI confirmation,
-bounded opt-in live-provider smoke results, measured handoff observations, compact-document review,
-and the explicit M2 handoff remain open; M1 is not yet marked complete.
+job now installs the pinned Chromium build and invokes the same runner. Local measurements and the
+explicit M2 handoff are recorded below. Hosted CI confirmation and one explicitly authorized,
+bounded live-provider smoke run remain open; M1 is not yet marked complete.
 
 Backend and runtime:
 
@@ -757,6 +757,51 @@ checkout. Only then may M2 add lifecycle breadth and reliability mechanisms.
 
 **Suggested commits:** deterministic M1 acceptance; optional provider smoke gates; browser journey;
 measured results and M2 handoff.
+
+**Local implementation record (2026-09-22, measured-results and handoff block):** The complete M1
+gate passed in one isolated Docker Desktop runtime. Building and reaching healthy state took 41.65
+seconds; idempotent workspace seeding took 1.57 seconds; and the cached acceptance-image build took
+0.71 seconds. The PDF reached `SEARCHABLE` in 0.77 seconds and the pasted-text original in 0.26
+seconds. The validated answer requests, including retrieval, deterministic proposal generation,
+support evaluation, canonical evidence validation, and response assembly, took 0.06 seconds for the
+PDF and 0.03 seconds for pasted text. The two visible Chromium journeys took 6.76 seconds, runtime
+log capture and sensitive-content inspection took 0.08 seconds, scoped runtime cleanup took 24.53
+seconds, and acceptance-image removal took 0.07 seconds. One API acceptance test and both browser
+tests passed, and cleanup removed the unique containers, networks, volumes, and image.
+
+These values are observations from one local cached run, not performance guarantees. The required
+runtime used deterministic embedding, dense-index, generation, and support adapters, so it made no
+paid provider calls and incurred zero external-provider cost by construction. Its provider-stage
+latencies are therefore not representative of OpenAI or Pinecone. The separate live-provider smoke
+remains manually triggered, restricted to the frozen public-synthetic fixtures, and capped by its
+manifest budget; no live result is claimed until that smoke is explicitly authorized and run.
+
+### 8.1 M1-to-M2 handoff
+
+M1 hands M2 one narrow, working document-to-answer path: immutable PDF and pasted-text originals,
+versioned parsing and chunks, deterministic vector identifiers, lexical and dense retrieval,
+canonical requalification, typed answer proposals, server-side statement support and evidence
+validation, exact source opening, safe usage and trace records, and the fixed loopback-only local
+identity boundary.
+
+M2 must make that path reliable across a broader document lifecycle without weakening those
+contracts:
+
+| M1 boundary                                                 | Required M2 extension                                                                           |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| One narrow capture and processing run                       | Multiple imports, immutable document versions, duplicate detection, and visible per-stage state |
+| One leased `ProcessingRun`                                  | Independently retryable `ProcessingStage` history with bounded policies and repair controls     |
+| Direct queue publication after capture                      | Transactional outbox committed with canonical state and safely replayed delivery                |
+| Deterministic vector IDs and safe canonical requalification | Durable indexing intent, provider receipts, drift detection, and reconciliation                 |
+| Retry overwrites the same derived vector                    | Reprocessing creates new derived versions and activates them atomically                         |
+| No user-facing deletion workflow                            | Immediate canonical exclusion, 30-day restoration, purge, and derived-store cleanup             |
+| M1 stale/foreign-vector rejection                           | Failure, partial-indexing, stale-vector, deletion, restoration, and replay acceptance gates     |
+
+This handoff deliberately does not promote archive browsing, companies, filters, RRF, reranking,
+conversation memory, authentication, public hosting, or agent workflows into M2. Those features
+remain assigned to their existing milestones. M2 may begin only after the final M1 revision passes
+the hosted required checks; the optional live-provider smoke provides compatibility evidence but
+does not replace deterministic correctness or authorize private data.
 
 ## 9. Verification matrix
 
