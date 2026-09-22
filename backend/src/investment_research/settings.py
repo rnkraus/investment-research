@@ -449,6 +449,7 @@ class ApiSettings(ObjectStorageSettings):
     )
     query_providers: DenseProviderSettings | None = None
     generation_provider: GenerationProviderSettings | None = None
+    acceptance_dense_index_path: Path | None = None
 
     @model_validator(mode="after")
     def require_supported_api_host(self) -> ApiSettings:
@@ -466,6 +467,17 @@ class ApiSettings(ObjectStorageSettings):
     def require_complete_m1_provider_configuration(self) -> ApiSettings:
         """Enable the complete M1 API provider and budget group or none of it."""
 
+        acceptance_enabled = self.acceptance_dense_index_path is not None
+        if acceptance_enabled:
+            self._require_safe_acceptance_dense_index_path()
+            if self.query_providers is not None or self.generation_provider is not None:
+                raise ValueError(
+                    "M1 acceptance dense index cannot be combined with external API providers"
+                )
+            if self.provider_monthly_budget_micro_usd is None:
+                raise ValueError("M1 acceptance API configuration requires the monthly budget")
+            return self
+
         if (self.query_providers is None) != (self.generation_provider is None):
             raise ValueError(
                 "M1 API provider configuration requires query and generation providers together"
@@ -475,6 +487,25 @@ class ApiSettings(ObjectStorageSettings):
         if providers_enabled != budget_configured:
             raise ValueError("M1 API provider configuration requires the monthly provider budget")
         return self
+
+    def require_acceptance_dense_index_path(self) -> Path:
+        """Return the validated shared index path for the isolated test runtime."""
+
+        if self.acceptance_dense_index_path is None:
+            raise RuntimeError("M1 acceptance dense index path is required")
+        return self.acceptance_dense_index_path
+
+    def _require_safe_acceptance_dense_index_path(self) -> None:
+        """Keep the credential-free adapter inside explicit non-secret test configuration."""
+
+        path = self.acceptance_dense_index_path
+        assert path is not None
+        if self.environment != "test":
+            raise ValueError("M1 acceptance dense index is allowed only in the test environment")
+        if not path.is_absolute():
+            raise ValueError("M1 acceptance dense index path must be absolute")
+        if path.is_relative_to(DOCKER_SECRETS_ROOT):
+            raise ValueError("M1 acceptance dense index path must not use the secrets directory")
 
     def require_query_providers(self) -> DenseProviderSettings:
         """Return complete query-provider values only when M1 dense retrieval is enabled."""
@@ -517,6 +548,7 @@ class WorkerSettings(ObjectStorageSettings):
         le=MAX_CONFIGURABLE_PROCESSING_TIMEOUT_SECONDS,
     )
     indexing_providers: DenseProviderSettings | None = None
+    acceptance_dense_index_path: Path | None = None
 
     @model_validator(mode="after")
     def restrict_regression_processing_profile(self) -> WorkerSettings:
@@ -532,6 +564,19 @@ class WorkerSettings(ObjectStorageSettings):
     def require_complete_m1_provider_budget(self) -> WorkerSettings:
         """Enable document-index providers and their shared budget together."""
 
+        acceptance_enabled = self.acceptance_dense_index_path is not None
+        if acceptance_enabled:
+            self._require_safe_acceptance_dense_index_path()
+            if self.processing_profile != "m1":
+                raise ValueError("M1 acceptance dense index requires the M1 processing profile")
+            if self.indexing_providers is not None:
+                raise ValueError(
+                    "M1 acceptance dense index cannot be combined with external indexing providers"
+                )
+            if self.provider_monthly_budget_micro_usd is None:
+                raise ValueError("M1 acceptance worker configuration requires the monthly budget")
+            return self
+
         providers_enabled = self.indexing_providers is not None
         budget_configured = self.provider_monthly_budget_micro_usd is not None
         if providers_enabled != budget_configured:
@@ -539,6 +584,25 @@ class WorkerSettings(ObjectStorageSettings):
                 "M1 worker provider configuration requires the monthly provider budget"
             )
         return self
+
+    def require_acceptance_dense_index_path(self) -> Path:
+        """Return the validated shared index path for the isolated test runtime."""
+
+        if self.acceptance_dense_index_path is None:
+            raise RuntimeError("M1 acceptance dense index path is required")
+        return self.acceptance_dense_index_path
+
+    def _require_safe_acceptance_dense_index_path(self) -> None:
+        """Keep the credential-free adapter inside explicit non-secret test configuration."""
+
+        path = self.acceptance_dense_index_path
+        assert path is not None
+        if self.environment != "test":
+            raise ValueError("M1 acceptance dense index is allowed only in the test environment")
+        if not path.is_absolute():
+            raise ValueError("M1 acceptance dense index path must be absolute")
+        if path.is_relative_to(DOCKER_SECRETS_ROOT):
+            raise ValueError("M1 acceptance dense index path must not use the secrets directory")
 
     @model_validator(mode="after")
     def require_supported_parser_endpoint(self) -> WorkerSettings:
@@ -980,6 +1044,10 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
             pinecone_key_name="INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
         ),
         "generation_provider": _generation_provider_runtime_values(file_values),
+        "acceptance_dense_index_path": _configuration_value(
+            "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
+            file_values,
+        ),
     }
     return ApiSettings.model_validate(values)
 
@@ -1027,6 +1095,10 @@ def load_worker_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> WorkerSett
             file_values,
             embedding_key_name="INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY",
             pinecone_key_name="INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY",
+        ),
+        "acceptance_dense_index_path": _configuration_value(
+            "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
+            file_values,
         ),
     }
     return WorkerSettings.model_validate(values)

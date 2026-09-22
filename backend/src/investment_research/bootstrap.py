@@ -6,6 +6,13 @@ from celery import Celery  # type: ignore[import-untyped]
 from sqlalchemy import Engine
 
 from investment_research import __version__
+from investment_research.infrastructure.acceptance import (
+    M1_ACCEPTANCE_GENERATION_PROFILE,
+    M1_ACCEPTANCE_SUPPORT_CONFIG_VERSION,
+    create_m1_acceptance_answer_generator,
+    create_m1_acceptance_embedding_provider,
+    create_m1_acceptance_support_evaluator,
+)
 from investment_research.infrastructure.database.metadata import get_model_metadata
 from investment_research.infrastructure.database.session import (
     SessionFactory,
@@ -76,6 +83,9 @@ from investment_research.infrastructure.queue.celery import (
     CeleryProcessingDispatcher,
     create_celery_app,
 )
+from investment_research.infrastructure.search.deterministic_index import (
+    DeterministicSqliteDenseIndex,
+)
 from investment_research.infrastructure.search.openai import (
     OPENAI_EMBEDDING_INPUT_MICRO_USD_PER_MILLION_TOKENS,
     OpenAIEmbeddingProvider,
@@ -137,6 +147,10 @@ from investment_research.modules.search.contracts import (
 from investment_research.modules.search.indexing import (
     DocumentEmbeddingAccountingProfile,
     IndexActiveChunksService,
+)
+from investment_research.modules.search.ports import (
+    DenseIndexWriter,
+    EmbeddingProvider,
 )
 from investment_research.settings import (
     ApiSettings,
@@ -227,6 +241,7 @@ class ApiContainer:
     dense_retriever: PineconeDenseRetriever | None
     answer_generator_provider: OpenAIAnswerGenerator | None
     statement_support_provider: OpenAIStatementSupportEvaluator | None
+    acceptance_dense_index: DeterministicSqliteDenseIndex | None
     operation_tracer: OpenTelemetryOperationTracer
     provider_operation_executor: ExecuteProviderOperationService | None
     processing_dispatcher: ProcessingDispatcher
@@ -242,28 +257,32 @@ class ApiContainer:
         """Release process-wide resources owned by the API container."""
 
         try:
-            if self.statement_support_provider is not None:
-                self.statement_support_provider.close()
+            if self.acceptance_dense_index is not None:
+                self.acceptance_dense_index.close()
         finally:
             try:
-                if self.answer_generator_provider is not None:
-                    self.answer_generator_provider.close()
+                if self.statement_support_provider is not None:
+                    self.statement_support_provider.close()
             finally:
                 try:
-                    if self.dense_retriever is not None:
-                        self.dense_retriever.close()
+                    if self.answer_generator_provider is not None:
+                        self.answer_generator_provider.close()
                 finally:
                     try:
-                        if self.query_embedding_provider is not None:
-                            self.query_embedding_provider.close()
+                        if self.dense_retriever is not None:
+                            self.dense_retriever.close()
                     finally:
                         try:
-                            self.queue_application.close()
+                            if self.query_embedding_provider is not None:
+                                self.query_embedding_provider.close()
                         finally:
                             try:
-                                self.operation_tracer.close()
+                                self.queue_application.close()
                             finally:
-                                self.database_engine.dispose()
+                                try:
+                                    self.operation_tracer.close()
+                                finally:
+                                    self.database_engine.dispose()
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +296,7 @@ class WorkerContainer:
     object_storage: ObjectStorage
     embedding_provider: OpenAIEmbeddingProvider | None
     dense_index_writer: PineconeDenseIndexWriter | None
+    acceptance_dense_index: DeterministicSqliteDenseIndex | None
     operation_tracer: OpenTelemetryOperationTracer
     provider_operation_executor: ExecuteProviderOperationService | None
     open_original_service: OpenOriginalService
@@ -289,17 +309,21 @@ class WorkerContainer:
         """Release process-wide resources owned by the worker container."""
 
         try:
-            if self.dense_index_writer is not None:
-                self.dense_index_writer.close()
+            if self.acceptance_dense_index is not None:
+                self.acceptance_dense_index.close()
         finally:
             try:
-                if self.embedding_provider is not None:
-                    self.embedding_provider.close()
+                if self.dense_index_writer is not None:
+                    self.dense_index_writer.close()
             finally:
                 try:
-                    self.operation_tracer.close()
+                    if self.embedding_provider is not None:
+                        self.embedding_provider.close()
                 finally:
-                    self.database_engine.dispose()
+                    try:
+                        self.operation_tracer.close()
+                    finally:
+                        self.database_engine.dispose()
 
 
 def build_api_container(settings: ApiSettings) -> ApiContainer:
@@ -323,6 +347,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     dense_retriever: PineconeDenseRetriever | None = None
     answer_generator_provider: OpenAIAnswerGenerator | None = None
     statement_support_provider: OpenAIStatementSupportEvaluator | None = None
+    acceptance_dense_index: DeterministicSqliteDenseIndex | None = None
     provider_operation_executor: ExecuteProviderOperationService | None = None
     m1_query_retrieval: M1QueryRetrievalDependencies | None = None
     answer_generator: AnswerGenerator = DeterministicFixtureAnswerGenerator(
@@ -342,7 +367,84 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     statement_support_accounting: StatementSupportAccountingProfile | None = None
     validation_profile = M0_0_EVIDENCE_VALIDATION_PROFILE
     lexical_candidate_limit = 10
-    if settings.query_providers is not None:
+    if settings.acceptance_dense_index_path is not None:
+        monthly_budget = settings.provider_monthly_budget_micro_usd
+        assert monthly_budget is not None
+        provider_operation_unit_of_work_factory = create_provider_operation_unit_of_work_factory(
+            database.session_factory
+        )
+        provider_operation_executor = ExecuteProviderOperationService(
+            reservation_service=ReserveProviderOperationService(
+                unit_of_work_factory=provider_operation_unit_of_work_factory,
+                budget_policy=ProviderBudgetPolicy(
+                    monthly_limit_micro_usd=monthly_budget,
+                ),
+            ),
+            finalization_service=FinalizeProviderOperationService(
+                unit_of_work_factory=provider_operation_unit_of_work_factory,
+            ),
+            tracer=operation_tracer,
+        )
+        try:
+            acceptance_dense_index = DeterministicSqliteDenseIndex(
+                settings.require_acceptance_dense_index_path()
+            )
+        except Exception:
+            try:
+                queue_application.close()
+            finally:
+                try:
+                    operation_tracer.close()
+                finally:
+                    database.engine.dispose()
+            raise
+        acceptance_embedding_provider = create_m1_acceptance_embedding_provider()
+        lexical_candidate_limit = M1_LANE_CANDIDATE_LIMIT
+        m1_query_retrieval = M1QueryRetrievalDependencies(
+            embedding_provider=acceptance_embedding_provider,
+            dense_retriever=acceptance_dense_index,
+            dense_profile=DenseRetrievalProfile(
+                embedding_config_version=M1_PROCESSING_PROFILE.embedding_config_version,
+                dense_index_config_version=M1_PROCESSING_PROFILE.dense_index_config_version,
+                candidate_limit=M1_LANE_CANDIDATE_LIMIT,
+            ),
+            selection_profile=M1SelectionProfile(),
+            provider_operation_executor=provider_operation_executor,
+            embedding_accounting=QueryEmbeddingAccountingProfile(
+                provider="deterministic",
+                model="deterministic-m1-acceptance-embedding-v1",
+                cost_policy=ProviderCostPolicy(
+                    input_micro_usd_per_million_units=0,
+                    output_micro_usd_per_million_units=0,
+                ),
+            ),
+        )
+        answer_generator = create_m1_acceptance_answer_generator()
+        support_evaluator = create_m1_acceptance_support_evaluator()
+        generation_profile = M1_ACCEPTANCE_GENERATION_PROFILE
+        generation_accounting = AnswerGenerationAccountingProfile(
+            provider="deterministic",
+            model="deterministic-m1-acceptance-answer-v1",
+            input_overhead_units=1,
+            maximum_output_units=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            cost_policy=ProviderCostPolicy(
+                input_micro_usd_per_million_units=0,
+                output_micro_usd_per_million_units=0,
+            ),
+        )
+        statement_support_accounting = StatementSupportAccountingProfile(
+            provider="deterministic",
+            model="deterministic-m1-acceptance-support-v1",
+            configuration_version=M1_ACCEPTANCE_SUPPORT_CONFIG_VERSION,
+            input_overhead_units=1,
+            maximum_output_units=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+            cost_policy=ProviderCostPolicy(
+                input_micro_usd_per_million_units=0,
+                output_micro_usd_per_million_units=0,
+            ),
+        )
+        validation_profile = M1_EVIDENCE_VALIDATION_PROFILE
+    elif settings.query_providers is not None:
         provider_settings = settings.require_query_providers()
         generation_settings = settings.require_generation_provider()
         monthly_budget = settings.provider_monthly_budget_micro_usd
@@ -506,6 +608,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         dense_retriever=dense_retriever,
         answer_generator_provider=answer_generator_provider,
         statement_support_provider=statement_support_provider,
+        acceptance_dense_index=acceptance_dense_index,
         operation_tracer=operation_tracer,
         provider_operation_executor=provider_operation_executor,
         processing_dispatcher=processing_dispatcher,
@@ -553,6 +656,7 @@ def build_worker_container(
     )
     embedding_provider: OpenAIEmbeddingProvider | None = None
     dense_index_writer: PineconeDenseIndexWriter | None = None
+    acceptance_dense_index: DeterministicSqliteDenseIndex | None = None
     provider_operation_executor: ExecuteProviderOperationService | None = None
     try:
         object_storage = _build_object_storage(settings)
@@ -583,7 +687,6 @@ def build_worker_container(
         index_active_chunks_service: IndexActiveChunksService | None = None
         index_processing_run_service: IndexProcessingRunService | None = None
         if settings.processing_profile == "m1":
-            provider_settings = settings.require_indexing_providers()
             monthly_budget = settings.provider_monthly_budget_micro_usd
             assert monthly_budget is not None
             provider_operation_unit_of_work_factory = (
@@ -601,23 +704,40 @@ def build_worker_container(
                 ),
                 tracer=operation_tracer,
             )
-            embedding_provider = create_openai_embedding_provider(
-                api_key=provider_settings.embedding.api_key.get_secret_value(),
-                embedding_config_version=provider_settings.embedding.config_version,
-                model=provider_settings.embedding.model,
-                dimensions=provider_settings.embedding.dimensions,
-                operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
-            )
-            dense_index_writer = create_pinecone_dense_index_writer(
-                api_key=provider_settings.pinecone.api_key.get_secret_value(),
-                index_host=provider_settings.pinecone.index_host,
-                operation_timeout_seconds=provider_settings.pinecone.operation_timeout_seconds,
-            )
-            index_active_chunks_service = IndexActiveChunksService(
-                embedding_provider=embedding_provider,
-                dense_index_writer=dense_index_writer,
-                provider_operation_executor=provider_operation_executor,
-                embedding_accounting=DocumentEmbeddingAccountingProfile(
+            active_embedding_provider: EmbeddingProvider
+            active_dense_index_writer: DenseIndexWriter
+            embedding_accounting: DocumentEmbeddingAccountingProfile
+            if settings.acceptance_dense_index_path is not None:
+                acceptance_dense_index = DeterministicSqliteDenseIndex(
+                    settings.require_acceptance_dense_index_path()
+                )
+                active_embedding_provider = create_m1_acceptance_embedding_provider()
+                active_dense_index_writer = acceptance_dense_index
+                embedding_accounting = DocumentEmbeddingAccountingProfile(
+                    provider="deterministic",
+                    model="deterministic-m1-acceptance-embedding-v1",
+                    cost_policy=ProviderCostPolicy(
+                        input_micro_usd_per_million_units=0,
+                        output_micro_usd_per_million_units=0,
+                    ),
+                )
+            else:
+                provider_settings = settings.require_indexing_providers()
+                embedding_provider = create_openai_embedding_provider(
+                    api_key=provider_settings.embedding.api_key.get_secret_value(),
+                    embedding_config_version=provider_settings.embedding.config_version,
+                    model=provider_settings.embedding.model,
+                    dimensions=provider_settings.embedding.dimensions,
+                    operation_timeout_seconds=provider_settings.embedding.timeout_seconds,
+                )
+                dense_index_writer = create_pinecone_dense_index_writer(
+                    api_key=provider_settings.pinecone.api_key.get_secret_value(),
+                    index_host=provider_settings.pinecone.index_host,
+                    operation_timeout_seconds=provider_settings.pinecone.operation_timeout_seconds,
+                )
+                active_embedding_provider = embedding_provider
+                active_dense_index_writer = dense_index_writer
+                embedding_accounting = DocumentEmbeddingAccountingProfile(
                     provider="openai",
                     model=provider_settings.embedding.model,
                     cost_policy=ProviderCostPolicy(
@@ -626,7 +746,12 @@ def build_worker_container(
                         ),
                         output_micro_usd_per_million_units=0,
                     ),
-                ),
+                )
+            index_active_chunks_service = IndexActiveChunksService(
+                embedding_provider=active_embedding_provider,
+                dense_index_writer=active_dense_index_writer,
+                provider_operation_executor=provider_operation_executor,
+                embedding_accounting=embedding_accounting,
             )
             index_processing_run_service = IndexProcessingRunService(
                 indexing_service=index_active_chunks_service,
@@ -643,6 +768,7 @@ def build_worker_container(
             object_storage=object_storage.adapter,
             embedding_provider=embedding_provider,
             dense_index_writer=dense_index_writer,
+            acceptance_dense_index=acceptance_dense_index,
             operation_tracer=operation_tracer,
             provider_operation_executor=provider_operation_executor,
             open_original_service=open_original_service,
@@ -657,15 +783,19 @@ def build_worker_container(
         )
     except Exception:
         try:
-            if dense_index_writer is not None:
-                dense_index_writer.close()
+            if acceptance_dense_index is not None:
+                acceptance_dense_index.close()
         finally:
             try:
-                if embedding_provider is not None:
-                    embedding_provider.close()
+                if dense_index_writer is not None:
+                    dense_index_writer.close()
             finally:
                 try:
-                    operation_tracer.close()
+                    if embedding_provider is not None:
+                        embedding_provider.close()
                 finally:
-                    database.engine.dispose()
+                    try:
+                        operation_tracer.close()
+                    finally:
+                        database.engine.dispose()
         raise

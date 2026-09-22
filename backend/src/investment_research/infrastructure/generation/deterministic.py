@@ -1,5 +1,6 @@
 """Deterministic answer generator for the bounded synthetic M0.0 fixture."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from unicodedata import normalize
 
@@ -46,46 +47,55 @@ M0_0_INSUFFICIENT_MESSAGE = (
 )
 
 
-class DeterministicFixtureAnswerGenerator:
-    """Generate only the configured answer when its exact evidence was retrieved."""
+class DeterministicFixtureSetAnswerGenerator:
+    """Generate only explicitly configured answers backed by exact retrieved evidence."""
 
     def __init__(
         self,
         *,
-        answerable_case: FixtureAnswerCase,
+        answerable_cases: Sequence[FixtureAnswerCase],
         insufficient_message: str,
     ) -> None:
+        if not answerable_cases:
+            raise ValueError("at least one answerable fixture case is required")
         if not insufficient_message.strip():
             raise ValueError("insufficient_message must contain a non-whitespace character")
-        self._answerable_case = answerable_case
+        cases_by_question: dict[str, FixtureAnswerCase] = {}
+        for case in answerable_cases:
+            normalized_question = self._normalize_question(case.question)
+            if normalized_question in cases_by_question:
+                raise ValueError("answerable fixture questions must be unique")
+            cases_by_question[normalized_question] = case
+        self._cases_by_question = cases_by_question
         self._insufficient_message = insufficient_message
 
     def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         """Return a reproducible proposal without treating it as validated evidence."""
 
-        if self._normalize_question(generation_input.question) != self._normalize_question(
-            self._answerable_case.question
-        ):
+        answerable_case = self._cases_by_question.get(
+            self._normalize_question(generation_input.question)
+        )
+        if answerable_case is None:
             return self._insufficient_result()
 
         for source in generation_input.sources:
-            start_character = source.text.find(self._answerable_case.evidence_text)
+            start_character = source.text.find(answerable_case.evidence_text)
             if start_character < 0:
                 continue
-            end_character = start_character + len(self._answerable_case.evidence_text)
+            end_character = start_character + len(answerable_case.evidence_text)
             return AnswerGenerationResult(
                 answer=UnvalidatedGeneratedAnswer(
                     coverage_status=CoverageStatus.COMPLETE,
-                    rendered_text=self._answerable_case.statement,
+                    rendered_text=answerable_case.statement,
                     statements=(
                         UnvalidatedGeneratedStatement(
-                            text=self._answerable_case.statement,
+                            text=answerable_case.statement,
                             evidence=(
                                 UnvalidatedEvidenceReference(
                                     retrieval_candidate_id=source.retrieval_candidate_id,
                                     start_character=start_character,
                                     end_character=end_character,
-                                    exact_text=self._answerable_case.evidence_text,
+                                    exact_text=answerable_case.evidence_text,
                                 ),
                             ),
                         ),
@@ -114,3 +124,18 @@ class DeterministicFixtureAnswerGenerator:
         """Normalize harmless spelling variation for deterministic fixture matching."""
 
         return " ".join(normalize("NFKC", question).casefold().split())
+
+
+class DeterministicFixtureAnswerGenerator(DeterministicFixtureSetAnswerGenerator):
+    """Retain the original one-case constructor used by the M0 regression path."""
+
+    def __init__(
+        self,
+        *,
+        answerable_case: FixtureAnswerCase,
+        insufficient_message: str,
+    ) -> None:
+        super().__init__(
+            answerable_cases=(answerable_case,),
+            insufficient_message=insufficient_message,
+        )
