@@ -23,6 +23,7 @@ from investment_research.modules.research.contracts import (
 from investment_research.modules.research.ports import (
     AnswerGenerationProviderConfigurationError,
     AnswerGenerationProviderContractError,
+    AnswerGenerationProviderOutputLimitError,
     AnswerGenerationProviderRefusalError,
     AnswerGenerationProviderTransientError,
 )
@@ -94,7 +95,11 @@ class OpenAIAnswerGenerator:
             raise AnswerGenerationProviderRefusalError(
                 "answer provider refused the request"
             ) from None
-        except LengthFinishReasonError, APIResponseValidationError, ValidationError:
+        except LengthFinishReasonError:
+            raise AnswerGenerationProviderOutputLimitError(
+                "answer provider exhausted the output-token limit"
+            ) from None
+        except APIResponseValidationError, ValidationError:
             raise AnswerGenerationProviderContractError(
                 "answer provider returned an invalid response"
             ) from None
@@ -116,6 +121,13 @@ class OpenAIAnswerGenerator:
                 "answer provider response model does not match the request"
             )
         if response.status == "incomplete":
+            if (
+                response.incomplete_details is not None
+                and response.incomplete_details.reason == "max_output_tokens"
+            ):
+                raise AnswerGenerationProviderOutputLimitError(
+                    "answer provider exhausted the output-token limit"
+                )
             raise AnswerGenerationProviderContractError(
                 "answer provider returned an incomplete response"
             )

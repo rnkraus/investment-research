@@ -38,6 +38,10 @@ class AnswerGenerationProviderContractError(AnswerGenerationProviderError):
     """The provider returned output outside the application contract."""
 
 
+class AnswerGenerationProviderOutputLimitError(AnswerGenerationProviderContractError):
+    """The provider exhausted the configured output-token limit."""
+
+
 class AnswerGenerationProviderRefusalError(AnswerGenerationProviderError):
     """The provider refused to produce an answer proposal."""
 
