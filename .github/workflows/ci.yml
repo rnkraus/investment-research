@@ -250,3 +250,35 @@ jobs:
       - name: Confirm M0 verification resources were removed
         if: ${{ always() }}
         run: python3 -m scripts.verify_runtime_cleanup
+
+  m1-runtime:
+    name: Complete M1 runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROGRESS: quiet
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: backend/pyproject.toml
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Verify complete automatic M1 PDF and text journey
+        run: uv run --locked python -m scripts.verify_m1_runtime
+
+      - name: Confirm M1 verification resources were removed
+        if: ${{ always() }}
+        run: python3 -m scripts.verify_runtime_cleanup
