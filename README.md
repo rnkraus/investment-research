@@ -220,6 +220,30 @@ citation, original bytes, and insufficient-evidence response, and removes every 
 uv run --locked python -m scripts.verify_m0_runtime
 ```
 
+Verify the complete credential-free M1 PDF and pasted-text journeys from `backend/`. Before the
+first local run, install the Chromium build pinned to the repository's Playwright version from the
+repository root:
+
+```shell
+pnpm --filter @investment-research/frontend exec playwright install chromium
+```
+
+Then run the complete gate with Docker available:
+
+```shell
+uv run --locked python -m scripts.verify_m1_runtime
+```
+
+The M1 verifier creates a fresh isolated Compose project with random loopback ports and disposable
+credentials. It first exercises PDF and pasted-text capture, processing, lexical and deterministic
+dense retrieval, answer validation, citation resolution, byte-identical originals, repeatability,
+safe insufficiency, and prompt-injection refusal through the same-origin HTTP boundary. Playwright
+then drives the visible Chromium interface through both media journeys, opens the validated PDF at
+its stored physical page, and highlights the exact verified pasted-text range. The required run uses
+credential-free deterministic provider implementations and incurs no OpenAI or Pinecone spend. It
+scans application logs for protected values and removes its containers, networks, volumes, and
+uniquely tagged acceptance image after success or failure.
+
 ## Seed or reset local data
 
 The normal Compose startup migrates the database automatically but intentionally does not seed
