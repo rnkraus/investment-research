@@ -38,7 +38,11 @@ from investment_research.modules.search.contracts import (
     EmbeddingResult,
     EmbeddingVector,
 )
-from investment_research.settings import GenerationProviderSettings, WorkerSettings
+from investment_research.settings import (
+    M1_MAX_PROVIDER_MONTHLY_BUDGET_MICRO_USD,
+    GenerationProviderSettings,
+    WorkerSettings,
+)
 from scripts import verify_m1_provider_smoke as smoke_module
 from scripts.verify_m1_provider_smoke import (
     APPROVED_ANSWERABLE_QUESTION,
@@ -49,6 +53,21 @@ from scripts.verify_m1_provider_smoke import (
     ProviderSmokeVerificationError,
     verify_m1_provider_smoke,
 )
+
+WORKFLOW_PATH = Path(__file__).resolve().parents[3] / ".github/workflows/m1-provider-smoke.yml"
+
+
+def test_workflow_supplies_required_monthly_provider_budget() -> None:
+    """Catch an incomplete live-smoke worker configuration before a hosted run."""
+
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    smoke_step = workflow.split("- name: Run bounded M1 provider compatibility smoke", 1)[1]
+    environment = smoke_step.split("        env:\n", 1)[1].split("        run:", 1)[0]
+
+    assert (
+        "          INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: "
+        f'"{M1_MAX_PROVIDER_MONTHLY_BUDGET_MICRO_USD}"\n'
+    ) in environment
 
 
 @dataclass(slots=True)
