@@ -1,0 +1,57 @@
+services:
+  m1-dense-index-bootstrap:
+    image: investment-research-backend-migration:local
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+    entrypoint:
+      - chown
+      - "65532:65532"
+      - /var/lib/investment-research-acceptance
+    command: []
+    volumes:
+      - m1-acceptance-dense-index:/var/lib/investment-research-acceptance
+    restart: "no"
+
+  api:
+    environment:
+      INVESTMENT_RESEARCH_ENVIRONMENT: test
+      INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: "5000000"
+      INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH: /var/lib/investment-research-acceptance/dense-index.sqlite3
+    volumes:
+      - m1-acceptance-dense-index:/var/lib/investment-research-acceptance
+    depends_on:
+      m1-dense-index-bootstrap:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      INVESTMENT_RESEARCH_ENVIRONMENT: test
+      INVESTMENT_RESEARCH_PROCESSING_PROFILE: m1
+      INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: "5000000"
+      INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH: /var/lib/investment-research-acceptance/dense-index.sqlite3
+    volumes:
+      - m1-acceptance-dense-index:/var/lib/investment-research-acceptance
+    depends_on:
+      m1-dense-index-bootstrap:
+        condition: service_completed_successfully
+
+  acceptance:
+    image: ${M1_ACCEPTANCE_IMAGE:-investment-research-m1-acceptance:local}
+    environment:
+      INVESTMENT_RESEARCH_M0_RUNTIME_ACCEPTANCE: "0"
+      INVESTMENT_RESEARCH_M1_RUNTIME_ACCEPTANCE: "1"
+    volumes:
+      - type: bind
+        source: ${M1_ACCEPTANCE_TEXT_FIXTURE_PATH:-./fixtures/m1/documents/northstar-grid-analytics-fy2026-capacity-update.txt}
+        target: /verification-text-fixture.txt
+        read_only: true
+
+volumes:
+  m1-acceptance-dense-index:
