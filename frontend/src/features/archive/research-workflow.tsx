@@ -5,7 +5,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import {
   ApiRequestError,
   apiClient,
-  requireLocalApiPath,
+  requireLocalSourcePath,
 } from "@/lib/api/client";
 
 import { archiveCopy, fixtureDefaults } from "./copy";
@@ -98,7 +98,7 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
           );
           currentSession = attachCitationSource(currentSession, {
             ...source,
-            viewer_url: requireLocalApiPath(source.viewer_url),
+            viewer_url: requireLocalSourcePath(source.viewer_url),
           });
           setSession(currentSession);
         }
