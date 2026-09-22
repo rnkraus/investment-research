@@ -5,14 +5,15 @@ query must read physical data owned by several business modules.
 
 ## Contents
 
-| File               | Responsibility                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| `__init__.py`      | Identifies the search-adapter package without exporting a concrete implementation.      |
-| `deterministic.py` | Returns explicitly configured fixed embeddings for credential-free correctness tests.   |
-| `openai.py`        | Creates bounded, correlated embeddings through one retry-free OpenAI SDK call.          |
-| `pinecone.py`      | Writes, verifies, and queries bounded vectors through retry-free Pinecone gRPC clients. |
-| `postgresql.py`    | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
-| `unavailable.py`   | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
+| File                     | Responsibility                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| `__init__.py`            | Identifies the search-adapter package without exporting a concrete implementation.      |
+| `deterministic.py`       | Returns explicitly configured fixed embeddings for credential-free correctness tests.   |
+| `deterministic_index.py` | Shares a content-free SQLite vector index across isolated acceptance-test processes.     |
+| `openai.py`              | Creates bounded, correlated embeddings through one retry-free OpenAI SDK call.          |
+| `pinecone.py`            | Writes, verifies, and queries bounded vectors through retry-free Pinecone gRPC clients. |
+| `postgresql.py`          | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
+| `unavailable.py`         | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
 
 ## Dependency direction
 
@@ -27,6 +28,7 @@ flowchart LR
     M1[M1 indexing and retrieval paths] --> PROVIDER_PORTS[Embedding and dense ports]
     FUTURE[Later M4 path] --> RERANK[Reranking port]
     DETERMINISTIC[DeterministicEmbeddingProvider] -. implements .-> PROVIDER_PORTS
+    TESTINDEX[DeterministicSqliteDenseIndex] -. implements .-> PROVIDER_PORTS
     OPENAI[OpenAIEmbeddingProvider] -. implements .-> PROVIDER_PORTS
     OPENAI --> OPENAI_API[OpenAI embeddings API]
     PINECONE[Pinecone writer and retriever] -. implements .-> PROVIDER_PORTS
@@ -122,6 +124,15 @@ Fixture texts and expected relationships stay in tests and acceptance-fixture co
 than this infrastructure package. That keeps production code fixture-neutral while allowing normal
 CI to prove document indexing and later dense-retrieval behavior without network access, credentials,
 provider availability, or spend.
+
+`DeterministicSqliteDenseIndex` supplies the process boundary needed by the isolated M1 acceptance
+runtime: the worker and API open independent connections to one disposable SQLite file. The schema
+contains only workspace namespaces, deterministic vector and canonical record identifiers,
+configuration versions, and numeric vectors. It never stores questions, chunk text, filenames, or
+other display metadata. Query results remain untrusted and still pass through the same PostgreSQL
+canonical-eligibility qualifier as Pinecone results. Composition may select this adapter only for
+the explicit test runtime; normal local and production-shaped M1 execution continues to use the
+Pinecone adapter.
 
 ## Unavailable provider behavior
 
