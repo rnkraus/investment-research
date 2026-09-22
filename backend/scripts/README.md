@@ -392,6 +392,8 @@ exceeded.
 The runner writes no source text to Pinecone metadata, uses a unique workspace namespace, deletes
 that complete namespace in `finally`, verifies that the vector is absent, closes all provider
 clients, and prints only safe aggregate counts, maximum reserved spend, and cleanup status.
+Visibility and deletion checks pass the remaining 30-second deadline to each Pinecone fetch and
+reject a confirmation that arrives after that deadline.
 Provider responses, fixture text, identifiers, hosts, and credentials are not logged.
 
 GitHub's separate `M1 provider smoke` workflow exposes the same operation only through manual

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 import pytest
 
@@ -91,6 +92,19 @@ class RecordingIndex:
 
 
 @dataclass(slots=True)
+class FakeTime:
+    """Advance smoke-test time without a real wait or external request."""
+
+    current: float = 0.0
+
+    def monotonic(self) -> float:
+        return self.current
+
+    def sleep(self, seconds: float) -> None:
+        self.current += seconds
+
+
+@dataclass(slots=True)
 class RecordingDenseWriter:
     """Acknowledge one vector and expose it until namespace cleanup."""
 
@@ -98,10 +112,12 @@ class RecordingDenseWriter:
     deleted: bool = False
     closed: bool = False
     fail_close: bool = False
+    fetch_delay_seconds: float = 0.0
+    clock: FakeTime | None = None
     upsert_calls: list[tuple[WorkspaceContext, DenseIndexWriteRequest]] = field(
         default_factory=list
     )
-    fetch_calls: list[tuple[WorkspaceContext, tuple[DenseVectorId, ...]]] = field(
+    fetch_calls: list[tuple[WorkspaceContext, tuple[DenseVectorId, ...], float | None]] = field(
         default_factory=list
     )
     index: RecordingIndex = field(init=False)
@@ -123,8 +139,12 @@ class RecordingDenseWriter:
         self,
         context: WorkspaceContext,
         vector_ids: tuple[DenseVectorId, ...],
+        *,
+        timeout_seconds: float | None = None,
     ) -> tuple[DenseVectorId, ...]:
-        self.fetch_calls.append((context, vector_ids))
+        self.fetch_calls.append((context, vector_ids, timeout_seconds))
+        if self.clock is not None:
+            self.clock.current += self.fetch_delay_seconds
         return () if self.deleted else vector_ids
 
     def close(self) -> None:
@@ -312,6 +332,43 @@ def test_smoke_uses_one_bounded_vector_and_verifies_cleanup(
     assert embedding.closed is True
     assert generator.closed is True
     assert support.closed is True
+
+
+def test_smoke_rejects_visibility_reported_after_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = FakeTime()
+    writer = RecordingDenseWriter(fetch_delay_seconds=31.0, clock=clock)
+    context = WorkspaceContext(user_id=uuid4(), workspace_id=uuid4())
+    monkeypatch.setattr(smoke_module, "monotonic", clock.monotonic)
+    monkeypatch.setattr(smoke_module, "sleep", clock.sleep)
+
+    with pytest.raises(ProviderSmokeVerificationError, match="did not become visible"):
+        smoke_module._await_visible(
+            cast(PineconeDenseIndexWriter, writer), context, "v1:" + "a" * 64
+        )
+
+    assert len(writer.fetch_calls) == 1
+    assert writer.fetch_calls[0][2] == 30.0
+
+
+def test_smoke_rejects_cleanup_reported_after_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = FakeTime()
+    writer = RecordingDenseWriter(fetch_delay_seconds=31.0, clock=clock)
+    context = WorkspaceContext(user_id=uuid4(), workspace_id=uuid4())
+    monkeypatch.setattr(smoke_module, "monotonic", clock.monotonic)
+    monkeypatch.setattr(smoke_module, "sleep", clock.sleep)
+
+    with pytest.raises(ProviderSmokeVerificationError, match="cleanup could not be verified"):
+        smoke_module._delete_and_verify_namespace(
+            cast(PineconeDenseIndexWriter, writer), context, "v1:" + "a" * 64
+        )
+
+    assert writer.deleted is True
+    assert len(writer.fetch_calls) == 1
+    assert writer.fetch_calls[0][2] == 30.0
 
 
 def test_smoke_rejects_unapproved_manifest_before_provider_construction(
