@@ -177,6 +177,22 @@ def test_fetch_visible_preserves_request_order_and_rejects_extra_ids() -> None:
         writer.fetch_visible(make_context(), (first_id, second_id))
 
 
+def test_fetch_visible_caps_sdk_timeout_to_remaining_deadline() -> None:
+    vector_id = make_vector().vector_id
+    index = RecordingGrpcIndex()
+    writer = make_writer(index)
+
+    assert writer.fetch_visible(make_context(), (vector_id,), timeout_seconds=0.4) == ()
+    assert index.fetch_calls[0]["timeout"] == 0.4
+
+    writer.fetch_visible(make_context(), (vector_id,), timeout_seconds=30.0)
+    assert index.fetch_calls[1]["timeout"] == PINECONE_OPERATION_TIMEOUT_SECONDS
+
+    with pytest.raises(ValueError, match="timeout must be positive"):
+        writer.fetch_visible(make_context(), (vector_id,), timeout_seconds=0.0)
+    assert len(index.fetch_calls) == 2
+
+
 def test_upsert_rejects_partial_provider_acknowledgement() -> None:
     index = RecordingGrpcIndex(
         upsert_response=UpsertResponse(

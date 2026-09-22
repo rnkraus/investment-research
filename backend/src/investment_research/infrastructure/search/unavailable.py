@@ -44,10 +44,12 @@ class UnavailableDenseIndexWriter:
         self,
         context: WorkspaceContext,
         vector_ids: Sequence[DenseVectorId],
+        *,
+        timeout_seconds: float | None = None,
     ) -> Sequence[DenseVectorId]:
         """Fail explicitly without contacting a vector index."""
 
-        del context, vector_ids
+        del context, vector_ids, timeout_seconds
         raise SearchProviderUnavailableError("dense index writer is unavailable")
 
 

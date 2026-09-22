@@ -179,7 +179,10 @@ class ImmediatelyVisibleDenseIndexWriter:
         self,
         context: WorkspaceContext,
         vector_ids: Sequence[DenseVectorId],
+        *,
+        timeout_seconds: float | None = None,
     ) -> tuple[DenseVectorId, ...]:
+        assert timeout_seconds is None or timeout_seconds > 0
         visible_ids = tuple(vector_ids)
         self.fetch_calls.append((context, visible_ids))
         return visible_ids

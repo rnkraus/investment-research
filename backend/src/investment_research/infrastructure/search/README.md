@@ -89,7 +89,9 @@ The factory constructs `GrpcIndex` directly from the configured index host, avoi
 lookup. TLS is mandatory, each operation is capped at 20 seconds, concurrency is one, and
 `RetryConfig(max_retries=0)` makes the application the only retry owner. A successful transport
 response is insufficient: the adapter requires complete item counts with no failed items or batch
-errors. Fetch-based readiness rejects unexpected IDs and preserves application request order.
+errors. Fetch-based readiness rejects unexpected IDs and preserves application request order. Each
+readiness fetch uses the smaller of the adapter's 20-second operation limit and the remaining
+application deadline.
 
 Pinecone connection, timeout, rate-limit, and service errors become bounded transient application
 errors. Authentication, configuration, and other deterministic SDK failures become bounded

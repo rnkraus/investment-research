@@ -75,8 +75,10 @@ class DenseIndexWriter(Protocol):
         self,
         context: WorkspaceContext,
         vector_ids: Sequence[DenseVectorId],
+        *,
+        timeout_seconds: float | None = None,
     ) -> Sequence[DenseVectorId]:
-        """Return only requested vector identities currently visible in the index."""
+        """Return requested visible IDs, bounding a blocking fetch when a timeout is given."""
 
 
 class DenseRetriever(Protocol):

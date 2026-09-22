@@ -299,7 +299,20 @@ class IndexActiveChunksService:
             try:
                 for offset in range(0, len(requested_ids), M1_EMBEDDING_BATCH_LIMIT):
                     batch = requested_ids[offset : offset + M1_EMBEDDING_BATCH_LIMIT]
-                    visible = tuple(self.dense_index_writer.fetch_visible(context, batch))
+                    remaining = deadline - self.monotonic_clock()
+                    if remaining <= 0:
+                        raise DenseIndexReadinessTimeoutError(
+                            "dense index visibility deadline expired"
+                        )
+                    visible = tuple(
+                        self.dense_index_writer.fetch_visible(
+                            context, batch, timeout_seconds=remaining
+                        )
+                    )
+                    if self.monotonic_clock() >= deadline:
+                        raise DenseIndexReadinessTimeoutError(
+                            "dense index visibility deadline expired"
+                        )
                     if not set(visible).issubset(batch):
                         raise SearchProviderContractError(
                             "dense index provider returned unexpected visible identities"

@@ -222,8 +222,11 @@ class InMemoryDenseIndexWriter:
         self,
         context: WorkspaceContext,
         vector_ids: Sequence[DenseVectorId],
+        *,
+        timeout_seconds: float | None = None,
     ) -> tuple[DenseVectorId, ...]:
         assert context.workspace_id == WORKSPACE_ID
+        assert timeout_seconds is None or timeout_seconds > 0
         return tuple(vector_id for vector_id in vector_ids if vector_id in self.vectors_by_id)
 
 
