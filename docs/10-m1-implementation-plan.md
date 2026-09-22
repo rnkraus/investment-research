@@ -769,6 +769,10 @@ response arriving after it expires cannot complete indexing. Unit tests cover de
 batch-by-batch timeout reduction, and the Pinecone SDK timeout; the backend unit and isolated
 PostgreSQL gates passed. M1 is not yet accepted.
 
+The optional live-provider smoke runner now applies the same deadline to its vector-visibility and
+namespace-cleanup checks. Synthetic-clock unit tests reject confirmations arriving after 30
+seconds; no live provider call has been made for this follow-up.
+
 **Local implementation record (2026-09-22, measured-results and handoff block):** The complete M1
 gate passed in one isolated Docker Desktop runtime. Building and reaching healthy state took 41.65
 seconds; idempotent workspace seeding took 1.57 seconds; and the cached acceptance-image build took

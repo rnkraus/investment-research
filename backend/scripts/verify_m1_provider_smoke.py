@@ -360,10 +360,16 @@ def _await_visible(
     """Require the one vector to become visible within the frozen readiness deadline."""
 
     deadline = monotonic() + READINESS_TIMEOUT_SECONDS
-    while monotonic() < deadline:
-        if tuple(writer.fetch_visible(context, (vector_id,))) == (vector_id,):
+    while (remaining := deadline - monotonic()) > 0:
+        visible = tuple(writer.fetch_visible(context, (vector_id,), timeout_seconds=remaining))
+        if monotonic() >= deadline:
+            break
+        if visible == (vector_id,):
             return
-        sleep(POLL_INTERVAL_SECONDS)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(POLL_INTERVAL_SECONDS, remaining))
     raise ProviderSmokeVerificationError("provider smoke vector did not become visible")
 
 
@@ -383,10 +389,16 @@ def _delete_and_verify_namespace(
         return
 
     deadline = monotonic() + READINESS_TIMEOUT_SECONDS
-    while monotonic() < deadline:
-        if not writer.fetch_visible(context, (vector_id,)):
+    while (remaining := deadline - monotonic()) > 0:
+        visible = writer.fetch_visible(context, (vector_id,), timeout_seconds=remaining)
+        if monotonic() >= deadline:
+            break
+        if not visible:
             return
-        sleep(POLL_INTERVAL_SECONDS)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(POLL_INTERVAL_SECONDS, remaining))
     raise ProviderSmokeVerificationError("provider smoke cleanup could not be verified")
 
 
