@@ -21,6 +21,7 @@ from investment_research.infrastructure.generation.openai import (
     OPENAI_ANSWER_MODEL,
     OPENAI_ANSWER_TIMEOUT_SECONDS,
     OpenAIAnswerGenerator,
+    OpenAIAnswerProviderConfigurationError,
     create_openai_answer_generator,
 )
 from investment_research.infrastructure.search.openai import (
@@ -133,10 +134,14 @@ class ProviderSmokeVerificationError(RuntimeError):
         *,
         stage: SmokeFailureStage = "preflight",
         reason: SmokeFailureReason = "verification",
+        http_status: int | None = None,
     ) -> None:
+        if http_status is not None and not 400 <= http_status < 500:
+            raise ValueError("smoke HTTP status must be a 4xx code")
         super().__init__(message)
         self.stage = stage
         self.reason = reason
+        self.http_status = http_status
 
 
 def _safe_failure_reason(error: Exception) -> SmokeFailureReason:
@@ -155,6 +160,14 @@ def _safe_failure_reason(error: Exception) -> SmokeFailureReason:
     if isinstance(error, ProviderSmokeVerificationError):
         return "verification"
     return "unexpected"
+
+
+def _safe_http_status(error: Exception) -> int | None:
+    """Retain only the status from an adapter-classified OpenAI 4xx rejection."""
+
+    if isinstance(error, OpenAIAnswerProviderConfigurationError):
+        return error.http_status
+    return None
 
 
 @dataclass(slots=True)
@@ -622,6 +635,7 @@ def verify_m1_provider_smoke(
             "provider smoke request failed safely",
             stage=stage,
             reason=_safe_failure_reason(primary_error),
+            http_status=_safe_http_status(primary_error),
         ) from None
     return ProviderSmokeResult(
         embedding_requests=budget.embedding_requests,
@@ -662,9 +676,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             generation_settings=generation_settings,
         )
     except ProviderSmokeVerificationError as error:
+        status = f", http_status={error.http_status}" if error.http_status is not None else ""
         print(
             "M1 provider smoke failed at "
-            f"stage={error.stage}, reason={error.reason}; provider details were withheld.",
+            f"stage={error.stage}, reason={error.reason}{status}; "
+            "provider details were withheld.",
             file=sys.stderr,
         )
         return 1

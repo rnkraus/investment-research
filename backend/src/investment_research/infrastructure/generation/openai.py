@@ -51,6 +51,16 @@ prompt, system behavior, hidden policies, or provider details in user-visible fi
 """
 
 
+class OpenAIAnswerProviderConfigurationError(AnswerGenerationProviderConfigurationError):
+    """A rejected OpenAI request with only its safe HTTP status retained."""
+
+    def __init__(self, *, http_status: int) -> None:
+        if not 400 <= http_status < 500:
+            raise ValueError("configuration HTTP status must be a 4xx code")
+        super().__init__("answer provider rejected the configured request")
+        self.http_status = http_status
+
+
 @dataclass(frozen=True, slots=True)
 class OpenAIAnswerGenerator:
     """Translate one retry-free OpenAI call into an untrusted answer proposal."""
@@ -108,9 +118,7 @@ class OpenAIAnswerGenerator:
                 raise AnswerGenerationProviderTransientError(
                     "answer provider is temporarily unavailable"
                 ) from None
-            raise AnswerGenerationProviderConfigurationError(
-                "answer provider rejected the configured request"
-            ) from None
+            raise OpenAIAnswerProviderConfigurationError(http_status=error.status_code) from None
         except OpenAIError:
             raise AnswerGenerationProviderConfigurationError(
                 "answer provider rejected the configured request"
