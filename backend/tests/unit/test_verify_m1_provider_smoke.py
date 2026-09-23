@@ -48,6 +48,11 @@ from investment_research.modules.search.contracts import (
     EmbeddingResult,
     EmbeddingVector,
 )
+from investment_research.modules.search.ports import (
+    SearchProviderConfigurationError,
+    SearchProviderContractError,
+    SearchProviderTransientError,
+)
 from investment_research.settings import (
     M1_MAX_PROVIDER_MONTHLY_BUDGET_MICRO_USD,
     GenerationProviderSettings,
@@ -85,6 +90,7 @@ class RecordingEmbeddingProvider:
     """Return one contract-valid vector or one private synthetic failure."""
 
     fail: bool = False
+    error: Exception | None = None
     calls: list[EmbeddingRequest] = field(default_factory=list)
     closed: bool = False
 
@@ -92,6 +98,8 @@ class RecordingEmbeddingProvider:
         self.calls.append(request)
         if self.fail:
             raise RuntimeError("sensitive embedding failure")
+        if self.error is not None:
+            raise self.error
         return EmbeddingResult(
             vectors=tuple(
                 EmbeddingVector(
@@ -462,7 +470,7 @@ def test_smoke_rejects_unapproved_manifest_before_provider_construction(
     assert constructor_calls == 0
 
 
-def test_provider_failure_is_safe_and_still_cleans_namespace(
+def test_embedding_failure_is_safe_and_does_not_delete_an_unwritten_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     embedding = RecordingEmbeddingProvider(fail=True)
@@ -486,11 +494,50 @@ def test_provider_failure_is_safe_and_still_cleans_namespace(
 
     assert "sensitive" not in str(captured.value)
     assert captured.value.stage == "embedding"
-    assert writer.index.delete_calls[0]["delete_all"] is True
+    assert writer.index.delete_calls == []
+    assert writer.deleted is False
     assert writer.closed is True
     assert embedding.closed is True
     assert generator.closed is True
     assert support.closed is True
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "expected_reason"),
+    [
+        (SearchProviderConfigurationError("sensitive detail"), "provider_configuration"),
+        (SearchProviderTransientError("sensitive detail"), "provider_transient"),
+        (SearchProviderContractError("sensitive detail"), "provider_contract"),
+    ],
+)
+def test_smoke_classifies_embedding_failure_without_deleting_an_unwritten_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_error: Exception,
+    expected_reason: str,
+) -> None:
+    writer = RecordingDenseWriter(fail_delete=True)
+    embedding = RecordingEmbeddingProvider(error=provider_error)
+    install_provider_fakes(
+        monkeypatch,
+        embedding=embedding,
+        writer=writer,
+        generator=RecordingAnswerGenerator(),
+        support=RecordingSupportEvaluator(),
+    )
+
+    with pytest.raises(ProviderSmokeVerificationError, match="failed safely") as captured:
+        verify_m1_provider_smoke(
+            manifest_path=APPROVED_MANIFEST,
+            settings=make_settings(),
+            generation_settings=make_generation_settings(),
+        )
+
+    assert captured.value.stage == "embedding"
+    assert captured.value.reason == expected_reason
+    assert "sensitive" not in str(captured.value)
+    assert writer.index.delete_calls == []
+    assert writer.closed is True
+    assert embedding.closed is True
 
 
 @pytest.mark.parametrize(

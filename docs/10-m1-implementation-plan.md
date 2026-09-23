@@ -666,13 +666,17 @@ public-synthetic fixture and separate least-privilege document-indexing and gene
 Manually dispatched live attempts have not yet passed. A prior Pinecone direct-write acknowledgement
 issue was corrected and covered by a regression test using the pinned SDK response type. One attempt
 reached `answer_generation` and reported `provider_configuration`; its specific HTTP rejection was
-not established. The latest attempt reported `cleanup` with `verification`, but the old runner
-masked any preceding failure, so that output does not establish whether answer generation passed.
-The runner now retains an allowlisted primary stage and reason when cleanup also fails, identifies
-which cleanup operation failed, and reports only the HTTP status number for adapter-classified
-OpenAI 4xx answer rejections. It never prints provider exceptions, credentials, prompts, or source
-content. A new bounded live run is required to identify the remaining failure; complete-stack M1
-acceptance remains the Step 6 gate.
+not established. A later attempt reported `cleanup` with `verification`, but the old runner masked
+any preceding failure. With separate cleanup diagnostics, the latest attempt identified an
+`embedding` failure classified as `unexpected` and a subsequent `pinecone_delete` failure. The
+classifier did not yet recognize application-owned embedding provider errors, and cleanup tried
+to delete a fresh namespace even though embedding had failed before any vector write. The runner
+now classifies those errors safely and skips namespace deletion before a vector ID exists; cleanup
+after a possible upsert remains mandatory. It retains an allowlisted primary stage and reason when
+cleanup also fails, identifies the failed cleanup operation, and reports only the HTTP status number
+for adapter-classified OpenAI 4xx answer rejections. It never prints provider exceptions,
+credentials, prompts, or source content. A new bounded live run is required to identify the actual
+embedding failure class; complete-stack M1 acceptance remains the Step 6 gate.
 
 ### Step 5 — Canonical usage and trace correlation
 
