@@ -914,6 +914,16 @@ def test_api_and_worker_accept_one_shared_m1_acceptance_index(tmp_path: Path) ->
 
     assert api.require_acceptance_dense_index_path() == index_path
     assert worker.require_acceptance_dense_index_path() == index_path
+    assert worker.require_m1_processing_configuration() == 5_000_000
+
+
+def test_m1_worker_rejects_missing_indexing_configuration_before_processing() -> None:
+    settings = WorkerSettings()
+
+    with pytest.raises(
+        ValueError, match="requires indexing providers or the test acceptance index"
+    ):
+        settings.require_m1_processing_configuration()
 
 
 @pytest.mark.parametrize(
@@ -1043,6 +1053,7 @@ def test_api_and_worker_load_distinct_least_privilege_provider_credentials(
     indexing_providers = worker_settings.require_indexing_providers()
     assert api_settings.provider_monthly_budget_micro_usd == 5_000_000
     assert worker_settings.provider_monthly_budget_micro_usd == 5_000_000
+    assert worker_settings.require_m1_processing_configuration() == 5_000_000
     assert query_providers.embedding.api_key.get_secret_value() == (
         "synthetic-query-embedding-secret"
     )

@@ -559,6 +559,22 @@ def test_build_worker_container_wires_credential_free_m1_acceptance(
         container.close()
 
 
+def test_build_worker_container_rejects_unconfigured_m1(tmp_path: Path) -> None:
+    settings = WorkerSettings.model_validate(
+        {
+            "environment": "test",
+            "database_url": LOCAL_DATABASE_URL,
+            "object_storage_root": tmp_path / "objects",
+            "parser_endpoint_url": "http://127.0.0.1:8100",
+        }
+    )
+
+    with pytest.raises(
+        ValueError, match="requires indexing providers or the test acceptance index"
+    ):
+        build_worker_container(settings)
+
+
 def test_build_worker_container_supports_credential_free_m0_regression(
     tmp_path: Path,
 ) -> None:
