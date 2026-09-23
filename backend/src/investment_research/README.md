@@ -73,7 +73,8 @@ The Celery worker is a second trusted process entry point with its own compositi
 
 ```mermaid
 flowchart TD
-    SETTINGS[WorkerSettings] --> ENTRY[worker.py]
+    SETTINGS[WorkerSettings] --> VALIDATE[Validate M1 indexing configuration]
+    VALIDATE --> ENTRY[worker.py]
     ENTRY --> CELERY[Celery application]
     ENTRY --> EXECUTOR[WorkerProcessingJobExecutor]
     CELERY --> TASK[Validated ProcessingJobV1 task]
@@ -98,6 +99,9 @@ The queue payload uses the versioned `ProcessingJobV1` contract rather than acce
 database or session objects. `WorkerProcessingJobExecutor` creates the worker container only when a
 child handles its first task, reuses process-owned resources safely, and disposes them when that
 child shuts down. Shutdown closes the Pinecone gRPC channel, OpenAI HTTP client, and database engine.
+For the M1 profile, `worker.py` requires either complete indexing-provider settings or the
+credential-free test acceptance index, plus the monthly provider budget, before the worker starts
+consuming tasks. Container construction repeats this validation as a safeguard for direct callers.
 The application service revalidates canonical workspace and run state before it opens the original,
 indexes active chunks, or commits derived output.
 
@@ -113,7 +117,7 @@ statement-support clients, then injects them into the M1 retrieval and validated
 The answer and support clients use the same API-role credential but remain independent clients with
 separate prompts, timeouts, token limits, and versioned profiles. When the API groups are absent,
 the credential-free lexical and deterministic-fixture regression path remains active. The worker
-group is required when its container is built and is wired only to document indexing. All provider
+group is required at M1 worker startup and is wired only to document indexing. All provider
 models, dimensions, configuration versions, and limits remain frozen in application-owned code.
 `ParserSettings` loads only its allowlisted process variables,
 exposes no database, queue, or provider field, and rejects known application credential variables.

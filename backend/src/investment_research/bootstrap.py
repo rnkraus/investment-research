@@ -687,8 +687,7 @@ def build_worker_container(
         index_active_chunks_service: IndexActiveChunksService | None = None
         index_processing_run_service: IndexProcessingRunService | None = None
         if settings.processing_profile == "m1":
-            monthly_budget = settings.provider_monthly_budget_micro_usd
-            assert monthly_budget is not None
+            monthly_budget = settings.require_m1_processing_configuration()
             provider_operation_unit_of_work_factory = (
                 create_provider_operation_unit_of_work_factory(database.session_factory)
             )

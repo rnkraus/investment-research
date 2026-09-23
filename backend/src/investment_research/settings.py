@@ -585,6 +585,17 @@ class WorkerSettings(ObjectStorageSettings):
             )
         return self
 
+    def require_m1_processing_configuration(self) -> int:
+        """Reject an M1 worker that cannot index before it consumes a job."""
+
+        if self.processing_profile != "m1":
+            raise ValueError("M1 processing configuration requires the M1 profile")
+        if self.acceptance_dense_index_path is None and self.indexing_providers is None:
+            raise ValueError("M1 worker requires indexing providers or the test acceptance index")
+        if self.provider_monthly_budget_micro_usd is None:
+            raise ValueError("M1 worker requires the monthly provider budget")
+        return self.provider_monthly_budget_micro_usd
+
     def require_acceptance_dense_index_path(self) -> Path:
         """Return the validated shared index path for the isolated test runtime."""
 

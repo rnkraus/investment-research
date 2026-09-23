@@ -44,6 +44,8 @@ def create_worker_application(
 ) -> tuple[Celery, WorkerProcessingJobExecutor]:
     """Build a broker application and register its processing task adapter."""
 
+    if settings.processing_profile == "m1":
+        settings.require_m1_processing_configuration()
     application = create_celery_app(settings)
     executor = WorkerProcessingJobExecutor(settings)
     register_processing_tasks(application, executor)
