@@ -2,8 +2,9 @@
 
 import argparse
 import hashlib
+import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -542,6 +543,7 @@ def verify_m1_provider_smoke(
     manifest_path: Path,
     settings: WorkerSettings,
     generation_settings: GenerationProviderSettings,
+    local_validation_output: Callable[[str], None] | None = None,
 ) -> ProviderSmokeResult:
     """Execute one bounded compatibility request and always clean its derived namespace."""
 
@@ -581,6 +583,7 @@ def verify_m1_provider_smoke(
             model=OPENAI_ANSWER_MODEL,
             operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
             max_output_tokens=SMOKE_ANSWER_MAX_OUTPUT_TOKENS,
+            local_validation_output=local_validation_output,
         )
         support_evaluator = create_openai_statement_support_evaluator(
             api_key=generation_settings.api_key.get_secret_value(),
@@ -731,6 +734,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--confirm-public-synthetic", action="store_true", required=True)
     parser.add_argument("--confirm-pinecone-starter", action="store_true", required=True)
+    parser.add_argument("--show-local-generation-output", action="store_true")
     return parser
 
 
@@ -738,6 +742,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Load least-privilege worker credentials and report only safe smoke metrics."""
 
     arguments = build_argument_parser().parse_args(argv)
+    if arguments.show_local_generation_output and ("CI" in os.environ or not sys.stdout.isatty()):
+        print(
+            "Raw generation output requires an interactive local terminal outside CI.",
+            file=sys.stderr,
+        )
+        return 2
+
+    def show_local_generation_output(output: str) -> None:
+        print("Unvalidated M1 generation output from the approved public-synthetic fixture:")
+        print(output)
+
     try:
         settings = load_worker_settings()
         generation_settings = load_generation_provider_settings()
@@ -752,6 +767,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             manifest_path=arguments.manifest,
             settings=settings,
             generation_settings=generation_settings,
+            local_validation_output=(
+                show_local_generation_output if arguments.show_local_generation_output else None
+            ),
         )
     except ProviderSmokeVerificationError as error:
         status = f", http_status={error.http_status}" if error.http_status is not None else ""

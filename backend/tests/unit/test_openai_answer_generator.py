@@ -61,7 +61,7 @@ SOURCE_TEXT = "A shortage of high-voltage transformers constrained new customer 
 STATEMENT = "A transformer shortage constrained new customer deployments."
 
 
-def make_generation_input() -> AnswerGenerationInput:
+def make_generation_input(*, source_text: str = SOURCE_TEXT) -> AnswerGenerationInput:
     """Build one bounded canonical source passed to the untrusted generator."""
 
     return AnswerGenerationInput(
@@ -75,7 +75,7 @@ def make_generation_input() -> AnswerGenerationInput:
                 document_version_id=VERSION_ID,
                 structure_block_id=BLOCK_ID,
                 source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
-                text=SOURCE_TEXT,
+                text=source_text,
             ),
         ),
     )
@@ -103,6 +103,30 @@ def make_proposal() -> UnvalidatedGeneratedAnswer:
     )
 
 
+def make_provider_proposal(
+    *,
+    exact_text: str = SOURCE_TEXT,
+    candidate_id: UUID = CANDIDATE_ID,
+) -> openai_module._OpenAIGeneratedAnswer:
+    """Build the provider shape without model-authored character positions."""
+
+    return openai_module._OpenAIGeneratedAnswer(
+        coverage_status=CoverageStatus.COMPLETE,
+        rendered_text=STATEMENT,
+        statements=(
+            openai_module._OpenAIGeneratedStatement(
+                text=STATEMENT,
+                evidence=(
+                    openai_module._OpenAIEvidenceReference(
+                        retrieval_candidate_id=candidate_id,
+                        exact_text=exact_text,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 @dataclass(slots=True)
 class StubResponseUsage:
     """Expose the bounded token totals consumed from an OpenAI response."""
@@ -118,7 +142,9 @@ class StubParsedResponse:
 
     model: str = OPENAI_ANSWER_MODEL
     status: str = "completed"
-    output_parsed: UnvalidatedGeneratedAnswer | None = field(default_factory=make_proposal)
+    output_parsed: openai_module._OpenAIGeneratedAnswer | None = field(
+        default_factory=make_provider_proposal
+    )
     output: tuple[object, ...] = ()
     incomplete_details: object | None = None
     usage: StubResponseUsage | None = field(default_factory=StubResponseUsage)
@@ -150,6 +176,50 @@ class RecordingOpenAIClient:
         self.closed = True
 
 
+@dataclass(slots=True)
+class StubRawResponse:
+    """Expose the raw provider body before the pinned SDK parser validates it."""
+
+    body: object
+    parse_error: ValidationError
+
+    @property
+    def http_response(self) -> StubRawResponse:
+        return self
+
+    def parse(self) -> StubParsedResponse:
+        raise self.parse_error
+
+    def json(self) -> object:
+        return self.body
+
+
+@dataclass(slots=True)
+class RecordingRawResponsesResource:
+    """Require the raw-response route while recording the single provider request."""
+
+    raw_response: StubRawResponse
+    calls: list[dict[str, object]] = field(default_factory=list)
+    raw_route_used: bool = False
+
+    @property
+    def with_raw_response(self) -> RecordingRawResponsesResource:
+        self.raw_route_used = True
+        return self
+
+    def parse(self, **kwargs: object) -> StubRawResponse:
+        self.calls.append(kwargs)
+        return self.raw_response
+
+
+@dataclass(slots=True)
+class RecordingRawOpenAIClient:
+    responses: RecordingRawResponsesResource
+
+    def close(self) -> None:
+        pass
+
+
 def make_generator(client: RecordingOpenAIClient) -> OpenAIAnswerGenerator:
     """Inject a recording client through the concrete SDK boundary."""
 
@@ -175,7 +245,7 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
     assert len(client.responses.calls) == 1
     call = client.responses.calls[0]
     assert call["model"] == OPENAI_ANSWER_MODEL
-    assert call["text_format"] is UnvalidatedGeneratedAnswer
+    assert call["text_format"] is openai_module._OpenAIGeneratedAnswer
     assert call["reasoning"] == {"effort": "low"}
     assert call["max_output_tokens"] == OPENAI_ANSWER_MAX_OUTPUT_TOKENS
     assert call["store"] is False
@@ -200,6 +270,84 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
     assert str(DOCUMENT_ID) not in serialized_payload
     assert str(VERSION_ID) not in serialized_payload
     assert str(BLOCK_ID) not in serialized_payload
+
+
+@pytest.mark.parametrize(
+    ("source_text", "exact_text", "expected_start"),
+    [
+        pytest.param(
+            "The primary constraint on new customer deployments is "
+            "a shortage of high-voltage transformers.",
+            "a shortage of high-voltage transformers",
+            54,
+            id="punctuation-is-not-part-of-evidence",
+        ),
+        pytest.param(
+            "Before 🧭 Evidence after",
+            "🧭 Evidence",
+            7,
+            id="unicode-code-point-offsets",
+        ),
+    ],
+)
+def test_generate_derives_exact_unique_source_offsets(
+    source_text: str,
+    exact_text: str,
+    expected_start: int,
+) -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(
+            response=StubParsedResponse(
+                output_parsed=make_provider_proposal(exact_text=exact_text),
+            )
+        )
+    )
+
+    result = make_generator(client).generate(make_generation_input(source_text=source_text))
+
+    reference = result.answer.statements[0].evidence[0]
+    assert reference.start_character == expected_start
+    assert reference.end_character == expected_start + len(exact_text)
+    assert source_text[reference.start_character : reference.end_character] == exact_text
+    assert len(client.responses.calls) == 1
+    assert set(openai_module._OpenAIEvidenceReference.model_fields) == {
+        "retrieval_candidate_id",
+        "exact_text",
+    }
+
+
+@pytest.mark.parametrize(
+    ("source_text", "exact_text", "candidate_id"),
+    [
+        pytest.param("No matching passage", "different passage", CANDIDATE_ID, id="missing-text"),
+        pytest.param(
+            "repeated text; repeated text", "repeated text", CANDIDATE_ID, id="ambiguous-text"
+        ),
+        pytest.param(SOURCE_TEXT, SOURCE_TEXT, REQUEST_ID, id="unknown-candidate"),
+    ],
+)
+def test_generate_rejects_unresolvable_evidence_without_guessing(
+    source_text: str,
+    exact_text: str,
+    candidate_id: UUID,
+) -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(
+            response=StubParsedResponse(
+                output_parsed=make_provider_proposal(
+                    exact_text=exact_text,
+                    candidate_id=candidate_id,
+                ),
+            )
+        )
+    )
+
+    with pytest.raises(OpenAIAnswerProviderContractError) as captured:
+        make_generator(client).generate(make_generation_input(source_text=source_text))
+
+    assert captured.value.detail == "typed_answer_validation"
+    assert captured.value.__cause__ is None
+    assert len(client.responses.calls) == 1
 
 
 @pytest.mark.parametrize(
@@ -367,7 +515,9 @@ def test_provider_errors_are_translated_without_exposing_details(
 
 def test_typed_answer_validation_failure_retains_only_a_fixed_detail() -> None:
     with pytest.raises(ValidationError) as invalid_output:
-        UnvalidatedGeneratedAnswer.model_validate({"coverage_status": CoverageStatus.COMPLETE})
+        openai_module._OpenAIGeneratedAnswer.model_validate(
+            {"coverage_status": CoverageStatus.COMPLETE}
+        )
     client = RecordingOpenAIClient(responses=RecordingResponsesResource(error=invalid_output.value))
 
     with pytest.raises(OpenAIAnswerProviderContractError) as captured:
@@ -376,6 +526,47 @@ def test_typed_answer_validation_failure_retains_only_a_fixed_detail() -> None:
     assert captured.value.detail == "typed_answer_validation"
     assert "coverage_status" not in str(captured.value)
     assert captured.value.__cause__ is None
+
+
+def test_local_debug_reads_only_raw_generated_text_from_one_request() -> None:
+    with pytest.raises(ValidationError) as invalid_output:
+        openai_module._OpenAIGeneratedAnswer.model_validate(
+            {"coverage_status": CoverageStatus.COMPLETE}
+        )
+    raw_response = StubRawResponse(
+        body={
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {"type": "output_text", "text": '{"rendered_text":"synthetic answer"}'},
+                        {"type": "refusal", "refusal": "private provider detail"},
+                    ],
+                }
+            ],
+            "metadata": {"secret": "private provider metadata"},
+        },
+        parse_error=invalid_output.value,
+    )
+    raw_responses = RecordingRawResponsesResource(raw_response=raw_response)
+    raw_client = RecordingRawOpenAIClient(responses=raw_responses)
+    output: list[str] = []
+
+    with pytest.raises(OpenAIAnswerProviderContractError) as captured:
+        OpenAIAnswerGenerator(
+            client=cast(OpenAI, raw_client),
+            local_validation_output=output.append,
+        ).generate(make_generation_input())
+
+    normal_responses = RecordingResponsesResource()
+    make_generator(RecordingOpenAIClient(responses=normal_responses)).generate(
+        make_generation_input()
+    )
+    assert captured.value.detail == "typed_answer_validation"
+    assert output == ['{"rendered_text":"synthetic answer"}']
+    assert raw_responses.raw_route_used is True
+    assert raw_responses.calls == normal_responses.calls
+    assert len(raw_responses.calls) == 1
 
 
 @pytest.mark.parametrize(

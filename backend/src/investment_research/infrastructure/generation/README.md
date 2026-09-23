@@ -60,14 +60,18 @@ references per statement.
 flowchart LR
     INPUT[Bounded AnswerGenerationInput] --> ALLOWLIST[Request ID, question,<br/>candidate ID, source text]
     ALLOWLIST --> API[OpenAI Responses API<br/>no tools, no storage]
-    API --> SCHEMA[Strict Pydantic schema]
-    SCHEMA --> PROPOSAL[UnvalidatedGeneratedAnswer]
+    API --> SCHEMA[Strict provider schema<br/>candidate ID + exact text]
+    SCHEMA --> RANGE[Resolve one unique substring<br/>to a half-open range]
+    RANGE --> PROPOSAL[UnvalidatedGeneratedAnswer]
     PROPOSAL --> CANONICAL[Canonical evidence validation]
 ```
 
 The serialized provider payload omits document, version, chunk, and structure-block identifiers
 because the model needs only the candidate identifier that it may cite. Instructions explicitly
 treat the question and source text as untrusted data and forbid general-knowledge completion.
+The model does not count source characters. The adapter derives offsets only for an exact substring
+that occurs once in the cited selected source; missing, repeated, or foreign references fail closed.
+The application's later canonical evidence validation remains mandatory.
 Provider connection, configuration, schema, incomplete-output, and refusal failures become safe
 application-owned errors without preserving provider messages as public details.
 

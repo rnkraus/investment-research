@@ -341,13 +341,18 @@ Generation receives only:
 - the strict output schema and versioned application prompt.
 
 The OpenAI request uses `gpt-5.6-terra`, low reasoning, `store=false`, no tools, no background mode,
-and a strict structured-output schema. Provider output remains an `UnvalidatedGeneratedAnswer`.
-The application adapter returns it inside `AnswerGenerationResult` together with validated,
-content-free `ProviderUsage`; no SDK response object crosses the provider boundary.
+and a strict structured-output schema. The provider proposes a retrieval-candidate ID and an exact
+supporting substring for each reference; it does not calculate character offsets. The application
+adapter accepts a reference only when that substring occurs exactly once in the named supplied
+source. It derives the zero-based, half-open source range, constructs an
+`UnvalidatedGeneratedAnswer`, and returns it inside `AnswerGenerationResult` together with
+validated, content-free `ProviderUsage`. Unknown candidates, absent or repeated substrings, and
+invalid answer shapes fail closed. No SDK response object crosses the provider boundary.
 
 An answered proposal contains no more than 8 statements and 2 evidence references per statement.
-Each reference names only a supplied retrieval-candidate ID and a block-local half-open range. An
-insufficient proposal contains no statements or citations and names the missing information.
+Each application reference names only a supplied retrieval-candidate ID and a block-local
+half-open range. An insufficient proposal contains no statements or citations and names the missing
+information.
 
 Statement support is evaluated separately with its own configuration, prompt, timeout, and usage
 record. The application first reads proposed canonical sources in a short transaction, then calls
@@ -511,6 +516,13 @@ Live tests:
 - stop before a call that would exceed a bound;
 - remove only resources carrying the exact run prefix;
 - report safe counts, usage, cost, and outcome without raw fixture or model content.
+
+For diagnosing a typed generation-response validation failure, the same smoke runner permits an
+explicit `--show-local-generation-output` option only in an interactive terminal outside CI. It
+retains the approved frozen public-synthetic manifest, the same request and spend limits, and the
+same cleanup. Only the model-generated `output_text` from a failed parse is shown locally; response
+metadata, credentials, prompts, and provider error bodies are not printed. The option is absent
+from the hosted workflow and must not be used with private or sensitive content.
 
 Live checks are compatibility evidence only. They never replace deterministic correctness,
 workspace-isolation, citation, failure, migration, or API-contract tests.
