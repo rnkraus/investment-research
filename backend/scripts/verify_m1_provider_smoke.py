@@ -20,8 +20,10 @@ from investment_research.infrastructure.evidence.openai import (
 from investment_research.infrastructure.generation.openai import (
     OPENAI_ANSWER_MODEL,
     OPENAI_ANSWER_TIMEOUT_SECONDS,
+    OpenAIAnswerContractDetail,
     OpenAIAnswerGenerator,
     OpenAIAnswerProviderConfigurationError,
+    OpenAIAnswerProviderContractError,
     create_openai_answer_generator,
 )
 from investment_research.infrastructure.search.openai import (
@@ -150,10 +152,12 @@ class ProviderSmokeVerificationError(RuntimeError):
         stage: SmokeFailureStage = "preflight",
         reason: SmokeFailureReason = "verification",
         http_status: int | None = None,
+        contract_detail: OpenAIAnswerContractDetail | None = None,
         cleanup_steps: tuple[SmokeCleanupStep, ...] = (),
         primary_stage: SmokeFailureStage | None = None,
         primary_reason: SmokeFailureReason | None = None,
         primary_http_status: int | None = None,
+        primary_contract_detail: OpenAIAnswerContractDetail | None = None,
     ) -> None:
         if http_status is not None and not 400 <= http_status < 500:
             raise ValueError("smoke HTTP status must be a 4xx code")
@@ -163,10 +167,12 @@ class ProviderSmokeVerificationError(RuntimeError):
         self.stage = stage
         self.reason = reason
         self.http_status = http_status
+        self.contract_detail = contract_detail
         self.cleanup_steps = cleanup_steps
         self.primary_stage = primary_stage
         self.primary_reason = primary_reason
         self.primary_http_status = primary_http_status
+        self.primary_contract_detail = primary_contract_detail
 
 
 def _safe_failure_reason(error: Exception) -> SmokeFailureReason:
@@ -197,6 +203,14 @@ def _safe_http_status(error: Exception) -> int | None:
         OpenAIAnswerProviderConfigurationError | OpenAIEmbeddingProviderConfigurationError,
     ):
         return error.http_status
+    return None
+
+
+def _safe_contract_detail(error: Exception) -> OpenAIAnswerContractDetail | None:
+    """Retain only a fixed adapter-owned contract category, never provider output."""
+
+    if isinstance(error, OpenAIAnswerProviderContractError):
+        return error.detail
     return None
 
 
@@ -689,6 +703,9 @@ def verify_m1_provider_smoke(
                 primary_http_status=(
                     _safe_http_status(primary_error) if primary_error is not None else None
                 ),
+                primary_contract_detail=(
+                    _safe_contract_detail(primary_error) if primary_error is not None else None
+                ),
             ) from None
     if primary_error is not None:
         raise ProviderSmokeVerificationError(
@@ -696,6 +713,7 @@ def verify_m1_provider_smoke(
             stage=stage,
             reason=_safe_failure_reason(primary_error),
             http_status=_safe_http_status(primary_error),
+            contract_detail=_safe_contract_detail(primary_error),
         ) from None
     return ProviderSmokeResult(
         embedding_requests=budget.embedding_requests,
@@ -737,6 +755,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except ProviderSmokeVerificationError as error:
         status = f", http_status={error.http_status}" if error.http_status is not None else ""
+        contract_detail = (
+            f", contract_detail={error.contract_detail}"
+            if error.contract_detail is not None
+            else ""
+        )
         cleanup = f", cleanup_steps={','.join(error.cleanup_steps)}" if error.cleanup_steps else ""
         primary = (
             f", primary_stage={error.primary_stage}, primary_reason={error.primary_reason}"
@@ -748,10 +771,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             if error.primary_http_status is not None
             else ""
         )
+        primary_contract_detail = (
+            f", primary_contract_detail={error.primary_contract_detail}"
+            if error.primary_contract_detail is not None
+            else ""
+        )
         print(
             "M1 provider smoke failed at "
-            f"stage={error.stage}, reason={error.reason}{status}{cleanup}"
-            f"{primary}{primary_status}; "
+            f"stage={error.stage}, reason={error.reason}{status}{contract_detail}{cleanup}"
+            f"{primary}{primary_status}{primary_contract_detail}; "
             "provider details were withheld.",
             file=sys.stderr,
         )

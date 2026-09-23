@@ -15,6 +15,7 @@ from investment_research.infrastructure.evidence.openai import OpenAIStatementSu
 from investment_research.infrastructure.generation.openai import (
     OpenAIAnswerGenerator,
     OpenAIAnswerProviderConfigurationError,
+    OpenAIAnswerProviderContractError,
 )
 from investment_research.infrastructure.search.openai import (
     OpenAIEmbeddingProvider,
@@ -646,6 +647,33 @@ def test_smoke_classifies_generation_failure_without_provider_details(
     assert writer.deleted is True
 
 
+def test_smoke_retains_only_fixed_generation_contract_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer = RecordingDenseWriter()
+    install_provider_fakes(
+        monkeypatch,
+        embedding=RecordingEmbeddingProvider(),
+        writer=writer,
+        generator=RecordingAnswerGenerator(
+            error=OpenAIAnswerProviderContractError(detail="typed_answer_validation")
+        ),
+        support=RecordingSupportEvaluator(),
+    )
+
+    with pytest.raises(ProviderSmokeVerificationError, match="failed safely") as captured:
+        verify_m1_provider_smoke(
+            manifest_path=APPROVED_MANIFEST,
+            settings=make_settings(),
+            generation_settings=make_generation_settings(),
+        )
+
+    assert captured.value.stage == "answer_generation"
+    assert captured.value.reason == "provider_contract"
+    assert captured.value.contract_detail == "typed_answer_validation"
+    assert writer.deleted is True
+
+
 def test_smoke_retains_only_classified_openai_http_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -762,12 +790,32 @@ def test_cleanup_failure_is_safe_and_does_not_skip_other_client_close(
     assert support.closed is True
 
 
+@pytest.mark.parametrize(
+    ("generation_error", "expected_reason", "expected_contract_detail"),
+    [
+        pytest.param(
+            AnswerGenerationProviderOutputLimitError(),
+            "provider_output_limit",
+            None,
+            id="output-limit",
+        ),
+        pytest.param(
+            OpenAIAnswerProviderContractError(detail="missing_usage"),
+            "provider_contract",
+            "missing_usage",
+            id="contract-detail",
+        ),
+    ],
+)
 def test_cleanup_failure_keeps_the_original_failure_classification(
     monkeypatch: pytest.MonkeyPatch,
+    generation_error: Exception,
+    expected_reason: str,
+    expected_contract_detail: str | None,
 ) -> None:
     embedding = RecordingEmbeddingProvider()
     writer = RecordingDenseWriter(fail_delete=True)
-    generator = RecordingAnswerGenerator(error=AnswerGenerationProviderOutputLimitError())
+    generator = RecordingAnswerGenerator(error=generation_error)
     support = RecordingSupportEvaluator()
     install_provider_fakes(
         monkeypatch,
@@ -786,7 +834,8 @@ def test_cleanup_failure_keeps_the_original_failure_classification(
 
     assert captured.value.cleanup_steps == ("pinecone_delete",)
     assert captured.value.primary_stage == "answer_generation"
-    assert captured.value.primary_reason == "provider_output_limit"
+    assert captured.value.primary_reason == expected_reason
+    assert captured.value.primary_contract_detail == expected_contract_detail
     assert "sensitive" not in str(captured.value)
     assert embedding.closed is True
     assert writer.closed is True
@@ -881,6 +930,40 @@ def test_main_reports_only_safe_http_status(
     assert result == 1
     assert output.out == ""
     assert "stage=answer_generation, reason=provider_configuration, http_status=401" in output.err
+    assert "sensitive" not in output.err
+
+
+def test_main_reports_only_fixed_contract_detail(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_smoke(**_: object) -> None:
+        raise ProviderSmokeVerificationError(
+            "sensitive provider detail",
+            stage="answer_generation",
+            reason="provider_contract",
+            contract_detail="typed_answer_validation",
+        )
+
+    monkeypatch.setattr(smoke_module, "load_worker_settings", make_settings)
+    monkeypatch.setattr(smoke_module, "load_generation_provider_settings", make_generation_settings)
+    monkeypatch.setattr(smoke_module, "verify_m1_provider_smoke", fail_smoke)
+
+    result = smoke_module.main(
+        [
+            "--manifest",
+            str(APPROVED_MANIFEST),
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+        ]
+    )
+
+    output = capsys.readouterr()
+    assert result == 1
+    assert output.out == ""
+    assert (
+        "stage=answer_generation, reason=provider_contract, contract_detail=typed_answer_validation"
+    ) in output.err
     assert "sensitive" not in output.err
 
 

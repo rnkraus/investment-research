@@ -20,6 +20,7 @@ from openai import (
     RateLimitError,
 )
 from openai.types.chat import ChatCompletion
+from pydantic import ValidationError
 
 from investment_research.infrastructure.generation import openai as openai_module
 from investment_research.infrastructure.generation.openai import (
@@ -28,6 +29,7 @@ from investment_research.infrastructure.generation.openai import (
     OPENAI_ANSWER_TIMEOUT_SECONDS,
     OpenAIAnswerGenerator,
     OpenAIAnswerProviderConfigurationError,
+    OpenAIAnswerProviderContractError,
     create_openai_answer_generator,
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
@@ -201,16 +203,18 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
 
 
 @pytest.mark.parametrize(
-    ("response", "application_error"),
+    ("response", "application_error", "expected_detail"),
     [
         pytest.param(
             StubParsedResponse(model="different-model"),
             AnswerGenerationProviderContractError,
+            "model_mismatch",
             id="model-drift",
         ),
         pytest.param(
             StubParsedResponse(status="incomplete", output_parsed=None),
             AnswerGenerationProviderContractError,
+            "incomplete_response",
             id="incomplete-without-output-limit",
         ),
         pytest.param(
@@ -220,16 +224,19 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
                 incomplete_details=SimpleNamespace(reason="max_output_tokens"),
             ),
             AnswerGenerationProviderOutputLimitError,
+            None,
             id="output-limit",
         ),
         pytest.param(
             StubParsedResponse(status="failed", output_parsed=None),
             AnswerGenerationProviderTransientError,
+            None,
             id="failed",
         ),
         pytest.param(
             StubParsedResponse(output_parsed=None),
             AnswerGenerationProviderContractError,
+            "missing_typed_answer",
             id="missing-typed-output",
         ),
         pytest.param(
@@ -243,16 +250,19 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
                 ),
             ),
             AnswerGenerationProviderRefusalError,
+            None,
             id="refusal",
         ),
         pytest.param(
             StubParsedResponse(usage=None),
             AnswerGenerationProviderContractError,
+            "missing_usage",
             id="missing-usage",
         ),
         pytest.param(
             StubParsedResponse(usage=StubResponseUsage(total_tokens=151)),
             AnswerGenerationProviderContractError,
+            "invalid_usage",
             id="contradictory-usage",
         ),
         pytest.param(
@@ -264,6 +274,7 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
                 )
             ),
             AnswerGenerationProviderContractError,
+            "invalid_usage",
             id="usage-out-of-range",
         ),
     ],
@@ -271,11 +282,16 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
 def test_generate_rejects_non_completed_or_untyped_responses(
     response: StubParsedResponse,
     application_error: type[Exception],
+    expected_detail: str | None,
 ) -> None:
     client = RecordingOpenAIClient(responses=RecordingResponsesResource(response=response))
 
-    with pytest.raises(application_error):
+    with pytest.raises(application_error) as captured:
         make_generator(client).generate(make_generation_input())
+
+    if expected_detail is not None:
+        assert isinstance(captured.value, OpenAIAnswerProviderContractError)
+        assert captured.value.detail == expected_detail
 
 
 @pytest.mark.parametrize(
@@ -344,6 +360,22 @@ def test_provider_errors_are_translated_without_exposing_details(
     assert "sensitive" not in str(captured.value)
     assert captured.value.__cause__ is None
     assert len(client.responses.calls) == 1
+    if isinstance(provider_error, APIResponseValidationError):
+        assert isinstance(captured.value, OpenAIAnswerProviderContractError)
+        assert captured.value.detail == "api_response_validation"
+
+
+def test_typed_answer_validation_failure_retains_only_a_fixed_detail() -> None:
+    with pytest.raises(ValidationError) as invalid_output:
+        UnvalidatedGeneratedAnswer.model_validate({"coverage_status": CoverageStatus.COMPLETE})
+    client = RecordingOpenAIClient(responses=RecordingResponsesResource(error=invalid_output.value))
+
+    with pytest.raises(OpenAIAnswerProviderContractError) as captured:
+        make_generator(client).generate(make_generation_input())
+
+    assert captured.value.detail == "typed_answer_validation"
+    assert "coverage_status" not in str(captured.value)
+    assert captured.value.__cause__ is None
 
 
 @pytest.mark.parametrize(

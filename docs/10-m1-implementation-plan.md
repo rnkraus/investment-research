@@ -680,6 +680,13 @@ rejections. It never prints provider exceptions, credentials, prompts, or source
 bounded live run is required to identify the embedding rejection status; complete-stack M1
 acceptance remains the Step 6 gate.
 
+As of 2026-09-23, a later manually dispatched live attempt reached `answer_generation` and
+reported `provider_contract`; no complete live smoke pass is claimed. The generation adapter and
+smoke runner now retain only a fixed application-owned `contract_detail` category for that failure,
+including when a cleanup failure would otherwise mask the primary error. Provider responses,
+exception messages, credentials, prompts, and source content remain excluded from diagnostics. A
+new bounded live run is needed to identify the specific contract category before deciding on a fix.
+
 ### Step 5 — Canonical usage and trace correlation
 
 **Suggested branch:** `feat/m1-observability`
