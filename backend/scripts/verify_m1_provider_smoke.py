@@ -123,6 +123,15 @@ type SmokeFailureReason = Literal[
     "verification",
     "unexpected",
 ]
+type SmokeCleanupStep = Literal[
+    "support_client_close",
+    "answer_client_close",
+    "pinecone_delete",
+    "pinecone_verify_absent",
+    "pinecone_cleanup",
+    "pinecone_client_close",
+    "embedding_client_close",
+]
 
 
 class ProviderSmokeVerificationError(RuntimeError):
@@ -135,13 +144,23 @@ class ProviderSmokeVerificationError(RuntimeError):
         stage: SmokeFailureStage = "preflight",
         reason: SmokeFailureReason = "verification",
         http_status: int | None = None,
+        cleanup_steps: tuple[SmokeCleanupStep, ...] = (),
+        primary_stage: SmokeFailureStage | None = None,
+        primary_reason: SmokeFailureReason | None = None,
+        primary_http_status: int | None = None,
     ) -> None:
         if http_status is not None and not 400 <= http_status < 500:
             raise ValueError("smoke HTTP status must be a 4xx code")
+        if primary_http_status is not None and not 400 <= primary_http_status < 500:
+            raise ValueError("primary smoke HTTP status must be a 4xx code")
         super().__init__(message)
         self.stage = stage
         self.reason = reason
         self.http_status = http_status
+        self.cleanup_steps = cleanup_steps
+        self.primary_stage = primary_stage
+        self.primary_reason = primary_reason
+        self.primary_http_status = primary_http_status
 
 
 def _safe_failure_reason(error: Exception) -> SmokeFailureReason:
@@ -453,17 +472,31 @@ def _delete_and_verify_namespace(
 ) -> None:
     """Delete only this run's unique namespace and require the written ID to disappear."""
 
-    writer.index.delete(
-        delete_all=True,
-        namespace=dense_index_namespace(context),
-        timeout=writer.operation_timeout_seconds,
-    )
+    try:
+        writer.index.delete(
+            delete_all=True,
+            namespace=dense_index_namespace(context),
+            timeout=writer.operation_timeout_seconds,
+        )
+    except Exception:
+        raise ProviderSmokeVerificationError(
+            "provider smoke cleanup delete failed",
+            stage="cleanup",
+            cleanup_steps=("pinecone_delete",),
+        ) from None
     if vector_id is None:
         return
 
     deadline = monotonic() + READINESS_TIMEOUT_SECONDS
     while (remaining := deadline - monotonic()) > 0:
-        visible = writer.fetch_visible(context, (vector_id,), timeout_seconds=remaining)
+        try:
+            visible = writer.fetch_visible(context, (vector_id,), timeout_seconds=remaining)
+        except Exception:
+            raise ProviderSmokeVerificationError(
+                "provider smoke cleanup visibility failed",
+                stage="cleanup",
+                cleanup_steps=("pinecone_verify_absent",),
+            ) from None
         if monotonic() >= deadline:
             break
         if not visible:
@@ -472,7 +505,11 @@ def _delete_and_verify_namespace(
         if remaining <= 0:
             break
         sleep(min(POLL_INTERVAL_SECONDS, remaining))
-    raise ProviderSmokeVerificationError("provider smoke cleanup could not be verified")
+    raise ProviderSmokeVerificationError(
+        "provider smoke cleanup could not be verified",
+        stage="cleanup",
+        cleanup_steps=("pinecone_verify_absent",),
+    )
 
 
 def verify_m1_provider_smoke(
@@ -601,34 +638,45 @@ def verify_m1_provider_smoke(
     except Exception as error:
         primary_error = error
     finally:
-        cleanup_error: Exception | None = None
+        cleanup_steps: list[SmokeCleanupStep] = []
         if support_evaluator is not None:
             try:
                 support_evaluator.close()
-            except Exception as error:
-                cleanup_error = error
+            except Exception:
+                cleanup_steps.append("support_client_close")
         if answer_generator is not None:
             try:
                 answer_generator.close()
-            except Exception as error:
-                cleanup_error = cleanup_error or error
+            except Exception:
+                cleanup_steps.append("answer_client_close")
         if writer is not None:
             try:
                 _delete_and_verify_namespace(writer, context, vector_id)
-            except Exception as error:
-                cleanup_error = error
+            except ProviderSmokeVerificationError as error:
+                cleanup_steps.extend(error.cleanup_steps or ("pinecone_cleanup",))
+            except Exception:
+                cleanup_steps.append("pinecone_cleanup")
             try:
                 writer.close()
-            except Exception as error:
-                cleanup_error = cleanup_error or error
+            except Exception:
+                cleanup_steps.append("pinecone_client_close")
         if embedding_provider is not None:
             try:
                 embedding_provider.close()
-            except Exception as error:
-                cleanup_error = cleanup_error or error
-        if cleanup_error is not None:
+            except Exception:
+                cleanup_steps.append("embedding_client_close")
+        if cleanup_steps:
             raise ProviderSmokeVerificationError(
-                "provider smoke cleanup failed", stage="cleanup"
+                "provider smoke cleanup failed",
+                stage="cleanup",
+                cleanup_steps=tuple(cleanup_steps),
+                primary_stage=stage if primary_error is not None else None,
+                primary_reason=(
+                    _safe_failure_reason(primary_error) if primary_error is not None else None
+                ),
+                primary_http_status=(
+                    _safe_http_status(primary_error) if primary_error is not None else None
+                ),
             ) from None
     if primary_error is not None:
         raise ProviderSmokeVerificationError(
@@ -677,9 +725,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except ProviderSmokeVerificationError as error:
         status = f", http_status={error.http_status}" if error.http_status is not None else ""
+        cleanup = f", cleanup_steps={','.join(error.cleanup_steps)}" if error.cleanup_steps else ""
+        primary = (
+            f", primary_stage={error.primary_stage}, primary_reason={error.primary_reason}"
+            if error.primary_stage is not None
+            else ""
+        )
+        primary_status = (
+            f", primary_http_status={error.primary_http_status}"
+            if error.primary_http_status is not None
+            else ""
+        )
         print(
             "M1 provider smoke failed at "
-            f"stage={error.stage}, reason={error.reason}{status}; "
+            f"stage={error.stage}, reason={error.reason}{status}{cleanup}"
+            f"{primary}{primary_status}; "
             "provider details were withheld.",
             file=sys.stderr,
         )
