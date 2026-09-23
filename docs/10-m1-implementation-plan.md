@@ -665,10 +665,11 @@ statement support under frozen request, token, vector, and cost ceilings. It use
 public-synthetic fixture and separate least-privilege document-indexing and generation credentials.
 Manually dispatched live attempts have not yet passed. A prior Pinecone direct-write acknowledgement
 issue was corrected and covered by a regression test using the pinned SDK response type. The latest
-attempt passed embedding and Pinecone, then stopped at `answer_generation`; the specific cause is not
-yet known. The runner now reports an allowlisted failure reason alongside its stage, including a
-distinct output-token-limit reason, without printing provider exceptions, credentials, prompts, or
-source content. A new bounded live run is required to classify the answer-generation failure;
+attempt passed embedding and Pinecone, then stopped at `answer_generation` with
+`provider_configuration`; the specific HTTP rejection is not yet known. The runner now reports an
+allowlisted failure reason alongside its stage and, for OpenAI 4xx answer rejections only, the HTTP
+status number. It never prints provider exceptions, credentials, prompts, or source content. A new
+bounded live run is required to identify the answer-generation rejection class;
 complete-stack M1 acceptance remains the Step 6 gate.
 
 ### Step 5 — Canonical usage and trace correlation

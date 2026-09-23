@@ -12,7 +12,10 @@ from uuid import uuid4
 import pytest
 
 from investment_research.infrastructure.evidence.openai import OpenAIStatementSupportEvaluator
-from investment_research.infrastructure.generation.openai import OpenAIAnswerGenerator
+from investment_research.infrastructure.generation.openai import (
+    OpenAIAnswerGenerator,
+    OpenAIAnswerProviderConfigurationError,
+)
 from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
 from investment_research.infrastructure.search.pinecone import PineconeDenseIndexWriter
 from investment_research.modules.evidence.contracts import (
@@ -535,6 +538,33 @@ def test_smoke_classifies_generation_failure_without_provider_details(
     assert writer.deleted is True
 
 
+def test_smoke_retains_only_classified_openai_http_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer = RecordingDenseWriter()
+    install_provider_fakes(
+        monkeypatch,
+        embedding=RecordingEmbeddingProvider(),
+        writer=writer,
+        generator=RecordingAnswerGenerator(
+            error=OpenAIAnswerProviderConfigurationError(http_status=400)
+        ),
+        support=RecordingSupportEvaluator(),
+    )
+
+    with pytest.raises(ProviderSmokeVerificationError, match="failed safely") as captured:
+        verify_m1_provider_smoke(
+            manifest_path=APPROVED_MANIFEST,
+            settings=make_settings(),
+            generation_settings=make_generation_settings(),
+        )
+
+    assert captured.value.stage == "answer_generation"
+    assert captured.value.reason == "provider_configuration"
+    assert captured.value.http_status == 400
+    assert writer.deleted is True
+
+
 def test_unsupported_generated_statement_fails_safely_and_cleans_everything(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -676,4 +706,37 @@ def test_main_reports_provider_stage_without_exception_details(
     assert output.out == ""
     assert "stage=pinecone_upsert" in output.err
     assert "reason=verification" in output.err
+    assert "http_status=" not in output.err
+    assert "sensitive" not in output.err
+
+
+def test_main_reports_only_safe_http_status(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_smoke(**_: object) -> None:
+        raise ProviderSmokeVerificationError(
+            "sensitive provider detail",
+            stage="answer_generation",
+            reason="provider_configuration",
+            http_status=401,
+        )
+
+    monkeypatch.setattr(smoke_module, "load_worker_settings", make_settings)
+    monkeypatch.setattr(smoke_module, "load_generation_provider_settings", make_generation_settings)
+    monkeypatch.setattr(smoke_module, "verify_m1_provider_smoke", fail_smoke)
+
+    result = smoke_module.main(
+        [
+            "--manifest",
+            str(APPROVED_MANIFEST),
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+        ]
+    )
+
+    output = capsys.readouterr()
+    assert result == 1
+    assert output.out == ""
+    assert "stage=answer_generation, reason=provider_configuration, http_status=401" in output.err
     assert "sensitive" not in output.err

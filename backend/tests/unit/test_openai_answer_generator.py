@@ -13,6 +13,7 @@ from openai import (
     APIConnectionError,
     APIResponseValidationError,
     AuthenticationError,
+    BadRequestError,
     InternalServerError,
     LengthFinishReasonError,
     OpenAI,
@@ -26,6 +27,7 @@ from investment_research.infrastructure.generation.openai import (
     OPENAI_ANSWER_MODEL,
     OPENAI_ANSWER_TIMEOUT_SECONDS,
     OpenAIAnswerGenerator,
+    OpenAIAnswerProviderConfigurationError,
     create_openai_answer_generator,
 )
 from investment_research.modules.documents.domain import SourceLocatorKind
@@ -342,6 +344,39 @@ def test_provider_errors_are_translated_without_exposing_details(
     assert "sensitive" not in str(captured.value)
     assert captured.value.__cause__ is None
     assert len(client.responses.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "expected_status"),
+    [
+        (
+            BadRequestError(
+                "sensitive request detail", response=make_status_response(400), body=None
+            ),
+            400,
+        ),
+        (
+            AuthenticationError(
+                "sensitive authentication detail",
+                response=make_status_response(401),
+                body=None,
+            ),
+            401,
+        ),
+    ],
+)
+def test_rejected_request_retains_only_safe_http_status(
+    provider_error: Exception,
+    expected_status: int,
+) -> None:
+    client = RecordingOpenAIClient(responses=RecordingResponsesResource(error=provider_error))
+
+    with pytest.raises(OpenAIAnswerProviderConfigurationError) as captured:
+        make_generator(client).generate(make_generation_input())
+
+    assert captured.value.http_status == expected_status
+    assert "sensitive" not in str(captured.value)
+    assert captured.value.__cause__ is None
 
 
 def test_application_abort_is_not_translated_or_retried() -> None:
