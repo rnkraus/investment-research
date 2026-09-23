@@ -11,6 +11,7 @@ from httpx2 import Request, Response
 from openai import (
     APIConnectionError,
     APIResponseValidationError,
+    APIStatusError,
     AuthenticationError,
     InternalServerError,
     OpenAI,
@@ -24,6 +25,7 @@ from investment_research.infrastructure.search.openai import (
     OPENAI_EMBEDDING_MODEL,
     OPENAI_EMBEDDING_TIMEOUT_SECONDS,
     OpenAIEmbeddingProvider,
+    OpenAIEmbeddingProviderConfigurationError,
     create_openai_embedding_provider,
 )
 from investment_research.modules.search.contracts import (
@@ -282,6 +284,23 @@ def test_provider_errors_are_translated_without_exposing_details(
     with pytest.raises(application_error) as captured:
         make_provider(client).embed(make_request())
 
+    assert "sensitive" not in str(captured.value)
+    assert captured.value.__cause__ is None
+
+
+@pytest.mark.parametrize("http_status", [400, 401, 403])
+def test_embedding_rejection_retains_only_safe_http_status(http_status: int) -> None:
+    provider_error = APIStatusError(
+        "sensitive provider detail",
+        response=make_status_response(http_status),
+        body={"sensitive": "provider response"},
+    )
+    client = RecordingOpenAIClient(embeddings=RecordingEmbeddingsResource(error=provider_error))
+
+    with pytest.raises(OpenAIEmbeddingProviderConfigurationError) as captured:
+        make_provider(client).embed(make_request())
+
+    assert captured.value.http_status == http_status
     assert "sensitive" not in str(captured.value)
     assert captured.value.__cause__ is None
 

@@ -16,7 +16,10 @@ from investment_research.infrastructure.generation.openai import (
     OpenAIAnswerGenerator,
     OpenAIAnswerProviderConfigurationError,
 )
-from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
+from investment_research.infrastructure.search.openai import (
+    OpenAIEmbeddingProvider,
+    OpenAIEmbeddingProviderConfigurationError,
+)
 from investment_research.infrastructure.search.pinecone import PineconeDenseIndexWriter
 from investment_research.modules.evidence.contracts import (
     StatementSupportDecision,
@@ -538,6 +541,33 @@ def test_smoke_classifies_embedding_failure_without_deleting_an_unwritten_namesp
     assert writer.index.delete_calls == []
     assert writer.closed is True
     assert embedding.closed is True
+
+
+def test_smoke_retains_only_classified_embedding_http_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer = RecordingDenseWriter()
+    install_provider_fakes(
+        monkeypatch,
+        embedding=RecordingEmbeddingProvider(
+            error=OpenAIEmbeddingProviderConfigurationError(http_status=403)
+        ),
+        writer=writer,
+        generator=RecordingAnswerGenerator(),
+        support=RecordingSupportEvaluator(),
+    )
+
+    with pytest.raises(ProviderSmokeVerificationError, match="failed safely") as captured:
+        verify_m1_provider_smoke(
+            manifest_path=APPROVED_MANIFEST,
+            settings=make_settings(),
+            generation_settings=make_generation_settings(),
+        )
+
+    assert captured.value.stage == "embedding"
+    assert captured.value.reason == "provider_configuration"
+    assert captured.value.http_status == 403
+    assert writer.index.delete_calls == []
 
 
 @pytest.mark.parametrize(

@@ -26,6 +26,7 @@ from investment_research.infrastructure.generation.openai import (
 )
 from investment_research.infrastructure.search.openai import (
     OpenAIEmbeddingProvider,
+    OpenAIEmbeddingProviderConfigurationError,
     create_openai_embedding_provider,
 )
 from investment_research.infrastructure.search.pinecone import (
@@ -191,7 +192,10 @@ def _safe_failure_reason(error: Exception) -> SmokeFailureReason:
 def _safe_http_status(error: Exception) -> int | None:
     """Retain only the status from an adapter-classified OpenAI 4xx rejection."""
 
-    if isinstance(error, OpenAIAnswerProviderConfigurationError):
+    if isinstance(
+        error,
+        OpenAIAnswerProviderConfigurationError | OpenAIEmbeddingProviderConfigurationError,
+    ):
         return error.http_status
     return None
 
