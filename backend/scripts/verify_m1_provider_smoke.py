@@ -59,6 +59,11 @@ from investment_research.modules.search.contracts import (
     EmbeddingPurpose,
     EmbeddingRequest,
 )
+from investment_research.modules.search.ports import (
+    SearchProviderConfigurationError,
+    SearchProviderContractError,
+    SearchProviderTransientError,
+)
 from investment_research.settings import (
     GenerationProviderSettings,
     WorkerSettings,
@@ -168,13 +173,15 @@ def _safe_failure_reason(error: Exception) -> SmokeFailureReason:
 
     if isinstance(error, AnswerGenerationProviderOutputLimitError):
         return "provider_output_limit"
-    if isinstance(error, AnswerGenerationProviderConfigurationError):
+    if isinstance(
+        error, AnswerGenerationProviderConfigurationError | SearchProviderConfigurationError
+    ):
         return "provider_configuration"
-    if isinstance(error, AnswerGenerationProviderTransientError):
+    if isinstance(error, AnswerGenerationProviderTransientError | SearchProviderTransientError):
         return "provider_transient"
     if isinstance(error, AnswerGenerationProviderRefusalError):
         return "provider_refusal"
-    if isinstance(error, AnswerGenerationProviderContractError):
+    if isinstance(error, AnswerGenerationProviderContractError | SearchProviderContractError):
         return "provider_contract"
     if isinstance(error, ProviderSmokeVerificationError):
         return "verification"
@@ -650,12 +657,13 @@ def verify_m1_provider_smoke(
             except Exception:
                 cleanup_steps.append("answer_client_close")
         if writer is not None:
-            try:
-                _delete_and_verify_namespace(writer, context, vector_id)
-            except ProviderSmokeVerificationError as error:
-                cleanup_steps.extend(error.cleanup_steps or ("pinecone_cleanup",))
-            except Exception:
-                cleanup_steps.append("pinecone_cleanup")
+            if vector_id is not None:
+                try:
+                    _delete_and_verify_namespace(writer, context, vector_id)
+                except ProviderSmokeVerificationError as error:
+                    cleanup_steps.extend(error.cleanup_steps or ("pinecone_cleanup",))
+                except Exception:
+                    cleanup_steps.append("pinecone_cleanup")
             try:
                 writer.close()
             except Exception:
