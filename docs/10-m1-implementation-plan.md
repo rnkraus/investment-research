@@ -672,11 +672,13 @@ any preceding failure. With separate cleanup diagnostics, the latest attempt ide
 classifier did not yet recognize application-owned embedding provider errors, and cleanup tried
 to delete a fresh namespace even though embedding had failed before any vector write. The runner
 now classifies those errors safely and skips namespace deletion before a vector ID exists; cleanup
-after a possible upsert remains mandatory. It retains an allowlisted primary stage and reason when
-cleanup also fails, identifies the failed cleanup operation, and reports only the HTTP status number
-for adapter-classified OpenAI 4xx answer rejections. It never prints provider exceptions,
-credentials, prompts, or source content. A new bounded live run is required to identify the actual
-embedding failure class; complete-stack M1 acceptance remains the Step 6 gate.
+after a possible upsert remains mandatory. The latest live attempt reported `embedding` with
+`provider_configuration`, without a Pinecone cleanup failure. The runner retains an allowlisted
+primary stage and reason when cleanup also fails, identifies the failed cleanup operation, and now
+reports only the HTTP status number for adapter-classified OpenAI 4xx embedding or answer
+rejections. It never prints provider exceptions, credentials, prompts, or source content. A new
+bounded live run is required to identify the embedding rejection status; complete-stack M1
+acceptance remains the Step 6 gate.
 
 ### Step 5 — Canonical usage and trace correlation
 

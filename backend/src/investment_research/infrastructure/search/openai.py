@@ -33,6 +33,16 @@ _CONFIGURATION_VERSION_ADAPTER = TypeAdapter(ConfigurationVersion)
 _TRANSIENT_STATUS_CODES = frozenset({408, 409, 429})
 
 
+class OpenAIEmbeddingProviderConfigurationError(SearchProviderConfigurationError):
+    """A rejected OpenAI embedding request with only its safe HTTP status retained."""
+
+    def __init__(self, *, http_status: int) -> None:
+        if not 400 <= http_status < 500:
+            raise ValueError("configuration HTTP status must be a 4xx code")
+        super().__init__("embedding provider rejected the configured request")
+        self.http_status = http_status
+
+
 @dataclass(frozen=True, slots=True)
 class OpenAIEmbeddingProvider:
     """Translate one retry-free OpenAI embedding call into application contracts."""
@@ -87,9 +97,7 @@ class OpenAIEmbeddingProvider:
                 raise SearchProviderTransientError(
                     "embedding provider is temporarily unavailable"
                 ) from None
-            raise SearchProviderConfigurationError(
-                "embedding provider rejected the configured request"
-            ) from None
+            raise OpenAIEmbeddingProviderConfigurationError(http_status=error.status_code) from None
         except OpenAIError:
             raise SearchProviderConfigurationError(
                 "embedding provider rejected the configured request"
