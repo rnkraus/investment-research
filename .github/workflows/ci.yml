@@ -165,6 +165,21 @@ jobs:
           SEAWEEDFS_ADMIN_SECRET_ACCESS_KEY: ci-validation-admin-secret
         run: docker compose --file compose.yaml config --quiet
 
+      - name: Validate provider-backed M1 Docker Compose override
+        working-directory: .
+        env:
+          COMPOSE_DISABLE_ENV_FILE: "1"
+          INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: "5000000"
+          INVESTMENT_RESEARCH_PINECONE_INDEX_HOST: ci-index.example.svc.pinecone.io
+          INVESTMENT_RESEARCH_S3_BUCKET: ci-validation-storage
+          POSTGRES_DB: investment_research
+          POSTGRES_USER: investment_research
+        run: >-
+          docker compose
+          --file compose.yaml
+          --file compose.m1-live.yaml
+          config --quiet
+
       - name: Validate deterministic Docker Compose test override
         working-directory: .
         env:
