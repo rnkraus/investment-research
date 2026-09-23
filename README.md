@@ -4,9 +4,10 @@ Investment Research Archive is an evidence-grounded research application. It wil
 
 The completed M0.0 milestone proves the smallest end-to-end path. The completed M0 engineering
 foundation replaces its development storage, processing delivery, and parser shortcuts with a
-production-shaped local runtime while preserving the proven application contracts. M1 is the next
-delivery milestone and will expand the accepted input and provider-backed path through those
-boundaries. Until then, the frozen synthetic fixture remains the acceptance scope recorded in
+production-shaped local runtime while preserving the proven application contracts. The accepted M1
+thin slice adds PDF and pasted-text input, versioned document embedding and dense indexing, lexical
+and dense retrieval, typed answer generation, server-side evidence validation, and exact citation
+opening. The frozen M0.0 fixture remains a regression case under
 [ADR-0004](docs/adr/0004-m0-0-parser-isolation-boundary.md) and
 [ADR-0006](docs/adr/0006-credential-free-parser-runtime.md). This is still a local development
 system, not a production deployment, trading system, or investment-advice application.
@@ -119,7 +120,7 @@ Use the documented complete automatic M0 fixture verification below to exercise 
 web application, its same-origin API proxy, API capture, Redis/Celery delivery, SeaweedFS, isolated
 parsing, research, citation resolution, original access, and the insufficient-evidence case
 together. The final local verification and hosted `Complete M0 runtime` CI gate passed; M0 is
-complete and the current implementation work has moved to M1.
+complete. The complete M1 runtime verification instructions appear below.
 
 All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
 recheck the server-owned workspace, active document version, validation state, byte count, and

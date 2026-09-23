@@ -1,8 +1,7 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Active v1.4 — Steps 0–5 locally implemented; Step 6 deterministic acceptance,
-browser journey, measurements, and M2 handoff locally implemented \
-**Active milestone:** M1 — Thin vertical slice \
+**Status:** Accepted v1.5 — M1 thin vertical slice completed on 2026-09-23 \
+**Milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
 [02-system-design.md](./02-system-design.md),
@@ -745,8 +744,9 @@ remains the Step 6 gate.
 
 **Suggested branch:** `test/m1-acceptance`
 
-**Implementation status (2026-09-22):** The credential-free complete-stack API acceptance and both
-visible Chromium journeys pass locally through `python -m scripts.verify_m1_runtime`. The PDF
+**Historical implementation status (2026-09-22):** The credential-free complete-stack API
+acceptance and both visible Chromium journeys pass locally through
+`python -m scripts.verify_m1_runtime`. The PDF
 journey opens the immutable original at the stored physical page, and the pasted-text journey
 verifies and highlights the exact Unicode-code-point range. The required `Complete M1 runtime` CI
 job now installs the pinned Chromium build and invokes the same runner. Local measurements and the
@@ -831,7 +831,26 @@ runtime used deterministic embedding, dense-index, generation, and support adapt
 paid provider calls and incurred zero external-provider cost by construction. Its provider-stage
 latencies are therefore not representative of OpenAI or Pinecone. The separate live-provider smoke
 remains manually triggered, restricted to the frozen public-synthetic fixtures, and capped by its
-manifest budget; no live result is claimed until that smoke is explicitly authorized and run.
+manifest budget. At the time of this 2026-09-22 record, no live result was claimed; the later
+authorized result is recorded immediately below.
+
+**M1 acceptance record (2026-09-23):** The deterministic complete-stack API and visible browser
+journeys, exact PDF and pasted-text citation opening, isolation, failure, and cleanup gates are
+recorded above. The repository owner reported that the required hosted GitHub Actions checks for
+the final M1 implementation were green. The explicitly authorized local provider smoke then passed
+with one document-embedding request, two answer-generation requests, one statement-support request,
+one Pinecone vector, an estimated maximum spend of USD 0.04102388, and verified cleanup. The
+reported local smoke had first failed once at `answer_validation_and_support` with the safe but
+non-specific `verification` reason, then passed on retry; that isolated failure has no established
+root cause. The failed attempt did not bypass validation. Together, these results satisfy the
+documented narrow M1 exit gate, so M1 is accepted and its M2 handoff below is active.
+
+This live smoke proves only the approved public-synthetic document-embedding, Pinecone index-write,
+answer-generation, and statement-support path. It does not test the separate query-embedding key,
+Pinecone query credential, or a complete live-provider browser journey; the required complete-stack
+correctness journey uses deterministic adapters. No broader retrieval-quality, latency, private-data,
+authentication, or public-deployment claim follows from M1 acceptance. A repeated live
+`verification` failure should be classified more specifically without exposing provider content.
 
 ### 8.1 M1-to-M2 handoff
 
