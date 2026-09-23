@@ -1,0 +1,82 @@
+name: Generation key check
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_public_synthetic:
+        description: Confirm one bounded paid Responses request using the approved synthetic M1 question
+        required: true
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  generation-key-check:
+    name: Check generation-key Responses access
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # No checkout, dependencies, or other provider secrets are needed.
+      # The metadata request is diagnostic; only the bounded Responses request is decisive.
+      - name: Check OpenAI Responses access
+        env:
+          GENERATION_API_KEY: ${{ secrets.M1_OPENAI_GENERATION_API_KEY }}
+          CONFIRM_PUBLIC_SYNTHETIC: ${{ inputs.confirm_public_synthetic }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import http.client
+          import json
+          import os
+          import sys
+
+          if os.environ.get("CONFIRM_PUBLIC_SYNTHETIC") != "true":
+              print("Generation key check not run: public-synthetic paid request was not confirmed.")
+              sys.exit(1)
+
+          key = os.environ.get("GENERATION_API_KEY", "")
+          if not key or key != key.strip() or any(ord(c) < 33 or ord(c) > 126 for c in key):
+              print("Generation key check failed: missing or malformed M1_OPENAI_GENERATION_API_KEY.")
+              sys.exit(1)
+
+          def request_status(method, path, body=None):
+              connection = http.client.HTTPSConnection("api.openai.com", timeout=30)
+              try:
+                  headers = {"Authorization": "Bearer " + key}
+                  if body is not None:
+                      headers["Content-Type"] = "application/json"
+                  connection.request(method, path, body=body, headers=headers)
+                  return connection.getresponse().status
+              except Exception:
+                  return None
+              finally:
+                  connection.close()
+
+          metadata_status = request_status("GET", "/v1/models/gpt-5.6-terra")
+          print(f"Model metadata http_status={metadata_status or 'connection_or_timeout'} (informational).")
+
+          # Exact question from fixtures/m1/manifest.yaml; no private archive content or tools.
+          body = json.dumps({
+              "model": "gpt-5.6-terra",
+              "input": "What dividend did Northstar Grid Analytics declare for FY2026?",
+              "reasoning": {"effort": "none"},
+              "max_output_tokens": 16,
+              "store": False,
+          }).encode("utf-8")
+          status = request_status("POST", "/v1/responses", body)
+          if status == 200:
+              print("Generation key accepted by Responses endpoint; http_status=200.")
+              print("The full M1 answer-generation path was not tested.")
+          else:
+              reason = {
+                  400: "request_rejected",
+                  401: "authentication_or_permission",
+                  403: "permission_denied",
+                  404: "model_unavailable",
+                  429: "rate_or_credit_limit",
+              }.get(status, "connection_or_timeout" if status is None else "provider_rejected_request")
+              print(f"Generation key check failed: reason={reason}, http_status={status or 'unavailable'}.")
+              # Never print response bodies, headers, exception details, or the key.
+              sys.exit(1)
+          PY
