@@ -117,6 +117,8 @@ class RecordingIndex:
 
     def delete(self, **kwargs: object) -> None:
         self.delete_calls.append(kwargs)
+        if self.writer.fail_delete:
+            raise RuntimeError("sensitive Pinecone delete failure")
         self.writer.deleted = True
 
 
@@ -139,6 +141,8 @@ class RecordingDenseWriter:
 
     operation_timeout_seconds: float = 20.0
     fail_upsert: bool = False
+    fail_delete: bool = False
+    fail_fetch: bool = False
     deleted: bool = False
     closed: bool = False
     fail_close: bool = False
@@ -175,6 +179,8 @@ class RecordingDenseWriter:
         timeout_seconds: float | None = None,
     ) -> tuple[DenseVectorId, ...]:
         self.fetch_calls.append((context, vector_ids, timeout_seconds))
+        if self.fail_fetch:
+            raise RuntimeError("sensitive Pinecone fetch failure")
         if self.clock is not None:
             self.clock.current += self.fetch_delay_seconds
         return () if self.deleted else vector_ids
@@ -404,6 +410,31 @@ def test_smoke_rejects_cleanup_reported_after_deadline(
     assert writer.deleted is True
     assert len(writer.fetch_calls) == 1
     assert writer.fetch_calls[0][2] == 30.0
+
+
+@pytest.mark.parametrize(
+    ("fail_delete", "fail_fetch", "expected_step"),
+    [
+        (True, False, "pinecone_delete"),
+        (False, True, "pinecone_verify_absent"),
+    ],
+)
+def test_smoke_identifies_cleanup_operation_without_provider_details(
+    fail_delete: bool,
+    fail_fetch: bool,
+    expected_step: str,
+) -> None:
+    writer = RecordingDenseWriter(fail_delete=fail_delete, fail_fetch=fail_fetch)
+    context = WorkspaceContext(user_id=uuid4(), workspace_id=uuid4())
+
+    with pytest.raises(ProviderSmokeVerificationError) as captured:
+        smoke_module._delete_and_verify_namespace(
+            cast(PineconeDenseIndexWriter, writer), context, "v1:" + "a" * 64
+        )
+
+    assert captured.value.stage == "cleanup"
+    assert captured.value.cleanup_steps == (expected_step,)
+    assert "sensitive" not in str(captured.value)
 
 
 def test_smoke_rejects_unapproved_manifest_before_provider_construction(
@@ -645,9 +676,43 @@ def test_cleanup_failure_is_safe_and_does_not_skip_other_client_close(
 
     assert "sensitive" not in str(captured.value)
     assert captured.value.stage == "cleanup"
+    assert captured.value.cleanup_steps == ("support_client_close", "pinecone_client_close")
+    assert captured.value.primary_stage is None
     assert writer.deleted is True
     assert writer.closed is True
     assert embedding.closed is True
+    assert generator.closed is True
+    assert support.closed is True
+
+
+def test_cleanup_failure_keeps_the_original_failure_classification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    embedding = RecordingEmbeddingProvider()
+    writer = RecordingDenseWriter(fail_delete=True)
+    generator = RecordingAnswerGenerator(error=AnswerGenerationProviderOutputLimitError())
+    support = RecordingSupportEvaluator()
+    install_provider_fakes(
+        monkeypatch,
+        embedding=embedding,
+        writer=writer,
+        generator=generator,
+        support=support,
+    )
+
+    with pytest.raises(ProviderSmokeVerificationError, match="cleanup failed") as captured:
+        verify_m1_provider_smoke(
+            manifest_path=APPROVED_MANIFEST,
+            settings=make_settings(),
+            generation_settings=make_generation_settings(),
+        )
+
+    assert captured.value.cleanup_steps == ("pinecone_delete",)
+    assert captured.value.primary_stage == "answer_generation"
+    assert captured.value.primary_reason == "provider_output_limit"
+    assert "sensitive" not in str(captured.value)
+    assert embedding.closed is True
+    assert writer.closed is True
     assert generator.closed is True
     assert support.closed is True
 
@@ -739,4 +804,41 @@ def test_main_reports_only_safe_http_status(
     assert result == 1
     assert output.out == ""
     assert "stage=answer_generation, reason=provider_configuration, http_status=401" in output.err
+    assert "sensitive" not in output.err
+
+
+def test_main_reports_cleanup_and_primary_failure_without_provider_details(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_smoke(**_: object) -> None:
+        raise ProviderSmokeVerificationError(
+            "sensitive provider detail",
+            stage="cleanup",
+            cleanup_steps=("pinecone_verify_absent", "pinecone_client_close"),
+            primary_stage="answer_generation",
+            primary_reason="provider_configuration",
+            primary_http_status=403,
+        )
+
+    monkeypatch.setattr(smoke_module, "load_worker_settings", make_settings)
+    monkeypatch.setattr(smoke_module, "load_generation_provider_settings", make_generation_settings)
+    monkeypatch.setattr(smoke_module, "verify_m1_provider_smoke", fail_smoke)
+
+    result = smoke_module.main(
+        [
+            "--manifest",
+            str(APPROVED_MANIFEST),
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+        ]
+    )
+
+    output = capsys.readouterr()
+    assert result == 1
+    assert output.out == ""
+    assert "stage=cleanup, reason=verification" in output.err
+    assert "cleanup_steps=pinecone_verify_absent,pinecone_client_close" in output.err
+    assert "primary_stage=answer_generation, primary_reason=provider_configuration" in output.err
+    assert "primary_http_status=403" in output.err
     assert "sensitive" not in output.err
