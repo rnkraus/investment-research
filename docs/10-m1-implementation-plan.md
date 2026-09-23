@@ -687,6 +687,20 @@ including when a cleanup failure would otherwise mask the primary error. Provide
 exception messages, credentials, prompts, and source content remain excluded from diagnostics. A
 new bounded live run is needed to identify the specific contract category before deciding on a fix.
 
+The existing smoke runner also offers an opt-in, interactive local diagnostic for
+`typed_answer_validation`: `--show-local-generation-output` displays only the generated
+`output_text` from the same failed response. It is excluded from CI and retains the frozen
+public-synthetic fixture, bounded provider calls, and cleanup. The default safe diagnostic remains
+unchanged; see `docs/11-m1-contracts.md` for the local-only exception.
+
+One local approved-fixture attempt exposed an off-by-one model-proposed evidence range: the
+`exact_text` omitted sentence punctuation, while the proposed half-open range included it. The
+v2 OpenAI answer adapter no longer asks the model to count characters. It derives a range only
+when the proposed exact text occurs once in the named selected source; canonical evidence checks
+still run afterward. Deterministic regression tests cover the observed case, Unicode offsets,
+unknown candidates, absent text, and ambiguous repeats. A new bounded live smoke is still required;
+this change does not claim a provider pass or complete M1 acceptance.
+
 ### Step 5 — Canonical usage and trace correlation
 
 **Suggested branch:** `feat/m1-observability`

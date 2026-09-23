@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -87,6 +88,7 @@ def test_workflow_supplies_required_monthly_provider_budget() -> None:
         "          INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: "
         f'"{M1_MAX_PROVIDER_MONTHLY_BUDGET_MICRO_USD}"\n'
     ) in environment
+    assert "--show-local-generation-output" not in smoke_step
 
 
 @dataclass(slots=True)
@@ -964,6 +966,81 @@ def test_main_reports_only_fixed_contract_detail(
     assert (
         "stage=answer_generation, reason=provider_contract, contract_detail=typed_answer_validation"
     ) in output.err
+    assert "sensitive" not in output.err
+
+
+@pytest.mark.parametrize(("ci", "interactive"), [(True, True), (False, False)])
+def test_local_generation_output_is_rejected_before_credentials_outside_a_local_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    ci: bool,
+    interactive: bool,
+) -> None:
+    if ci:
+        monkeypatch.setenv("CI", "true")
+    else:
+        monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: interactive)
+    monkeypatch.setattr(
+        smoke_module,
+        "load_worker_settings",
+        lambda: pytest.fail("credentials must not be loaded"),
+    )
+
+    result = smoke_module.main(
+        [
+            "--manifest",
+            str(APPROVED_MANIFEST),
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+            "--show-local-generation-output",
+        ]
+    )
+
+    output = capsys.readouterr()
+    assert result == 2
+    assert output.out == ""
+    assert "interactive local terminal outside CI" in output.err
+
+
+def test_interactive_local_generation_output_is_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    def fail_after_debug_output(**kwargs: object) -> None:
+        callback = kwargs["local_validation_output"]
+        assert callable(callback)
+        callback('{"rendered_text":"public synthetic answer"}')
+        raise ProviderSmokeVerificationError(
+            "sensitive provider detail",
+            stage="answer_generation",
+            reason="provider_contract",
+            contract_detail="typed_answer_validation",
+        )
+
+    monkeypatch.setattr(smoke_module, "load_worker_settings", make_settings)
+    monkeypatch.setattr(smoke_module, "load_generation_provider_settings", make_generation_settings)
+    monkeypatch.setattr(smoke_module, "verify_m1_provider_smoke", fail_after_debug_output)
+
+    result = smoke_module.main(
+        [
+            "--manifest",
+            str(APPROVED_MANIFEST),
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+            "--show-local-generation-output",
+        ]
+    )
+
+    output = capsys.readouterr()
+    assert result == 1
+    assert output.out == (
+        "Unvalidated M1 generation output from the approved public-synthetic fixture:\n"
+        '{"rendered_text":"public synthetic answer"}\n'
+    )
     assert "sensitive" not in output.err
 
 
