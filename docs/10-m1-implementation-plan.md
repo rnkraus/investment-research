@@ -833,6 +833,16 @@ latencies are therefore not representative of OpenAI or Pinecone. The separate l
 remains manually triggered, restricted to the frozen public-synthetic fixtures, and capped by its
 manifest budget; no live result is claimed until that smoke is explicitly authorized and run.
 
+**Local runtime configuration follow-up (2026-09-24):** The normal provider-backed Compose runtime
+requires `compose.m1-live.yaml` in addition to `compose.yaml`. The API receives only query and
+generation keys, and the worker receives only document-embedding and index keys, all through
+role-specific secret mounts. Budget and Pinecone data-plane host are non-secret Compose inputs.
+The worker rejects missing M1 indexing configuration before consuming jobs instead of raising an
+assertion inside the first task. Required CI and isolated M1 acceptance remain credential-free;
+existing `CAPTURED` jobs are not replayed by this configuration correction, which remains an M2
+delivery-reliability concern. The live local journey still requires a separate manual check with
+approved public or synthetic content.
+
 ### 8.1 M1-to-M2 handoff
 
 M1 hands M2 one narrow, working document-to-answer path: immutable PDF and pasted-text originals,

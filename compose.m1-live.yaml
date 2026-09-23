@@ -1,0 +1,34 @@
+services:
+  api:
+    environment:
+      INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: ${INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD:?Set the local M1 provider budget}
+      INVESTMENT_RESEARCH_PINECONE_INDEX_HOST: ${INVESTMENT_RESEARCH_PINECONE_INDEX_HOST:?Set the Pinecone data-plane host}
+      INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY_FILE: /run/secrets/openai_query_api_key
+      INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY_FILE: /run/secrets/pinecone_query_api_key
+      INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY_FILE: /run/secrets/openai_generation_api_key
+    secrets:
+      - openai_query_api_key
+      - pinecone_query_api_key
+      - openai_generation_api_key
+
+  worker:
+    environment:
+      INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: ${INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD:?Set the local M1 provider budget}
+      INVESTMENT_RESEARCH_PINECONE_INDEX_HOST: ${INVESTMENT_RESEARCH_PINECONE_INDEX_HOST:?Set the Pinecone data-plane host}
+      INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY_FILE: /run/secrets/openai_document_api_key
+      INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY_FILE: /run/secrets/pinecone_index_api_key
+    secrets:
+      - openai_document_api_key
+      - pinecone_index_api_key
+
+secrets:
+  openai_query_api_key:
+    file: ${INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY_SECRET_FILE:-.secrets/openai_query_api_key}
+  pinecone_query_api_key:
+    file: ${INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY_SECRET_FILE:-.secrets/pinecone_query_api_key}
+  openai_generation_api_key:
+    file: ${INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY_SECRET_FILE:-.secrets/openai_generation_api_key}
+  openai_document_api_key:
+    file: ${INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY_SECRET_FILE:-.secrets/openai_document_api_key}
+  pinecone_index_api_key:
+    file: ${INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY_SECRET_FILE:-.secrets/pinecone_index_api_key}

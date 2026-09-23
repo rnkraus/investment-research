@@ -78,24 +78,50 @@ The non-secret `*_SECRET_FILE` entries in `.env` select these source paths for D
 Inside a container, Compose mounts the selected file under `/run/secrets`; the settings layer reads
 the value there without placing it in the container environment or process arguments.
 
+For the explicitly credentialed local M1 stack, create five more ignored files and put one
+role-specific provider key in each using a local editor or password manager:
+
+```shell
+umask 077
+touch .secrets/openai_query_api_key .secrets/pinecone_query_api_key
+touch .secrets/openai_generation_api_key .secrets/openai_document_api_key
+touch .secrets/pinecone_index_api_key
+chmod 600 .secrets/openai_query_api_key .secrets/pinecone_query_api_key
+chmod 600 .secrets/openai_generation_api_key .secrets/openai_document_api_key
+chmod 600 .secrets/pinecone_index_api_key
+```
+
+`touch` and `chmod` leave any existing file contents untouched. Do not paste keys into shell
+commands or terminal output.
+Set `INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD=5000000` and the hostname-only
+`INVESTMENT_RESEARCH_PINECONE_INDEX_HOST` in the ignored `.env`. Do not put the five provider keys
+there for Compose: `compose.m1-live.yaml` mounts their files only into the process that needs each
+key. The optional `*_SECRET_FILE` entries in `.env.example` select alternative source paths; the
+default names above need no extra path configuration. Existing direct provider-key entries in a
+host `.env` are not passed into containers by `--env-file`; move their values to the matching
+ignored files if switching from host development to live Compose. Keep live-provider use limited to
+approved public or synthetic material; this local single-user stack is not a public deployment.
+
 `INVESTMENT_RESEARCH_RUNTIME_LOCATION=host` remains available for focused host-side tools and tests.
-The normal M0 web application, API, Celery worker, and parser run as Compose services. Compose
-supplies their container-specific database, broker, S3, and parser settings without exposing
-credential values in the host development file.
+The web application, API, Celery worker, and parser run as Compose services. Compose supplies their
+container-specific database, broker, S3, parser, and role-specific provider settings without
+placing credential values in container environment variables.
 
 ## Run locally
 
-Start the complete local runtime from the repository root:
+Start the complete provider-backed local M1 runtime from the repository root:
 
 ```shell
-docker compose --env-file .env up --build --detach --wait
-docker compose --env-file .env ps
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml ps
 ```
 
 Compose waits for PostgreSQL, runs the reviewed one-shot migration to Alembic `head`, initializes the
 SeaweedFS bucket, and starts the API, worker, and web application only after their required
 dependencies are ready. It does not seed or delete business data during restart. Use the explicit
-seed or reset commands below when deterministic synthetic workspaces are required.
+seed or reset commands below when deterministic synthetic workspaces are required. The base
+`compose.yaml` remains the credential-free foundation for isolated tests; by itself it does not
+configure a working M1 indexing worker.
 
 The API writes one structured JSON completion or failure event per HTTP request at the configured
 `INVESTMENT_RESEARCH_LOG_LEVEL`. It generates the correlation identifier on the server and returns
@@ -110,7 +136,7 @@ Alembic revision exactly matches the schema required by this API version, Redis 
 broker connection, and the configured S3 bucket is accessible. A failed readiness check returns only
 `503 {"status":"not_ready"}` and never exposes dependency or error details.
 
-The web application presents the automatic M0 processing states and no longer exposes the temporary
+The web application presents the automatic processing states and no longer exposes the temporary
 M0.0 runner command. Its non-root, read-only Distroless container reaches only the API through the
 frontend network. Browser API requests remain same-origin; PostgreSQL, Redis, object storage, and
 the parser are not reachable from the web container.
@@ -130,14 +156,14 @@ For focused frontend development, stop only the Compose web service, keep the ba
 running, and start the local development server:
 
 ```shell
-docker compose --env-file .env stop web
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml stop web
 pnpm dev
 ```
 
 Stop the Compose stack without deleting its named volumes:
 
 ```shell
-docker compose --env-file .env down
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml down
 ```
 
 ## Verify changes
@@ -328,7 +354,8 @@ uv audit --locked
   bucket bootstrap services. PostgreSQL has no normal host port and the backend network is internal.
   The API alone bridges the loopback-facing frontend network to backend and storage-data; the worker
   alone bridges backend, storage-data, and parser. `compose.test.yaml` adds a separate test-only
-  bridge and loopback database port for isolated host-driven verification.
+  bridge and loopback database port for isolated host-driven verification. `compose.m1-live.yaml`
+  adds only the approved live M1 provider configuration and role-scoped secret mounts.
 - `.secrets/` is an ignored local source directory for Compose secret mounts; it is not application
   configuration, a production secret manager, or a place for shared credentials.
 - The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
