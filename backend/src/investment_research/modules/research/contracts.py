@@ -1,7 +1,7 @@
 """Typed application contracts for research retrieval orchestration."""
 
 from datetime import UTC, datetime
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -36,6 +36,15 @@ from investment_research.modules.search.domain import (
 
 M1_GENERATED_STATEMENT_LIMIT = 8
 M1_STATEMENT_EVIDENCE_LIMIT = 2
+
+ResearchProgressStage = Literal[
+    "EMBEDDING_QUESTION",
+    "SEARCHING_SOURCES",
+    "SELECTING_PASSAGES",
+    "GENERATING_ANSWER",
+    "VALIDATING_EVIDENCE",
+    "SAVING_RESULT",
+]
 
 
 class ImmutableResearchContract(BaseModel):

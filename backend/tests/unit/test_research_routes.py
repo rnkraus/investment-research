@@ -1,10 +1,12 @@
 """Unit tests for the validated research HTTP and SSE boundary."""
 
+import asyncio
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from threading import Event
 from typing import Any, cast
 from uuid import UUID
 
@@ -16,6 +18,7 @@ from investment_research.api.dependencies import (
     get_answer_research_request_service,
     get_workspace_context,
 )
+from investment_research.api.routes.research import stream_research_events
 from investment_research.main import create_app
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.domain import (
@@ -31,6 +34,7 @@ from investment_research.modules.research.application import (
     ResearchProviderUnavailableError,
 )
 from investment_research.modules.research.contracts import (
+    ResearchProgressStage,
     ResearchRetrievalInput,
     ValidatedAnswerResult,
 )
@@ -72,16 +76,22 @@ class FakeAnswerResearchRequestService:
     def __init__(self) -> None:
         self.result = make_result()
         self.error: Exception | None = None
+        self.progress_stages: tuple[ResearchProgressStage, ...] = ()
         self.calls: list[tuple[WorkspaceContext, ResearchRetrievalInput]] = []
 
     def answer(
         self,
         context: WorkspaceContext,
         retrieval_input: ResearchRetrievalInput,
+        *,
+        progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
     ) -> ValidatedAnswerResult:
         """Record the call before returning or raising the configured outcome."""
 
         self.calls.append((context, retrieval_input))
+        if progress is not None:
+            for stage in self.progress_stages:
+                progress(REQUEST_ID, stage)
         if self.error is not None:
             raise self.error
         return self.result
@@ -257,6 +267,73 @@ def test_research_route_streams_only_validated_statement_and_citation(
     ]
 
 
+def test_research_route_streams_progress_before_validated_answer(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+) -> None:
+    client, service = research_client
+    service.progress_stages = (
+        "EMBEDDING_QUESTION",
+        "SEARCHING_SOURCES",
+        "SELECTING_PASSAGES",
+        "GENERATING_ANSWER",
+        "VALIDATING_EVIDENCE",
+        "SAVING_RESULT",
+    )
+
+    response = client.post("/api/v1/research-requests", json={"question": QUESTION})
+
+    events = parse_server_sent_events(response.text)
+    assert [event["event_name"] for event in events] == [
+        *(["research.progress"] * 6),
+        "answer.statement",
+        "answer.citation",
+        "answer.completed",
+    ]
+    assert [event["payload"]["stage"] for event in events[:6]] == list(service.progress_stages)
+    assert all(event["payload"]["research_request_id"] == str(REQUEST_ID) for event in events)
+    assert STATEMENT not in str(events[:6])
+
+
+def test_research_progress_arrives_while_service_is_still_running() -> None:
+    release = Event()
+
+    class WaitingService(FakeAnswerResearchRequestService):
+        def answer(
+            self,
+            context: WorkspaceContext,
+            retrieval_input: ResearchRetrievalInput,
+            *,
+            progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
+        ) -> ValidatedAnswerResult:
+            assert progress is not None
+            progress(REQUEST_ID, "GENERATING_ANSWER")
+            assert release.wait(timeout=2)
+            return self.result
+
+    async def collect() -> tuple[bytes, list[bytes]]:
+        stream = stream_research_events(
+            cast(AnswerResearchRequestService, WaitingService()),
+            make_context(),
+            ResearchRetrievalInput(question=QUESTION),
+            None,
+        )
+        try:
+            first = await asyncio.wait_for(anext(stream), timeout=1)
+            assert not release.is_set()
+            release.set()
+            remaining = [frame async for frame in stream]
+            return first, remaining
+        finally:
+            release.set()
+            await stream.aclose()
+
+    first, remaining = asyncio.run(collect())
+
+    assert b"research.progress" in first
+    assert b"GENERATING_ANSWER" in first
+    assert b"answer.statement" in remaining[0]
+
+
 def test_research_route_streams_explicit_insufficient_result_without_content(
     research_client: tuple[TestClient, FakeAnswerResearchRequestService],
 ) -> None:
@@ -299,17 +376,21 @@ def test_research_route_streams_one_safe_provider_failure(
 ) -> None:
     client, service = research_client
     service.error = ResearchProviderUnavailableError(REQUEST_ID, retriable=retriable)
+    service.progress_stages = ("GENERATING_ANSWER",)
 
     response = client.post("/api/v1/research-requests", json={"question": QUESTION})
 
     events = parse_server_sent_events(response.text)
     assert response.status_code == 200
-    assert [event["event_name"] for event in events] == ["research.failed"]
-    assert events[0]["payload"]["research_request_id"] == str(REQUEST_ID)
-    assert events[0]["payload"]["error"]["code"] == "PROVIDER_UNAVAILABLE"
-    assert events[0]["payload"]["error"]["message"] == "research provider is unavailable"
-    assert events[0]["payload"]["error"]["request_id"] is not None
-    assert events[0]["payload"]["retriable"] is retriable
+    assert [event["event_name"] for event in events] == [
+        "research.progress",
+        "research.failed",
+    ]
+    assert events[1]["payload"]["research_request_id"] == str(REQUEST_ID)
+    assert events[1]["payload"]["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert events[1]["payload"]["error"]["message"] == "research provider is unavailable"
+    assert events[1]["payload"]["error"]["request_id"] is not None
+    assert events[1]["payload"]["retriable"] is retriable
     assert "answer.statement" not in response.text
     assert "answer.citation" not in response.text
 
@@ -322,8 +403,10 @@ def test_research_route_translates_database_failure_without_internal_details(
 
     response = client.post("/api/v1/research-requests", json={"question": QUESTION})
 
-    assert response.status_code == 500
-    assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+    assert response.status_code == 200
+    events = parse_server_sent_events(response.text)
+    assert [event["event_name"] for event in events] == ["research.failed"]
+    assert events[0]["payload"]["error"]["code"] == "INTERNAL_ERROR"
     assert "private database detail" not in response.text
 
 

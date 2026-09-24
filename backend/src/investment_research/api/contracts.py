@@ -15,6 +15,7 @@ from pydantic import (
 
 from investment_research.modules.documents.contracts import MAX_PASTED_TEXT_CHARACTERS
 from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.research.contracts import ResearchProgressStage
 from investment_research.modules.research.domain import TemporalMode
 
 TrimmedTitle = Annotated[
@@ -191,7 +192,7 @@ class ResearchProgressEvent(StreamEventBase):
     """Progress emitted before validated answer content exists."""
 
     event: Literal["research.progress"] = "research.progress"
-    stage: Literal["RETRIEVING", "GENERATING", "VALIDATING"]
+    stage: ResearchProgressStage
 
 
 class AnswerStatementEvent(StreamEventBase):

@@ -126,9 +126,18 @@ def test_retrieve_preserves_request_and_maps_ordered_hits_to_candidates() -> Non
         question="  What was FY2025 REVENUE?  ",
         document_ids=(DOCUMENT_ID,),
     )
+    progress_stages: list[str] = []
 
-    result = service.retrieve(make_context(), retrieval_input)
+    result = service.retrieve(
+        make_context(),
+        retrieval_input,
+        progress=lambda request_id, stage: progress_stages.append(f"{request_id}:{stage}"),
+    )
 
+    assert progress_stages == [
+        f"{REQUEST_ID}:SEARCHING_SOURCES",
+        f"{REQUEST_ID}:SELECTING_PASSAGES",
+    ]
     assert unit_of_work.enter_count == 1
     assert result.request.id == REQUEST_ID
     assert result.request.question == retrieval_input.question
