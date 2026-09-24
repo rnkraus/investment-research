@@ -6,6 +6,7 @@ from openai import (
     APIConnectionError,
     APIResponseValidationError,
     APIStatusError,
+    APITimeoutError,
     OpenAI,
     OpenAIError,
 )
@@ -31,6 +32,17 @@ OPENAI_EMBEDDING_INPUT_MICRO_USD_PER_MILLION_TOKENS = 20_000
 
 _CONFIGURATION_VERSION_ADAPTER = TypeAdapter(ConfigurationVersion)
 _TRANSIENT_STATUS_CODES = frozenset({408, 409, 429})
+_NON_RETRYABLE_429_SUMMARIES = {
+    "credit_balance_exhausted": "embedding provider credit balance exhausted (HTTP 429)",
+    "organization_spend_limit_exceeded": (
+        "embedding provider organization spend limit reached (HTTP 429)"
+    ),
+    "organization_usage_limit_exceeded": (
+        "embedding provider organization usage limit reached (HTTP 429)"
+    ),
+    "project_spend_limit_exceeded": "embedding provider project spend limit reached (HTTP 429)",
+    "insufficient_quota": "embedding provider quota exhausted (HTTP 429)",
+}
 
 
 class OpenAIEmbeddingProviderConfigurationError(SearchProviderConfigurationError):
@@ -39,7 +51,7 @@ class OpenAIEmbeddingProviderConfigurationError(SearchProviderConfigurationError
     def __init__(self, *, http_status: int) -> None:
         if not 400 <= http_status < 500:
             raise ValueError("configuration HTTP status must be a 4xx code")
-        super().__init__("embedding provider rejected the configured request")
+        super().__init__(f"embedding provider rejected the configured request (HTTP {http_status})")
         self.http_status = http_status
 
 
@@ -84,19 +96,29 @@ class OpenAIEmbeddingProvider:
                 encoding_format="float",
                 timeout=self.operation_timeout_seconds,
             )
+        except APITimeoutError:
+            raise SearchProviderTransientError("embedding provider request timed out") from None
         except APIConnectionError:
-            raise SearchProviderTransientError(
-                "embedding provider is temporarily unavailable"
-            ) from None
+            raise SearchProviderTransientError("embedding provider connection failed") from None
         except APIResponseValidationError:
             raise SearchProviderContractError(
                 "embedding provider returned a malformed response"
             ) from None
         except APIStatusError as error:
+            if error.status_code == 429:
+                quota_summary = _NON_RETRYABLE_429_SUMMARIES.get(error.code or "")
+                if quota_summary is not None:
+                    raise SearchProviderConfigurationError(quota_summary) from None
             if error.status_code in _TRANSIENT_STATUS_CODES or error.status_code >= 500:
-                raise SearchProviderTransientError(
-                    "embedding provider is temporarily unavailable"
-                ) from None
+                if error.status_code == 408:
+                    summary = "embedding provider request timed out (HTTP 408)"
+                elif error.status_code == 409:
+                    summary = "embedding provider reported a temporary conflict (HTTP 409)"
+                elif error.status_code == 429:
+                    summary = "embedding provider returned HTTP 429 (rate or quota limit)"
+                else:
+                    summary = f"embedding provider server error (HTTP {error.status_code})"
+                raise SearchProviderTransientError(summary) from None
             raise OpenAIEmbeddingProviderConfigurationError(http_status=error.status_code) from None
         except OpenAIError:
             raise SearchProviderConfigurationError(
