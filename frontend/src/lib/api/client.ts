@@ -194,9 +194,14 @@ function isResearchStreamEvent(value: unknown): value is ResearchStreamEvent {
 
   switch (value.event) {
     case "research.progress":
-      return ["RETRIEVING", "GENERATING", "VALIDATING"].includes(
-        String(value.stage),
-      );
+      return [
+        "EMBEDDING_QUESTION",
+        "SEARCHING_SOURCES",
+        "SELECTING_PASSAGES",
+        "GENERATING_ANSWER",
+        "VALIDATING_EVIDENCE",
+        "SAVING_RESULT",
+      ].includes(String(value.stage));
     case "answer.statement":
       return (
         isUuid(value.statement_id) &&

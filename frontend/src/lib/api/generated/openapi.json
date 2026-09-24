@@ -727,9 +727,12 @@
           },
           "stage": {
             "enum": [
-              "RETRIEVING",
-              "GENERATING",
-              "VALIDATING"
+              "EMBEDDING_QUESTION",
+              "SEARCHING_SOURCES",
+              "SELECTING_PASSAGES",
+              "GENERATING_ANSWER",
+              "VALIDATING_EVIDENCE",
+              "SAVING_RESULT"
             ],
             "title": "Stage",
             "type": "string"
@@ -1212,7 +1215,7 @@
     },
     "/api/v1/research-requests": {
       "post": {
-        "description": "Execute one bounded request and stream only its validated terminal output.",
+        "description": "Start a live stream without exposing content before complete validation.",
         "operationId": "answer_research_request_api_v1_research_requests_post",
         "requestBody": {
           "content": {

@@ -3,6 +3,20 @@ import type { EvidenceSpanResult, ResearchStreamEvent } from "@/lib/api/client";
 export type ResearchSessionStatus =
   "IDLE" | "RUNNING" | "COMPLETED" | "INSUFFICIENT" | "FAILED";
 
+export type ResearchProgressStage = Extract<
+  ResearchStreamEvent,
+  { readonly event: "research.progress" }
+>["stage"];
+
+export const RESEARCH_PROGRESS_ORDER: readonly ResearchProgressStage[] = [
+  "EMBEDDING_QUESTION",
+  "SEARCHING_SOURCES",
+  "SELECTING_PASSAGES",
+  "GENERATING_ANSWER",
+  "VALIDATING_EVIDENCE",
+  "SAVING_RESULT",
+];
+
 export interface ResearchCitation {
   readonly evidenceSpanId: string;
   readonly relationship: "SUPPORTS" | "CONFLICTS";
@@ -20,7 +34,8 @@ export interface ResearchStatement {
 export interface ResearchSession {
   readonly status: ResearchSessionStatus;
   readonly researchRequestId?: string;
-  readonly stage?: "RETRIEVING" | "GENERATING" | "VALIDATING";
+  readonly stage?: ResearchProgressStage;
+  readonly progressStages: readonly ResearchProgressStage[];
   readonly coverage?: "COMPLETE" | "PARTIAL" | "CONFLICTING";
   readonly message?: string;
   readonly statements: readonly ResearchStatement[];
@@ -35,12 +50,14 @@ export class ResearchSequenceError extends Error {
 
 export const EMPTY_RESEARCH_SESSION: ResearchSession = {
   status: "IDLE",
+  progressStages: [],
   statements: [],
 };
 
 export function beginResearchSession(): ResearchSession {
   return {
     status: "RUNNING",
+    progressStages: [],
     statements: [],
   };
 }
@@ -146,7 +163,19 @@ export function applyResearchEvent(
       if (session.statements.length > 0) {
         throw new ResearchSequenceError();
       }
-      return { ...session, researchRequestId, stage: event.stage };
+      if (
+        session.stage !== undefined &&
+        RESEARCH_PROGRESS_ORDER.indexOf(event.stage) <=
+          RESEARCH_PROGRESS_ORDER.indexOf(session.stage)
+      ) {
+        throw new ResearchSequenceError();
+      }
+      return {
+        ...session,
+        researchRequestId,
+        stage: event.stage,
+        progressStages: [...session.progressStages, event.stage],
+      };
     case "answer.statement":
       return addStatement(session, event, researchRequestId);
     case "answer.citation":

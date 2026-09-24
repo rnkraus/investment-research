@@ -115,7 +115,7 @@ export interface paths {
         readonly put?: never;
         /**
          * Answer Research Request
-         * @description Execute one bounded request and stream only its validated terminal output.
+         * @description Start a live stream without exposing content before complete validation.
          */
         readonly post: operations["answer_research_request_api_v1_research_requests_post"];
         readonly delete?: never;
@@ -577,7 +577,7 @@ export interface components {
              * Stage
              * @enum {string}
              */
-            readonly stage: "RETRIEVING" | "GENERATING" | "VALIDATING";
+            readonly stage: "EMBEDDING_QUESTION" | "SEARCHING_SOURCES" | "SELECTING_PASSAGES" | "GENERATING_ANSWER" | "VALIDATING_EVIDENCE" | "SAVING_RESULT";
         };
         /**
          * ResearchRequestContext

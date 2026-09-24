@@ -61,6 +61,40 @@ function failedEvent(requestId = REQUEST_ID) {
   };
 }
 
+function progressEvent(stage, requestId = REQUEST_ID) {
+  return {
+    event: "research.progress",
+    schema_version: "1.0",
+    research_request_id: requestId,
+    stage,
+  };
+}
+
+test("progress tracks only stages received in increasing order", () => {
+  const searching = applyResearchEvent(
+    beginResearchSession(),
+    progressEvent("SEARCHING_SOURCES"),
+  );
+  const selecting = applyResearchEvent(
+    searching,
+    progressEvent("SELECTING_PASSAGES"),
+  );
+
+  assert.deepEqual(selecting.progressStages, [
+    "SEARCHING_SOURCES",
+    "SELECTING_PASSAGES",
+  ]);
+  assert.equal(selecting.stage, "SELECTING_PASSAGES");
+  assert.throws(
+    () => applyResearchEvent(selecting, progressEvent("SEARCHING_SOURCES")),
+    ResearchSequenceError,
+  );
+  assert.throws(
+    () => applyResearchEvent(selecting, progressEvent("SELECTING_PASSAGES")),
+    ResearchSequenceError,
+  );
+});
+
 test("a statement becomes complete only after its citation arrives", () => {
   const withStatement = applyResearchEvent(
     beginResearchSession(),
