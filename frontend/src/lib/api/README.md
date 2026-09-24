@@ -42,6 +42,12 @@ The browser receives only relative `/api/v1/` paths. `next.config.ts` reads the 
 M1. This avoids exposing an internal target in a `NEXT_PUBLIC_` variable and avoids a permissive
 CORS policy.
 
+The local M1 rewrite has a 120-second proxy timeout because one synchronous research request can
+include multiple bounded provider calls before FastAPI emits its validated answer events. This
+limit prevents the observed 30-second disconnect but does not guarantee that every slow request
+will finish within the proxy window. A disconnected browser does not prove that the backend stopped;
+repeating the question can create another paid provider operation.
+
 Successful JSON responses are checked for the fields used by the application instead of being
 trusted solely because TypeScript compiled. Server-sent events are buffered across arbitrary network
 chunks, decoded by their `event` discriminator, and rejected if their runtime shape does not match the
@@ -50,3 +56,8 @@ endpoint. Both return the same `DocumentAccepted` contract and enter the same st
 Backend-provided status and viewer URLs must remain relative application API paths. Evidence results
 must carry either a valid `PDF_PAGE` or `TEXT_PASSAGE` locator; unknown locator kinds fail before they
 reach the UI.
+
+Known API error codes retain their safe public messages and request IDs. An unstructured HTTP
+failure instead reports its status and a possible web-to-API timeout without displaying its raw
+body. Connection and stream failures also use fixed safe messages; transport exception text and
+unknown error-code messages never reach the UI.
