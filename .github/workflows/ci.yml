@@ -174,11 +174,24 @@ jobs:
           INVESTMENT_RESEARCH_S3_BUCKET: ci-validation-storage
           POSTGRES_DB: investment_research
           POSTGRES_USER: investment_research
-        run: >-
-          docker compose
-          --file compose.yaml
-          --file compose.m1-live.yaml
-          config --quiet
+        run: |
+          docker compose --file compose.yaml --file compose.m1-live.yaml config --quiet
+          docker compose --file compose.yaml --file compose.m1-live.yaml config --format json |
+            python3 -c '
+          import json
+          import sys
+
+          config = json.load(sys.stdin)
+          worker_networks = config["services"]["worker"]["networks"]
+          assert {"backend", "parser", "storage-data", "provider-egress"} <= worker_networks.keys()
+          assert config["networks"]["provider-egress"].get("internal") is not True
+          assert {
+              name
+              for name, service in config["services"].items()
+              if "provider-egress" in service.get("networks", {})
+          } == {"worker"}
+          assert set(config["services"]["parser"]["networks"]) == {"parser"}
+          '
 
       - name: Validate deterministic Docker Compose test override
         working-directory: .
