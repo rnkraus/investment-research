@@ -485,20 +485,27 @@ validation.
 
 ### 11.3 Research stream
 
-The existing SSE event names and ordering remain:
+The research SSE stream reports actual application stages while the request is running:
 
 ```text
-research.progress(RETRIEVING)
-research.progress(GENERATING)
-research.progress(VALIDATING)
+research.progress(EMBEDDING_QUESTION)
+research.progress(SEARCHING_SOURCES)
+research.progress(SELECTING_PASSAGES)
+research.progress(GENERATING_ANSWER)
+research.progress(VALIDATING_EVIDENCE)
+research.progress(SAVING_RESULT)
 answer.statement + answer.citation
 answer.completed
 ```
 
-or one terminal `answer.insufficient` / `research.failed`. Statements and citations are emitted only
-after the complete answer has passed validation. M1 adds safe error code `PROVIDER_UNAVAILABLE`;
-provider authentication, rate-limit, timeout, refusal, and schema details remain internal safe
-categories.
+The credential-free lexical path omits `EMBEDDING_QUESTION`. A stream can instead end with one
+terminal `answer.insufficient` or `research.failed`. Ten-second SSE comment heartbeats keep idle
+connections open without claiming progress. Progress is not a percentage or an answer preview;
+statements and citations are emitted only after the complete answer has passed validation. Once
+streaming begins, failures are reported as a safe terminal event rather than changing the HTTP
+status; `PROVIDER_UNAVAILABLE` and `INTERNAL_ERROR` with the HTTP request ID contain no provider or
+database details. Provider authentication, rate-limit, timeout, refusal, and schema details remain
+internal safe categories.
 
 ## 12. Deterministic and live verification boundaries
 
