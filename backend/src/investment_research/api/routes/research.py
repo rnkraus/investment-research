@@ -1,9 +1,13 @@
 """HTTP endpoint for validated evidence-grounded research answers."""
 
-from collections.abc import Iterator
+import asyncio
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import suppress
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, status
-from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
 from investment_research.api.contracts import (
@@ -15,6 +19,7 @@ from investment_research.api.contracts import (
     ErrorDetail,
     ErrorResponse,
     ResearchFailedEvent,
+    ResearchProgressEvent,
     ResearchRequestInput,
     ResearchStreamEvent,
 )
@@ -26,16 +31,17 @@ from investment_research.api.dependencies import (
     AnswerResearchRequestServiceDependency,
     WorkspaceContextDependency,
 )
-from investment_research.api.errors import ApiError
 from investment_research.infrastructure.logging import current_request_id
 from investment_research.modules.research.application import ResearchProviderUnavailableError
 from investment_research.modules.research.contracts import (
+    ResearchProgressStage,
     ResearchRetrievalInput,
     ValidatedAnswerResult,
 )
 from investment_research.modules.research.domain import AnswerState
 
 router = APIRouter(prefix="/api/v1/research-requests", tags=["research"])
+logger = logging.getLogger(__name__)
 
 
 def build_research_stream_events(
@@ -112,13 +118,87 @@ def build_research_stream_events(
     return tuple(events)
 
 
-def encode_server_sent_events(
-    events: tuple[ResearchStreamEvent, ...],
-) -> Iterator[bytes]:
-    """Serialize typed events into UTF-8 server-sent-event frames."""
+def encode_server_sent_event(event: ResearchStreamEvent) -> bytes:
+    """Serialize one typed event into a UTF-8 server-sent-event frame."""
 
-    for event in events:
-        yield f"event: {event.event}\ndata: {event.model_dump_json()}\n\n".encode()
+    return f"event: {event.event}\ndata: {event.model_dump_json()}\n\n".encode()
+
+
+async def stream_research_events(
+    service: AnswerResearchRequestServiceDependency,
+    context: WorkspaceContextDependency,
+    retrieval_input: ResearchRetrievalInput,
+    http_request_id: UUID | None,
+) -> AsyncGenerator[bytes]:
+    """Deliver real progress while bounded synchronous research runs in a worker thread."""
+
+    loop = asyncio.get_running_loop()
+    events: asyncio.Queue[ResearchStreamEvent | None] = asyncio.Queue()
+    research_request_id: UUID | None = None
+
+    def publish_progress(request_id: UUID, stage: ResearchProgressStage) -> None:
+        nonlocal research_request_id
+        research_request_id = request_id
+        # The client may disconnect while a bounded provider call is still running.
+        with suppress(RuntimeError):
+            loop.call_soon_threadsafe(
+                events.put_nowait,
+                ResearchProgressEvent(research_request_id=request_id, stage=stage),
+            )
+
+    async def run_research() -> None:
+        try:
+            result = await run_in_threadpool(
+                service.answer,
+                context,
+                retrieval_input,
+                progress=publish_progress,
+            )
+            terminal_events = build_research_stream_events(result)
+        except ResearchProviderUnavailableError as error:
+            terminal_events = (
+                ResearchFailedEvent(
+                    research_request_id=error.research_request_id,
+                    error=ErrorDetail(
+                        code=ErrorCode.PROVIDER_UNAVAILABLE,
+                        message="research provider is unavailable",
+                        request_id=http_request_id,
+                    ),
+                    retriable=error.retriable,
+                ),
+            )
+        except Exception as error:
+            # An SSE response has already started; report a safe terminal event.
+            logger.error(
+                "research.stream.failed",
+                extra={"exception_type": type(error).__name__, "request_id": http_request_id},
+            )
+            terminal_events = (
+                ResearchFailedEvent(
+                    research_request_id=research_request_id or uuid4(),
+                    error=ErrorDetail(
+                        code=ErrorCode.INTERNAL_ERROR,
+                        message="research request could not be completed",
+                        request_id=http_request_id,
+                    ),
+                    retriable=False,
+                ),
+            )
+        for event in terminal_events:
+            await events.put(event)
+        await events.put(None)
+
+    async with asyncio.TaskGroup() as group:
+        group.create_task(run_research())
+        while True:
+            try:
+                event = await asyncio.wait_for(events.get(), timeout=10)
+            except TimeoutError:
+                yield b": keep-alive\n\n"
+                continue
+            if event is None:
+                break
+            yield encode_server_sent_event(event)
 
 
 @router.post(
@@ -142,40 +222,16 @@ def answer_research_request(
     service: AnswerResearchRequestServiceDependency,
     context: WorkspaceContextDependency,
 ) -> StreamingResponse:
-    """Execute one bounded request and stream only its validated terminal output."""
+    """Start a live stream without exposing content before complete validation."""
 
-    try:
-        result = service.answer(
-            context,
-            ResearchRetrievalInput(
-                question=request.question,
-                document_ids=request.context.document_ids,
-                temporal_mode=request.context.temporal_mode,
-                cutoff_at=request.context.cutoff_at,
-            ),
-        )
-    except ResearchProviderUnavailableError as error:
-        events: tuple[ResearchStreamEvent, ...] = (
-            ResearchFailedEvent(
-                research_request_id=error.research_request_id,
-                error=ErrorDetail(
-                    code=ErrorCode.PROVIDER_UNAVAILABLE,
-                    message="research provider is unavailable",
-                    request_id=current_request_id(),
-                ),
-                retriable=error.retriable,
-            ),
-        )
-    except SQLAlchemyError as error:
-        raise ApiError(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            code=ErrorCode.INTERNAL_ERROR,
-            message="research request could not be completed",
-        ) from error
-    else:
-        events = build_research_stream_events(result)
+    retrieval_input = ResearchRetrievalInput(
+        question=request.question,
+        document_ids=request.context.document_ids,
+        temporal_mode=request.context.temporal_mode,
+        cutoff_at=request.context.cutoff_at,
+    )
     return StreamingResponse(
-        encode_server_sent_events(events),
+        stream_research_events(service, context, retrieval_input, current_request_id()),
         media_type="text/event-stream",
         headers={
             "cache-control": "private, no-store",

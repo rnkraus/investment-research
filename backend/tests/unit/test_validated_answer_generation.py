@@ -534,9 +534,19 @@ def test_support_provider_failure_persists_no_partial_answer_content() -> None:
 def test_valid_answer_persists_only_validated_content_in_one_unit_of_work() -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     service, generator = make_service(unit_of_work, make_answer_proposal())
+    progress_stages: list[str] = []
 
-    result = service.generate(make_context(), make_retrieval_result())
+    result = service.generate(
+        make_context(),
+        make_retrieval_result(),
+        progress=lambda request_id, stage: progress_stages.append(f"{request_id}:{stage}"),
+    )
 
+    assert progress_stages == [
+        f"{REQUEST_ID}:GENERATING_ANSWER",
+        f"{REQUEST_ID}:VALIDATING_EVIDENCE",
+        f"{REQUEST_ID}:SAVING_RESULT",
+    ]
     assert generator.transaction_was_open is False
     assert unit_of_work.enter_count == 2
     assert generator.calls[0].sources[0].text == SOURCE_TEXT

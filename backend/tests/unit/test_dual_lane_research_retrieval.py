@@ -287,9 +287,18 @@ def test_dual_lane_retrieval_persists_request_before_providers_and_result_afterw
             question="How did sales and profitability develop?",
             document_ids=(DOCUMENT_ID,),
         ),
+        progress=lambda request_id, stage: events.append(f"{request_id}:{stage}"),
     )
 
-    assert events == ["database", "embedding", "pinecone", "database"]
+    assert events == [
+        "database",
+        f"{REQUEST_ID}:EMBEDDING_QUESTION",
+        "embedding",
+        f"{REQUEST_ID}:SEARCHING_SOURCES",
+        "pinecone",
+        "database",
+        f"{REQUEST_ID}:SELECTING_PASSAGES",
+    ]
     assert unit_of_work.enter_count == 2
     assert result.retrieval_run.mode is RetrievalMode.DUAL_LANE
     assert result.retrieval_run.embedding_config_version == EMBEDDING_CONFIG_VERSION

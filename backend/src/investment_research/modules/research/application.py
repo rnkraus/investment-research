@@ -50,6 +50,7 @@ from investment_research.modules.research.contracts import (
     AnswerGenerationProfile,
     AnswerGenerationSource,
     CanonicalCandidateSource,
+    ResearchProgressStage,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
     UnvalidatedGeneratedAnswer,
@@ -289,6 +290,8 @@ class RetrieveResearchService:
         self,
         context: WorkspaceContext,
         retrieval_input: ResearchRetrievalInput,
+        *,
+        progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
     ) -> ResearchRetrievalResult:
         """Run the configured bounded retrieval mode and persist one coherent result."""
 
@@ -318,6 +321,7 @@ class RetrieveResearchService:
                 query=query,
                 retrieval_run_id=retrieval_run_id,
                 started_at=started_at,
+                progress=progress,
             )
 
         return self._retrieve_lexical(
@@ -326,6 +330,7 @@ class RetrieveResearchService:
             query=query,
             retrieval_run_id=retrieval_run_id,
             started_at=started_at,
+            progress=progress,
         )
 
     def _retrieve_lexical(
@@ -336,12 +341,17 @@ class RetrieveResearchService:
         query: LexicalSearchQuery,
         retrieval_run_id: UUID,
         started_at: datetime,
+        progress: Callable[[UUID, ResearchProgressStage], None] | None,
     ) -> ResearchRetrievalResult:
         """Retain the credential-free lexical regression path."""
 
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.research.add_request(context, request)
+            if progress is not None:
+                progress(request.id, "SEARCHING_SOURCES")
             hits = tuple(unit_of_work.lexical_search.search(context, query))
+            if progress is not None:
+                progress(request.id, "SELECTING_PASSAGES")
             completed_at = self._aware_utc_now()
             run = RetrievalRun(
                 id=retrieval_run_id,
@@ -400,6 +410,7 @@ class RetrieveResearchService:
         query: LexicalSearchQuery,
         retrieval_run_id: UUID,
         started_at: datetime,
+        progress: Callable[[UUID, ResearchProgressStage], None] | None,
     ) -> ResearchRetrievalResult:
         """Run external query providers first, then commit canonical selection atomically."""
         dependencies = self._m1_query_retrieval
@@ -409,6 +420,8 @@ class RetrieveResearchService:
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.research.add_request(context, request)
 
+        if progress is not None:
+            progress(request.id, "EMBEDDING_QUESTION")
         embedding_request = EmbeddingRequest(
             inputs=(
                 EmbeddingInput(
@@ -466,6 +479,8 @@ class RetrieveResearchService:
             dense_index_config_version=dependencies.dense_profile.dense_index_config_version,
             candidate_limit=dependencies.dense_profile.candidate_limit,
         )
+        if progress is not None:
+            progress(request.id, "SEARCHING_SOURCES")
         try:
             provider_hits = self._call_with_retry(
                 lambda: tuple(dependencies.dense_retriever.retrieve(context, dense_query)),
@@ -487,6 +502,8 @@ class RetrieveResearchService:
         with self._unit_of_work_factory() as unit_of_work:
             lexical_hits = tuple(unit_of_work.lexical_search.search(context, query))
             dense_hits = tuple(unit_of_work.dense_qualifier.qualify(context, qualification_request))
+            if progress is not None:
+                progress(request.id, "SELECTING_PASSAGES")
             selection = select_m1_context(
                 lexical_hits=lexical_hits,
                 dense_hits=dense_hits,
@@ -726,6 +743,8 @@ class GenerateValidatedAnswerService:
         self,
         context: WorkspaceContext,
         retrieval_result: ResearchRetrievalResult,
+        *,
+        progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
     ) -> ValidatedAnswerResult:
         """Persist only the terminal aggregate derived from a complete validation decision."""
 
@@ -745,7 +764,11 @@ class GenerateValidatedAnswerService:
             created_at=created_at,
         )
         generation_input = self._build_generation_input(retrieval_result)
+        if progress is not None:
+            progress(retrieval_result.request.id, "GENERATING_ANSWER")
         generated_answer = self._generate_answer(context, generation_input)
+        if progress is not None:
+            progress(retrieval_result.request.id, "VALIDATING_EVIDENCE")
         source_snapshot = self._load_source_snapshot(
             context,
             retrieval_result.retrieval_run.id,
@@ -759,6 +782,8 @@ class GenerateValidatedAnswerService:
             support_evaluator=support_evaluator,
         ).validate(context, retrieval_result.retrieval_run.id, generated_answer)
 
+        if progress is not None:
+            progress(retrieval_result.request.id, "SAVING_RESULT")
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.research.add_answer(context, answer)
             answer = self._advance_answer(
@@ -1194,12 +1219,21 @@ class AnswerResearchRequestService:
         self,
         context: WorkspaceContext,
         retrieval_input: ResearchRetrievalInput,
+        *,
+        progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
     ) -> ValidatedAnswerResult:
         """Return only the validated terminal result of one research request."""
 
-        retrieval_result = self.retrieval_service.retrieve(context, retrieval_input)
+        if progress is None:
+            retrieval_result = self.retrieval_service.retrieve(context, retrieval_input)
+        else:
+            retrieval_result = self.retrieval_service.retrieve(
+                context, retrieval_input, progress=progress
+            )
         try:
-            return self.generation_service.generate(context, retrieval_result)
+            if progress is None:
+                return self.generation_service.generate(context, retrieval_result)
+            return self.generation_service.generate(context, retrieval_result, progress=progress)
         except (
             AnswerGenerationProviderError,
             StatementSupportProviderError,
