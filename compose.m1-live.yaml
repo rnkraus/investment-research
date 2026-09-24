@@ -20,6 +20,11 @@ services:
     secrets:
       - openai_document_api_key
       - pinecone_index_api_key
+    networks:
+      - provider-egress
+
+networks:
+  provider-egress: {}
 
 secrets:
   openai_query_api_key:
