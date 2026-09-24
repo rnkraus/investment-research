@@ -12,6 +12,7 @@ from openai import (
     APIConnectionError,
     APIResponseValidationError,
     APIStatusError,
+    APITimeoutError,
     AuthenticationError,
     InternalServerError,
     OpenAI,
@@ -227,24 +228,52 @@ def test_embed_rejects_invalid_vector_values(invalid_vector: tuple[float, ...]) 
 
 
 @pytest.mark.parametrize(
-    ("provider_error", "application_error"),
+    ("provider_error", "application_error", "safe_summary"),
     [
+        pytest.param(
+            APITimeoutError(request=Request("POST", "https://api.openai.com/v1/embeddings")),
+            SearchProviderTransientError,
+            "embedding provider request timed out",
+            id="timeout",
+        ),
         pytest.param(
             APIConnectionError(
                 message="sensitive transport detail",
                 request=Request("POST", "https://api.openai.com/v1/embeddings"),
             ),
             SearchProviderTransientError,
+            "embedding provider connection failed",
             id="connection",
+        ),
+        pytest.param(
+            APIStatusError(
+                "sensitive request-timeout detail",
+                response=make_status_response(408),
+                body=None,
+            ),
+            SearchProviderTransientError,
+            "embedding provider request timed out (HTTP 408)",
+            id="http-timeout",
+        ),
+        pytest.param(
+            APIStatusError(
+                "sensitive conflict detail",
+                response=make_status_response(409),
+                body=None,
+            ),
+            SearchProviderTransientError,
+            "embedding provider reported a temporary conflict (HTTP 409)",
+            id="temporary-conflict",
         ),
         pytest.param(
             RateLimitError(
                 "sensitive rate-limit detail",
                 response=make_status_response(429),
-                body=None,
+                body={"code": "sensitive-unknown-code", "message": "sensitive response"},
             ),
             SearchProviderTransientError,
-            id="rate-limit",
+            "embedding provider returned HTTP 429 (rate or quota limit)",
+            id="unknown-429",
         ),
         pytest.param(
             InternalServerError(
@@ -253,6 +282,7 @@ def test_embed_rejects_invalid_vector_values(invalid_vector: tuple[float, ...]) 
                 body=None,
             ),
             SearchProviderTransientError,
+            "embedding provider server error (HTTP 500)",
             id="service",
         ),
         pytest.param(
@@ -262,6 +292,7 @@ def test_embed_rejects_invalid_vector_values(invalid_vector: tuple[float, ...]) 
                 body=None,
             ),
             SearchProviderConfigurationError,
+            "embedding provider rejected the configured request (HTTP 401)",
             id="authentication",
         ),
         pytest.param(
@@ -271,6 +302,7 @@ def test_embed_rejects_invalid_vector_values(invalid_vector: tuple[float, ...]) 
                 message="sensitive schema detail",
             ),
             SearchProviderContractError,
+            "embedding provider returned a malformed response",
             id="response-schema",
         ),
     ],
@@ -278,14 +310,65 @@ def test_embed_rejects_invalid_vector_values(invalid_vector: tuple[float, ...]) 
 def test_provider_errors_are_translated_without_exposing_details(
     provider_error: Exception,
     application_error: type[Exception],
+    safe_summary: str,
 ) -> None:
     client = RecordingOpenAIClient(embeddings=RecordingEmbeddingsResource(error=provider_error))
 
     with pytest.raises(application_error) as captured:
         make_provider(client).embed(make_request())
 
+    assert str(captured.value) == safe_summary
     assert "sensitive" not in str(captured.value)
     assert captured.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("provider_code", "safe_summary"),
+    [
+        pytest.param(
+            "credit_balance_exhausted",
+            "embedding provider credit balance exhausted (HTTP 429)",
+            id="credits",
+        ),
+        pytest.param(
+            "organization_spend_limit_exceeded",
+            "embedding provider organization spend limit reached (HTTP 429)",
+            id="organization-spend",
+        ),
+        pytest.param(
+            "organization_usage_limit_exceeded",
+            "embedding provider organization usage limit reached (HTTP 429)",
+            id="organization-usage",
+        ),
+        pytest.param(
+            "project_spend_limit_exceeded",
+            "embedding provider project spend limit reached (HTTP 429)",
+            id="project-spend",
+        ),
+        pytest.param(
+            "insufficient_quota",
+            "embedding provider quota exhausted (HTTP 429)",
+            id="legacy-quota",
+        ),
+    ],
+)
+def test_embedding_quota_errors_are_not_retried_or_exposed(
+    provider_code: str,
+    safe_summary: str,
+) -> None:
+    provider_error = RateLimitError(
+        "sensitive provider detail",
+        response=make_status_response(429),
+        body={"code": provider_code, "message": "sensitive provider response"},
+    )
+    client = RecordingOpenAIClient(embeddings=RecordingEmbeddingsResource(error=provider_error))
+
+    with pytest.raises(SearchProviderConfigurationError) as captured:
+        make_provider(client).embed(make_request())
+
+    assert str(captured.value) == safe_summary
+    assert captured.value.__cause__ is None
+    assert len(client.embeddings.calls) == 1
 
 
 @pytest.mark.parametrize("http_status", [400, 401, 403])

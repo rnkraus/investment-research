@@ -72,6 +72,14 @@ failures become safe transient errors. Authentication, authorization, and determ
 failures become safe configuration errors. Malformed or contradictory output becomes a contract
 error, and raw provider details are never included in those messages. Non-SDK exceptions propagate
 unchanged so a worker shutdown or time limit cannot be mistaken for a retryable provider outage.
+The internal error distinguishes an SDK timeout, connection failure, HTTP request timeout,
+temporary conflict, HTTP 429, or provider 5xx status using only fixed text and, where available,
+the numeric HTTP status. Known OpenAI credit, spend, and usage-limit codes inside an HTTP 429 are
+mapped through a fixed allowlist to non-retryable configuration errors; other HTTP 429 responses
+retain the bounded transient retry policy and an explicitly ambiguous rate-or-quota summary. A
+rejected request likewise retains only its safe 4xx status. These details aid worker-log diagnosis;
+the public processing status remains a bounded sanitized summary, and provider response bodies,
+headers, URLs, unknown codes, and SDK exception text are never copied.
 
 Before returning, the adapter requires the configured model, list object, exact item count, and
 provider indexes `0..n-1` in request order. Every vector then passes the application contract's
