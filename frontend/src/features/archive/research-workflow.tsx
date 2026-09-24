@@ -3,7 +3,9 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import {
+  ApiProtocolError,
   ApiRequestError,
+  ApiTransportError,
   apiClient,
   requireLocalSourcePath,
 } from "@/lib/api/client";
@@ -24,6 +26,11 @@ interface ResearchWorkflowProps {
 
 function safeErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
+    return error.requestId
+      ? `${error.message} Request ID: ${error.requestId}`
+      : error.message;
+  }
+  if (error instanceof ApiProtocolError || error instanceof ApiTransportError) {
     return error.message;
   }
   return archiveCopy.errors.unexpected;
