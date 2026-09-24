@@ -286,6 +286,18 @@ test("openOriginal rejects unsafe identifiers and unsupported content", async ()
 test("streamResearch decodes validated events split across network chunks", async () => {
   const frames = [
     {
+      event: "research.progress",
+      schema_version: "1.0",
+      research_request_id: RESEARCH_REQUEST_ID,
+      stage: "EMBEDDING_QUESTION",
+    },
+    {
+      event: "research.progress",
+      schema_version: "1.0",
+      research_request_id: RESEARCH_REQUEST_ID,
+      stage: "SEARCHING_SOURCES",
+    },
+    {
       event: "answer.statement",
       schema_version: "1.0",
       research_request_id: RESEARCH_REQUEST_ID,
@@ -309,7 +321,10 @@ test("streamResearch decodes validated events split across network chunks", asyn
       coverage: "COMPLETE",
     },
   ].map((event) => `event: ${event.event}\ndata: ${JSON.stringify(event)}\n\n`);
-  const wirePayload = frames.join("").replaceAll("\n", "\r\n");
+  const wirePayload = `: keep-alive\n\n${frames.join("")}`.replaceAll(
+    "\n",
+    "\r\n",
+  );
   const encoded = new TextEncoder().encode(wirePayload);
   const splitAt = wirePayload.indexOf("\r\n") + 1;
   const body = new ReadableStream({
@@ -336,9 +351,36 @@ test("streamResearch decodes validated events split across network chunks", asyn
 
   assert.deepEqual(
     events.map((event) => event.event),
-    ["answer.statement", "answer.citation", "answer.completed"],
+    [
+      "research.progress",
+      "research.progress",
+      "answer.statement",
+      "answer.citation",
+      "answer.completed",
+    ],
   );
-  assert.equal(events[1].evidence_span_id, EVIDENCE_SPAN_ID);
+  assert.equal(events[3].evidence_span_id, EVIDENCE_SPAN_ID);
+});
+
+test("streamResearch rejects an unknown progress stage", async () => {
+  const frame = {
+    event: "research.progress",
+    schema_version: "1.0",
+    research_request_id: RESEARCH_REQUEST_ID,
+    stage: "UNTRUSTED_STAGE",
+  };
+  const client = createApiClient(
+    async () =>
+      new Response(
+        `event: research.progress\ndata: ${JSON.stringify(frame)}\n\n`,
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      ),
+  );
+
+  await assert.rejects(collectResearch(client), ApiProtocolError);
 });
 
 test("streamResearch accepts the safe provider-unavailable terminal event", async () => {

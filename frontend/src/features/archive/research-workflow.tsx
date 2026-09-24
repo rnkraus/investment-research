@@ -16,6 +16,7 @@ import {
   attachCitationSource,
   beginResearchSession,
   EMPTY_RESEARCH_SESSION,
+  RESEARCH_PROGRESS_ORDER,
   ResearchSequenceError,
   type ResearchSession,
 } from "./research-session";
@@ -34,13 +35,6 @@ function safeErrorMessage(error: unknown): string {
     return error.message;
   }
   return archiveCopy.errors.unexpected;
-}
-
-function progressMessage(stage: ResearchSession["stage"]): string | undefined {
-  if (stage === undefined) {
-    return undefined;
-  }
-  return archiveCopy.research.progress[stage];
 }
 
 export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
@@ -123,7 +117,10 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
     }
   }
 
-  const activeProgress = progressMessage(session.stage);
+  const visibleProgressStages =
+    session.progressStages[0] === "SEARCHING_SOURCES"
+      ? RESEARCH_PROGRESS_ORDER.slice(1)
+      : RESEARCH_PROGRESS_ORDER;
 
   return (
     <section
@@ -189,10 +186,41 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
       </form>
 
       <div aria-live="polite" className="mt-7">
-        {activeProgress !== undefined ? (
-          <p className="rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-900">
-            {activeProgress}
-          </p>
+        {session.status === "RUNNING" ? (
+          <div className="rounded-2xl bg-sky-50 px-4 py-4 text-sm text-sky-950">
+            <h3 className="font-semibold">
+              {archiveCopy.research.progressHeading}
+            </h3>
+            {session.stage === undefined ? (
+              <p className="mt-2" role="status">
+                {archiveCopy.research.starting}
+              </p>
+            ) : (
+              <ol className="mt-3 space-y-2" role="list">
+                {visibleProgressStages.map((stage, index) => {
+                  const completed =
+                    session.progressStages.includes(stage) &&
+                    stage !== session.stage;
+                  const active = stage === session.stage;
+                  return (
+                    <li
+                      aria-current={active ? "step" : undefined}
+                      className={`flex items-start gap-3 ${active ? "font-semibold" : completed ? "text-sky-800" : "text-slate-500"}`}
+                      key={stage}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${active ? "bg-sky-800 text-white" : completed ? "bg-sky-200 text-sky-900" : "bg-white text-slate-500"}`}
+                      >
+                        {completed ? "✓" : index + 1}
+                      </span>
+                      <span>{archiveCopy.research.progress[stage]}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
         ) : null}
 
         {errorMessage !== undefined ? (
