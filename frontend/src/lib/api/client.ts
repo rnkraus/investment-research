@@ -56,6 +56,13 @@ export class ApiProtocolError extends Error {
   }
 }
 
+export class ApiTransportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApiTransportError";
+  }
+}
+
 type FetchImplementation = typeof fetch;
 type JsonRecord = Readonly<Record<string, unknown>>;
 type JsonGuard<T> = (value: unknown) => value is T;
@@ -231,7 +238,10 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-async function requestError(response: Response): Promise<ApiRequestError> {
+async function requestError(
+  response: Response,
+  fallbackMessage = `The request could not be completed (HTTP ${response.status}).`,
+): Promise<ApiRequestError> {
   let payload: unknown;
   try {
     payload = await response.json();
@@ -239,16 +249,22 @@ async function requestError(response: Response): Promise<ApiRequestError> {
     payload = undefined;
   }
 
+  const headerRequestId = response.headers.get("x-request-id");
+  const safeHeaderRequestId = isUuid(headerRequestId)
+    ? headerRequestId
+    : undefined;
+
   if (isRecord(payload) && isRecord(payload.error)) {
     const code = isErrorCode(payload.error.code)
       ? payload.error.code
       : undefined;
-    const message = isNonEmptyString(payload.error.message)
-      ? payload.error.message
-      : "The request could not be completed.";
+    const message =
+      code !== undefined && isNonEmptyString(payload.error.message)
+        ? payload.error.message
+        : fallbackMessage;
     const requestId = isUuid(payload.error.request_id)
       ? payload.error.request_id
-      : undefined;
+      : safeHeaderRequestId;
     return new ApiRequestError(message, {
       status: response.status,
       code,
@@ -256,8 +272,9 @@ async function requestError(response: Response): Promise<ApiRequestError> {
     });
   }
 
-  return new ApiRequestError("The request could not be completed.", {
+  return new ApiRequestError(fallbackMessage, {
     status: response.status,
+    requestId: safeHeaderRequestId,
   });
 }
 
@@ -446,17 +463,39 @@ export function createApiClient(
       input: ResearchRequestInput,
       signal?: AbortSignal,
     ): AsyncGenerator<ResearchStreamEvent> {
-      const response = await fetchImplementation("/api/v1/research-requests", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-        signal,
-      });
+      let response: Response;
+      try {
+        response = await fetchImplementation("/api/v1/research-requests", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+          signal,
+        });
+      } catch (error) {
+        if (signal?.aborted) {
+          throw error;
+        }
+        throw new ApiTransportError(
+          "The connection to the research API failed before a response arrived. The server may still finish; retrying can incur another provider charge.",
+        );
+      }
       if (!response.ok) {
-        throw await requestError(response);
+        throw await requestError(
+          response,
+          `The web server did not receive a complete research response (HTTP ${response.status}). The API connection may have timed out. The server may still finish; retrying can incur another provider charge.`,
+        );
       }
 
-      yield* decodeResearchStream(response);
+      try {
+        yield* decodeResearchStream(response);
+      } catch (error) {
+        if (signal?.aborted || error instanceof ApiProtocolError) {
+          throw error;
+        }
+        throw new ApiTransportError(
+          "The connection to the research API closed before the answer finished. The server may still finish; retrying can incur another provider charge.",
+        );
+      }
     },
 
     resolveEvidenceSpan(

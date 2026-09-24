@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   ApiProtocolError,
   ApiRequestError,
+  ApiTransportError,
   createApiClient,
   requireLocalApiPath,
   requireLocalSourcePath,
@@ -21,6 +22,16 @@ function jsonResponse(payload, status = 200) {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+async function collectResearch(client) {
+  const events = [];
+  for await (const event of client.streamResearch({
+    question: "What changed?",
+  })) {
+    events.push(event);
+  }
+  return events;
 }
 
 test("captureDocument sends the exact multipart API fields", async () => {
@@ -359,6 +370,78 @@ test("streamResearch accepts the safe provider-unavailable terminal event", asyn
   }
 
   assert.deepEqual(events, [failure]);
+});
+
+test("unstructured research proxy failures explain the HTTP error without exposing the body", async () => {
+  const client = createApiClient(
+    async () =>
+      new Response("private provider detail", {
+        status: 500,
+        headers: { "x-request-id": RESEARCH_REQUEST_ID },
+      }),
+  );
+
+  await assert.rejects(collectResearch(client), (error) => {
+    assert.ok(error instanceof ApiRequestError);
+    assert.equal(error.status, 500);
+    assert.equal(error.requestId, RESEARCH_REQUEST_ID);
+    assert.match(error.message, /HTTP 500/);
+    assert.match(error.message, /may have timed out/);
+    assert.match(error.message, /another provider charge/);
+    assert.doesNotMatch(error.message, /private provider detail/);
+    return true;
+  });
+});
+
+test("unknown research error codes never expose an untrusted response message", async () => {
+  const client = createApiClient(async () =>
+    jsonResponse(
+      { error: { code: "UNKNOWN", message: "private provider detail" } },
+      502,
+    ),
+  );
+
+  await assert.rejects(collectResearch(client), (error) => {
+    assert.ok(error instanceof ApiRequestError);
+    assert.equal(error.code, undefined);
+    assert.match(error.message, /HTTP 502/);
+    assert.doesNotMatch(error.message, /private provider detail/);
+    return true;
+  });
+});
+
+test("research connection failures have a safe explanation", async () => {
+  const client = createApiClient(async () => {
+    throw new Error("private network detail");
+  });
+
+  await assert.rejects(collectResearch(client), (error) => {
+    assert.ok(error instanceof ApiTransportError);
+    assert.match(error.message, /connection to the research API failed/);
+    assert.doesNotMatch(error.message, /private network detail/);
+    return true;
+  });
+});
+
+test("interrupted research streams have a safe explanation", async () => {
+  const client = createApiClient(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error("private stream detail"));
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+
+  await assert.rejects(collectResearch(client), (error) => {
+    assert.ok(error instanceof ApiTransportError);
+    assert.match(error.message, /closed before the answer finished/);
+    assert.doesNotMatch(error.message, /private stream detail/);
+    return true;
+  });
 });
 
 test("local API paths allow protected viewer fragments and reject external targets", () => {

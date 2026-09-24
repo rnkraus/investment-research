@@ -48,6 +48,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
+  experimental: {
+    proxyTimeout: 120_000,
+  },
   async rewrites() {
     return [
       {
