@@ -244,7 +244,7 @@ def test_research_route_streams_only_validated_statement_and_citation(
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["cache-control"] == "private, no-store, no-transform"
     assert response.headers["x-content-type-options"] == "nosniff"
     events = parse_server_sent_events(response.text)
     assert [event["event_name"] for event in events] == [

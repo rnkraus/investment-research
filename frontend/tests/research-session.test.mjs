@@ -6,6 +6,7 @@ import {
   applyResearchEvent,
   attachCitationSource,
   beginResearchSession,
+  getResearchDisplaySteps,
 } from "../src/features/archive/research-session.ts";
 
 const REQUEST_ID = "10000000-0000-4000-8000-000000000001";
@@ -93,6 +94,53 @@ test("progress tracks only stages received in increasing order", () => {
     () => applyResearchEvent(selecting, progressEvent("SELECTING_PASSAGES")),
     ResearchSequenceError,
   );
+});
+
+test("six backend stages become four stable display steps", () => {
+  let session = beginResearchSession();
+  const stages = [
+    "EMBEDDING_QUESTION",
+    "SEARCHING_SOURCES",
+    "SELECTING_PASSAGES",
+    "GENERATING_ANSWER",
+    "VALIDATING_EVIDENCE",
+    "SAVING_RESULT",
+  ];
+  const expectedActiveSteps = [
+    "PREPARING_QUESTION",
+    "FINDING_PASSAGES",
+    "FINDING_PASSAGES",
+    "DRAFTING_ANSWER",
+    "CHECKING_EVIDENCE",
+    "CHECKING_EVIDENCE",
+  ];
+
+  for (const [index, stage] of stages.entries()) {
+    session = applyResearchEvent(session, progressEvent(stage));
+    const display = getResearchDisplaySteps(session);
+    assert.equal(display.length, 4);
+    assert.equal(
+      display.find((step) => step.status === "ACTIVE")?.stage,
+      expectedActiveSteps[index],
+    );
+    assert.equal(
+      display.filter((step) => step.status === "COMPLETED").length,
+      [0, 1, 1, 2, 3, 3][index],
+    );
+  }
+});
+
+test("lexical research does not show a completed embedding step", () => {
+  const session = applyResearchEvent(
+    beginResearchSession(),
+    progressEvent("SEARCHING_SOURCES"),
+  );
+
+  assert.deepEqual(getResearchDisplaySteps(session), [
+    { stage: "FINDING_PASSAGES", status: "ACTIVE" },
+    { stage: "DRAFTING_ANSWER", status: "PENDING" },
+    { stage: "CHECKING_EVIDENCE", status: "PENDING" },
+  ]);
 });
 
 test("a statement becomes complete only after its citation arrives", () => {

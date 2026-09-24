@@ -84,6 +84,8 @@ successful responses disable private caching.
 flowchart LR
     REQUEST[ResearchRequestInput] --> CONTEXT[Resolve trusted context]
     CONTEXT --> SERVICE[AnswerResearchRequestService]
+    SERVICE --> PROGRESS[Safe progress events]
+    PROGRESS --> SSE[text/event-stream]
     SERVICE --> VALIDATED[ValidatedAnswerResult]
     VALIDATED --> MAP[Map safe terminal events]
     MAP --> SSE[text/event-stream]
@@ -91,10 +93,11 @@ flowchart LR
 
 The research route accepts a question and optional document and temporal filters but no workspace
 identifier. It calls one complete application use case and maps only its validated terminal result.
-Streamed answers emit each statement followed by its ordered citation references and one completion
-event. Insufficient and rejected results emit no statements or citations. Database failures are
-translated before streaming begins, and successful responses disable private caching and content
-sniffing.
+The stream may emit progress before the complete result is validated, but never answer content.
+Validated answers emit each statement followed by its ordered citation references and one completion
+event. Insufficient and rejected results emit no statements or citations. Failures after the stream
+starts use a safe terminal event. Successful responses disable private caching, content sniffing,
+and intermediary transformations so progress frames can be delivered promptly.
 
 ```mermaid
 flowchart LR
