@@ -16,7 +16,7 @@ import {
   attachCitationSource,
   beginResearchSession,
   EMPTY_RESEARCH_SESSION,
-  RESEARCH_PROGRESS_ORDER,
+  getResearchDisplaySteps,
   ResearchSequenceError,
   type ResearchSession,
 } from "./research-session";
@@ -117,10 +117,7 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
     }
   }
 
-  const visibleProgressStages =
-    session.progressStages[0] === "SEARCHING_SOURCES"
-      ? RESEARCH_PROGRESS_ORDER.slice(1)
-      : RESEARCH_PROGRESS_ORDER;
+  const visibleProgressSteps = getResearchDisplaySteps(session);
 
   return (
     <section
@@ -197,16 +194,14 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
               </p>
             ) : (
               <ol className="mt-3 space-y-2" role="list">
-                {visibleProgressStages.map((stage, index) => {
-                  const completed =
-                    session.progressStages.includes(stage) &&
-                    stage !== session.stage;
-                  const active = stage === session.stage;
+                {visibleProgressSteps.map((step, index) => {
+                  const completed = step.status === "COMPLETED";
+                  const active = step.status === "ACTIVE";
                   return (
                     <li
                       aria-current={active ? "step" : undefined}
                       className={`flex items-start gap-3 ${active ? "font-semibold" : completed ? "text-sky-800" : "text-slate-500"}`}
-                      key={stage}
+                      key={step.stage}
                     >
                       <span
                         aria-hidden="true"
@@ -214,7 +209,7 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
                       >
                         {completed ? "✓" : index + 1}
                       </span>
-                      <span>{archiveCopy.research.progress[stage]}</span>
+                      <span>{archiveCopy.research.progress[step.stage]}</span>
                     </li>
                   );
                 })}

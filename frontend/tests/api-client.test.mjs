@@ -362,6 +362,50 @@ test("streamResearch decodes validated events split across network chunks", asyn
   assert.equal(events[3].evidence_span_id, EVIDENCE_SPAN_ID);
 });
 
+test(
+  "streamResearch yields progress before the response stream closes",
+  { timeout: 2_000 },
+  async () => {
+    const progress = {
+      event: "research.progress",
+      schema_version: "1.0",
+      research_request_id: RESEARCH_REQUEST_ID,
+      stage: "EMBEDDING_QUESTION",
+    };
+    let closeStream;
+    const streamClosed = new Promise((resolve) => {
+      closeStream = resolve;
+    });
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `event: research.progress\ndata: ${JSON.stringify(progress)}\n\n`,
+          ),
+        );
+        void streamClosed.then(() => controller.close());
+      },
+    });
+    const client = createApiClient(
+      async () =>
+        new Response(body, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+    const events = client.streamResearch({ question: "What changed?" });
+
+    try {
+      const first = await events.next();
+      assert.equal(first.done, false);
+      assert.deepEqual(first.value, progress);
+    } finally {
+      closeStream();
+      await events.return();
+    }
+  },
+);
+
 test("streamResearch rejects an unknown progress stage", async () => {
   const frame = {
     event: "research.progress",

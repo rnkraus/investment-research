@@ -68,6 +68,19 @@ research request, rejects duplicate or out-of-order relationships, and refuses t
 whose statement has no citation. Resolving a citation remains a separate authorized API call; only
 then does `attachCitationSource` add the exact source location to the completed UI state.
 
+The UI groups six actual progress events into four stable, English display steps:
+
+| Display step                                  | Backend stages                            |
+| --------------------------------------------- | ----------------------------------------- |
+| Preparing the question for search             | `EMBEDDING_QUESTION`                      |
+| Finding relevant passages                     | `SEARCHING_SOURCES`, `SELECTING_PASSAGES` |
+| Drafting an answer from the selected passages | `GENERATING_ANSWER`                       |
+| Checking the answer and its evidence          | `VALIDATING_EVIDENCE`, `SAVING_RESULT`    |
+
+A step is active or complete only after its corresponding event arrives; no percentage or timed
+animation implies unobserved progress. The credential-free lexical path omits the embedding step.
+The answer and citations remain hidden until the terminal validated events arrive.
+
 ## Research UI flow
 
 ```mermaid

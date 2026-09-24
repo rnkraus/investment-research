@@ -234,7 +234,7 @@ def answer_research_request(
         stream_research_events(service, context, retrieval_input, current_request_id()),
         media_type="text/event-stream",
         headers={
-            "cache-control": "private, no-store",
+            "cache-control": "private, no-store, no-transform",
             "x-content-type-options": "nosniff",
         },
     )

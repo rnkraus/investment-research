@@ -17,6 +17,36 @@ export const RESEARCH_PROGRESS_ORDER: readonly ResearchProgressStage[] = [
   "SAVING_RESULT",
 ];
 
+export type ResearchDisplayStage =
+  | "PREPARING_QUESTION"
+  | "FINDING_PASSAGES"
+  | "DRAFTING_ANSWER"
+  | "CHECKING_EVIDENCE";
+
+const DISPLAY_STAGE_BY_PROGRESS_STAGE: Record<
+  ResearchProgressStage,
+  ResearchDisplayStage
+> = {
+  EMBEDDING_QUESTION: "PREPARING_QUESTION",
+  SEARCHING_SOURCES: "FINDING_PASSAGES",
+  SELECTING_PASSAGES: "FINDING_PASSAGES",
+  GENERATING_ANSWER: "DRAFTING_ANSWER",
+  VALIDATING_EVIDENCE: "CHECKING_EVIDENCE",
+  SAVING_RESULT: "CHECKING_EVIDENCE",
+};
+
+const RESEARCH_DISPLAY_ORDER: readonly ResearchDisplayStage[] = [
+  "PREPARING_QUESTION",
+  "FINDING_PASSAGES",
+  "DRAFTING_ANSWER",
+  "CHECKING_EVIDENCE",
+];
+
+export interface ResearchDisplayStep {
+  readonly stage: ResearchDisplayStage;
+  readonly status: "PENDING" | "ACTIVE" | "COMPLETED";
+}
+
 export interface ResearchCitation {
   readonly evidenceSpanId: string;
   readonly relationship: "SUPPORTS" | "CONFLICTS";
@@ -60,6 +90,35 @@ export function beginResearchSession(): ResearchSession {
     progressStages: [],
     statements: [],
   };
+}
+
+export function getResearchDisplaySteps(
+  session: ResearchSession,
+): readonly ResearchDisplayStep[] {
+  const visibleOrder =
+    session.progressStages.length > 0 &&
+    session.progressStages[0] !== "EMBEDDING_QUESTION"
+      ? RESEARCH_DISPLAY_ORDER.slice(1)
+      : RESEARCH_DISPLAY_ORDER;
+  const observedStages = new Set(
+    session.progressStages.map(
+      (stage) => DISPLAY_STAGE_BY_PROGRESS_STAGE[stage],
+    ),
+  );
+  const activeStage =
+    session.stage === undefined
+      ? undefined
+      : DISPLAY_STAGE_BY_PROGRESS_STAGE[session.stage];
+
+  return visibleOrder.map((stage) => ({
+    stage,
+    status:
+      stage === activeStage
+        ? "ACTIVE"
+        : observedStages.has(stage)
+          ? "COMPLETED"
+          : "PENDING",
+  }));
 }
 
 function requireRunningSession(session: ResearchSession): void {
