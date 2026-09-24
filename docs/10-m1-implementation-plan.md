@@ -837,11 +837,21 @@ manifest budget; no live result is claimed until that smoke is explicitly author
 requires `compose.m1-live.yaml` in addition to `compose.yaml`. The API receives only query and
 generation keys, and the worker receives only document-embedding and index keys, all through
 role-specific secret mounts. Budget and Pinecone data-plane host are non-secret Compose inputs.
-The worker rejects missing M1 indexing configuration before consuming jobs instead of raising an
-assertion inside the first task. Required CI and isolated M1 acceptance remain credential-free;
+The live override also attaches only the worker to a non-internal `provider-egress` network, so it
+can resolve and reach OpenAI and Pinecone while the parser remains on its internal network. This
+network provides outbound access, not a provider-domain allowlist. The worker rejects missing M1
+indexing configuration before consuming jobs instead of raising an assertion inside the first task.
+Required CI and isolated M1 acceptance remain credential-free;
 existing `CAPTURED` jobs are not replayed by this configuration correction, which remains an M2
 delivery-reliability concern. The live local journey still requires a separate manual check with
 approved public or synthetic content.
+
+The local Next.js rewrite uses a 120-second proxy timeout for synchronous research requests after
+an observed 30-second disconnect while the API was still completing provider work. This is a
+bounded M1 compatibility adjustment, not an end-to-end execution deadline or durable async job.
+Unstructured HTTP and transport failures receive safe browser explanations and any available
+request ID; a disconnected browser may leave paid backend work running, so retries are not
+automatically issued.
 
 ### 8.1 M1-to-M2 handoff
 

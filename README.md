@@ -129,6 +129,13 @@ it in the `x-request-id` response header and safe JSON error envelope. Request b
 raw unmatched paths, headers, credentials, exception messages, and traceback text are excluded from
 these application events.
 
+Research may make several bounded provider calls before its first response event. The local Next.js
+rewrite therefore waits up to 120 seconds instead of its previous 30-second default. If the web
+container reports a proxy disconnect, the API may still finish after the browser has received an
+error; do not immediately repeat a paid request without checking its outcome. The research UI shows
+a safe HTTP or connection explanation and any available request ID. See the
+[frontend API boundary](frontend/src/lib/api/README.md) for the error-handling contract.
+
 Open the web application at <http://127.0.0.1:3000>. The API liveness endpoint is available at
 <http://127.0.0.1:8000/health>; it reports only whether the API process is running. The readiness
 endpoint at <http://127.0.0.1:8000/ready> returns `200` only when PostgreSQL is reachable and its
@@ -355,7 +362,9 @@ uv audit --locked
   The API alone bridges the loopback-facing frontend network to backend and storage-data; the worker
   alone bridges backend, storage-data, and parser. `compose.test.yaml` adds a separate test-only
   bridge and loopback database port for isolated host-driven verification. `compose.m1-live.yaml`
-  adds only the approved live M1 provider configuration and role-scoped secret mounts.
+  adds the approved live M1 provider configuration, role-scoped secret mounts, and a dedicated
+  outbound network for the worker's OpenAI and Pinecone calls. The parser stays on its internal
+  network; this outbound network is not a domain allowlist.
 - `.secrets/` is an ignored local source directory for Compose secret mounts; it is not application
   configuration, a production secret manager, or a place for shared credentials.
 - The API lifecycle owns one SQLAlchemy engine and session factory. Module repositories use the
