@@ -33,6 +33,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/api/v1/evidence-spans/{evidence_span_id}",
         "/api/v1/processing-runs/{processing_run_id}",
         "/api/v1/research-requests",
+        "/api/v1/research-requests/models",
     }
 
 

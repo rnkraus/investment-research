@@ -27,6 +27,7 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.research.contracts import ResearchModel
 
 OPENAI_STATEMENT_SUPPORT_MODEL = "gpt-5.6-terra"
 OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS = 30.0
@@ -61,8 +62,8 @@ class OpenAIStatementSupportEvaluator:
     def __post_init__(self) -> None:
         """Reject adapter settings outside the frozen M1 support profile."""
 
-        if self.model != OPENAI_STATEMENT_SUPPORT_MODEL:
-            raise ValueError(f"statement-support model must be {OPENAI_STATEMENT_SUPPORT_MODEL}")
+        if self.model not in ResearchModel:
+            raise ValueError("statement-support model must be an allowlisted research model")
         if not 0 < self.operation_timeout_seconds <= OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS:
             raise ValueError("OpenAI statement-support timeout must be between 0 and 30 seconds")
         if not 1 <= self.max_output_tokens <= OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS:

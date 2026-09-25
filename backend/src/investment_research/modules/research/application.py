@@ -1,6 +1,6 @@
 """Application services for research retrieval and validated answer generation."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import sleep
@@ -50,6 +50,7 @@ from investment_research.modules.research.contracts import (
     AnswerGenerationProfile,
     AnswerGenerationSource,
     CanonicalCandidateSource,
+    ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
@@ -1214,6 +1215,9 @@ class AnswerResearchRequestService:
 
     retrieval_service: RetrieveResearchService
     generation_service: GenerateValidatedAnswerService
+    model_services: (
+        Mapping[tuple[ResearchModel, ResearchModel], GenerateValidatedAnswerService] | None
+    ) = None
 
     def answer(
         self,
@@ -1224,6 +1228,17 @@ class AnswerResearchRequestService:
     ) -> ValidatedAnswerResult:
         """Return only the validated terminal result of one research request."""
 
+        selected_models = (retrieval_input.generation_model, retrieval_input.support_model)
+        if self.model_services is None:
+            if selected_models != (ResearchModel.TERRA, ResearchModel.TERRA):
+                raise ValueError("selected research models are unavailable in this runtime")
+            generation_service = self.generation_service
+        else:
+            selected_service = self.model_services.get(selected_models)
+            if selected_service is None:
+                raise ValueError("selected research models are unavailable in this runtime")
+            generation_service = selected_service
+
         if progress is None:
             retrieval_result = self.retrieval_service.retrieve(context, retrieval_input)
         else:
@@ -1232,8 +1247,8 @@ class AnswerResearchRequestService:
             )
         try:
             if progress is None:
-                return self.generation_service.generate(context, retrieval_result)
-            return self.generation_service.generate(context, retrieval_result, progress=progress)
+                return generation_service.generate(context, retrieval_result)
+            return generation_service.generate(context, retrieval_result, progress=progress)
         except (
             AnswerGenerationProviderError,
             StatementSupportProviderError,

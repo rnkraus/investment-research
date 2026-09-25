@@ -32,6 +32,7 @@ from investment_research.infrastructure.generation.openai import (
     OpenAIAnswerProviderContractError,
     create_openai_answer_generator,
 )
+from investment_research.infrastructure.logging import SafeJsonFormatter
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
@@ -273,6 +274,51 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
 
 
 @pytest.mark.parametrize(
+    ("response", "expected_reason"),
+    [
+        (
+            StubParsedResponse(
+                model="gpt-5.6-luna",
+                status="incomplete",
+                output_parsed=None,
+                incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+            ),
+            "output_limit",
+        ),
+        (
+            StubParsedResponse(
+                model="gpt-5.6-luna",
+                output_parsed=make_provider_proposal(candidate_id=DOCUMENT_ID),
+            ),
+            "unknown_candidate",
+        ),
+    ],
+)
+def test_luna_generation_failure_logs_only_safe_diagnostic(
+    response: StubParsedResponse,
+    expected_reason: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = RecordingOpenAIClient(responses=RecordingResponsesResource(response=response))
+    generator = OpenAIAnswerGenerator(client=cast(OpenAI, client), model="gpt-5.6-luna")
+
+    with pytest.raises(AnswerGenerationProviderContractError):
+        generator.generate(make_generation_input())
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "investment_research.infrastructure.generation.openai"
+    ]
+    assert len(records) == 1
+    expected_event = f"answer_generation.provider_failed.gpt-5.6-luna.{expected_reason}"
+    assert records[0].message == expected_event
+    assert expected_event in SafeJsonFormatter(process_name="api").format(records[0])
+    assert QUESTION not in caplog.text
+    assert SOURCE_TEXT not in caplog.text
+
+
+@pytest.mark.parametrize(
     ("source_text", "exact_text", "expected_start"),
     [
         pytest.param(
@@ -317,19 +363,36 @@ def test_generate_derives_exact_unique_source_offsets(
 
 
 @pytest.mark.parametrize(
-    ("source_text", "exact_text", "candidate_id"),
+    ("source_text", "exact_text", "candidate_id", "expected_detail"),
     [
-        pytest.param("No matching passage", "different passage", CANDIDATE_ID, id="missing-text"),
         pytest.param(
-            "repeated text; repeated text", "repeated text", CANDIDATE_ID, id="ambiguous-text"
+            "No matching passage",
+            "different passage",
+            CANDIDATE_ID,
+            "quote_not_found",
+            id="missing-text",
         ),
-        pytest.param(SOURCE_TEXT, SOURCE_TEXT, REQUEST_ID, id="unknown-candidate"),
+        pytest.param(
+            "repeated text; repeated text",
+            "repeated text",
+            CANDIDATE_ID,
+            "quote_ambiguous",
+            id="ambiguous-text",
+        ),
+        pytest.param(
+            SOURCE_TEXT,
+            SOURCE_TEXT,
+            REQUEST_ID,
+            "unknown_candidate",
+            id="unknown-candidate",
+        ),
     ],
 )
 def test_generate_rejects_unresolvable_evidence_without_guessing(
     source_text: str,
     exact_text: str,
     candidate_id: UUID,
+    expected_detail: str,
 ) -> None:
     client = RecordingOpenAIClient(
         responses=RecordingResponsesResource(
@@ -345,7 +408,7 @@ def test_generate_rejects_unresolvable_evidence_without_guessing(
     with pytest.raises(OpenAIAnswerProviderContractError) as captured:
         make_generator(client).generate(make_generation_input(source_text=source_text))
 
-    assert captured.value.detail == "typed_answer_validation"
+    assert captured.value.detail == expected_detail
     assert captured.value.__cause__ is None
     assert len(client.responses.calls) == 1
 
@@ -513,7 +576,7 @@ def test_provider_errors_are_translated_without_exposing_details(
         assert captured.value.detail == "api_response_validation"
 
 
-def test_typed_answer_validation_failure_retains_only_a_fixed_detail() -> None:
+def test_provider_schema_validation_failure_retains_only_a_fixed_detail() -> None:
     with pytest.raises(ValidationError) as invalid_output:
         openai_module._OpenAIGeneratedAnswer.model_validate(
             {"coverage_status": CoverageStatus.COMPLETE}
@@ -523,7 +586,7 @@ def test_typed_answer_validation_failure_retains_only_a_fixed_detail() -> None:
     with pytest.raises(OpenAIAnswerProviderContractError) as captured:
         make_generator(client).generate(make_generation_input())
 
-    assert captured.value.detail == "typed_answer_validation"
+    assert captured.value.detail == "provider_schema_validation"
     assert "coverage_status" not in str(captured.value)
     assert captured.value.__cause__ is None
 
@@ -562,7 +625,7 @@ def test_local_debug_reads_only_raw_generated_text_from_one_request() -> None:
     make_generator(RecordingOpenAIClient(responses=normal_responses)).generate(
         make_generation_input()
     )
-    assert captured.value.detail == "typed_answer_validation"
+    assert captured.value.detail == "provider_schema_validation"
     assert output == ['{"rendered_text":"synthetic answer"}']
     assert raw_responses.raw_route_used is True
     assert raw_responses.calls == normal_responses.calls
