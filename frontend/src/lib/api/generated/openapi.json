@@ -704,6 +704,46 @@
         "title": "ResearchFailedEvent",
         "type": "object"
       },
+      "ResearchModel": {
+        "description": "Allowlisted models for answer generation and statement support.",
+        "enum": [
+          "gpt-5.6-terra",
+          "gpt-5.6-luna"
+        ],
+        "title": "ResearchModel",
+        "type": "string"
+      },
+      "ResearchModelOptions": {
+        "additionalProperties": false,
+        "description": "Models genuinely available in the active API runtime.",
+        "properties": {
+          "generation_models": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchModel"
+            },
+            "title": "Generation Models",
+            "type": "array"
+          },
+          "provider_enabled": {
+            "title": "Provider Enabled",
+            "type": "boolean"
+          },
+          "support_models": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchModel"
+            },
+            "title": "Support Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider_enabled",
+          "generation_models",
+          "support_models"
+        ],
+        "title": "ResearchModelOptions",
+        "type": "object"
+      },
       "ResearchProgressEvent": {
         "additionalProperties": false,
         "description": "Progress emitted before validated answer content exists.",
@@ -786,11 +826,19 @@
           "context": {
             "$ref": "#/components/schemas/ResearchRequestContext"
           },
+          "generation_model": {
+            "$ref": "#/components/schemas/ResearchModel",
+            "default": "gpt-5.6-terra"
+          },
           "question": {
             "maxLength": 2000,
             "minLength": 1,
             "title": "Question",
             "type": "string"
+          },
+          "support_model": {
+            "$ref": "#/components/schemas/ResearchModel",
+            "default": "gpt-5.6-terra"
           }
         },
         "required": [
@@ -1260,6 +1308,28 @@
           }
         },
         "summary": "Answer Research Request",
+        "tags": [
+          "research"
+        ]
+      }
+    },
+    "/api/v1/research-requests/models": {
+      "get": {
+        "description": "Advertise only model choices backed by the active provider runtime.",
+        "operationId": "get_research_models_api_v1_research_requests_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchModelOptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Research Models",
         "tags": [
           "research"
         ]

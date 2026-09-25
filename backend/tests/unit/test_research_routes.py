@@ -34,6 +34,7 @@ from investment_research.modules.research.application import (
     ResearchProviderUnavailableError,
 )
 from investment_research.modules.research.contracts import (
+    ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
     ValidatedAnswerResult,
@@ -78,6 +79,7 @@ class FakeAnswerResearchRequestService:
         self.error: Exception | None = None
         self.progress_stages: tuple[ResearchProgressStage, ...] = ()
         self.calls: list[tuple[WorkspaceContext, ResearchRetrievalInput]] = []
+        self.model_services: dict[tuple[ResearchModel, ResearchModel], object] | None = None
 
     def answer(
         self,
@@ -265,6 +267,73 @@ def test_research_route_streams_only_validated_statement_and_citation(
             ResearchRetrievalInput(question=QUESTION, document_ids=(DOCUMENT_ID,)),
         )
     ]
+
+
+def test_research_route_passes_independent_model_choices(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+) -> None:
+    client, service = research_client
+
+    response = client.post(
+        "/api/v1/research-requests",
+        json={
+            "question": QUESTION,
+            "generation_model": ResearchModel.LUNA,
+            "support_model": ResearchModel.TERRA,
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.calls == [
+        (
+            make_context(),
+            ResearchRetrievalInput(
+                question=QUESTION,
+                generation_model=ResearchModel.LUNA,
+                support_model=ResearchModel.TERRA,
+            ),
+        )
+    ]
+
+
+def test_research_route_rejects_unknown_model_before_starting_research(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+) -> None:
+    client, service = research_client
+
+    response = client.post(
+        "/api/v1/research-requests",
+        json={"question": QUESTION, "generation_model": "unsupported-model"},
+    )
+
+    assert response.status_code == 422
+    assert service.calls == []
+
+
+def test_research_models_endpoint_reports_actual_runtime_availability(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+) -> None:
+    client, service = research_client
+
+    deterministic_response = client.get("/api/v1/research-requests/models")
+    assert deterministic_response.status_code == 200
+    assert deterministic_response.json() == {
+        "provider_enabled": False,
+        "generation_models": [],
+        "support_models": [],
+    }
+
+    service.model_services = {
+        (answer, support): object() for answer in ResearchModel for support in ResearchModel
+    }
+    provider_response = client.get("/api/v1/research-requests/models")
+
+    assert provider_response.status_code == 200
+    assert provider_response.json() == {
+        "provider_enabled": True,
+        "generation_models": [model.value for model in ResearchModel],
+        "support_models": [model.value for model in ResearchModel],
+    }
 
 
 def test_research_route_streams_progress_before_validated_answer(

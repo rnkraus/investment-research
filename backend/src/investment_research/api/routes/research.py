@@ -19,6 +19,7 @@ from investment_research.api.contracts import (
     ErrorDetail,
     ErrorResponse,
     ResearchFailedEvent,
+    ResearchModelOptions,
     ResearchProgressEvent,
     ResearchRequestInput,
     ResearchStreamEvent,
@@ -34,6 +35,7 @@ from investment_research.api.dependencies import (
 from investment_research.infrastructure.logging import current_request_id
 from investment_research.modules.research.application import ResearchProviderUnavailableError
 from investment_research.modules.research.contracts import (
+    ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
     ValidatedAnswerResult,
@@ -42,6 +44,20 @@ from investment_research.modules.research.domain import AnswerState
 
 router = APIRouter(prefix="/api/v1/research-requests", tags=["research"])
 logger = logging.getLogger(__name__)
+
+
+@router.get("/models", response_model=ResearchModelOptions)
+def get_research_models(
+    service: AnswerResearchRequestServiceDependency,
+) -> ResearchModelOptions:
+    """Advertise only model choices backed by the active provider runtime."""
+
+    model_services = service.model_services
+    return ResearchModelOptions(
+        provider_enabled=model_services is not None,
+        generation_models=(tuple(ResearchModel) if model_services is not None else ()),
+        support_models=(tuple(ResearchModel) if model_services is not None else ()),
+    )
 
 
 def build_research_stream_events(
@@ -229,6 +245,8 @@ def answer_research_request(
         document_ids=request.context.document_ids,
         temporal_mode=request.context.temporal_mode,
         cutoff_at=request.context.cutoff_at,
+        generation_model=request.generation_model,
+        support_model=request.support_model,
     )
     return StreamingResponse(
         stream_research_events(service, context, retrieval_input, current_request_id()),

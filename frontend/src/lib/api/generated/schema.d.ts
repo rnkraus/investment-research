@@ -124,6 +124,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/research-requests/models": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Research Models
+         * @description Advertise only model choices backed by the active provider runtime.
+         */
+        readonly get: operations["get_research_models_api_v1_research_requests_models_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/health": {
         readonly parameters: {
             readonly query?: never;
@@ -553,6 +573,24 @@ export interface components {
             readonly schema_version: "1.0";
         };
         /**
+         * ResearchModel
+         * @description Allowlisted models for answer generation and statement support.
+         * @enum {string}
+         */
+        readonly ResearchModel: "gpt-5.6-terra" | "gpt-5.6-luna";
+        /**
+         * ResearchModelOptions
+         * @description Models genuinely available in the active API runtime.
+         */
+        readonly ResearchModelOptions: {
+            /** Generation Models */
+            readonly generation_models: readonly components["schemas"]["ResearchModel"][];
+            /** Provider Enabled */
+            readonly provider_enabled: boolean;
+            /** Support Models */
+            readonly support_models: readonly components["schemas"]["ResearchModel"][];
+        };
+        /**
          * ResearchProgressEvent
          * @description Progress emitted before validated answer content exists.
          */
@@ -600,8 +638,12 @@ export interface components {
          */
         readonly ResearchRequestInput: {
             readonly context?: components["schemas"]["ResearchRequestContext"];
+            /** @default gpt-5.6-terra */
+            readonly generation_model: components["schemas"]["ResearchModel"];
             /** Question */
             readonly question: string;
+            /** @default gpt-5.6-terra */
+            readonly support_model: components["schemas"]["ResearchModel"];
         };
         readonly ResearchStreamEvent: components["schemas"]["ResearchProgressEvent"] | components["schemas"]["AnswerStatementEvent"] | components["schemas"]["AnswerCitationEvent"] | components["schemas"]["AnswerCompletedEvent"] | components["schemas"]["AnswerInsufficientEvent"] | components["schemas"]["ResearchFailedEvent"];
         /**
@@ -935,6 +977,26 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_research_models_api_v1_research_requests_models_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ResearchModelOptions"];
                 };
             };
         };

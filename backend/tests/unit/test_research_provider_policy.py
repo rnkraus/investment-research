@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import cast
+from unittest.mock import Mock, sentinel
 from uuid import UUID
 
 import pytest
@@ -23,6 +24,7 @@ from investment_research.modules.research.application import (
     RetrieveResearchService,
 )
 from investment_research.modules.research.contracts import (
+    ResearchModel,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
     ValidatedAnswerResult,
@@ -189,3 +191,42 @@ def test_non_provider_failure_is_not_reclassified() -> None:
 
     assert captured.value is application_error
     assert len(generation.calls) == 1
+
+
+def test_selected_model_pair_uses_its_own_generation_service() -> None:
+    retrieval = StaticRetrievalService()
+    default_generation = Mock(spec=GenerateValidatedAnswerService)
+    selected_generation = Mock(spec=GenerateValidatedAnswerService)
+    selected_generation.generate.return_value = sentinel.validated_result
+    service = AnswerResearchRequestService(
+        retrieval_service=cast(RetrieveResearchService, retrieval),
+        generation_service=default_generation,
+        model_services={(ResearchModel.LUNA, ResearchModel.TERRA): selected_generation},
+    )
+    retrieval_input = ResearchRetrievalInput(
+        question=QUESTION,
+        generation_model=ResearchModel.LUNA,
+        support_model=ResearchModel.TERRA,
+    )
+
+    result = service.answer(make_context(), retrieval_input)
+
+    assert result is sentinel.validated_result
+    selected_generation.generate.assert_called_once_with(make_context(), retrieval.result)
+    default_generation.generate.assert_not_called()
+
+
+def test_unavailable_model_pair_fails_before_retrieval() -> None:
+    retrieval = StaticRetrievalService()
+    service = AnswerResearchRequestService(
+        retrieval_service=cast(RetrieveResearchService, retrieval),
+        generation_service=Mock(spec=GenerateValidatedAnswerService),
+    )
+
+    with pytest.raises(ValueError, match="selected research models are unavailable"):
+        service.answer(
+            make_context(),
+            ResearchRetrievalInput(question=QUESTION, support_model=ResearchModel.LUNA),
+        )
+
+    assert retrieval.calls == []

@@ -40,6 +40,7 @@ from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorage,
     S3ObjectStorageReadinessProbe,
 )
+from investment_research.infrastructure.openai_models import RESEARCH_MODEL_PRICES
 from investment_research.infrastructure.operations.opentelemetry import (
     OpenTelemetryOperationTracer,
 )
@@ -74,6 +75,7 @@ from investment_research.modules.research.application import (
     GenerateValidatedAnswerService,
     RetrieveResearchService,
 )
+from investment_research.modules.research.contracts import ResearchModel
 from investment_research.modules.search.contracts import M1_LANE_CANDIDATE_LIMIT
 from investment_research.modules.search.indexing import IndexActiveChunksService
 from investment_research.settings import ApiSettings, WorkerSettings
@@ -198,6 +200,8 @@ class ApiProviderFakes:
     dense_retriever: Mock
     answer_generator: Mock
     support_evaluator: Mock
+    luna_answer_generator: Mock
+    luna_support_evaluator: Mock
     embedding_factory: Mock
     dense_factory: Mock
     answer_factory: Mock
@@ -213,10 +217,12 @@ def install_api_provider_fakes(
     dense_retriever = create_autospec(PineconeDenseRetriever, instance=True)
     answer_generator = create_autospec(OpenAIAnswerGenerator, instance=True)
     support_evaluator = create_autospec(OpenAIStatementSupportEvaluator, instance=True)
+    luna_answer_generator = create_autospec(OpenAIAnswerGenerator, instance=True)
+    luna_support_evaluator = create_autospec(OpenAIStatementSupportEvaluator, instance=True)
     embedding_factory = Mock(return_value=embedding_provider)
     dense_factory = Mock(return_value=dense_retriever)
-    answer_factory = Mock(return_value=answer_generator)
-    support_factory = Mock(return_value=support_evaluator)
+    answer_factory = Mock(side_effect=(answer_generator, luna_answer_generator))
+    support_factory = Mock(side_effect=(support_evaluator, luna_support_evaluator))
     monkeypatch.setattr(
         bootstrap_module,
         "create_openai_embedding_provider",
@@ -238,6 +244,8 @@ def install_api_provider_fakes(
         dense_retriever=dense_retriever,
         answer_generator=answer_generator,
         support_evaluator=support_evaluator,
+        luna_answer_generator=luna_answer_generator,
+        luna_support_evaluator=luna_support_evaluator,
         embedding_factory=embedding_factory,
         dense_factory=dense_factory,
         answer_factory=answer_factory,
@@ -341,6 +349,8 @@ def test_build_api_container_wires_m1_query_resources(
         assert container.dense_retriever is fakes.dense_retriever
         assert container.answer_generator_provider is fakes.answer_generator
         assert container.statement_support_provider is fakes.support_evaluator
+        assert container.luna_answer_generator_provider is fakes.luna_answer_generator
+        assert container.luna_statement_support_provider is fakes.luna_support_evaluator
         assert container.provider_operation_executor is not None
         assert (
             container.generate_validated_answer_service._provider_operation_executor
@@ -403,22 +413,64 @@ def test_build_api_container_wires_m1_query_resources(
             index_host=provider_settings.pinecone.index_host,
             operation_timeout_seconds=provider_settings.pinecone.operation_timeout_seconds,
         )
-        fakes.answer_factory.assert_called_once_with(
+        assert fakes.answer_factory.call_count == 2
+        fakes.answer_factory.assert_any_call(
             api_key="synthetic-generation-key",
             model=OPENAI_ANSWER_MODEL,
             operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
         )
-        fakes.support_factory.assert_called_once_with(
+        fakes.answer_factory.assert_any_call(
+            api_key="synthetic-generation-key",
+            model=ResearchModel.LUNA,
+            operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
+            max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+        )
+        assert fakes.support_factory.call_count == 2
+        fakes.support_factory.assert_any_call(
             api_key="synthetic-generation-key",
             model=OPENAI_STATEMENT_SUPPORT_MODEL,
             operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
         )
+        fakes.support_factory.assert_any_call(
+            api_key="synthetic-generation-key",
+            model=ResearchModel.LUNA,
+            operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
+            max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+        )
+        services = container.answer_research_request_service.model_services
+        assert services is not None
+        assert len(services) == 4
+        for (answer_model, support_model), service in services.items():
+            assert service._answer_generator is (
+                fakes.answer_generator
+                if answer_model is ResearchModel.TERRA
+                else fakes.luna_answer_generator
+            )
+            assert service._support_evaluator is (
+                fakes.support_evaluator
+                if support_model is ResearchModel.TERRA
+                else fakes.luna_support_evaluator
+            )
+            assert service._generation_accounting is not None
+            assert service._generation_accounting.model == answer_model
+            assert (
+                service._generation_accounting.cost_policy.input_micro_usd_per_million_units
+                == RESEARCH_MODEL_PRICES[answer_model].input_micro_usd_per_million_tokens
+            )
+            assert service._statement_support_accounting is not None
+            assert service._statement_support_accounting.model == support_model
+            assert (
+                service._statement_support_accounting.cost_policy.output_micro_usd_per_million_units
+                == RESEARCH_MODEL_PRICES[support_model].output_micro_usd_per_million_tokens
+            )
     finally:
         container.close()
     fakes.support_evaluator.close.assert_called_once_with()
     fakes.answer_generator.close.assert_called_once_with()
+    fakes.luna_support_evaluator.close.assert_called_once_with()
+    fakes.luna_answer_generator.close.assert_called_once_with()
     fakes.dense_retriever.close.assert_called_once_with()
     fakes.embedding_provider.close.assert_called_once_with()
 

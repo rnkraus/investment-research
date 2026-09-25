@@ -1,6 +1,7 @@
 """OpenAI adapter for bounded, typed answer proposals."""
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -23,6 +24,7 @@ from investment_research.modules.research.contracts import (
     M1_STATEMENT_EVIDENCE_LIMIT,
     AnswerGenerationInput,
     AnswerGenerationResult,
+    ResearchModel,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
     UnvalidatedGeneratedStatement,
@@ -31,12 +33,14 @@ from investment_research.modules.research.domain import CoverageStatus, Statemen
 from investment_research.modules.research.ports import (
     AnswerGenerationProviderConfigurationError,
     AnswerGenerationProviderContractError,
+    AnswerGenerationProviderError,
     AnswerGenerationProviderOutputLimitError,
     AnswerGenerationProviderRefusalError,
     AnswerGenerationProviderTransientError,
 )
 
 OPENAI_ANSWER_MODEL = "gpt-5.6-terra"
+logger = logging.getLogger(__name__)
 OPENAI_ANSWER_TIMEOUT_SECONDS = 60.0
 OPENAI_ANSWER_MAX_OUTPUT_TOKENS = 2_000
 OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS = 16_000
@@ -49,7 +53,12 @@ M1_ANSWER_PROMPT_VERSION = "m1-grounded-answer-prompt-v2"
 _TRANSIENT_STATUS_CODES = frozenset({408, 409, 429})
 type OpenAIAnswerContractDetail = Literal[
     "api_response_validation",
+    "provider_schema_validation",
     "typed_answer_validation",
+    "unknown_candidate",
+    "quote_not_found",
+    "quote_ambiguous",
+    "proposal_validation",
     "model_mismatch",
     "incomplete_response",
     "missing_typed_answer",
@@ -134,8 +143,8 @@ class OpenAIAnswerGenerator:
     def __post_init__(self) -> None:
         """Reject adapter settings outside the frozen M1 answer profile."""
 
-        if self.model != OPENAI_ANSWER_MODEL:
-            raise ValueError(f"answer model must be {OPENAI_ANSWER_MODEL}")
+        if self.model not in ResearchModel:
+            raise ValueError("answer model must be an allowlisted research model")
         if not 0 < self.operation_timeout_seconds <= OPENAI_ANSWER_TIMEOUT_SECONDS:
             raise ValueError("OpenAI answer timeout must be between 0 and 60 seconds")
         if not 1 <= self.max_output_tokens <= OPENAI_ANSWER_MAX_OUTPUT_TOKENS:
@@ -143,6 +152,28 @@ class OpenAIAnswerGenerator:
 
     def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         """Return one schema-valid proposal and usage or raise a safe provider error."""
+
+        try:
+            return self._generate(generation_input)
+        except AnswerGenerationProviderError as error:
+            failure_reason: str
+            if isinstance(error, OpenAIAnswerProviderContractError):
+                failure_reason = error.detail
+            elif isinstance(error, AnswerGenerationProviderOutputLimitError):
+                failure_reason = "output_limit"
+            elif isinstance(error, AnswerGenerationProviderConfigurationError):
+                failure_reason = "configuration"
+            elif isinstance(error, AnswerGenerationProviderRefusalError):
+                failure_reason = "refusal"
+            elif isinstance(error, AnswerGenerationProviderTransientError):
+                failure_reason = "transient"
+            else:
+                failure_reason = "unknown"
+            logger.warning(f"answer_generation.provider_failed.{self.model}.{failure_reason}")
+            raise
+
+    def _generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
+        """Make the provider call and apply the typed response contract."""
 
         try:
             if self.local_validation_output is None:
@@ -200,7 +231,7 @@ class OpenAIAnswerGenerator:
         except APIResponseValidationError:
             raise OpenAIAnswerProviderContractError(detail="api_response_validation") from None
         except ValidationError:
-            raise OpenAIAnswerProviderContractError(detail="typed_answer_validation") from None
+            raise OpenAIAnswerProviderContractError(detail="provider_schema_validation") from None
         except APIStatusError as error:
             if error.status_code in _TRANSIENT_STATUS_CODES or error.status_code >= 500:
                 raise AnswerGenerationProviderTransientError(
@@ -282,10 +313,12 @@ class OpenAIAnswerGenerator:
                 for reference in statement.evidence:
                     source_text = sources.get(reference.retrieval_candidate_id)
                     if source_text is None:
-                        raise OpenAIAnswerProviderContractError(detail="typed_answer_validation")
+                        raise OpenAIAnswerProviderContractError(detail="unknown_candidate")
                     start = source_text.find(reference.exact_text)
-                    if start < 0 or source_text.find(reference.exact_text, start + 1) >= 0:
-                        raise OpenAIAnswerProviderContractError(detail="typed_answer_validation")
+                    if start < 0:
+                        raise OpenAIAnswerProviderContractError(detail="quote_not_found")
+                    if source_text.find(reference.exact_text, start + 1) >= 0:
+                        raise OpenAIAnswerProviderContractError(detail="quote_ambiguous")
                     references.append(
                         UnvalidatedEvidenceReference(
                             retrieval_candidate_id=reference.retrieval_candidate_id,
@@ -304,7 +337,7 @@ class OpenAIAnswerGenerator:
                 missing_information=proposal.missing_information,
             )
         except ValidationError:
-            raise OpenAIAnswerProviderContractError(detail="typed_answer_validation") from None
+            raise OpenAIAnswerProviderContractError(detail="proposal_validation") from None
 
     @staticmethod
     def _output_text_from_raw_body(body: object) -> str | None:

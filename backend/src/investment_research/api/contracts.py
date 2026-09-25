@@ -15,7 +15,7 @@ from pydantic import (
 
 from investment_research.modules.documents.contracts import MAX_PASTED_TEXT_CHARACTERS
 from investment_research.modules.processing.domain import ProcessingState
-from investment_research.modules.research.contracts import ResearchProgressStage
+from investment_research.modules.research.contracts import ResearchModel, ResearchProgressStage
 from investment_research.modules.research.domain import TemporalMode
 
 TrimmedTitle = Annotated[
@@ -121,6 +121,16 @@ class ResearchRequestInput(StrictContract):
 
     question: Question
     context: ResearchRequestContext = Field(default_factory=ResearchRequestContext)
+    generation_model: ResearchModel = ResearchModel.TERRA
+    support_model: ResearchModel = ResearchModel.TERRA
+
+
+class ResearchModelOptions(StrictContract):
+    """Models genuinely available in the active API runtime."""
+
+    provider_enabled: bool
+    generation_models: tuple[ResearchModel, ...]
+    support_models: tuple[ResearchModel, ...]
 
 
 class EvidenceRelationship(StrEnum):

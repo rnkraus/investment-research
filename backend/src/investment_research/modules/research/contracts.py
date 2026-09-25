@@ -1,6 +1,7 @@
 """Typed application contracts for research retrieval orchestration."""
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
 
@@ -37,6 +38,14 @@ from investment_research.modules.search.domain import (
 M1_GENERATED_STATEMENT_LIMIT = 8
 M1_STATEMENT_EVIDENCE_LIMIT = 2
 
+
+class ResearchModel(StrEnum):
+    """Allowlisted models for answer generation and statement support."""
+
+    TERRA = "gpt-5.6-terra"
+    LUNA = "gpt-5.6-luna"
+
+
 ResearchProgressStage = Literal[
     "EMBEDDING_QUESTION",
     "SEARCHING_SOURCES",
@@ -60,6 +69,8 @@ class ResearchRetrievalInput(ImmutableResearchContract):
     document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     temporal_mode: TemporalMode = TemporalMode.CURRENT
     cutoff_at: AwareDatetime | None = None
+    generation_model: ResearchModel = ResearchModel.TERRA
+    support_model: ResearchModel = ResearchModel.TERRA
 
     @field_validator("question")
     @classmethod

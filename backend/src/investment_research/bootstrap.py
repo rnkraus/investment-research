@@ -1,5 +1,6 @@
 """Process-specific composition roots for application services and adapters."""
 
+from contextlib import ExitStack
 from dataclasses import dataclass
 
 from celery import Celery  # type: ignore[import-untyped]
@@ -73,6 +74,11 @@ from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorageReadinessProbe,
     create_s3_client,
 )
+from investment_research.infrastructure.openai_models import (
+    RESEARCH_MODEL_PRICES,
+    answer_config_version,
+    support_config_version,
+)
 from investment_research.infrastructure.operations.opentelemetry import (
     OpenTelemetryOperationTracer,
     create_operation_tracer,
@@ -136,7 +142,7 @@ from investment_research.modules.research.application import (
     RetrieveResearchService,
     StatementSupportAccountingProfile,
 )
-from investment_research.modules.research.contracts import AnswerGenerationProfile
+from investment_research.modules.research.contracts import AnswerGenerationProfile, ResearchModel
 from investment_research.modules.research.ports import AnswerGenerator
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
@@ -241,6 +247,8 @@ class ApiContainer:
     dense_retriever: PineconeDenseRetriever | None
     answer_generator_provider: OpenAIAnswerGenerator | None
     statement_support_provider: OpenAIStatementSupportEvaluator | None
+    luna_answer_generator_provider: OpenAIAnswerGenerator | None
+    luna_statement_support_provider: OpenAIStatementSupportEvaluator | None
     acceptance_dense_index: DeterministicSqliteDenseIndex | None
     operation_tracer: OpenTelemetryOperationTracer
     provider_operation_executor: ExecuteProviderOperationService | None
@@ -256,33 +264,21 @@ class ApiContainer:
     def close(self) -> None:
         """Release process-wide resources owned by the API container."""
 
-        try:
-            if self.acceptance_dense_index is not None:
-                self.acceptance_dense_index.close()
-        finally:
-            try:
-                if self.statement_support_provider is not None:
-                    self.statement_support_provider.close()
-            finally:
-                try:
-                    if self.answer_generator_provider is not None:
-                        self.answer_generator_provider.close()
-                finally:
-                    try:
-                        if self.dense_retriever is not None:
-                            self.dense_retriever.close()
-                    finally:
-                        try:
-                            if self.query_embedding_provider is not None:
-                                self.query_embedding_provider.close()
-                        finally:
-                            try:
-                                self.queue_application.close()
-                            finally:
-                                try:
-                                    self.operation_tracer.close()
-                                finally:
-                                    self.database_engine.dispose()
+        with ExitStack() as stack:
+            stack.callback(self.database_engine.dispose)
+            stack.callback(self.operation_tracer.close)
+            stack.callback(self.queue_application.close)
+            for resource in (
+                self.query_embedding_provider,
+                self.dense_retriever,
+                self.answer_generator_provider,
+                self.statement_support_provider,
+                self.luna_answer_generator_provider,
+                self.luna_statement_support_provider,
+                self.acceptance_dense_index,
+            ):
+                if resource is not None:
+                    stack.callback(resource.close)
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +343,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     dense_retriever: PineconeDenseRetriever | None = None
     answer_generator_provider: OpenAIAnswerGenerator | None = None
     statement_support_provider: OpenAIStatementSupportEvaluator | None = None
+    luna_answer_generator_provider: OpenAIAnswerGenerator | None = None
+    luna_statement_support_provider: OpenAIStatementSupportEvaluator | None = None
     acceptance_dense_index: DeterministicSqliteDenseIndex | None = None
     provider_operation_executor: ExecuteProviderOperationService | None = None
     m1_query_retrieval: M1QueryRetrievalDependencies | None = None
@@ -489,30 +487,33 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
                 max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
             )
+            luna_answer_generator_provider = create_openai_answer_generator(
+                api_key=generation_settings.api_key.get_secret_value(),
+                model=ResearchModel.LUNA,
+                operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
+                max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            )
+            luna_statement_support_provider = create_openai_statement_support_evaluator(
+                api_key=generation_settings.api_key.get_secret_value(),
+                model=ResearchModel.LUNA,
+                operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
+                max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+            )
         except Exception:
-            try:
-                if statement_support_provider is not None:
-                    statement_support_provider.close()
-            finally:
-                try:
-                    if answer_generator_provider is not None:
-                        answer_generator_provider.close()
-                finally:
-                    try:
-                        if dense_retriever is not None:
-                            dense_retriever.close()
-                    finally:
-                        try:
-                            if query_embedding_provider is not None:
-                                query_embedding_provider.close()
-                        finally:
-                            try:
-                                queue_application.close()
-                            finally:
-                                try:
-                                    operation_tracer.close()
-                                finally:
-                                    database.engine.dispose()
+            with ExitStack() as stack:
+                stack.callback(database.engine.dispose)
+                stack.callback(operation_tracer.close)
+                stack.callback(queue_application.close)
+                for resource in (
+                    query_embedding_provider,
+                    dense_retriever,
+                    answer_generator_provider,
+                    statement_support_provider,
+                    luna_answer_generator_provider,
+                    luna_statement_support_provider,
+                ):
+                    if resource is not None:
+                        stack.callback(resource.close)
             raise
         lexical_candidate_limit = M1_LANE_CANDIDATE_LIMIT
         m1_query_retrieval = M1QueryRetrievalDependencies(
@@ -592,6 +593,85 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         generation_accounting=generation_accounting,
         statement_support_accounting=statement_support_accounting,
     )
+    model_services: (
+        dict[tuple[ResearchModel, ResearchModel], GenerateValidatedAnswerService] | None
+    ) = None
+    if settings.query_providers is not None:
+        assert answer_generator_provider is not None
+        assert statement_support_provider is not None
+        assert luna_answer_generator_provider is not None
+        assert luna_statement_support_provider is not None
+        assert provider_operation_executor is not None
+        generators = {
+            ResearchModel.TERRA: answer_generator_provider,
+            ResearchModel.LUNA: luna_answer_generator_provider,
+        }
+        evaluators = {
+            ResearchModel.TERRA: statement_support_provider,
+            ResearchModel.LUNA: luna_statement_support_provider,
+        }
+        model_services = {
+            (ResearchModel.TERRA, ResearchModel.TERRA): generate_validated_answer_service
+        }
+        answer_unit_of_work_factory = create_answer_validation_unit_of_work_factory(
+            database.session_factory
+        )
+        for answer_model in ResearchModel:
+            for support_model in ResearchModel:
+                if (answer_model, support_model) == (ResearchModel.TERRA, ResearchModel.TERRA):
+                    continue
+                answer_price = RESEARCH_MODEL_PRICES[answer_model]
+                support_price = RESEARCH_MODEL_PRICES[support_model]
+                model_services[(answer_model, support_model)] = GenerateValidatedAnswerService(
+                    unit_of_work_factory=answer_unit_of_work_factory,
+                    answer_generator=generators[answer_model],
+                    support_evaluator=evaluators[support_model],
+                    generation_profile=AnswerGenerationProfile(
+                        generator_version=M1_ANSWER_GENERATOR_VERSION,
+                        generation_config_version=answer_config_version(answer_model),
+                        prompt_version=M1_ANSWER_PROMPT_VERSION,
+                    ),
+                    validation_profile=EvidenceValidationProfile(
+                        validation_config_version=(
+                            M1_EVIDENCE_VALIDATION_PROFILE.validation_config_version
+                            if support_model is ResearchModel.TERRA
+                            else "m1-evidence-validation-v1-luna-support"
+                        )
+                    ),
+                    insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
+                    provider_operation_executor=provider_operation_executor,
+                    generation_accounting=AnswerGenerationAccountingProfile(
+                        provider="openai",
+                        model=answer_model,
+                        input_overhead_units=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+                        maximum_output_units=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+                        cost_policy=ProviderCostPolicy(
+                            input_micro_usd_per_million_units=(
+                                answer_price.input_micro_usd_per_million_tokens
+                            ),
+                            output_micro_usd_per_million_units=(
+                                answer_price.output_micro_usd_per_million_tokens
+                            ),
+                        ),
+                    ),
+                    statement_support_accounting=StatementSupportAccountingProfile(
+                        provider="openai",
+                        model=support_model,
+                        configuration_version=support_config_version(support_model),
+                        input_overhead_units=(
+                            OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS
+                        ),
+                        maximum_output_units=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+                        cost_policy=ProviderCostPolicy(
+                            input_micro_usd_per_million_units=(
+                                support_price.input_micro_usd_per_million_tokens
+                            ),
+                            output_micro_usd_per_million_units=(
+                                support_price.output_micro_usd_per_million_tokens
+                            ),
+                        ),
+                    ),
+                )
     open_original_service = OpenOriginalService(
         object_storage=object_storage.adapter,
         unit_of_work_factory=create_document_read_unit_of_work_factory(database.session_factory),
@@ -608,6 +688,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         dense_retriever=dense_retriever,
         answer_generator_provider=answer_generator_provider,
         statement_support_provider=statement_support_provider,
+        luna_answer_generator_provider=luna_answer_generator_provider,
+        luna_statement_support_provider=luna_statement_support_provider,
         acceptance_dense_index=acceptance_dense_index,
         operation_tracer=operation_tracer,
         provider_operation_executor=provider_operation_executor,
@@ -630,6 +712,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         answer_research_request_service=AnswerResearchRequestService(
             retrieval_service=retrieve_research_service,
             generation_service=generate_validated_answer_service,
+            model_services=model_services,
         ),
         resolve_evidence_span_service=ResolveEvidenceSpanService(
             create_evidence_read_unit_of_work_factory(database.session_factory)
