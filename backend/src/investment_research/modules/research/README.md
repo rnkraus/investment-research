@@ -86,9 +86,12 @@ its first selected occurrence becomes a `CanonicalCandidateSource`. Empty lanes 
 explicit retrieval result and never create invented candidates.
 
 `AnswerResearchRequestService` is the route-facing application use case. It passes the committed
-retrieval result directly to `GenerateValidatedAnswerService` and returns only the validated
-terminal result. This small composition keeps HTTP code unaware of intermediate retrieval data and
-preserves the two focused services as independently testable boundaries.
+retrieval result to the selected `GenerateValidatedAnswerService` and returns only the validated
+terminal result. In the provider-backed runtime, answer-generation and statement-support models
+are selected independently from the approved Terra/Luna pairs before retrieval starts. The
+credential-free runtime retains its deterministic service and Terra/Terra request defaults, without
+making a paid provider call. This composition keeps HTTP code unaware of intermediate retrieval
+data and preserves the two focused services as independently testable boundaries.
 
 The same use case owns the public provider-failure policy. Generation and statement-support
 adapters retain their distinct internal safe error categories, while the route receives only

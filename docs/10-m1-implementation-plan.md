@@ -261,7 +261,8 @@ decision is accepted.
 Confirm:
 
 - Pinecone index mode, region, dimensions, metric, namespace, metadata, and deletion ownership;
-- one embedding model and one typed generation model suitable for the public M1 fixtures;
+- one embedding model, a default typed generation model, and explicitly allowlisted alternatives
+  suitable for the public M1 fixtures;
 - provider timeouts, batch and token limits, retry ownership, and cost ceilings;
 - structured-output and usage-metadata behavior;
 - deterministic adapters for normal CI and opt-in live smoke-test commands;
@@ -625,6 +626,8 @@ Backend:
 
 - implement the approved typed generator behind `AnswerGenerator`;
 - implement the approved bounded semantic support evaluator behind `StatementSupportEvaluator`;
+- allow independent, server-approved answer and support model selection in the local provider
+  runtime while retaining Terra/Terra as the default pair;
 - version model, prompt, schema, configuration, and validation policy independently;
 - bound source count, source text, input/output tokens, retries, timeout, and concurrent calls;
 - translate provider failures into safe application categories without raw prompts or document text;
@@ -642,12 +645,21 @@ CI:
 Frontend:
 
 - preserve strict event ordering and runtime validation;
+- load the active runtime's model options before showing provider controls, and submit the two
+  independently selected model values with the research request;
 - display validated statements, citations, and explicit insufficient coverage;
 - show safe provider failure without exposing provider internals or partially generated prose.
 
 **Gate:** the approved public fixture produces a provider-backed answer whose statements all resolve
 to validated original spans; the unanswerable case remains insufficient; adversarial or malformed
 provider output emits no answer content.
+
+**Model-selection follow-up (2026-09-25):** Terra and Luna are independently selectable for answer
+generation and statement support in the local provider-backed runtime. Deterministic acceptance
+does not advertise provider models. The frontend fails closed if model options cannot be loaded;
+model-pair routing, distinct prices and configuration versions, and the HTTP contract have offline
+tests. This capability does not replace representative model-quality evaluation or the public
+release gate.
 
 **Suggested commits:** provider generator; support evaluator; generation policy and error mapping;
 generation CI; frontend terminal behavior; docs.
