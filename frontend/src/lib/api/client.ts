@@ -6,6 +6,9 @@ export type PastedTextDocumentInput =
   components["schemas"]["PastedTextDocumentInput"];
 export type ResearchRequestInput =
   components["schemas"]["ResearchRequestInput"];
+export type ResearchModel = components["schemas"]["ResearchModel"];
+export type ResearchModelOptions =
+  components["schemas"]["ResearchModelOptions"];
 export type ResearchStreamEvent = components["schemas"]["ResearchStreamEvent"];
 export type EvidenceSpanResult = components["schemas"]["EvidenceSpanResult"];
 export type ApiErrorCode = components["schemas"]["ErrorCode"];
@@ -100,6 +103,10 @@ const RESEARCH_EVENTS = new Set([
   "answer.insufficient",
   "research.failed",
 ]);
+const RESEARCH_MODELS = new Set<ResearchModel>([
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+]);
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -111,6 +118,37 @@ function isUuid(value: unknown): value is string {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+function isResearchModel(value: unknown): value is ResearchModel {
+  return (
+    typeof value === "string" && RESEARCH_MODELS.has(value as ResearchModel)
+  );
+}
+
+function isResearchModelOptions(value: unknown): value is ResearchModelOptions {
+  if (
+    !isRecord(value) ||
+    typeof value.provider_enabled !== "boolean" ||
+    !Array.isArray(value.generation_models) ||
+    !Array.isArray(value.support_models) ||
+    !value.generation_models.every(isResearchModel) ||
+    !value.support_models.every(isResearchModel)
+  ) {
+    return false;
+  }
+
+  if (!value.provider_enabled) {
+    return (
+      value.generation_models.length === 0 && value.support_models.length === 0
+    );
+  }
+  return (
+    value.generation_models.length > 0 &&
+    value.support_models.length > 0 &&
+    new Set(value.generation_models).size === value.generation_models.length &&
+    new Set(value.support_models).size === value.support_models.length
+  );
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -460,6 +498,17 @@ export function createApiClient(
         fetchImplementation,
         requireLocalApiPath(processingStatusUrl),
         isProcessingRunResult,
+        { signal },
+      );
+    },
+
+    getResearchModelOptions(
+      signal?: AbortSignal,
+    ): Promise<ResearchModelOptions> {
+      return requestJson(
+        fetchImplementation,
+        "/api/v1/research-requests/models",
+        isResearchModelOptions,
         { signal },
       );
     },

@@ -8,6 +8,8 @@ import {
   ApiTransportError,
   apiClient,
   requireLocalSourcePath,
+  type ResearchModel,
+  type ResearchModelOptions,
 } from "@/lib/api/client";
 
 import { archiveCopy, fixtureDefaults } from "./copy";
@@ -37,8 +39,16 @@ function safeErrorMessage(error: unknown): string {
   return archiveCopy.errors.unexpected;
 }
 
+function modelLabel(model: ResearchModel): string {
+  return model === "gpt-5.6-terra"
+    ? archiveCopy.research.terraModel
+    : archiveCopy.research.lunaModel;
+}
+
 export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
   const questionInputId = useId();
+  const generationModelId = useId();
+  const supportModelId = useId();
   const requestController = useRef<AbortController | null>(null);
   const [question, setQuestion] = useState<string>(
     fixtureDefaults.answerableQuestion,
@@ -48,6 +58,45 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
   );
   const [isBusy, setIsBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [modelOptions, setModelOptions] = useState<ResearchModelOptions>();
+  const [generationModel, setGenerationModel] =
+    useState<ResearchModel>("gpt-5.6-terra");
+  const [supportModel, setSupportModel] =
+    useState<ResearchModel>("gpt-5.6-terra");
+  const [isLoadingModelOptions, setIsLoadingModelOptions] = useState(true);
+  const [modelOptionsFailed, setModelOptionsFailed] = useState(false);
+  const [modelOptionsRequestId, setModelOptionsRequestId] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void apiClient
+      .getResearchModelOptions(controller.signal)
+      .then((options) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setModelOptions(options);
+        setGenerationModel((current) =>
+          options.generation_models.includes(current)
+            ? current
+            : (options.generation_models[0] ?? "gpt-5.6-terra"),
+        );
+        setSupportModel((current) =>
+          options.support_models.includes(current)
+            ? current
+            : (options.support_models[0] ?? "gpt-5.6-terra"),
+        );
+        setIsLoadingModelOptions(false);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setModelOptionsFailed(true);
+        setIsLoadingModelOptions(false);
+      });
+    return () => controller.abort();
+  }, [modelOptionsRequestId]);
 
   useEffect(() => {
     return () => {
@@ -59,6 +108,14 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (
+      modelOptions === undefined ||
+      (modelOptions.provider_enabled &&
+        (!modelOptions.generation_models.includes(generationModel) ||
+          !modelOptions.support_models.includes(supportModel)))
+    ) {
+      return;
+    }
     requestController.current?.abort();
     const controller = new AbortController();
     requestController.current = controller;
@@ -71,6 +128,12 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
       for await (const researchEvent of apiClient.streamResearch(
         {
           question,
+          generation_model: modelOptions.provider_enabled
+            ? generationModel
+            : "gpt-5.6-terra",
+          support_model: modelOptions.provider_enabled
+            ? supportModel
+            : "gpt-5.6-terra",
           context: {
             document_ids: [documentId],
             temporal_mode: "CURRENT",
@@ -118,6 +181,18 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
   }
 
   const visibleProgressSteps = getResearchDisplaySteps(session);
+  const modelSelectionReady =
+    modelOptions !== undefined &&
+    (!modelOptions.provider_enabled ||
+      (modelOptions.generation_models.includes(generationModel) &&
+        modelOptions.support_models.includes(supportModel)));
+
+  function retryModelOptions() {
+    setModelOptions(undefined);
+    setModelOptionsFailed(false);
+    setIsLoadingModelOptions(true);
+    setModelOptionsRequestId((current) => current + 1);
+  }
 
   return (
     <section
@@ -171,9 +246,102 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
             {archiveCopy.research.unanswerableExample}
           </button>
         </div>
+        {isLoadingModelOptions ? (
+          <p className="mt-5 text-sm text-slate-600" role="status">
+            {archiveCopy.research.modelOptionsLoading}
+          </p>
+        ) : null}
+        {modelOptionsFailed ? (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p role="alert">{archiveCopy.research.modelOptionsUnavailable}</p>
+            <button
+              className="mt-2 font-semibold underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+              onClick={retryModelOptions}
+              type="button"
+            >
+              {archiveCopy.research.retryModelOptions}
+            </button>
+          </div>
+        ) : null}
+        {modelOptions?.provider_enabled === false ? (
+          <p className="mt-5 text-sm text-slate-600">
+            {archiveCopy.research.deterministicMode}
+          </p>
+        ) : null}
+        {modelOptions?.provider_enabled === true ? (
+          <fieldset className="mt-6 rounded-2xl border border-slate-200 p-4 sm:p-5">
+            <legend className="px-1 text-sm font-semibold text-slate-900">
+              {archiveCopy.research.modelSettingsLabel}
+            </legend>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div>
+                <label
+                  className="block text-sm font-semibold text-slate-800"
+                  htmlFor={generationModelId}
+                >
+                  {archiveCopy.research.generationModelLabel}
+                </label>
+                <p className="mt-1 text-xs text-slate-600">
+                  {archiveCopy.research.generationModelHint}
+                </p>
+                <select
+                  className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 disabled:opacity-50"
+                  disabled={isBusy}
+                  id={generationModelId}
+                  onChange={(event) => {
+                    const selected = modelOptions.generation_models.find(
+                      (model) => model === event.target.value,
+                    );
+                    if (selected !== undefined) {
+                      setGenerationModel(selected);
+                    }
+                  }}
+                  value={generationModel}
+                >
+                  {modelOptions.generation_models.map((model) => (
+                    <option key={model} value={model}>
+                      {modelLabel(model)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
+                  className="block text-sm font-semibold text-slate-800"
+                  htmlFor={supportModelId}
+                >
+                  {archiveCopy.research.supportModelLabel}
+                </label>
+                <p className="mt-1 text-xs text-slate-600">
+                  {archiveCopy.research.supportModelHint}
+                </p>
+                <select
+                  className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 disabled:opacity-50"
+                  disabled={isBusy}
+                  id={supportModelId}
+                  onChange={(event) => {
+                    const selected = modelOptions.support_models.find(
+                      (model) => model === event.target.value,
+                    );
+                    if (selected !== undefined) {
+                      setSupportModel(selected);
+                    }
+                  }}
+                  value={supportModel}
+                >
+                  {modelOptions.support_models.map((model) => (
+                    <option key={model} value={model}>
+                      {modelLabel(model)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </fieldset>
+        ) : null}
         <button
           className="mt-5 inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 disabled:cursor-wait disabled:bg-slate-400"
-          disabled={isBusy}
+          disabled={isBusy || !modelSelectionReady}
           type="submit"
         >
           {isBusy
