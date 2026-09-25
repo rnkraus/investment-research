@@ -170,6 +170,62 @@ test("processing status accepts the complete M1 indexing lifecycle", async () =>
   }
 });
 
+test("research model options accept only the active runtime's allowlisted models", async () => {
+  const options = {
+    provider_enabled: true,
+    generation_models: ["gpt-5.6-terra", "gpt-5.6-luna"],
+    support_models: ["gpt-5.6-terra", "gpt-5.6-luna"],
+  };
+  let requestedPath;
+  const client = createApiClient(async (path) => {
+    requestedPath = path;
+    return jsonResponse(options);
+  });
+
+  assert.deepEqual(await client.getResearchModelOptions(), options);
+  assert.equal(requestedPath, "/api/v1/research-requests/models");
+
+  const deterministicClient = createApiClient(async () =>
+    jsonResponse({
+      provider_enabled: false,
+      generation_models: [],
+      support_models: [],
+    }),
+  );
+  assert.equal(
+    (await deterministicClient.getResearchModelOptions()).provider_enabled,
+    false,
+  );
+});
+
+test("research model options reject unapproved or inconsistent values", async () => {
+  for (const options of [
+    {
+      provider_enabled: true,
+      generation_models: ["unknown-model"],
+      support_models: ["gpt-5.6-terra"],
+    },
+    {
+      provider_enabled: true,
+      generation_models: ["gpt-5.6-terra"],
+      support_models: [],
+    },
+    {
+      provider_enabled: false,
+      generation_models: ["gpt-5.6-terra"],
+      support_models: [],
+    },
+    {
+      provider_enabled: true,
+      generation_models: ["gpt-5.6-terra", "gpt-5.6-terra"],
+      support_models: ["gpt-5.6-terra"],
+    },
+  ]) {
+    const client = createApiClient(async () => jsonResponse(options));
+    await assert.rejects(client.getResearchModelOptions(), ApiProtocolError);
+  }
+});
+
 test("evidence spans accept PDF-page and text-passage locators", async () => {
   const locators = [
     { kind: "PDF_PAGE", page: 2 },
@@ -360,6 +416,36 @@ test("streamResearch decodes validated events split across network chunks", asyn
     ],
   );
   assert.equal(events[3].evidence_span_id, EVIDENCE_SPAN_ID);
+});
+
+test("streamResearch sends independently selected answer and support models", async () => {
+  let requestPath;
+  let requestBody;
+  const client = createApiClient(async (path, init) => {
+    requestPath = path;
+    requestBody = JSON.parse(init.body);
+    return new Response("", {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  });
+
+  for await (const event of client.streamResearch({
+    question: "What changed?",
+    generation_model: "gpt-5.6-luna",
+    support_model: "gpt-5.6-terra",
+    context: { document_ids: [DOCUMENT_ID], temporal_mode: "CURRENT" },
+  })) {
+    assert.fail(`the empty test stream emitted ${event.event}`);
+  }
+
+  assert.equal(requestPath, "/api/v1/research-requests");
+  assert.deepEqual(requestBody, {
+    question: "What changed?",
+    generation_model: "gpt-5.6-luna",
+    support_model: "gpt-5.6-terra",
+    context: { document_ids: [DOCUMENT_ID], temporal_mode: "CURRENT" },
+  });
 });
 
 test(
