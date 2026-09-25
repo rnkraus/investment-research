@@ -51,7 +51,8 @@ the same port, while deterministic tests and server-side evidence validation rem
 ## M1 OpenAI adapter
 
 `OpenAIAnswerGenerator` makes one foreground, retry-free Responses API call with
-`gpt-5.6-terra`, low reasoning, `store=false`, no tools, strict structured output, a 60-second
+the selected `gpt-5.6-terra` or `gpt-5.6-luna` model, low reasoning, `store=false`, no tools,
+strict structured output, a 60-second
 operation timeout, and at most 2,000 output tokens. Its application contract admits no more than
 eight selected sources, 24,000 combined source characters, eight statements, and two evidence
 references per statement.
@@ -74,6 +75,9 @@ that occurs once in the cited selected source; missing, repeated, or foreign ref
 The application's later canonical evidence validation remains mandatory.
 Provider connection, configuration, schema, incomplete-output, and refusal failures become safe
 application-owned errors without preserving provider messages as public details.
+Failures also emit a bounded `answer_generation.provider_failed.<model>.<reason>` event in the API
+log. Its reason is an application-owned code such as `output_limit` or
+`quote_not_found`; prompts, source text, provider messages, and raw responses are omitted.
 
 The adapter never selects credentials by itself. `ApiSettings` loads the API-role generation
 credential, and the API composition root selects this adapter only when the complete M1 query and

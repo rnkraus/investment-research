@@ -4,7 +4,7 @@
 
 **Date:** 2026-09-17
 
-**Amended:** 2026-09-18 — narrow OpenAI SDK release-age exception
+**Amended:** 2026-09-18 — narrow OpenAI SDK release-age exception; 2026-09-25 — independent research-model selection
 
 **Scope:** M1 embeddings, dense indexing, answer generation, semantic support evaluation, and local
 trace context
@@ -73,14 +73,19 @@ The selected M1 configuration is:
 | Capability                    | Selection                                                   | Required boundary                                                                                |
 | ----------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Document and query embeddings | OpenAI `text-embedding-3-small`, full 1536 dimensions       | Ordered, finite, dimension-checked results; separate versioned document and query configurations |
-| Answer proposal               | OpenAI `gpt-5.6-terra`, Responses API, low reasoning effort | Strict Structured Outputs, foreground stateless request, `store=false`, no tools                 |
-| Statement-support evaluation  | OpenAI `gpt-5.6-terra`                                      | Separate prompt, schema, timeout, usage, and configuration version                               |
+| Answer proposal               | OpenAI `gpt-5.6-terra` by default, or `gpt-5.6-luna`; Responses API, low reasoning effort | Strict Structured Outputs, foreground stateless request, `store=false`, no tools                 |
+| Statement-support evaluation  | OpenAI `gpt-5.6-terra` by default, or `gpt-5.6-luna`, independently selected             | Separate prompt, schema, timeout, usage, and configuration version                               |
 | Dense index                   | Pinecone Serverless on-demand BYOV in `aws/us-east-1`       | 1536-dimensional cosine index; one server-derived namespace per workspace                        |
 | Trace context                 | OpenTelemetry Python API and SDK with W3C propagation       | No exporter, Collector, hosted backend, or LangSmith in M1                                       |
 
-Terra is selected over the flagship tier because the bounded RAG task does not justify flagship
-cost, and over Luna because evidence-sensitive financial answers favor the stronger balanced tier.
-A measured quality suite may later justify a cheaper support model.
+Terra remains the default for both roles because evidence-sensitive research favors the stronger
+balanced tier. Luna is an explicitly selected lower-cost option for either role; this is a real
+local product capability, not an automatic fallback or a claim of equivalent answer quality. The
+same application-owned source and support validation applies to all four model pairs. Each paid
+operation records its actual model, configuration, token usage, and estimated cost using that
+model's price policy. Representative quality evaluation is still required before preferring Luna
+as a default or making a public-release quality claim. The API advertises model choices only in the
+provider-backed runtime; the deterministic runtime does not impersonate an OpenAI model.
 
 The following rules are binding:
 
@@ -145,8 +150,9 @@ answers. Pinecone's eventual consistency requires bounded readiness behavior and
 qualification. OpenAI and Pinecone introduce cost, regional, retention, rate-limit, and vendor
 lock-in considerations that must be measured and revisited before private or public use.
 
-Using Terra for both generation and support evaluation favors initial correctness over minimum
-cost. The quality suite may later justify a cheaper support model. Using `us-east-1` favors the M1
+Using Terra by default for both roles favors initial correctness over minimum cost. Users may
+choose Luna independently for lower-cost local research, with explicit quality uncertainty until
+the representative evaluation gate. Using `us-east-1` favors the M1
 Starter path over EU residency and is forbidden once the approved public/synthetic data restriction
 no longer applies.
 
@@ -182,6 +188,7 @@ a measured multi-step workflow meets the M9 framework-admission criteria.
 
 - [OpenAI `text-embedding-3-small`](https://developers.openai.com/api/docs/models/text-embedding-3-small)
 - [OpenAI `gpt-5.6-terra`](https://developers.openai.com/api/docs/models/gpt-5.6-terra)
+- [OpenAI `gpt-5.6-luna`](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
 - [OpenAI Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)
 - [OpenAI API data controls](https://developers.openai.com/api/docs/guides/your-data)
 - [OpenAI Python SDK releases](https://github.com/openai/openai-python/releases)

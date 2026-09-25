@@ -148,6 +148,14 @@ M0.0 runner command. Its non-root, read-only Distroless container reaches only t
 frontend network. Browser API requests remain same-origin; PostgreSQL, Redis, object storage, and
 the parser are not reachable from the web container.
 
+In the provider-backed M1 runtime, the research form offers independent answer-generation and
+statement-support model selections: `gpt-5.6-terra` or `gpt-5.6-luna`, with Terra as the default for
+both. The browser obtains the available choices from FastAPI and sends only model identifiers; API
+credentials stay server-side. If the choices cannot be loaded, research submission is disabled
+rather than silently using another model. The deterministic runtime has no paid-model controls.
+After a frontend code change, rebuild the Compose web image with the `up --build` command above
+before checking the served website.
+
 Use the documented complete automatic M0 fixture verification below to exercise the containerized
 web application, its same-origin API proxy, API capture, Redis/Celery delivery, SeaweedFS, isolated
 parsing, research, citation resolution, original access, and the insufficient-evidence case

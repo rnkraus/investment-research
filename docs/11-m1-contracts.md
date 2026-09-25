@@ -33,7 +33,8 @@ examples below are the accepted target contract; generated files must never be e
 | Embedding batch            | At most 16 inputs and 32,000 total Unicode code points                    |
 | Lane candidates            | At most 20 lexical and 20 dense candidates                                |
 | Selected context           | At most 8 unique chunks and 24,000 total Unicode code points              |
-| Generator                  | OpenAI `gpt-5.6-terra`, low reasoning, strict structured output, no tools |
+| Generator                  | OpenAI `gpt-5.6-terra` by default or `gpt-5.6-luna`, low reasoning, strict structured output, no tools |
+| Statement-support model    | Independently selected `gpt-5.6-terra` by default or `gpt-5.6-luna`       |
 | Generated answer           | At most 8 statements and 2 evidence references per statement              |
 | Dense index                | Pinecone Serverless BYOV, cosine, 1536 dimensions, `aws/us-east-1`        |
 | Dense-index config version | `pinecone-serverless-cosine-1536-aws-us-east-1-v1`                        |
@@ -340,7 +341,8 @@ Generation receives only:
 - up to 8 selected canonical sources with safe identifiers and exact chunk text;
 - the strict output schema and versioned application prompt.
 
-The OpenAI request uses `gpt-5.6-terra`, low reasoning, `store=false`, no tools, no background mode,
+The OpenAI request uses the selected `gpt-5.6-terra` or `gpt-5.6-luna` model, low reasoning,
+`store=false`, no tools, no background mode,
 and a strict structured-output schema. The provider proposes a retrieval-candidate ID and an exact
 supporting substring for each reference; it does not calculate character offsets. The application
 adapter accepts a reference only when that substring occurs exactly once in the named supplied
@@ -361,6 +363,16 @@ source. In a new answer transaction, the server reloads current sources and re-r
 workspace, active-version, processing-state, temporal, retrieval-candidate, exact-span, support, and
 coverage checks. A recorded support decision may be reused only for the same statement and exact
 evidence texts; the provider is not called again inside that transaction.
+
+The research request accepts independent `generation_model` and `support_model` allowlisted values;
+both default to `gpt-5.6-terra` for existing callers. Unknown model names fail request validation.
+`GET /api/v1/research-requests/models` reports the active runtime's selectable models. It returns
+empty lists in the deterministic runtime, so the website does not present provider model controls
+there. In the provider-backed runtime, all four Terra/Luna pairs are wired to model-specific
+generation, support, configuration-version, usage, and estimated-cost records. The website blocks
+submission if it cannot load and validate the model-options response; it never silently substitutes
+an unavailable model. Selecting Luna changes only the model used for the chosen role, not canonical
+source qualification or evidence-validation authority.
 
 Only the accepted aggregate is persisted and mapped to public answer events. Model tokens or partial
 statements are never streamed before validation. Evidence locators and source-viewer behavior follow

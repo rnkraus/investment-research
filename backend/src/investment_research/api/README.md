@@ -50,9 +50,10 @@ The research route maps its JSON body to `ResearchRetrievalInput` and calls only
 `AnswerResearchRequestService`. It buffers no unvalidated model output: after the synchronous M0.0
 use case returns, the route serializes `answer.statement` and `answer.citation` events only from the
 validated aggregate, followed by one terminal event. Insufficient and rejected results contain no
-statement or citation events. Genuine live progress events remain part of the versioned contract but
-require a later observable execution boundary; the route does not fabricate progress after work has
-already completed.
+statement or citation events. In the M1 path, the application publishes observed research progress
+through the event stream without exposing unvalidated answer content. The route also exposes the
+configured answer-generation and statement-support model choices through a read-only endpoint;
+the research request accepts only those approved model identifiers, never credentials.
 
 The evidence-span route accepts only a citation UUID and resolves it through the trusted workspace
 context. The application rechecks that the span belongs to the current version of an active

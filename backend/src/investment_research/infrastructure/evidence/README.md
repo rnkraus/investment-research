@@ -67,7 +67,8 @@ It remains useful for the frozen local fixture and deterministic tests.
 
 The M1 OpenAI adapter independently evaluates one complete statement against one or two exact
 canonical evidence texts. Its input is limited to 24,000 code points, and its strict response schema
-contains only `supported: bool`. The request uses the approved model with low reasoning, a
+contains only `supported: bool`. The request uses the independently selected `gpt-5.6-terra` or
+`gpt-5.6-luna` model with low reasoning, a
 30-second timeout, provider storage disabled, no tools, no background execution, and SDK retries
 disabled. Its prompt, adapter, and configuration versions are separate from answer generation.
 

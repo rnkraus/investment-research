@@ -12,7 +12,7 @@ PostgreSQL, or parse document content.
 | `document-workflow.tsx` | Captures one PDF or pasted-text original and polls its background-processing status. |
 | `processing-state.ts`   | Defines polling completion and fail-closed research admission.                       |
 | `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.                |
-| `research-workflow.tsx` | Asks a bounded question and opens resolved PDF-page or text-passage evidence.        |
+| `research-workflow.tsx` | Loads model choices, asks a bounded question, and opens exact source evidence.       |
 | `source-anchor.ts`      | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
 | `source-viewer.tsx`     | Resolves and renders an authorized immutable PDF or pasted-text source.              |
 
@@ -85,7 +85,11 @@ The answer and citations remain hidden until the terminal validated events arriv
 
 ```mermaid
 flowchart LR
-    READY[SEARCHABLE document] --> FORM[ResearchWorkflow]
+    READY[SEARCHABLE document] --> OPTIONS[Load approved model options]
+    OPTIONS -->|provider mode| CHOICES[Choose answer and support models]
+    OPTIONS -->|deterministic mode| FORM[ResearchWorkflow]
+    CHOICES --> FORM
+    OPTIONS -->|unavailable or invalid| BLOCK[Disable research submission]
     FORM --> STREAM[Typed research event stream]
     STREAM --> SESSION[Research session reducer]
     SESSION -->|validated completion| IDS[Evidence span IDs]
@@ -101,7 +105,11 @@ flowchart LR
 ```
 
 `document-workflow.tsx` mounts the research UI only for the M1 `SEARCHABLE` state. The UI submits the
-current document ID as an explicit research filter and never treats streamed partial text as a
+current document ID as an explicit research filter. In provider mode, the form independently selects
+the answer-generation and statement-support models from the backend-advertised Terra/Luna choices;
+both default to Terra. In deterministic mode, the paid-model controls are absent. An unavailable or
+invalid choices response disables submission instead of making an implicit model choice. The UI
+never treats streamed partial text as a
 usable answer. After a validated terminal event, each unique evidence span is resolved through the
 workspace-scoped API. The resulting viewer URL must still pass the frontend's stable local
 source-path check

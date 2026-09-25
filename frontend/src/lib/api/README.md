@@ -53,6 +53,10 @@ trusted solely because TypeScript compiled. Server-sent events are buffered acro
 chunks, decoded by their `event` discriminator, and rejected if their runtime shape does not match the
 generated union. PDF capture uses the multipart endpoint; pasted-text capture uses its bounded JSON
 endpoint. Both return the same `DocumentAccepted` contract and enter the same status flow.
+The research-model options endpoint is checked against the two approved model identifiers and
+rejects malformed or inconsistent availability data. The UI does not submit a provider-backed
+research request until these options load; selected identifiers are sent in the typed request body,
+while provider credentials never enter the browser.
 Backend-provided status and viewer URLs must remain relative application API paths. Evidence results
 must carry either a valid `PDF_PAGE` or `TEXT_PASSAGE` locator; unknown locator kinds fail before they
 reach the UI.
