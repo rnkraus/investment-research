@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
 
 COPY src ./src
+RUN chmod -R a+rX /app/src
 
 FROM builder AS verification-builder
 
