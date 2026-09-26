@@ -326,7 +326,7 @@ def assert_provider_fakes_closed(fakes: M1ProviderFakes) -> None:
 
 
 def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
-    """Decode completed server-sent events into test-visible dictionaries."""
+    """Decode terminal events while leaving live progress to its dedicated tests."""
 
     return [
         {
@@ -335,6 +335,7 @@ def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
         }
         for frame in body.strip().split("\n\n")
         if (lines := frame.splitlines())
+        if lines[0] != "event: research.progress"
     ]
 
 

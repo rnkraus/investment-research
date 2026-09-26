@@ -130,10 +130,12 @@ host users while the file mode lets native-Linux Docker bind-mount the secret fo
 users with different UIDs. Normal `compose.yaml` publishes no PostgreSQL port and keeps the backend
 network internal. `compose.test.yaml` adds a separate non-internal `host-test` network and one
 loopback-only database port for host-driven Alembic and SQLAlchemy checks. It also selects the
-credential-free `m0-regression` worker profile, which stops after `LEXICAL_READY`, only while the
-runtime environment is `test`; normal M1 workers keep the `m1` profile and require the configured
-embedding and dense-index providers. The PostgreSQL, object-storage, queue-recovery, and
-complete-runtime verifiers load this override; normal startup and container-only gates do not.
+credential-free `m0-regression` processing profile for both API capture and the worker, which stops
+after `LEXICAL_READY`, only while the runtime environment is `test`. The M1 acceptance override
+selects `m1` for both processes and supplies its deterministic dense index; normal M1 workers
+require the configured embedding and dense-index providers. The PostgreSQL, object-storage,
+queue-recovery, and complete-runtime verifiers load this override; normal startup and
+container-only gates do not.
 Cleanup runs after success, command failure, or test failure. It removes only resources owned by
 that invocation and never targets the normal development database or its volume. The temporary
 secret directory is removed when the command exits.
@@ -275,7 +277,8 @@ object-storage data networks. It never starts the M0.0 manual runner.
 Success requires the answerable fixture question to return its validated statement and exact
 page-two evidence twice. The second request must create a new research request while reusing the
 same canonical evidence span. The original endpoint must return byte-identical PDF content, and the
-unanswerable control question must return only the insufficient-evidence event. Before cleanup, the
+unanswerable control question must return the insufficient-evidence terminal event. Live
+`research.progress` events may precede these validated terminal events. Before cleanup, the
 verifier captures the web, API, worker, and parser logs without displaying them and rejects any
 injected credential marker, exact generated credential, or fixture evidence text. Failure
 diagnostics redact those sentinels before printing logs. The command also reports observed startup,

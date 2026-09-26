@@ -42,11 +42,13 @@ pytestmark = pytest.mark.skipif(
 
 
 def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
-    """Decode one complete terminal server-sent-event response."""
+    """Decode terminal server-sent events independently of live progress."""
 
     events: list[dict[str, Any]] = []
     for frame in body.strip().split("\n\n"):
         lines = frame.splitlines()
+        if not lines or lines[0] == "event: research.progress":
+            continue
         events.append(
             {
                 "event": lines[0].removeprefix("event: "),
