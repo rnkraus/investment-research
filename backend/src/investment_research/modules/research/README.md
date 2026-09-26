@@ -4,15 +4,16 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 
 ## Contents
 
-| File             | Responsibility                                                                         |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| `application.py` | Orchestrates validated terminal answers and preserves existing application imports.   |
-| `retrieval.py`   | Runs lexical or dual-lane retrieval and persists qualified candidates.                 |
-| `errors.py`      | Defines the safe provider failure shared by retrieval and answer generation.           |
-| `contracts.py`   | Defines strict retrieval, generation, and validated-answer boundary values.            |
-| `domain.py`      | Defines requests, temporal modes, answer states, coverage, statements, and invariants. |
-| `ports.py`       | Defines repositories, units of work, and the answer-generator contract.                |
-| `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.      |
+| File                   | Responsibility                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| `application.py`       | Connects retrieval and answer validation and preserves existing application imports.   |
+| `retrieval.py`         | Runs lexical or dual-lane retrieval and persists qualified candidates.                 |
+| `answer_validation.py` | Accounts for generation and support, validates evidence, and saves terminal answers.   |
+| `errors.py`            | Defines the safe provider failure shared by retrieval and answer generation.           |
+| `contracts.py`         | Defines strict retrieval, generation, and validated-answer boundary values.            |
+| `domain.py`            | Defines requests, temporal modes, answer states, coverage, statements, and invariants. |
+| `ports.py`             | Defines repositories, units of work, and the answer-generator contract.                |
+| `persistence.py`       | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.      |
 
 ## Ownership and traceability
 
@@ -97,6 +98,8 @@ data and preserves the two focused services as independently testable boundaries
 
 `RetrieveResearchService` is implemented in `retrieval.py`; `application.py` re-exports the
 existing public names so bootstrap and API imports remain stable during this internal split.
+`GenerateValidatedAnswerService` and its provider-accounting profiles are implemented in
+`answer_validation.py` and re-exported from `application.py` for the same reason.
 
 The same use case owns the public provider-failure policy. Generation and statement-support
 adapters retain their distinct internal safe error categories, while the route receives only
