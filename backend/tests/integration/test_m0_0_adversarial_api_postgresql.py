@@ -96,11 +96,13 @@ class AdversarialAnswerGenerator:
 
 
 def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
-    """Decode a complete deterministic server-sent-event response."""
+    """Decode terminal events without treating progress as generated content."""
 
     events: list[dict[str, Any]] = []
     for frame in body.strip().split("\n\n"):
         lines = frame.splitlines()
+        if not lines or lines[0] == "event: research.progress":
+            continue
         events.append(
             {
                 "event": lines[0].removeprefix("event: "),

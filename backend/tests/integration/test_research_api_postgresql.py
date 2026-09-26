@@ -45,11 +45,13 @@ def make_manifest_source(*, label: str) -> ResearchSource:
 
 
 def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
-    """Decode event names and JSON payloads from the completed test response."""
+    """Decode terminal events independently of live research progress."""
 
     decoded: list[dict[str, Any]] = []
     for frame in body.strip().split("\n\n"):
         lines = frame.splitlines()
+        if not lines or lines[0] == "event: research.progress":
+            continue
         decoded.append(
             {
                 "event_name": lines[0].removeprefix("event: "),
