@@ -20,7 +20,7 @@ type RuntimeEnvironment = Literal["development", "test"]
 type RuntimeLocation = Literal["host", "container"]
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 type ObjectStorageProvider = Literal["local", "s3"]
-type WorkerProcessingProfile = Literal["m1", "m0-regression"]
+type ProcessingProfileName = Literal["m1", "m0-regression"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
@@ -439,6 +439,7 @@ class GenerationProviderSettings(BaseModel):
 class ApiSettings(ObjectStorageSettings):
     """Configuration available to the FastAPI process."""
 
+    processing_profile: ProcessingProfileName = "m1"
     app_name: str = "Investment Research Archive"
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1024, le=65535)
@@ -450,6 +451,23 @@ class ApiSettings(ObjectStorageSettings):
     query_providers: DenseProviderSettings | None = None
     generation_provider: GenerationProviderSettings | None = None
     acceptance_dense_index_path: Path | None = None
+
+    @model_validator(mode="after")
+    def restrict_regression_processing_profile(self) -> ApiSettings:
+        """Allow legacy capture only in the isolated M0 test runtime."""
+
+        if self.processing_profile == "m0-regression":
+            if self.environment != "test":
+                raise ValueError(
+                    "m0-regression processing_profile is allowed only in the test environment"
+                )
+            if (
+                self.query_providers is not None
+                or self.generation_provider is not None
+                or self.acceptance_dense_index_path is not None
+            ):
+                raise ValueError("m0-regression processing_profile cannot use M1 providers")
+        return self
 
     @model_validator(mode="after")
     def require_supported_api_host(self) -> ApiSettings:
@@ -525,7 +543,7 @@ class ApiSettings(ObjectStorageSettings):
 class WorkerSettings(ObjectStorageSettings):
     """Least-privilege configuration available to the Celery worker."""
 
-    processing_profile: WorkerProcessingProfile = "m1"
+    processing_profile: ProcessingProfileName = "m1"
     parser_endpoint_url: str | None = None
     max_parser_request_bytes: int = Field(
         default=DEFAULT_MAX_UPLOAD_BYTES,
@@ -1033,6 +1051,11 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
         **_queue_runtime_values(file_values, database_values.get("runtime_location")),
         **_object_storage_runtime_values(file_values),
         **_provider_budget_runtime_values(file_values),
+        "processing_profile": _configuration_value(
+            "INVESTMENT_RESEARCH_PROCESSING_PROFILE",
+            file_values,
+            "m1",
+        ),
         "app_name": _configuration_value(
             "INVESTMENT_RESEARCH_APP_NAME",
             file_values,
