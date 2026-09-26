@@ -1342,6 +1342,22 @@ def test_worker_allows_m0_regression_profile_only_in_test_environment() -> None:
         WorkerSettings(processing_profile="m0-regression")
 
 
+def test_api_allows_m0_regression_profile_only_without_m1_providers() -> None:
+    settings = ApiSettings(environment="test", processing_profile="m0-regression")
+
+    assert settings.processing_profile == "m0-regression"
+
+    with pytest.raises(ValidationError, match="allowed only in the test environment"):
+        ApiSettings(processing_profile="m0-regression")
+
+    with pytest.raises(ValidationError, match="cannot use M1 providers"):
+        ApiSettings(
+            environment="test",
+            processing_profile="m0-regression",
+            acceptance_dense_index_path=Path("/tmp/m1-dense-index.sqlite3"),
+        )
+
+
 @pytest.mark.parametrize(
     "forbidden_name",
     [

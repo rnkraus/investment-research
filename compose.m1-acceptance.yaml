@@ -22,6 +22,7 @@ services:
   api:
     environment:
       INVESTMENT_RESEARCH_ENVIRONMENT: test
+      INVESTMENT_RESEARCH_PROCESSING_PROFILE: m1
       INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD: "5000000"
       INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH: /var/lib/investment-research-acceptance/dense-index.sqlite3
     volumes:

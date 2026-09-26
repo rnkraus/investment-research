@@ -334,6 +334,28 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
         container.close()
 
 
+def test_build_api_container_uses_m0_profile_for_isolated_regression(tmp_path: Path) -> None:
+    settings = ApiSettings.model_validate(
+        {
+            "environment": "test",
+            "processing_profile": "m0-regression",
+            "database_url": LOCAL_DATABASE_URL,
+            "redis_url": LOCAL_REDIS_URL,
+            "object_storage_root": tmp_path / "objects",
+        }
+    )
+    container = build_api_container(settings)
+
+    try:
+        assert container.capture_document_service._processing_profile is M0_0_PROCESSING_PROFILE
+        assert (
+            container.retrieve_research_service._search_profile.lexical_config_version
+            == M0_0_PROCESSING_PROFILE.lexical_config_version
+        )
+    finally:
+        container.close()
+
+
 def test_build_api_container_wires_m1_query_resources(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

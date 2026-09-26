@@ -6,6 +6,11 @@ services:
       - backend
       - host-test
 
+  api:
+    environment:
+      INVESTMENT_RESEARCH_ENVIRONMENT: test
+      INVESTMENT_RESEARCH_PROCESSING_PROFILE: m0-regression
+
   worker:
     environment:
       INVESTMENT_RESEARCH_ENVIRONMENT: test

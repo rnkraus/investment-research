@@ -325,6 +325,11 @@ class WorkerContainer:
 def build_api_container(settings: ApiSettings) -> ApiContainer:
     """Wire API application services without constructing parser execution."""
 
+    processing_profile: ProcessingProfile = (
+        M0_0_PROCESSING_PROFILE
+        if settings.processing_profile == "m0-regression"
+        else M1_PROCESSING_PROFILE
+    )
     queue_application = create_celery_app(settings)
     processing_dispatcher = CeleryProcessingDispatcher(queue_application)
     database = _build_database_resources(settings)
@@ -575,7 +580,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             database.session_factory
         ),
         search_profile=LexicalSearchProfile(
-            lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
+            lexical_config_version=processing_profile.lexical_config_version,
             candidate_limit=lexical_candidate_limit,
         ),
         m1_query_retrieval=m1_query_retrieval,
@@ -699,7 +704,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             unit_of_work_factory=create_capture_unit_of_work_factory(database.session_factory),
             max_upload_bytes=settings.max_upload_bytes,
             processing_dispatcher=processing_dispatcher,
-            processing_profile=M1_PROCESSING_PROFILE,
+            processing_profile=processing_profile,
         ),
         open_original_service=open_original_service,
         get_processing_run_service=GetProcessingRunService(
