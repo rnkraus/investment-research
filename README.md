@@ -1,15 +1,19 @@
 # Investment Research Archive
 
-Investment Research Archive is an evidence-grounded research application. It will import research documents, preserve their originals, make them searchable, and answer questions with exact, verifiable citations.
+Investment Research Archive is an evidence-grounded research application. It imports research documents, preserves their originals, makes them searchable, and answers questions with exact, verifiable citations.
 
 The completed M0.0 milestone proves the smallest end-to-end path. The completed M0 engineering
 foundation replaces its development storage, processing delivery, and parser shortcuts with a
-production-shaped local runtime while preserving the proven application contracts. M1 is the next
-delivery milestone and will expand the accepted input and provider-backed path through those
-boundaries. Until then, the frozen synthetic fixture remains the acceptance scope recorded in
+production-shaped local runtime while preserving the proven application contracts. The accepted M1
+thin slice adds PDF and pasted-text input, versioned document embedding and dense indexing, lexical
+and dense retrieval, typed answer generation, server-side evidence validation, and exact citation
+opening. Live progress and independent answer/support model choices are available in the local
+provider-backed runtime. The frozen M0.0 fixture remains a regression case under
 [ADR-0004](docs/adr/0004-m0-0-parser-isolation-boundary.md) and
-[ADR-0006](docs/adr/0006-credential-free-parser-runtime.md). This is still a local development
-system, not a production deployment, trading system, or investment-advice application.
+[ADR-0006](docs/adr/0006-credential-free-parser-runtime.md). M2 is the next planning milestone.
+This is still a local development system, not a production deployment, trading system, or
+investment-advice application. The narrow M1 acceptance evidence and limits are recorded in the
+[M1 implementation plan](docs/10-m1-implementation-plan.md).
 
 ## Prerequisites
 
@@ -149,8 +153,10 @@ logs after the request. After debugging, restart without the override to disable
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait api
 ```
 
-Research may make several bounded provider calls before its first response event. The local Next.js
-rewrite therefore waits up to 120 seconds instead of its previous 30-second default. If the web
+Research may make several bounded provider calls before its first response event. It streams safe
+progress events while work continues; statements and citations follow only after validation. The
+local Next.js rewrite allows up to 120 seconds for the complete request instead of its previous
+30-second default. If the web
 container reports a proxy disconnect, the API may still finish after the browser has received an
 error; do not immediately repeat a paid request without checking its outcome. The research UI shows
 a safe HTTP or connection explanation and any available request ID. See the
@@ -180,7 +186,7 @@ Use the documented complete automatic M0 fixture verification below to exercise 
 web application, its same-origin API proxy, API capture, Redis/Celery delivery, SeaweedFS, isolated
 parsing, research, citation resolution, original access, and the insufficient-evidence case
 together. The final local verification and hosted `Complete M0 runtime` CI gate passed; M0 is
-complete and the current implementation work has moved to M1.
+complete. The complete M1 runtime verification instructions appear below.
 
 All browser requests use the same-origin Next.js API boundary. The original and citation endpoints
 recheck the server-owned workspace, active document version, validation state, byte count, and
