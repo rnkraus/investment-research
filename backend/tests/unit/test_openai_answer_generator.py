@@ -24,6 +24,7 @@ from pydantic import ValidationError
 
 from investment_research.infrastructure.generation import openai as openai_module
 from investment_research.infrastructure.generation.openai import (
+    M1_ANSWER_PROMPT_VERSION,
     OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
     OPENAI_ANSWER_MODEL,
     OPENAI_ANSWER_TIMEOUT_SECONDS,
@@ -271,6 +272,24 @@ def test_generate_sends_one_bounded_stateless_request_with_allowlisted_data() ->
     assert str(DOCUMENT_ID) not in serialized_payload
     assert str(VERSION_ID) not in serialized_payload
     assert str(BLOCK_ID) not in serialized_payload
+
+
+def test_luna_receives_versioned_verbatim_evidence_instructions() -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(response=StubParsedResponse(model="gpt-5.6-luna"))
+    )
+    generator = OpenAIAnswerGenerator(client=cast(OpenAI, client), model="gpt-5.6-luna")
+
+    generator.generate(make_generation_input())
+
+    instructions = cast(str, client.responses.calls[0]["instructions"])
+    assert M1_ANSWER_PROMPT_VERSION == "m1-grounded-answer-prompt-v3"
+    assert "exact_text character-for-character" in instructions
+    assert "Do not paraphrase, translate, normalize, correct" in instructions
+    assert "each exact_text occurs exactly once in its cited source" in instructions
+    assert (
+        "If no unique verbatim substring supports a statement, omit that statement" in instructions
+    )
 
 
 @pytest.mark.parametrize(
