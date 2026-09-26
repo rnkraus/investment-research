@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.1 — M0 complete; M1 Step 6 locally verified, hosted confirmation pending
+**Status:** Active v1.2 — M1 accepted on 2026-09-28; M2 planning next
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md)
@@ -146,6 +146,7 @@ evidence. It is not an authenticated or publicly deployable release.
 
 The exact M1 decisions, repository delta, backend-to-CI-to-frontend sequence, and verification
 matrix are maintained in [10-m1-implementation-plan.md](./10-m1-implementation-plan.md).
+The M1 acceptance evidence and its remaining live-provider coverage limits are recorded there.
 
 ### Build
 
@@ -342,12 +343,11 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Complete the Step 6 clean-stack acceptance and browser journey before declaring M1 complete.
-2. Prove the deterministic PDF and pasted-text journeys, exact citation opening, insufficient
-   answer, safe provider failure, isolation, recovery, and cleanup behavior from an empty state.
-3. Record measured observations and the remaining M2 lifecycle, outbox, receipt, and reconciliation
-   gaps without promoting them into M1 scope.
-4. Keep credentialed provider smoke tests bounded, manually triggered, non-required, and restricted
-   to the frozen public-synthetic fixtures.
-5. Preserve the fixed local owner and loopback-only boundary through M1, then continue to M2 only
-   after the M1 handoff records its remaining lifecycle and reconciliation gaps.
+1. Plan M2 from the accepted M1-to-M2 handoff in `10-m1-implementation-plan.md`, keeping
+   lifecycle reliability separate from later archive discovery and advanced RAG milestones.
+2. Preserve the M1 PDF, pasted-text, citation, insufficient-answer, workspace-isolation, provider
+   failure, recovery, and cleanup gates while extending ingestion and processing behavior.
+3. Add M2 document versions, retryable stage history, durable outbox delivery, indexing receipts,
+   reconciliation, reprocessing, deletion, and restoration according to the M2 exit gate.
+4. Keep the fixed local owner and loopback-only boundary until the authentication milestone;
+   credentialed provider smokes remain bounded, manual, and public-synthetic only.

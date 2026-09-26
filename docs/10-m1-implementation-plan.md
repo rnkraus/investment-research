@@ -1,8 +1,7 @@
 # Investment Research Archive — M1 Implementation Plan
 
-**Status:** Active v1.4 — Steps 0–5 locally implemented; Step 6 deterministic acceptance,
-browser journey, measurements, and M2 handoff locally implemented \
-**Active milestone:** M1 — Thin vertical slice \
+**Status:** Accepted v1.5 — M1 thin vertical slice completed on 2026-09-28 \
+**Milestone:** M1 — Thin vertical slice \
 **Depends on:** completed M0 engineering foundation and accepted ADRs 0001–0009 \
 **Related:** [01-product-scope.md](./01-product-scope.md),
 [02-system-design.md](./02-system-design.md),
@@ -29,7 +28,7 @@ The accepted M1 path is deliberately narrow:
 4. run both PostgreSQL lexical retrieval and Pinecone dense retrieval;
 5. generate a typed answer through one approved AI provider;
 6. validate every statement and evidence reference against canonical PostgreSQL state;
-7. stream only validated statements and citations;
+7. stream progress and then only validated statements and citations;
 8. open the immutable PDF page or pasted-text passage used as evidence;
 9. retain safe version, latency, usage, cost, and trace identifiers.
 
@@ -769,13 +768,14 @@ remains the Step 6 gate.
 
 **Suggested branch:** `test/m1-acceptance`
 
-**Implementation status (2026-09-22):** The credential-free complete-stack API acceptance and both
-visible Chromium journeys pass locally through `python -m scripts.verify_m1_runtime`. The PDF
+**Historical implementation status (2026-09-22):** The credential-free complete-stack API
+acceptance and both visible Chromium journeys passed locally through
+`python -m scripts.verify_m1_runtime`. The PDF
 journey opens the immutable original at the stored physical page, and the pasted-text journey
 verifies and highlights the exact Unicode-code-point range. The required `Complete M1 runtime` CI
 job now installs the pinned Chromium build and invokes the same runner. Local measurements and the
 explicit M2 handoff are recorded below. Hosted CI confirmation and one explicitly authorized,
-bounded live-provider smoke run remain open; M1 is not yet marked complete.
+bounded live-provider smoke run were still open at that date; the later result is recorded below.
 
 Backend and runtime:
 
@@ -826,7 +826,7 @@ gate passed with a real chunk-set deactivation during support evaluation. The se
 visibility deadline finding is also resolved: each fetch receives the remaining deadline, and a
 response arriving after it expires cannot complete indexing. Unit tests cover delayed visibility,
 batch-by-batch timeout reduction, and the Pinecone SDK timeout; the backend unit and isolated
-PostgreSQL gates passed. M1 is not yet accepted.
+PostgreSQL gates passed. At that date, M1 had not yet been accepted.
 
 The optional live-provider smoke runner now applies the same deadline to its vector-visibility and
 namespace-cleanup checks. Synthetic-clock unit tests reject confirmations arriving after 30
@@ -855,7 +855,8 @@ runtime used deterministic embedding, dense-index, generation, and support adapt
 paid provider calls and incurred zero external-provider cost by construction. Its provider-stage
 latencies are therefore not representative of OpenAI or Pinecone. The separate live-provider smoke
 remains manually triggered, restricted to the frozen public-synthetic fixtures, and capped by its
-manifest budget; no live result is claimed until that smoke is explicitly authorized and run.
+manifest budget. At the time of this 2026-09-22 record, no live result was claimed; the later
+authorized result is recorded immediately below.
 
 **Local runtime configuration follow-up (2026-09-24):** The normal provider-backed Compose runtime
 requires `compose.m1-live.yaml` in addition to `compose.yaml`. The API receives only query and
@@ -876,6 +877,29 @@ bounded M1 compatibility adjustment, not an end-to-end execution deadline or dur
 Unstructured HTTP and transport failures receive safe browser explanations and any available
 request ID; a disconnected browser may leave paid backend work running, so retries are not
 automatically issued.
+
+**M1 acceptance record (2026-09-28):** The repository owner confirmed that all required hosted
+GitHub Actions checks were green on the latest `main` after the final M1 fixes. The deterministic
+complete-stack API and browser journeys, exact PDF and pasted-text citation opening, isolation,
+failure, and cleanup gates are documented above. The explicitly authorized public-synthetic
+provider smoke passed on 2026-09-23 with one document-embedding request, two answer-generation
+requests, one statement-support request, one Pinecone vector, an estimated maximum spend of
+USD 0.04102388, and verified cleanup. A preceding local smoke attempt failed once at
+`answer_validation_and_support` with the safe but non-specific `verification` reason and then passed
+on retry; that isolated failure has no established root cause and did not bypass validation.
+After the later `PARTIAL` answer correction, the owner also confirmed a successful local frontend
+build, Docker runtime, and one previously failing live-provider browser question. Together, these
+results satisfy the narrow M1 exit gate. M1 is accepted, and the M2 handoff below is active.
+
+The final M1 implementation also streams safe research progress and offers independent Terra/Luna
+answer and statement-support choices in the local provider-backed UI. Those choices have offline
+contract and routing tests, but the live smoke does not establish comparative quality or reliability
+for every model pair. The scripted smoke does not test the separate query-embedding key or Pinecone
+query credential; the single manual browser question is not a repeatable provider acceptance suite.
+Deterministic adapters provide the required complete-stack correctness proof. No broader
+retrieval-quality, latency, private-data, authentication, or public-deployment claim follows from
+M1 acceptance. Repeated live verification failures should be classified more specifically without
+exposing provider content.
 
 ### 8.1 M1-to-M2 handoff
 
@@ -901,8 +925,9 @@ contracts:
 This handoff deliberately does not promote archive browsing, companies, filters, RRF, reranking,
 conversation memory, authentication, public hosting, or agent workflows into M2. Those features
 remain assigned to their existing milestones. M2 may begin only after the final M1 revision passes
-the hosted required checks; the optional live-provider smoke provides compatibility evidence but
-does not replace deterministic correctness or authorize private data.
+the hosted required checks, which the repository owner confirmed on 2026-09-28. The optional
+live-provider smoke provides compatibility evidence but does not replace deterministic correctness
+or authorize private data.
 
 ## 9. Verification matrix
 
