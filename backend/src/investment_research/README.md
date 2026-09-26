@@ -4,16 +4,17 @@
 
 ## Contents
 
-| Path              | Responsibility                                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `main.py`         | Creates FastAPI, installs transport safeguards and error handlers, attaches the container, and registers routes. |
-| `worker.py`       | Creates the Celery worker application and executes validated processing jobs with process-owned resources.       |
-| `parser_app.py`   | Hosts the credential-free PDF parser on the private parser network.                                              |
-| `bootstrap.py`    | Separate API and worker composition roots that select concrete implementations for application-owned contracts.  |
-| `settings.py`     | Loads least-privilege API, worker, parser, and database-maintenance configuration.                               |
-| `api/`            | HTTP transport models, dependencies, OpenAPI generation, and routes.                                             |
-| `infrastructure/` | Technical database, logging, queue, lexical-search, parsing, and secure local object-storage adapters.           |
-| `modules/`        | Business capabilities with explicit ownership and dependency boundaries.                                         |
+| Path                 | Responsibility                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `main.py`            | Creates FastAPI, installs transport safeguards and error handlers, attaches the container, and registers routes. |
+| `worker.py`          | Creates the Celery worker application and executes validated processing jobs with process-owned resources.       |
+| `parser_app.py`      | Hosts the credential-free PDF parser on the private parser network.                                              |
+| `bootstrap.py`       | Separate API and worker composition roots that select concrete implementations for application-owned contracts.  |
+| `settings.py`        | Loads least-privilege process configuration and preserves the existing settings import path.                     |
+| `settings_models.py` | Defines immutable settings models, defaults, and validation for each process and provider role.                  |
+| `api/`               | HTTP transport models, dependencies, OpenAPI generation, and routes.                                             |
+| `infrastructure/`    | Technical database, logging, queue, lexical-search, parsing, and secure local object-storage adapters.           |
+| `modules/`           | Business capabilities with explicit ownership and dependency boundaries.                                         |
 
 ## Startup flow
 
@@ -104,6 +105,10 @@ credential-free test acceptance index, plus the monthly provider budget, before 
 consuming tasks. Container construction repeats this validation as a safeguard for direct callers.
 The application service revalidates canonical workspace and run state before it opens the original,
 indexes active chunks, or commits derived output.
+
+`settings.py` selects process-specific values and builds the validated models in
+`settings_models.py`. Existing callers continue to import both loaders and models from
+`investment_research.settings`; the split changes no configuration keys or defaults.
 
 `ApiSettings` and `WorkerSettings` may load the ignored root development file. The API requires an
 authenticated Redis broker URL when its container is built; host development may derive it from
