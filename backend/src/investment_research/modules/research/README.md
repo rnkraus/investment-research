@@ -6,7 +6,9 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 
 | File             | Responsibility                                                                         |
 | ---------------- | -------------------------------------------------------------------------------------- |
-| `application.py` | Orchestrates atomic retrieval and validated terminal-answer persistence.               |
+| `application.py` | Orchestrates validated terminal answers and preserves existing application imports.   |
+| `retrieval.py`   | Runs lexical or dual-lane retrieval and persists qualified candidates.                 |
+| `errors.py`      | Defines the safe provider failure shared by retrieval and answer generation.           |
 | `contracts.py`   | Defines strict retrieval, generation, and validated-answer boundary values.            |
 | `domain.py`      | Defines requests, temporal modes, answer states, coverage, statements, and invariants. |
 | `ports.py`       | Defines repositories, units of work, and the answer-generator contract.                |
@@ -92,6 +94,9 @@ are selected independently from the approved Terra/Luna pairs before retrieval s
 credential-free runtime retains its deterministic service and Terra/Terra request defaults, without
 making a paid provider call. This composition keeps HTTP code unaware of intermediate retrieval
 data and preserves the two focused services as independently testable boundaries.
+
+`RetrieveResearchService` is implemented in `retrieval.py`; `application.py` re-exports the
+existing public names so bootstrap and API imports remain stable during this internal split.
 
 The same use case owns the public provider-failure policy. Generation and statement-support
 adapters retain their distinct internal safe error categories, while the route receives only
