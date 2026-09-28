@@ -219,6 +219,16 @@ export function DocumentWorkflow() {
       aria-label="Document import and processing"
       className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr]"
     >
+      <div className="lg:col-span-2">
+        <ResearchWorkflow
+          documentId={
+            accepted !== undefined &&
+            canResearchProcessingRun(processing?.state)
+              ? accepted.document_id
+              : undefined
+          }
+        />
+      </div>
       <form
         className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70 sm:p-8"
         onSubmit={handleSubmit}
@@ -435,15 +445,6 @@ export function DocumentWorkflow() {
           </div>
         )}
       </section>
-
-      {accepted !== undefined && canResearchProcessingRun(processing?.state) ? (
-        <div className="lg:col-span-2">
-          <ResearchWorkflow
-            documentId={accepted.document_id}
-            key={accepted.document_id}
-          />
-        </div>
-      ) : null}
     </section>
   );
 }

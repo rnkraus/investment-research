@@ -40,7 +40,7 @@ async function waitUntilSearchable(page: Page) {
 
 async function askQuestion(page: Page, question: string, statement: string) {
   await page.getByLabel("Research question").fill(question);
-  await page.getByRole("button", { name: "Research document" }).click();
+  await page.getByRole("button", { name: "Ask the archive" }).click();
   await expect(page.getByText(statement, { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -64,6 +64,7 @@ test.describe("M1 visible browser journey", () => {
     await page.getByRole("button", { name: "Import document" }).click();
     await waitUntilSearchable(page);
 
+    await page.getByLabel("Current processed document").check();
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
 
@@ -79,6 +80,15 @@ test.describe("M1 visible browser journey", () => {
       "src",
       /#page=2$/,
     );
+
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Ask the archive" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Current processed document")).toHaveCount(0);
+    await expect(page.getByLabel("All saved documents")).toBeChecked();
+    await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
+    await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
   });
 
   test("a pasted-text answer highlights its exact verified source range", async ({
@@ -97,6 +107,7 @@ test.describe("M1 visible browser journey", () => {
     await page.getByRole("button", { name: "Import document" }).click();
     await waitUntilSearchable(page);
 
+    await page.getByLabel("Current processed document").check();
     await askQuestion(page, TEXT_QUESTION, TEXT_STATEMENT);
     await expect(page.getByText(TEXT_EVIDENCE, { exact: true })).toBeVisible();
 

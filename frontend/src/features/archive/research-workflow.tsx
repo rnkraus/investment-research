@@ -24,7 +24,7 @@ import {
 } from "./research-session";
 
 interface ResearchWorkflowProps {
-  readonly documentId: string;
+  readonly documentId?: string;
 }
 
 function safeErrorMessage(error: unknown): string {
@@ -47,12 +47,14 @@ function modelLabel(model: ResearchModel): string {
 
 export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
   const questionInputId = useId();
+  const scopeInputName = useId();
   const generationModelId = useId();
   const supportModelId = useId();
   const requestController = useRef<AbortController | null>(null);
   const [question, setQuestion] = useState<string>(
     fixtureDefaults.answerableQuestion,
   );
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string>();
   const [session, setSession] = useState<ResearchSession>(
     EMPTY_RESEARCH_SESSION,
   );
@@ -135,7 +137,11 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
             ? supportModel
             : "gpt-5.6-terra",
           context: {
-            document_ids: [documentId],
+            document_ids:
+              selectedDocumentId !== undefined &&
+              selectedDocumentId === documentId
+                ? [selectedDocumentId]
+                : [],
             temporal_mode: "CURRENT",
           },
         },
@@ -213,8 +219,42 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
       </p>
 
       <form className="mt-7" onSubmit={handleSubmit}>
+        <fieldset disabled={isBusy}>
+          <legend className="text-sm font-semibold text-slate-800">
+            {archiveCopy.research.scopeLegend}
+          </legend>
+          <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-700">
+            <label className="inline-flex cursor-pointer items-center gap-2">
+              <input
+                checked={
+                  selectedDocumentId !== documentId || documentId === undefined
+                }
+                name={scopeInputName}
+                onChange={() => setSelectedDocumentId(undefined)}
+                type="radio"
+                value="archive"
+              />
+              {archiveCopy.research.archiveScope}
+            </label>
+            {documentId !== undefined ? (
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  checked={selectedDocumentId === documentId}
+                  name={scopeInputName}
+                  onChange={() => setSelectedDocumentId(documentId)}
+                  type="radio"
+                  value="current-document"
+                />
+                {archiveCopy.research.documentScope}
+              </label>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {archiveCopy.research.scopeHint}
+          </p>
+        </fieldset>
         <label
-          className="text-sm font-semibold text-slate-800"
+          className="mt-6 block text-sm font-semibold text-slate-800"
           htmlFor={questionInputId}
         >
           {archiveCopy.research.questionLabel}
