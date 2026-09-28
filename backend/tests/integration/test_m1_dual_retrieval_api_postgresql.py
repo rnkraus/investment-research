@@ -69,6 +69,7 @@ from tests.integration.factories import (
     ResearchSource,
     make_searchable_research_source,
     persist_research_source,
+    persist_workspace,
 )
 
 SEMANTIC_QUESTION = "What is mainly holding back Northstar's rollout to new clients?"
@@ -485,6 +486,99 @@ def test_m1_api_selects_exact_lexical_evidence_in_dual_lane_mode(
         context=source.context,
         research_request_id=request_id,
     )
+    assert_provider_fakes_closed(fakes)
+
+
+@pytest.mark.parametrize("pasted_text", [False, True], ids=["pdf", "pasted-text"])
+def test_m1_api_researches_existing_archive_without_document_filter(
+    integration_api_settings: ApiSettings,
+    integration_database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pasted_text: bool,
+) -> None:
+    matching_text = f"{M0_0_FIXTURE_ANSWER_CASE.question} {M0_0_FIXTURE_ANSWER_CASE.evidence_text}"
+    source = make_searchable_source(
+        label="M1 Existing Archive Source",
+        primary_text=matching_text,
+        pasted_text=pasted_text,
+    )
+    foreign = make_searchable_source(
+        label="M1 Foreign Archive Source",
+        primary_text=matching_text,
+        pasted_text=not pasted_text,
+    )
+    persist_research_source(integration_database_engine, source)
+    persist_research_source(integration_database_engine, foreign)
+    fakes = install_provider_fakes(
+        monkeypatch,
+        hits=(
+            DenseRetrievalHit(chunk_id=foreign.chunks[0].id, raw_score=0.95),
+            DenseRetrievalHit(chunk_id=source.chunks[0].id, raw_score=0.9),
+        ),
+        statement=M0_0_FIXTURE_ANSWER_CASE.statement,
+    )
+    application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/research-requests",
+            json={
+                "question": M0_0_FIXTURE_ANSWER_CASE.question,
+                "context": {"document_ids": []},
+            },
+        )
+
+    events = parse_server_sent_events(response.text)
+    request_id = UUID(events[0]["payload"]["research_request_id"])
+    run, candidates = load_retrieval_result(
+        integration_database_engine,
+        workspace_id=source.context.workspace_id,
+        research_request_id=request_id,
+    )
+    assert response.status_code == 200
+    assert [event["event_name"] for event in events] == [
+        "answer.statement",
+        "answer.citation",
+        "answer.completed",
+    ]
+    assert events[0]["payload"]["text"] == M0_0_FIXTURE_ANSWER_CASE.statement
+    assert run.filter_snapshot["document_ids"] == []
+    assert {candidate.chunk_id for candidate in candidates} == {source.chunks[0].id}
+    assert fakes.dense.queries[0].filters.document_ids == ()
+    assert_provider_fakes_closed(fakes)
+
+
+def test_m1_api_empty_existing_archive_returns_insufficient_evidence(
+    integration_api_settings: ApiSettings,
+    integration_database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    owner = make_searchable_source(
+        label="M1 Empty Archive Owner",
+        primary_text=M0_0_FIXTURE_ANSWER_CASE.evidence_text,
+    )
+    persist_workspace(integration_database_engine, owner)
+    fakes = install_provider_fakes(monkeypatch, hits=(), statement=None)
+    application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
+    application.dependency_overrides[get_workspace_context] = lambda: owner.context
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/research-requests",
+            json={
+                "question": M0_0_FIXTURE_ANSWER_CASE.question,
+                "context": {"document_ids": []},
+            },
+        )
+
+    events = parse_server_sent_events(response.text)
+    assert response.status_code == 200
+    assert [event["event_name"] for event in events] == ["answer.insufficient"]
+    assert fakes.generator.requests[0].sources == ()
+    assert fakes.support.requests == []
     assert_provider_fakes_closed(fakes)
 
 
