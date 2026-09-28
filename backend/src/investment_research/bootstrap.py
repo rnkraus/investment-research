@@ -1,5 +1,8 @@
 """Process-specific composition roots for application services and adapters."""
 
+import json
+import sys
+from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
 
@@ -181,6 +184,28 @@ M1_GENERATION_PROFILE = AnswerGenerationProfile(
 M1_EVIDENCE_VALIDATION_PROFILE = EvidenceValidationProfile(
     validation_config_version="m1-evidence-validation-v1"
 )
+_MAX_LOCAL_MODEL_FAILURE_OUTPUT_CHARACTERS = 100_000
+
+
+def _local_model_failure_sink(role: str, model: str) -> Callable[[str], None]:
+    """Show opt-in local model text outside normal sanitized application logging."""
+
+    def emit(output_text: str) -> None:
+        maximum = _MAX_LOCAL_MODEL_FAILURE_OUTPUT_CHARACTERS
+        payload = {
+            "event": "local.model_failure_output",
+            "role": role,
+            "model": model,
+            "output_text": output_text[:maximum],
+            "truncated": len(output_text) > maximum,
+        }
+        try:
+            sys.stderr.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            sys.stderr.flush()
+        except OSError, ValueError:
+            pass
+
+    return emit
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,24 +510,44 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 model=OPENAI_ANSWER_MODEL,
                 operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
                 max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+                local_validation_output=(
+                    _local_model_failure_sink("answer", OPENAI_ANSWER_MODEL)
+                    if settings.local_model_failure_output
+                    else None
+                ),
             )
             statement_support_provider = create_openai_statement_support_evaluator(
                 api_key=generation_settings.api_key.get_secret_value(),
                 model=OPENAI_STATEMENT_SUPPORT_MODEL,
                 operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
                 max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+                local_validation_output=(
+                    _local_model_failure_sink("statement_support", OPENAI_STATEMENT_SUPPORT_MODEL)
+                    if settings.local_model_failure_output
+                    else None
+                ),
             )
             luna_answer_generator_provider = create_openai_answer_generator(
                 api_key=generation_settings.api_key.get_secret_value(),
                 model=ResearchModel.LUNA,
                 operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
                 max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+                local_validation_output=(
+                    _local_model_failure_sink("answer", ResearchModel.LUNA)
+                    if settings.local_model_failure_output
+                    else None
+                ),
             )
             luna_statement_support_provider = create_openai_statement_support_evaluator(
                 api_key=generation_settings.api_key.get_secret_value(),
                 model=ResearchModel.LUNA,
                 operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
                 max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+                local_validation_output=(
+                    _local_model_failure_sink("statement_support", ResearchModel.LUNA)
+                    if settings.local_model_failure_output
+                    else None
+                ),
             )
         except Exception:
             with ExitStack() as stack:

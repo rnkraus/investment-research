@@ -448,6 +448,17 @@ class ApiSettings(ObjectStorageSettings):
     query_providers: DenseProviderSettings | None = None
     generation_provider: GenerationProviderSettings | None = None
     acceptance_dense_index_path: Path | None = None
+    local_model_failure_output: bool = False
+
+    @model_validator(mode="after")
+    def restrict_local_model_failure_output(self) -> ApiSettings:
+        """Permit raw model diagnostics only in the local development API container."""
+
+        if self.local_model_failure_output and (
+            self.environment != "development" or self.runtime_location != "container"
+        ):
+            raise ValueError("local model failure output requires a development API container")
+        return self
 
     @model_validator(mode="after")
     def restrict_regression_processing_profile(self) -> ApiSettings:

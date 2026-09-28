@@ -711,6 +711,12 @@ The existing smoke runner also offers an opt-in, interactive local diagnostic fo
 public-synthetic fixture, bounded provider calls, and cleanup. The default safe diagnostic remains
 unchanged; see `docs/11-m1-contracts.md` for the local-only exception.
 
+Separately, `compose.m1-local-diagnostics.yaml` enables failed answer-generation and
+statement-support model output in the local development API logs for approved public or synthetic
+documents. It is off in the normal Compose runtime and does not change browser errors or traces.
+This override must not be used with private data or in CI, staging, or public deployments; see the
+root `README.md` for the exact start and disable commands.
+
 One local approved-fixture attempt exposed an off-by-one model-proposed evidence range: the
 `exact_text` omitted sentence punctuation, while the proposed half-open range included it. The
 v2 OpenAI answer adapter no longer asks the model to count characters. It derives a range only

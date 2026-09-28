@@ -1,7 +1,7 @@
 """OpenAI adapter for bounded semantic statement-support decisions."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from openai import (
@@ -58,6 +58,7 @@ class OpenAIStatementSupportEvaluator:
     model: str = OPENAI_STATEMENT_SUPPORT_MODEL
     operation_timeout_seconds: float = OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS
     max_output_tokens: int = OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS
+    local_validation_output: Callable[[str], None] | None = None
 
     def __post_init__(self) -> None:
         """Reject adapter settings outside the frozen M1 support profile."""
@@ -81,19 +82,46 @@ class OpenAIStatementSupportEvaluator:
             evidence_texts=tuple(evidence_texts),
         )
         try:
-            response = self.client.responses.parse(
-                model=self.model,
-                instructions=_STATEMENT_SUPPORT_INSTRUCTIONS,
-                input=self._serialize_input(support_input),
-                text_format=StatementSupportDecision,
-                reasoning={"effort": "low"},
-                max_output_tokens=self.max_output_tokens,
-                store=False,
-                background=False,
-                tools=[],
-                truncation="disabled",
-                timeout=self.operation_timeout_seconds,
-            )
+            if self.local_validation_output is None:
+                response = self.client.responses.parse(
+                    model=self.model,
+                    instructions=_STATEMENT_SUPPORT_INSTRUCTIONS,
+                    input=self._serialize_input(support_input),
+                    text_format=StatementSupportDecision,
+                    reasoning={"effort": "low"},
+                    max_output_tokens=self.max_output_tokens,
+                    store=False,
+                    background=False,
+                    tools=[],
+                    truncation="disabled",
+                    timeout=self.operation_timeout_seconds,
+                )
+            else:
+                raw_response = self.client.responses.with_raw_response.parse(
+                    model=self.model,
+                    instructions=_STATEMENT_SUPPORT_INSTRUCTIONS,
+                    input=self._serialize_input(support_input),
+                    text_format=StatementSupportDecision,
+                    reasoning={"effort": "low"},
+                    max_output_tokens=self.max_output_tokens,
+                    store=False,
+                    background=False,
+                    tools=[],
+                    truncation="disabled",
+                    timeout=self.operation_timeout_seconds,
+                )
+                try:
+                    response = raw_response.parse()
+                except ValidationError:
+                    try:
+                        raw_body: object = raw_response.http_response.json()
+                    except ValueError:
+                        raw_body = None
+                    self.local_validation_output(
+                        self._output_text_from_raw_body(raw_body)
+                        or "[No generated output_text was returned.]"
+                    )
+                    raise
         except APIConnectionError:
             raise StatementSupportProviderTransientError(
                 "statement-support provider is temporarily unavailable"
@@ -119,60 +147,70 @@ class OpenAIStatementSupportEvaluator:
                 "statement-support provider rejected the configured request"
             ) from None
 
-        if response.model != self.model:
-            raise StatementSupportProviderContractError(
-                "statement-support provider response model does not match the request"
-            )
-        if response.status == "incomplete":
-            raise StatementSupportProviderContractError(
-                "statement-support provider returned an incomplete response"
-            )
-        if response.status != "completed":
-            raise StatementSupportProviderTransientError(
-                "statement-support provider did not complete the request"
-            )
-
-        parsed = response.output_parsed
-        if parsed is None:
-            if self._contains_refusal(response):
-                raise StatementSupportProviderRefusalError(
-                    "statement-support provider refused the request"
-                )
-            raise StatementSupportProviderContractError(
-                "statement-support provider returned no typed decision"
-            )
-        usage = response.usage
-        if usage is None:
-            raise StatementSupportProviderContractError(
-                "statement-support provider returned no usage metadata"
-            )
-        input_tokens = usage.input_tokens
-        output_tokens = usage.output_tokens
-        total_tokens = usage.total_tokens
-        if (
-            isinstance(input_tokens, bool)
-            or not isinstance(input_tokens, int)
-            or input_tokens < 0
-            or isinstance(output_tokens, bool)
-            or not isinstance(output_tokens, int)
-            or output_tokens < 0
-            or isinstance(total_tokens, bool)
-            or not isinstance(total_tokens, int)
-            or total_tokens != input_tokens + output_tokens
-        ):
-            raise StatementSupportProviderContractError(
-                "statement-support provider returned invalid usage metadata"
-            )
         try:
-            provider_usage = ProviderUsage(
-                input_units=input_tokens,
-                output_units=output_tokens,
-            )
-        except ValidationError:
-            raise StatementSupportProviderContractError(
-                "statement-support provider returned invalid usage metadata"
-            ) from None
-        return StatementSupportResult(decision=parsed, usage=provider_usage)
+            if response.model != self.model:
+                raise StatementSupportProviderContractError(
+                    "statement-support provider response model does not match the request"
+                )
+            if response.status == "incomplete":
+                raise StatementSupportProviderContractError(
+                    "statement-support provider returned an incomplete response"
+                )
+            if response.status != "completed":
+                raise StatementSupportProviderTransientError(
+                    "statement-support provider did not complete the request"
+                )
+
+            parsed = response.output_parsed
+            if parsed is None:
+                if self._contains_refusal(response):
+                    raise StatementSupportProviderRefusalError(
+                        "statement-support provider refused the request"
+                    )
+                raise StatementSupportProviderContractError(
+                    "statement-support provider returned no typed decision"
+                )
+            usage = response.usage
+            if usage is None:
+                raise StatementSupportProviderContractError(
+                    "statement-support provider returned no usage metadata"
+                )
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+            total_tokens = usage.total_tokens
+            if (
+                isinstance(input_tokens, bool)
+                or not isinstance(input_tokens, int)
+                or input_tokens < 0
+                or isinstance(output_tokens, bool)
+                or not isinstance(output_tokens, int)
+                or output_tokens < 0
+                or isinstance(total_tokens, bool)
+                or not isinstance(total_tokens, int)
+                or total_tokens != input_tokens + output_tokens
+            ):
+                raise StatementSupportProviderContractError(
+                    "statement-support provider returned invalid usage metadata"
+                )
+            try:
+                provider_usage = ProviderUsage(
+                    input_units=input_tokens,
+                    output_units=output_tokens,
+                )
+            except ValidationError:
+                raise StatementSupportProviderContractError(
+                    "statement-support provider returned invalid usage metadata"
+                ) from None
+            return StatementSupportResult(decision=parsed, usage=provider_usage)
+        except StatementSupportProviderContractError, StatementSupportProviderTransientError:
+            if self.local_validation_output is not None:
+                parsed_output = response.output_parsed
+                self.local_validation_output(
+                    parsed_output.model_dump_json()
+                    if isinstance(parsed_output, StatementSupportDecision)
+                    else "[No parsed statement-support output was returned.]"
+                )
+            raise
 
     @staticmethod
     def _serialize_input(support_input: StatementSupportInput) -> str:
@@ -187,6 +225,28 @@ class OpenAIStatementSupportEvaluator:
             separators=(",", ":"),
             sort_keys=True,
         )
+
+    @staticmethod
+    def _output_text_from_raw_body(body: object) -> str | None:
+        """Extract generated text only, never provider metadata or request headers."""
+
+        if not isinstance(body, dict) or not isinstance(body.get("output"), list):
+            return None
+        texts: list[str] = []
+        for item in body["output"]:
+            if not isinstance(item, dict) or item.get("type") != "message":
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == "output_text"
+                    and isinstance(part.get("text"), str)
+                ):
+                    texts.append(part["text"])
+        return "\n".join(texts) or None
 
     @staticmethod
     def _contains_refusal(response: object) -> bool:
@@ -212,6 +272,7 @@ def create_openai_statement_support_evaluator(
     model: str = OPENAI_STATEMENT_SUPPORT_MODEL,
     operation_timeout_seconds: float = OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
     max_output_tokens: int = OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+    local_validation_output: Callable[[str], None] | None = None,
 ) -> OpenAIStatementSupportEvaluator:
     """Build one least-privilege synchronous client with SDK retries disabled."""
 
@@ -227,4 +288,5 @@ def create_openai_statement_support_evaluator(
         model=model,
         operation_timeout_seconds=operation_timeout_seconds,
         max_output_tokens=max_output_tokens,
+        local_validation_output=local_validation_output,
     )

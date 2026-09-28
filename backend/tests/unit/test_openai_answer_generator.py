@@ -183,14 +183,18 @@ class StubRawResponse:
     """Expose the raw provider body before the pinned SDK parser validates it."""
 
     body: object
-    parse_error: ValidationError
+    parse_error: ValidationError | None = None
+    parsed_response: StubParsedResponse | None = None
 
     @property
     def http_response(self) -> StubRawResponse:
         return self
 
     def parse(self) -> StubParsedResponse:
-        raise self.parse_error
+        if self.parse_error is not None:
+            raise self.parse_error
+        assert self.parsed_response is not None
+        return self.parsed_response
 
     def json(self) -> object:
         return self.body
@@ -686,6 +690,33 @@ def test_local_debug_reads_only_raw_generated_text_from_one_request() -> None:
     assert raw_responses.raw_route_used is True
     assert raw_responses.calls == normal_responses.calls
     assert len(raw_responses.calls) == 1
+
+
+def test_local_debug_shows_proposal_rejected_by_application_validation() -> None:
+    proposal = make_provider_proposal().model_copy(
+        update={
+            "coverage_status": CoverageStatus.INSUFFICIENT,
+            "missing_information": "The requested answer is unavailable.",
+        }
+    )
+    raw_response = StubRawResponse(
+        body={"metadata": {"secret": "private provider metadata"}},
+        parsed_response=StubParsedResponse(output_parsed=proposal),
+    )
+    raw_client = RecordingRawOpenAIClient(
+        responses=RecordingRawResponsesResource(raw_response=raw_response)
+    )
+    output: list[str] = []
+
+    with pytest.raises(OpenAIAnswerProviderContractError) as captured:
+        OpenAIAnswerGenerator(
+            client=cast(OpenAI, raw_client),
+            local_validation_output=output.append,
+        ).generate(make_generation_input())
+
+    assert captured.value.detail == "proposal_validation"
+    assert output == [proposal.model_dump_json()]
+    assert "private provider metadata" not in output[0]
 
 
 @pytest.mark.parametrize(

@@ -476,6 +476,11 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
             "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
             file_values,
         ),
+        "local_model_failure_output": _configuration_value(
+            "INVESTMENT_RESEARCH_LOCAL_MODEL_FAILURE_OUTPUT",
+            file_values,
+            "false",
+        ),
     }
     return ApiSettings.model_validate(values)
 

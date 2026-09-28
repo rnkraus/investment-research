@@ -1,0 +1,5 @@
+# Opt-in only for public or synthetic local M1 research; model text may enter Docker logs.
+services:
+  api:
+    environment:
+      INVESTMENT_RESEARCH_LOCAL_MODEL_FAILURE_OUTPUT: "true"

@@ -308,10 +308,13 @@ class OpenAIAnswerGenerator:
             )
         except ValidationError:
             raise OpenAIAnswerProviderContractError(detail="invalid_usage") from None
-        return AnswerGenerationResult(
-            answer=self._resolve_evidence_ranges(parsed, generation_input),
-            usage=provider_usage,
-        )
+        try:
+            answer = self._resolve_evidence_ranges(parsed, generation_input)
+        except OpenAIAnswerProviderContractError:
+            if self.local_validation_output is not None:
+                self.local_validation_output(parsed.model_dump_json())
+            raise
+        return AnswerGenerationResult(answer=answer, usage=provider_usage)
 
     @staticmethod
     def _resolve_evidence_ranges(

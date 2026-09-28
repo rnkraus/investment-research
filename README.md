@@ -129,6 +129,26 @@ it in the `x-request-id` response header and safe JSON error envelope. Request b
 raw unmatched paths, headers, credentials, exception messages, and traceback text are excluded from
 these application events.
 
+For an explicitly approved public or synthetic document, an opt-in local diagnostic can show the
+generated output when answer generation or statement-support validation fails. Start the API with
+the additional override, then watch its terminal logs:
+
+```shell
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml up --build --detach --wait api
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml logs --follow api
+```
+
+Look for `local.model_failure_output` with `role` (`answer` or `statement_support`), `model`, and
+`output_text`. The output is capped at 100,000 characters and may contain source text. It appears
+only in local API logs, never in the browser error response. Do not use this override with private
+documents or in CI, staging, or public deployments; do not paste raw output into tickets or chats.
+Connection failures without a model response have no output text to show. Docker may retain these
+logs after the request. After debugging, restart without the override to disable the output:
+
+```shell
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait api
+```
+
 Research may make several bounded provider calls before its first response event. The local Next.js
 rewrite therefore waits up to 120 seconds instead of its previous 30-second default. If the web
 container reports a proxy disconnect, the API may still finish after the browser has received an

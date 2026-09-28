@@ -64,6 +64,7 @@ QUEUE_SETTING_NAMES = (
     "REDIS_PORT",
 )
 PROVIDER_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_LOCAL_MODEL_FAILURE_OUTPUT",
     "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
     "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
     "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
@@ -1217,6 +1218,28 @@ def test_process_models_expose_only_their_owned_configuration() -> None:
     assert "provider_monthly_budget_micro_usd" in ApiSettings.model_fields
     assert "provider_monthly_budget_micro_usd" in WorkerSettings.model_fields
     assert "provider_monthly_budget_micro_usd" not in ParserSettings.model_fields
+    assert "local_model_failure_output" in ApiSettings.model_fields
+    assert "local_model_failure_output" not in WorkerSettings.model_fields
+    assert "local_model_failure_output" not in ParserSettings.model_fields
+
+
+def test_local_model_failure_output_requires_explicit_development_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert ApiSettings().local_model_failure_output is False
+    for environment, runtime_location in (("test", "container"), ("development", "host")):
+        with pytest.raises(ValidationError, match="development API container"):
+            ApiSettings.model_validate(
+                {
+                    "environment": environment,
+                    "runtime_location": runtime_location,
+                    "local_model_failure_output": True,
+                }
+            )
+
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "container")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_LOCAL_MODEL_FAILURE_OUTPUT", "true")
+    assert load_api_settings(env_file=None).local_model_failure_output is True
 
 
 @pytest.mark.parametrize("settings_factory", [ApiSettings, WorkerSettings, ParserSettings])
