@@ -24,3 +24,10 @@ test("the processing copy describes automatic background execution", () => {
   assert.match(archiveCopy.processing.ready, /searchable evidence is ready/i);
   assert.doesNotMatch(processingCopy, /separate terminal|copy command/i);
 });
+
+test("partial coverage copy explains that the answer remains incomplete", () => {
+  assert.match(
+    archiveCopy.research.partialCoverageNote,
+    /does not fully answer/i,
+  );
+});

@@ -661,6 +661,12 @@ model-pair routing, distinct prices and configuration versions, and the HTTP con
 tests. This capability does not replace representative model-quality evaluation or the public
 release gate.
 
+**Partial-answer correction (2026-09-28):** A live model proposal exposed `PARTIAL` with cited
+statements and a non-null `missing_information` field. The versioned answer prompt now defines all
+four coverage choices and the field rule; the adapter discards only that extra unvalidated field
+for `PARTIAL` before the unchanged evidence checks. The website marks accepted partial answers with
+a fixed incomplete-evidence notice. The regression and contract are in `docs/11-m1-contracts.md`.
+
 **Suggested commits:** provider generator; support evaluator; generation policy and error mapping;
 generation CI; frontend terminal behavior; docs.
 

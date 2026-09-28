@@ -78,6 +78,8 @@ export const archiveCopy = {
     },
     resultLabel: "Validated answer",
     coverageLabel: "Evidence coverage",
+    partialCoverageNote:
+      "The available evidence does not fully answer the question.",
     insufficientLabel: "Insufficient evidence",
     failedLabel: "Research stopped safely",
   },

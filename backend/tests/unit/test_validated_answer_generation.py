@@ -580,6 +580,21 @@ def test_valid_answer_persists_only_validated_content_in_one_unit_of_work() -> N
     unit_of_work.evidence_mock.add_answer_validations.assert_called_once()
 
 
+def test_valid_partial_answer_retains_cited_content() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    proposal = make_answer_proposal().model_copy(update={"coverage_status": CoverageStatus.PARTIAL})
+    service, _ = make_service(unit_of_work, proposal)
+
+    result = service.generate(make_context(), make_retrieval_result())
+
+    assert result.answer.state is AnswerState.STREAMED
+    assert result.answer.coverage_status is CoverageStatus.PARTIAL
+    assert result.answer.rendered_text == STATEMENT
+    assert len(result.statement_evidence) == 1
+    assert result.evidence_spans[0].exact_text == EVIDENCE_TEXT
+    assert unit_of_work.committed is True
+
+
 def test_source_becoming_inactive_during_support_check_rejects_answer() -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     evaluator = DeterministicFixtureStatementSupportEvaluator(

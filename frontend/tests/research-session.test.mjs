@@ -39,12 +39,12 @@ function citationEvent(requestId = REQUEST_ID) {
   };
 }
 
-function completedEvent(requestId = REQUEST_ID) {
+function completedEvent(requestId = REQUEST_ID, coverage = "COMPLETE") {
   return {
     event: "answer.completed",
     schema_version: "1.0",
     research_request_id: requestId,
-    coverage: "COMPLETE",
+    coverage,
   };
 }
 
@@ -154,6 +154,20 @@ test("a statement becomes complete only after its citation arrives", () => {
   assert.equal(completed.status, "COMPLETED");
   assert.equal(completed.coverage, "COMPLETE");
   assert.equal(completed.statements[0].text, "Revenue increased by 22.0%.");
+  assert.equal(completed.statements[0].citations[0].evidenceSpanId, SPAN_ID);
+});
+
+test("partial coverage preserves the validated answer and its citation", () => {
+  const completed = applyResearchEvent(
+    applyResearchEvent(
+      applyResearchEvent(beginResearchSession(), statementEvent()),
+      citationEvent(),
+    ),
+    completedEvent(REQUEST_ID, "PARTIAL"),
+  );
+
+  assert.equal(completed.status, "COMPLETED");
+  assert.equal(completed.coverage, "PARTIAL");
   assert.equal(completed.statements[0].citations[0].evidenceSpanId, SPAN_ID);
 });
 

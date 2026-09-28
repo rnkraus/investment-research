@@ -356,6 +356,16 @@ Each application reference names only a supplied retrieval-candidate ID and a bl
 half-open range. An insufficient proposal contains no statements or citations and names the missing
 information.
 
+The versioned M1 answer prompt defines the four coverage choices for the question as a whole:
+`COMPLETE` when every material part is supported, `PARTIAL` when at least one material part is
+supported but another remains unanswered, `CONFLICTING` when supplied sources directly disagree
+about a material answer, and `INSUFFICIENT` when no answer is supported. The model must set
+`missing_information` to `null` except for `INSUFFICIENT`. As a narrow provider-boundary safeguard,
+an additional model-authored gap description on an otherwise cited `PARTIAL` proposal is discarded
+before application-contract validation. It is not displayed or treated as evidence. Other invalid
+coverage shapes still fail closed. After validation, the website shows a fixed incomplete-evidence
+notice for `PARTIAL` alongside the accepted cited statements.
+
 Statement support is evaluated separately with its own configuration, prompt, timeout, and usage
 record. The application first reads proposed canonical sources in a short transaction, then calls
 the support evaluator with no answer transaction open. The support evaluator cannot authorize a
