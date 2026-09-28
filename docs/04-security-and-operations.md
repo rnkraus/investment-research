@@ -186,6 +186,10 @@ Later LangGraph workflows require separate approval criteria, tool allowlists, s
 
 - Structured logs use request, job, workspace, and trace identifiers.
 - Raw document text and full prompts are excluded by default.
+- An explicit local-development API override may emit only failed answer-generation or
+  statement-support model output for approved public or synthetic material. It is disabled by
+  default, must never run in CI or shared/public environments, and is not sent to browser errors or
+  normal traces. Local Docker logs can retain this output; disable the override after diagnosis.
 - Error messages, filenames, query text, and model traces follow redaction and sampling rules.
 - LangSmith is optional for request execution and never the only audit store.
 - Product audit events record actor, workspace, action, target, time, and safe change metadata.

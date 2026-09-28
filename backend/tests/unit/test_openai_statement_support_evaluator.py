@@ -88,6 +88,50 @@ class RecordingOpenAIClient:
         self.closed = True
 
 
+@dataclass(slots=True)
+class StubRawResponse:
+    """Expose only the response body and parsed result needed for local diagnostics."""
+
+    body: object
+    parse_error: ValidationError | None = None
+    parsed_response: StubParsedResponse | None = None
+
+    @property
+    def http_response(self) -> StubRawResponse:
+        return self
+
+    def parse(self) -> StubParsedResponse:
+        if self.parse_error is not None:
+            raise self.parse_error
+        assert self.parsed_response is not None
+        return self.parsed_response
+
+    def json(self) -> object:
+        return self.body
+
+
+@dataclass(slots=True)
+class RecordingRawResponsesResource:
+    raw_response: StubRawResponse
+    calls: list[dict[str, object]] = field(default_factory=list)
+
+    @property
+    def with_raw_response(self) -> RecordingRawResponsesResource:
+        return self
+
+    def parse(self, **kwargs: object) -> StubRawResponse:
+        self.calls.append(kwargs)
+        return self.raw_response
+
+
+@dataclass(slots=True)
+class RecordingRawOpenAIClient:
+    responses: RecordingRawResponsesResource
+
+    def close(self) -> None:
+        pass
+
+
 def make_evaluator(client: RecordingOpenAIClient) -> OpenAIStatementSupportEvaluator:
     """Inject a recording client through the concrete SDK boundary."""
 
@@ -361,3 +405,56 @@ def test_factory_disables_sdk_retries_and_close_releases_client(
         "max_retries": 0,
     }
     assert client.closed is True
+
+
+def test_local_debug_shows_only_generated_text_when_support_schema_fails() -> None:
+    with pytest.raises(ValidationError) as invalid_output:
+        StatementSupportDecision.model_validate({"supported": "not-a-boolean"})
+    raw_response = StubRawResponse(
+        body={
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {"type": "output_text", "text": '{"supported":"not-a-boolean"}'},
+                    ],
+                }
+            ],
+            "metadata": {"secret": "private provider metadata"},
+        },
+        parse_error=invalid_output.value,
+    )
+    client = RecordingRawOpenAIClient(
+        responses=RecordingRawResponsesResource(raw_response=raw_response)
+    )
+    output: list[str] = []
+
+    with pytest.raises(StatementSupportProviderContractError):
+        OpenAIStatementSupportEvaluator(
+            client=cast(OpenAI, client),
+            local_validation_output=output.append,
+        ).evaluate(STATEMENT, EVIDENCE_TEXTS)
+
+    assert output == ['{"supported":"not-a-boolean"}']
+    assert "private provider metadata" not in output[0]
+    assert len(client.responses.calls) == 1
+
+
+def test_local_debug_shows_parsed_support_decision_on_later_contract_failure() -> None:
+    decision = StatementSupportDecision(supported=True)
+    raw_response = StubRawResponse(
+        body={"metadata": {"secret": "private provider metadata"}},
+        parsed_response=StubParsedResponse(output_parsed=decision, usage=None),
+    )
+    client = RecordingRawOpenAIClient(
+        responses=RecordingRawResponsesResource(raw_response=raw_response)
+    )
+    output: list[str] = []
+
+    with pytest.raises(StatementSupportProviderContractError):
+        OpenAIStatementSupportEvaluator(
+            client=cast(OpenAI, client),
+            local_validation_output=output.append,
+        ).evaluate(STATEMENT, EVIDENCE_TEXTS)
+
+    assert output == [decision.model_dump_json()]

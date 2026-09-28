@@ -1,5 +1,6 @@
 """Unit tests for application resource wiring and lifecycle ownership."""
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -441,12 +442,14 @@ def test_build_api_container_wires_m1_query_resources(
             model=OPENAI_ANSWER_MODEL,
             operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            local_validation_output=None,
         )
         fakes.answer_factory.assert_any_call(
             api_key="synthetic-generation-key",
             model=ResearchModel.LUNA,
             operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            local_validation_output=None,
         )
         assert fakes.support_factory.call_count == 2
         fakes.support_factory.assert_any_call(
@@ -454,12 +457,14 @@ def test_build_api_container_wires_m1_query_resources(
             model=OPENAI_STATEMENT_SUPPORT_MODEL,
             operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+            local_validation_output=None,
         )
         fakes.support_factory.assert_any_call(
             api_key="synthetic-generation-key",
             model=ResearchModel.LUNA,
             operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+            local_validation_output=None,
         )
         services = container.answer_research_request_service.model_services
         assert services is not None
@@ -495,6 +500,45 @@ def test_build_api_container_wires_m1_query_resources(
     fakes.luna_answer_generator.close.assert_called_once_with()
     fakes.dense_retriever.close.assert_called_once_with()
     fakes.embedding_provider.close.assert_called_once_with()
+
+
+def test_build_api_container_wires_opt_in_local_model_failure_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fakes = install_api_provider_fakes(monkeypatch)
+    values = make_m1_api_settings(tmp_path / "objects").model_dump()
+    values.update(
+        environment="development",
+        runtime_location="container",
+        database_url="postgresql+psycopg://synthetic:synthetic@postgres:5432/research",
+        redis_url="redis://:synthetic@redis:6379/0",
+        local_model_failure_output=True,
+    )
+    container = build_api_container(ApiSettings.model_validate(values))
+
+    try:
+        for factory in (fakes.answer_factory, fakes.support_factory):
+            for call in factory.call_args_list:
+                callback = call.kwargs["local_validation_output"]
+                assert callable(callback)
+                callback('{"synthetic":"model output"}')
+        payloads = [
+            json.loads(line)
+            for line in capsys.readouterr().err.splitlines()
+            if line.startswith('{"event": "local.model_failure_output"')
+        ]
+        assert {(item["role"], item["model"]) for item in payloads} == {
+            ("answer", OPENAI_ANSWER_MODEL),
+            ("answer", ResearchModel.LUNA),
+            ("statement_support", OPENAI_STATEMENT_SUPPORT_MODEL),
+            ("statement_support", ResearchModel.LUNA),
+        }
+        assert all(item["output_text"] == '{"synthetic":"model output"}' for item in payloads)
+        assert all(item["truncated"] is False for item in payloads)
+    finally:
+        container.close()
 
 
 def test_build_api_container_wires_credential_free_m1_acceptance(
