@@ -906,6 +906,11 @@ canonical requalification, typed answer proposals, server-side statement support
 validation, exact source opening, safe usage and trace records, and the fixed loopback-only local
 identity boundary.
 
+The post-acceptance local UI also permits questions over already saved eligible documents without
+another upload: the existing empty `document_ids` contract searches the server-derived workspace,
+while a newly `SEARCHABLE` document can be selected as a one-document filter. This does not add
+archive browsing or change M2's import, versioning, retry, and deletion responsibilities.
+
 M2 must make that path reliable across a broader document lifecycle without weakening those
 contracts:
 

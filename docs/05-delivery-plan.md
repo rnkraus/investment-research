@@ -175,6 +175,12 @@ Use a tiny redistributable fixture set containing at least:
 
 The answerable case must cite the correct original location. The unanswerable case must not be completed from general model knowledge.
 
+After M1 acceptance, the local research form may also submit an archive-wide question without a
+new upload. An empty document-ID filter means all eligible current documents in the server-derived
+workspace; a newly processed document can still be selected as an explicit one-document filter.
+This small usability addition does not include document browsing, bulk import, version-management
+controls, or the M2 lifecycle guarantees.
+
 ## 7. M2 — Reliable ingestion and lifecycle
 
 ### Build
