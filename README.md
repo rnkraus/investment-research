@@ -179,6 +179,9 @@ statement-support model selections: `gpt-5.6-terra` or `gpt-5.6-luna`, with Terr
 both. The browser obtains the available choices from FastAPI and sends only model identifiers; API
 credentials stay server-side. If the choices cannot be loaded, research submission is disabled
 rather than silently using another model. The deterministic runtime has no paid-model controls.
+The research form is available without a new upload: its default searches eligible saved documents
+in the local workspace. After an import reaches `SEARCHABLE`, the user can optionally restrict the
+question to that document. This is not yet an archive browser or document-management workflow.
 After a frontend code change, rebuild the Compose web image with the `up --build` command above
 before checking the served website.
 

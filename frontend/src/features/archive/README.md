@@ -41,9 +41,9 @@ Both capture responses supply the same processing status URL and canonical ident
 never starts parsing inside the API process. Each capture endpoint commits the canonical `CAPTURED`
 run and publishes its task to Celery, and the component polls the workspace-scoped status endpoint
 until the run reaches `SEARCHABLE` or `FAILED`. Both `LEXICAL_READY` and `INDEXING` remain active
-M1 states and therefore continue polling without exposing the research form. The worker invokes the
-isolated parser runner through protocol v2 while the historical protocol-v1 PDF path remains a
-backend regression contract.
+M1 states and therefore continue polling without offering the new document as a research filter.
+The worker invokes the isolated parser runner through protocol v2 while the historical protocol-v1
+PDF path remains a backend regression contract.
 
 All network access goes through `src/lib/api/client.ts`. Raw exceptions are not rendered. The
 component displays only safe API messages or a generic local failure message, and active requests
@@ -85,13 +85,16 @@ The answer and citations remain hidden until the terminal validated events arriv
 
 ```mermaid
 flowchart LR
-    READY[SEARCHABLE document] --> OPTIONS[Load approved model options]
+    ARCHIVE[Saved archive] --> OPTIONS[Load approved model options]
+    READY[New SEARCHABLE document] --> SCOPE[Optional current-document scope]
+    SCOPE --> OPTIONS
     OPTIONS -->|provider mode| CHOICES[Choose answer and support models]
     OPTIONS -->|deterministic mode| FORM[ResearchWorkflow]
     CHOICES --> FORM
     OPTIONS -->|unavailable or invalid| BLOCK[Disable research submission]
-    FORM --> STREAM[Typed research event stream]
-    STREAM --> SESSION[Research session reducer]
+    FORM -->|all saved documents: empty document_ids| STREAM
+    FORM -->|current document: one document ID| STREAM
+    STREAM[Typed research event stream] --> SESSION[Research session reducer]
     SESSION -->|validated completion| IDS[Evidence span IDs]
     IDS --> RESOLVE[Authorized evidence endpoint]
     RESOLVE --> SAFE[Verified stable source path]
@@ -104,19 +107,20 @@ flowchart LR
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
 
-`document-workflow.tsx` mounts the research UI only for the M1 `SEARCHABLE` state. The UI submits the
-current document ID as an explicit research filter. In provider mode, the form independently selects
-the answer-generation and statement-support models from the backend-advertised Terra/Luna choices;
-both default to Terra. In deterministic mode, the paid-model controls are absent. An unavailable or
-invalid choices response disables submission instead of making an implicit model choice. The UI
-never treats streamed partial text as a
-usable answer. After a validated terminal event, each unique evidence span is resolved through the
+`document-workflow.tsx` always mounts the research UI, including after a page reload with no new
+upload. The default scope submits `document_ids: []` to search eligible current sources in the
+server-derived workspace. Once a newly captured document reaches `SEARCHABLE`, the user may narrow
+the request to its ID. Changing to a different document resets that optional filter. In provider
+mode, the form independently selects the answer-generation and statement-support models from the
+backend-advertised Terra/Luna choices; both default to Terra. In deterministic mode, the paid-model
+controls are absent. An unavailable or invalid choices response disables submission instead of
+making an implicit model choice. The UI never treats streamed partial text as a usable answer.
+After a validated terminal event, each unique evidence span is resolved through the
 workspace-scoped API. The resulting viewer URL must still pass the frontend's stable local
-source-path check
-before it becomes an original-source link. The discriminated locator renders either the PDF page or
-the one-based visible text range without inventing pages for text. This avoids trusting an arbitrary
-URL returned over the network and keeps exact source text separate from the streamed answer
-contract.
+source-path check before it becomes an original-source link. The discriminated locator renders
+either the PDF page or the one-based visible text range without inventing pages for text. This
+avoids trusting an arbitrary URL returned over the network and keeps exact source text separate
+from the streamed answer contract.
 
 The stable `/sources/{evidence_span_id}` page resolves the evidence span again and requires the API
 to confirm that exact opaque route. It then loads the original through the authorized same-origin
