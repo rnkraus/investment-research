@@ -2,11 +2,16 @@ export const archiveCopy = {
   eyebrow: "M1 local research slice",
   heading: "Research answers should open back to the source.",
   introduction:
-    "Import an English PDF or paste English research text, process it locally, and ask an evidence-grounded question.",
+    "Ask a question about saved English research sources, or import a new PDF or text source to expand the archive.",
   workspaceLabel: "Evidence workspace",
   localOnly: "Local-only · Single workspace · English archive",
   safetyNote: "M1 workflow: use public, synthetic, or non-sensitive research.",
-  steps: ["Import", "Process", "Research", "Open citation"],
+  steps: [
+    "Ask the archive",
+    "Import evidence",
+    "Process evidence",
+    "Open citation",
+  ],
   upload: {
     eyebrow: "Step 1",
     heading: "Import research evidence",
@@ -46,10 +51,15 @@ export const archiveCopy = {
     failed: "Processing stopped safely.",
   },
   research: {
-    eyebrow: "Step 3",
+    eyebrow: "Research saved evidence",
     heading: "Ask the archive",
     description:
-      "The answer is limited to validated evidence from this processed document.",
+      "Search already saved PDFs and text without importing again. Answers use only validated evidence from eligible sources in this workspace.",
+    scopeLegend: "Search scope",
+    archiveScope: "All saved documents",
+    documentScope: "Current processed document",
+    scopeHint:
+      "Only searchable, current evidence is eligible. Choose the current document after its processing finishes to narrow the search.",
     questionLabel: "Research question",
     answerableExample: "Use answerable example",
     unanswerableExample: "Use insufficient-evidence example",
@@ -66,7 +76,7 @@ export const archiveCopy = {
     retryModelOptions: "Try loading models again",
     deterministicMode:
       "This local runtime uses deterministic research; AI model selection is unavailable.",
-    submitIdle: "Research document",
+    submitIdle: "Ask the archive",
     submitBusy: "Researching…",
     progressHeading: "Research progress",
     starting: "Starting research…",
