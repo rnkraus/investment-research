@@ -283,7 +283,12 @@ def test_luna_receives_versioned_verbatim_evidence_instructions() -> None:
     generator.generate(make_generation_input())
 
     instructions = cast(str, client.responses.calls[0]["instructions"])
-    assert M1_ANSWER_PROMPT_VERSION == "m1-grounded-answer-prompt-v3"
+    assert M1_ANSWER_PROMPT_VERSION == "m1-grounded-answer-prompt-v4"
+    assert "COMPLETE when the supplied sources support every material part" in instructions
+    assert "PARTIAL when at least one material part is supported" in instructions
+    assert "CONFLICTING only when the supplied sources directly disagree" in instructions
+    assert "INSUFFICIENT when the sources support no answer" in instructions
+    assert "missing_information to null" in instructions
     assert "exact_text character-for-character" in instructions
     assert "Do not paraphrase, translate, normalize, correct" in instructions
     assert "each exact_text occurs exactly once in its cited source" in instructions
@@ -379,6 +384,38 @@ def test_generate_derives_exact_unique_source_offsets(
         "retrieval_candidate_id",
         "exact_text",
     }
+
+
+def test_generate_keeps_supported_partial_answer_without_unvalidated_gap_text() -> None:
+    proposal = make_provider_proposal().model_copy(
+        update={
+            "coverage_status": CoverageStatus.PARTIAL,
+            "missing_information": "No further plans were supplied.",
+        }
+    )
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(response=StubParsedResponse(output_parsed=proposal))
+    )
+
+    result = make_generator(client).generate(make_generation_input())
+
+    assert result.answer.coverage_status is CoverageStatus.PARTIAL
+    assert result.answer.missing_information is None
+    assert result.answer.statements == make_proposal().statements
+
+
+def test_generate_still_rejects_complete_answer_with_missing_information() -> None:
+    proposal = make_provider_proposal().model_copy(
+        update={"missing_information": "A material part is unanswered."}
+    )
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(response=StubParsedResponse(output_parsed=proposal))
+    )
+
+    with pytest.raises(OpenAIAnswerProviderContractError) as captured:
+        make_generator(client).generate(make_generation_input())
+
+    assert captured.value.detail == "proposal_validation"
 
 
 @pytest.mark.parametrize(

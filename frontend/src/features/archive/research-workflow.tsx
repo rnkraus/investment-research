@@ -423,6 +423,11 @@ export function ResearchWorkflow({ documentId }: ResearchWorkflowProps) {
                 {archiveCopy.research.coverageLabel}: {session.coverage}
               </span>
             </div>
+            {session.coverage === "PARTIAL" ? (
+              <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                {archiveCopy.research.partialCoverageNote}
+              </p>
+            ) : null}
             <ol className="mt-5 space-y-6">
               {session.statements.map((statement) => (
                 <li key={statement.statementId}>
