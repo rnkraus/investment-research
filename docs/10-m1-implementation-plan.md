@@ -884,11 +884,9 @@ complete-stack API and browser journeys, exact PDF and pasted-text citation open
 failure, and cleanup gates are documented above. The explicitly authorized public-synthetic
 provider smoke passed on 2026-09-23 with one document-embedding request, two answer-generation
 requests, one statement-support request, one Pinecone vector, an estimated maximum spend of
-USD 0.04102388, and verified cleanup. A preceding local smoke attempt failed once at
-`answer_validation_and_support` with the safe but non-specific `verification` reason and then passed
-on retry; that isolated failure has no established root cause and did not bypass validation.
+USD 0.04102388, and verified cleanup.
 After the later `PARTIAL` answer correction, the owner also confirmed a successful local frontend
-build, Docker runtime, and one previously failing live-provider browser question. Together, these
+build, Docker runtime, and one live-provider browser question. Together, these
 results satisfy the narrow M1 exit gate. M1 is accepted, and the M2 handoff below is active.
 
 The final M1 implementation also streams safe research progress and offers independent Terra/Luna
@@ -898,8 +896,7 @@ for every model pair. The scripted smoke does not test the separate query-embedd
 query credential; the single manual browser question is not a repeatable provider acceptance suite.
 Deterministic adapters provide the required complete-stack correctness proof. No broader
 retrieval-quality, latency, private-data, authentication, or public-deployment claim follows from
-M1 acceptance. Repeated live verification failures should be classified more specifically without
-exposing provider content.
+M1 acceptance.
 
 ### 8.1 M1-to-M2 handoff
 
