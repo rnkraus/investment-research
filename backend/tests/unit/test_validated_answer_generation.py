@@ -21,6 +21,7 @@ from investment_research.modules.documents.domain import (
 )
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
+    EvidenceValidationDecision,
     EvidenceValidationProfile,
     StatementSupportResult,
 )
@@ -325,6 +326,9 @@ def make_service(
     generator_error: Exception | None = None,
     support_evaluator: StatementSupportEvaluator | None = None,
     provider_operation_executor: Mock | None = None,
+    rejection_diagnostic: (
+        Callable[[UnvalidatedGeneratedAnswer, EvidenceValidationDecision], None] | None
+    ) = None,
 ) -> tuple[GenerateValidatedAnswerService, StaticAnswerGenerator]:
     """Build a deterministic service and its observable untrusted generator."""
 
@@ -383,6 +387,7 @@ def make_service(
                 ),
             )
         ),
+        rejection_diagnostic=rejection_diagnostic,
         clock=clock_values.__next__,
         identifier_factory=lambda: UUID(int=next(identifier_values)),
     )
@@ -675,18 +680,75 @@ def test_rejected_answer_stores_findings_without_generated_content() -> None:
     unit_of_work.evidence_mock.add_statement_evidence.assert_not_called()
 
 
+def test_rejected_answer_reports_final_decision_only_after_commit() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    reports: list[tuple[UnvalidatedGeneratedAnswer, EvidenceValidationDecision]] = []
+
+    def record_rejection(
+        proposal: UnvalidatedGeneratedAnswer,
+        decision: EvidenceValidationDecision,
+    ) -> None:
+        assert unit_of_work.committed is True
+        assert unit_of_work.is_open is False
+        reports.append((proposal, decision))
+
+    service, _ = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        support_evaluator=DeterministicFixtureStatementSupportEvaluator(
+            [FixtureStatementSupportRule(statement="Different claim", evidence_text=EVIDENCE_TEXT)]
+        ),
+        rejection_diagnostic=record_rejection,
+    )
+
+    result = service.generate(make_context(), make_retrieval_result())
+
+    assert result.answer.state is AnswerState.REJECTED
+    assert len(reports) == 1
+    assert reports[0][0].statements[0].text == STATEMENT
+    assert [
+        (finding.rule.value, finding.statement_ordinal)
+        for finding in reports[0][1].findings
+        if not finding.passed
+    ] == [
+        ("STATEMENT_SUPPORT", 0),
+        ("COVERAGE", None),
+    ]
+
+
+def test_accepted_answer_does_not_report_a_rejection() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    reports: list[EvidenceValidationDecision] = []
+    service, _ = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        rejection_diagnostic=lambda _proposal, decision: reports.append(decision),
+    )
+
+    result = service.generate(make_context(), make_retrieval_result())
+
+    assert result.answer.state is AnswerState.STREAMED
+    assert reports == []
+
+
 def test_persistence_failure_leaves_the_unit_of_work_uncommitted() -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     unit_of_work.evidence_mock.add_answer_validations.side_effect = RuntimeError(
         "validation write failed"
     )
-    service, _ = make_service(unit_of_work, make_answer_proposal())
+    reports: list[EvidenceValidationDecision] = []
+    service, _ = make_service(
+        unit_of_work,
+        make_answer_proposal(exact_text="X" + EVIDENCE_TEXT[1:]),
+        rejection_diagnostic=lambda _proposal, decision: reports.append(decision),
+    )
 
     with pytest.raises(RuntimeError, match="validation write failed"):
         service.generate(make_context(), make_retrieval_result())
 
     assert unit_of_work.committed is False
     assert unit_of_work.rolled_back is True
+    assert reports == []
 
 
 def test_result_contract_rejects_a_cross_workspace_aggregate_record() -> None:

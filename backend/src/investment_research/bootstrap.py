@@ -112,7 +112,10 @@ from investment_research.modules.documents.application import (
 )
 from investment_research.modules.documents.ports import ObjectStorage
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
-from investment_research.modules.evidence.contracts import EvidenceValidationProfile
+from investment_research.modules.evidence.contracts import (
+    EvidenceValidationDecision,
+    EvidenceValidationProfile,
+)
 from investment_research.modules.evidence.ports import StatementSupportEvaluator
 from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
@@ -145,7 +148,11 @@ from investment_research.modules.research.application import (
     RetrieveResearchService,
     StatementSupportAccountingProfile,
 )
-from investment_research.modules.research.contracts import AnswerGenerationProfile, ResearchModel
+from investment_research.modules.research.contracts import (
+    AnswerGenerationProfile,
+    ResearchModel,
+    UnvalidatedGeneratedAnswer,
+)
 from investment_research.modules.research.ports import AnswerGenerator
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
@@ -206,6 +213,56 @@ def _local_model_failure_sink(role: str, model: str) -> Callable[[str], None]:
             pass
 
     return emit
+
+
+def _local_evidence_rejection_sink(
+    answer_model: ResearchModel,
+    support_model: ResearchModel,
+) -> Callable[[UnvalidatedGeneratedAnswer, EvidenceValidationDecision], None]:
+    """Show only failed proposal parts in the opt-in local model diagnostic."""
+
+    emit = _local_model_failure_sink("evidence_validation", f"{answer_model}/{support_model}")
+
+    def report(
+        proposal: UnvalidatedGeneratedAnswer,
+        decision: EvidenceValidationDecision,
+    ) -> None:
+        failed_findings = tuple(finding for finding in decision.findings if not finding.passed)
+        rejected_ordinals = {
+            finding.statement_ordinal
+            for finding in failed_findings
+            if finding.statement_ordinal is not None
+        }
+        payload = {
+            "coverage_status": proposal.coverage_status,
+            "rendered_text": proposal.rendered_text,
+            "rejected_statements": [
+                {
+                    "ordinal": ordinal,
+                    "text": statement.text,
+                    "evidence": [
+                        {
+                            "retrieval_candidate_id": str(reference.retrieval_candidate_id),
+                            "exact_text": reference.exact_text,
+                        }
+                        for reference in statement.evidence
+                    ],
+                }
+                for ordinal, statement in enumerate(proposal.statements)
+                if ordinal in rejected_ordinals
+            ],
+            "failed_findings": [
+                {
+                    "rule": finding.rule,
+                    "statement_ordinal": finding.statement_ordinal,
+                    "reason": finding.reason,
+                }
+                for finding in failed_findings
+            ],
+        }
+        emit(json.dumps(payload, ensure_ascii=False))
+
+    return report
 
 
 @dataclass(frozen=True, slots=True)
@@ -642,6 +699,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         provider_operation_executor=provider_operation_executor,
         generation_accounting=generation_accounting,
         statement_support_accounting=statement_support_accounting,
+        rejection_diagnostic=(
+            _local_evidence_rejection_sink(ResearchModel.TERRA, ResearchModel.TERRA)
+            if settings.local_model_failure_output and settings.query_providers is not None
+            else None
+        ),
     )
     model_services: (
         dict[tuple[ResearchModel, ResearchModel], GenerateValidatedAnswerService] | None
@@ -720,6 +782,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                                 support_price.output_micro_usd_per_million_tokens
                             ),
                         ),
+                    ),
+                    rejection_diagnostic=(
+                        _local_evidence_rejection_sink(answer_model, support_model)
+                        if settings.local_model_failure_output
+                        else None
                     ),
                 )
     open_original_service = OpenOriginalService(

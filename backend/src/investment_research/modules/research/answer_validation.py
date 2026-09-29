@@ -72,6 +72,7 @@ from investment_research.modules.research.ports import (
 type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
 type SupportKey = tuple[str, tuple[str, ...]]
+type RejectionDiagnostic = Callable[[UnvalidatedGeneratedAnswer, EvidenceValidationDecision], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +234,7 @@ class GenerateValidatedAnswerService:
         provider_operation_executor: ExecuteProviderOperationService | None = None,
         generation_accounting: AnswerGenerationAccountingProfile | None = None,
         statement_support_accounting: StatementSupportAccountingProfile | None = None,
+        rejection_diagnostic: RejectionDiagnostic | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
@@ -257,6 +259,7 @@ class GenerateValidatedAnswerService:
         self._provider_operation_executor = provider_operation_executor
         self._generation_accounting = generation_accounting
         self._statement_support_accounting = statement_support_accounting
+        self._rejection_diagnostic = rejection_diagnostic
         self._clock = clock
         self._identifier_factory = identifier_factory
 
@@ -373,6 +376,8 @@ class GenerateValidatedAnswerService:
                 result.validations,
             )
 
+        if not decision.accepted and self._rejection_diagnostic is not None:
+            self._rejection_diagnostic(generated_answer, decision)
         return result
 
     def _load_source_snapshot(
