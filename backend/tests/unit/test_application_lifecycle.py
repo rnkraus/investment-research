@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock, create_autospec
+from uuid import UUID
 
 import pytest
 from celery import Celery  # type: ignore[import-untyped]
@@ -63,6 +64,11 @@ from investment_research.modules.documents.application import (
     OpenOriginalService,
 )
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
+from investment_research.modules.evidence.contracts import (
+    EvidenceValidationDecision,
+    ValidationFinding,
+)
+from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
@@ -76,7 +82,13 @@ from investment_research.modules.research.application import (
     GenerateValidatedAnswerService,
     RetrieveResearchService,
 )
-from investment_research.modules.research.contracts import ResearchModel
+from investment_research.modules.research.contracts import (
+    ResearchModel,
+    UnvalidatedEvidenceReference,
+    UnvalidatedGeneratedAnswer,
+    UnvalidatedGeneratedStatement,
+)
+from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.search.contracts import M1_LANE_CANDIDATE_LIMIT
 from investment_research.modules.search.indexing import IndexActiveChunksService
 from investment_research.settings import ApiSettings, WorkerSettings
@@ -537,8 +549,78 @@ def test_build_api_container_wires_opt_in_local_model_failure_output(
         }
         assert all(item["output_text"] == '{"synthetic":"model output"}' for item in payloads)
         assert all(item["truncated"] is False for item in payloads)
+        assert container.generate_validated_answer_service._rejection_diagnostic is not None
+        assert container.answer_research_request_service.model_services is not None
+        assert all(
+            service._rejection_diagnostic is not None
+            for service in container.answer_research_request_service.model_services.values()
+        )
     finally:
         container.close()
+
+
+def test_local_evidence_rejection_output_contains_failed_proposal_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    proposal = UnvalidatedGeneratedAnswer(
+        coverage_status=CoverageStatus.COMPLETE,
+        rendered_text="A proposed answer.",
+        statements=(
+            UnvalidatedGeneratedStatement(
+                text="A proposed claim.",
+                evidence=(
+                    UnvalidatedEvidenceReference(
+                        retrieval_candidate_id=UUID("10000000-0000-4000-8000-000000000001"),
+                        start_character=0,
+                        end_character=13,
+                        exact_text="Source phrase",
+                    ),
+                ),
+            ),
+        ),
+    )
+    decision = EvidenceValidationDecision(
+        accepted=False,
+        coverage_status=None,
+        statements=(),
+        findings=(
+            ValidationFinding(
+                rule=ValidationRule.STATEMENT_SUPPORT,
+                statement_ordinal=0,
+                passed=False,
+                reason="Canonical evidence does not support the complete statement.",
+            ),
+        ),
+    )
+
+    bootstrap_module._local_evidence_rejection_sink(ResearchModel.LUNA, ResearchModel.TERRA)(
+        proposal, decision
+    )
+
+    log_record = json.loads(capsys.readouterr().err)
+    diagnostic = json.loads(log_record["output_text"])
+    assert log_record["role"] == "evidence_validation"
+    assert log_record["model"] == f"{ResearchModel.LUNA}/{ResearchModel.TERRA}"
+    assert diagnostic["rendered_text"] == "A proposed answer."
+    assert diagnostic["rejected_statements"] == [
+        {
+            "ordinal": 0,
+            "text": "A proposed claim.",
+            "evidence": [
+                {
+                    "retrieval_candidate_id": "10000000-0000-4000-8000-000000000001",
+                    "exact_text": "Source phrase",
+                }
+            ],
+        }
+    ]
+    assert diagnostic["failed_findings"] == [
+        {
+            "rule": "STATEMENT_SUPPORT",
+            "statement_ordinal": 0,
+            "reason": "Canonical evidence does not support the complete statement.",
+        }
+    ]
 
 
 def test_build_api_container_wires_credential_free_m1_acceptance(
