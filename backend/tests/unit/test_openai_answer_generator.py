@@ -719,6 +719,54 @@ def test_local_debug_shows_proposal_rejected_by_application_validation() -> None
     assert "private provider metadata" not in output[0]
 
 
+def test_local_debug_identifies_first_quote_missing_from_its_candidate() -> None:
+    valid_statement = make_provider_proposal().statements[0]
+    missing_quote = "A proposed phrase absent from the selected source."
+    proposal = make_provider_proposal().model_copy(
+        update={
+            "statements": (
+                valid_statement,
+                openai_module._OpenAIGeneratedStatement(
+                    text="A second proposed claim.",
+                    evidence=(
+                        valid_statement.evidence[0],
+                        openai_module._OpenAIEvidenceReference(
+                            retrieval_candidate_id=CANDIDATE_ID,
+                            exact_text=missing_quote,
+                        ),
+                    ),
+                ),
+            )
+        }
+    )
+    raw_response = StubRawResponse(
+        body={"metadata": {"secret": "private provider metadata"}},
+        parsed_response=StubParsedResponse(output_parsed=proposal),
+    )
+    client = RecordingRawOpenAIClient(
+        responses=RecordingRawResponsesResource(raw_response=raw_response)
+    )
+    output: list[str] = []
+
+    with pytest.raises(OpenAIAnswerProviderContractError) as captured:
+        OpenAIAnswerGenerator(
+            client=cast(OpenAI, client),
+            local_validation_output=output.append,
+        ).generate(make_generation_input())
+
+    assert captured.value.detail == "quote_not_found"
+    assert len(output) == 1
+    assert json.loads(output[0]) == {
+        "failure": "quote_not_found",
+        "statement_ordinal": 1,
+        "evidence_ordinal": 1,
+        "retrieval_candidate_id": str(CANDIDATE_ID),
+        "exact_text": missing_quote,
+    }
+    assert SOURCE_TEXT not in output[0]
+    assert "private provider metadata" not in output[0]
+
+
 @pytest.mark.parametrize(
     ("provider_error", "expected_status"),
     [
