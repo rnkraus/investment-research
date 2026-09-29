@@ -310,14 +310,14 @@ class OpenAIAnswerGenerator:
             raise OpenAIAnswerProviderContractError(detail="invalid_usage") from None
         try:
             answer = self._resolve_evidence_ranges(parsed, generation_input)
-        except OpenAIAnswerProviderContractError:
-            if self.local_validation_output is not None:
+        except OpenAIAnswerProviderContractError as error:
+            if self.local_validation_output is not None and error.detail != "quote_not_found":
                 self.local_validation_output(parsed.model_dump_json())
             raise
         return AnswerGenerationResult(answer=answer, usage=provider_usage)
 
-    @staticmethod
     def _resolve_evidence_ranges(
+        self,
         proposal: _OpenAIGeneratedAnswer,
         generation_input: AnswerGenerationInput,
     ) -> UnvalidatedGeneratedAnswer:
@@ -328,14 +328,29 @@ class OpenAIAnswerGenerator:
         }
         statements: list[UnvalidatedGeneratedStatement] = []
         try:
-            for statement in proposal.statements:
+            for statement_ordinal, statement in enumerate(proposal.statements):
                 references: list[UnvalidatedEvidenceReference] = []
-                for reference in statement.evidence:
+                for evidence_ordinal, reference in enumerate(statement.evidence):
                     source_text = sources.get(reference.retrieval_candidate_id)
                     if source_text is None:
                         raise OpenAIAnswerProviderContractError(detail="unknown_candidate")
                     start = source_text.find(reference.exact_text)
                     if start < 0:
+                        if self.local_validation_output is not None:
+                            self.local_validation_output(
+                                json.dumps(
+                                    {
+                                        "failure": "quote_not_found",
+                                        "statement_ordinal": statement_ordinal,
+                                        "evidence_ordinal": evidence_ordinal,
+                                        "retrieval_candidate_id": str(
+                                            reference.retrieval_candidate_id
+                                        ),
+                                        "exact_text": reference.exact_text,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            )
                         raise OpenAIAnswerProviderContractError(detail="quote_not_found")
                     if source_text.find(reference.exact_text, start + 1) >= 0:
                         raise OpenAIAnswerProviderContractError(detail="quote_ambiguous")

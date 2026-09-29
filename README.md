@@ -133,21 +133,29 @@ it in the `x-request-id` response header and safe JSON error envelope. Request b
 raw unmatched paths, headers, credentials, exception messages, and traceback text are excluded from
 these application events.
 
-For an explicitly approved public or synthetic document, an opt-in local diagnostic can show the
-generated output when answer generation or statement-support validation fails. Start the API with
-the additional override, then watch its terminal logs:
+For an explicitly approved public or synthetic document, an opt-in local diagnostic can show raw
+provider output when answer generation or statement-support response parsing fails. It also shows
+the unvalidated answer proposal and failed rules when server-side evidence validation rejects an
+answer. Start the API with the additional override, then watch its terminal logs:
 
 ```shell
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml up --build --detach --wait api
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml logs --follow api
 ```
 
-Look for `local.model_failure_output` with `role` (`answer` or `statement_support`), `model`, and
-`output_text`. The output is capped at 100,000 characters and may contain source text. It appears
-only in local API logs, never in the browser error response. Do not use this override with private
-documents or in CI, staging, or public deployments; do not paste raw output into tickets or chats.
-Connection failures without a model response have no output text to show. Docker may retain these
-logs after the request. After debugging, restart without the override to disable the output:
+Look for `local.model_failure_output` with `role` (`answer`, `statement_support`, or
+`evidence_validation`), `model`, and `output_text`. For `answer` with `quote_not_found`, the nested
+JSON identifies the first missing model-proposed `exact_text`, its `retrieval_candidate_id`, and
+zero-based `statement_ordinal` and `evidence_ordinal`. It does not include the candidate's source
+text; the quote remains unverified until it matches that source exactly. For `evidence_validation`,
+the nested JSON has the proposed rendering, rejected statements and proposed citation text, and
+failed validation findings. A `STATEMENT_SUPPORT` failure means the support decision did not accept
+the statement as fully supported; it does not expose a model explanation. The proposal and citation
+text remain untrusted and are not sent to the browser or stored as accepted answer content. Output
+is capped at 100,000 characters and may contain source text. Do not use this override with private documents
+or in CI, staging, or public deployments; do not paste raw output into tickets or chats. Connection
+failures without a model response have no output text to show. Docker may retain these logs after
+the request. After debugging, restart without the override to disable the output:
 
 ```shell
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait api
