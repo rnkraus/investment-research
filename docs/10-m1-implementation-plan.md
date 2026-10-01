@@ -13,6 +13,12 @@
 [ADR-0008](./adr/0008-application-owned-ai-and-vector-adapters.md), and
 [ADR-0009](./adr/0009-stable-source-anchors.md)
 
+**Post-acceptance schedule note (2026-10-01):** This accepted plan records the M1 scope and its
+original M2/M4 handoff. The current [delivery plan](./05-delivery-plan.md) now schedules a bounded
+[M1.5 RAG quality proof](./13-m1-5-rag-quality-plan.md) before M2. References below to RRF and
+reranking arriving in M4 are historical planning statements; M1.5 may experiment with them and
+M4 retains the full production-shaped RAG gate. M1's accepted behavior is unchanged.
+
 ## 1. Purpose and scope
 
 M1 turns the completed M0 engineering foundation into the first complete local RAG slice. It

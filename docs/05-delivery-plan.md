@@ -1,9 +1,9 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.2 — M1 accepted on 2026-09-28; M2 planning next
+**Status:** Active v1.3 — M1 accepted on 2026-09-28; M1.5 RAG quality proof next
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
-**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md)
+**Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
 
 ## 1. Delivery strategy
 
@@ -46,9 +46,10 @@ M0.0 is governed by its narrower proof-specific constraints and exit gate. For M
 | M0.0 — Lean proof of value | The core archive promise is demonstrated with minimal local infrastructure | One known question produces a validated answer whose citation opens the exact fixture location |
 | M0 — Engineering foundation | Reproducible local development and basic delivery checks | One command starts the stack and automated checks pass |
 | M1 — Thin vertical slice | One document can produce one validated cited answer | Citation opens the exact original location |
+| M1.5 — RAG quality proof | The existing local RAG path is more robust and measured for a portfolio demonstration | Reviewed cases show reproducible quality, exact citations, latency, cost, and limitations |
 | M2 — Reliable ingestion | Imports, retries, versions, reprocessing, and deletion are consistent | Failure and stale-index scenarios preserve canonical state |
 | M3 — Archive and discovery | Documents and companies can be browsed, filtered, and searched | Exact, lexical, and semantic discovery work together |
-| M4 — Production-shaped direct RAG | Routed hybrid retrieval, reranking, conversation, and evidence rules work | Critical correctness cases and the initial representative quality baseline pass |
+| M4 — Production-shaped direct RAG | Routed hybrid retrieval, reranking, conversation, and evidence rules work | Critical correctness cases and the expanded representative quality baseline pass |
 | M5 — Local release hardening | Security, recovery, observability, and cost controls are exercised | All local release gates pass |
 | M6 — Public portfolio demo | Sanitized read-only demo is safely hosted | Public-release security, operations, and pre-demo quality gates pass |
 | M7 — Expanded corpus evaluation | Retrieval and answer changes are compared on broader real use cases | Baselines and regression gates are evidence-based |
@@ -181,7 +182,25 @@ workspace; a newly processed document can still be selected as an explicit one-d
 This small usability addition does not include document browsing, bulk import, version-management
 controls, or the M2 lifecycle guarantees.
 
+## 6A. M1.5 — RAG quality proof
+
+The repository owner prioritized a measurable local RAG demonstration before broadening the
+document lifecycle. The implementation sequence, boundaries, and gates are in
+[13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md). First freeze a small reviewed
+evaluation corpus and the current M1 baseline; then compare RRF, model-selectable citable source
+units, and bounded reranking without weakening canonical source validation. Record quality,
+latency, cost, safe failures, and limitations. The fixed local identity and public/synthetic-only
+provider boundary remain in force.
+
+M1.5 does not satisfy M2's delivery/version/deletion gate, M3's archive/discovery gate, or the full
+M4 routing/conversation/temporal gate. A failed experiment may be documented and declined rather
+than becoming the default merely because it was implemented.
+
 ## 7. M2 — Reliable ingestion and lifecycle
+
+The proposed backend-to-CI-to-frontend step sequence, repository delta, decisions to freeze, and
+failure gates are in [12-m2-implementation-plan.md](./12-m2-implementation-plan.md). That draft
+does not approve an unresolved source-access or purge-retention decision by itself.
 
 ### Build
 
@@ -210,11 +229,12 @@ Replaying any job or outbox event produces the same final state. Deleted or inac
 - Exact identifier and phrase lookup using PostgreSQL.
 - Lexical passage search and Pinecone dense search.
 - Search-result explanations showing route, filters, document, page, and passage.
-- Initial versioned evaluation core using public or sanitized representative document forms and reviewed questions with expected evidence and failure categories.
+- Expand the M1.5 evaluation core with public or sanitized representative document forms,
+  discovery cases, reviewed expected evidence, and failure categories.
 
 ### Exit gate
 
-The fixture corpus can be found through exact ticker lookup, lexical wording, semantic paraphrase, metadata filtering, and document navigation without using chat. Before M4 begins, the initial evaluation core and its critical metrics and thresholds are frozen so later retrieval and answer comparisons use the same versioned cases.
+The fixture corpus can be found through exact ticker lookup, lexical wording, semantic paraphrase, metadata filtering, and document navigation without using chat. Before the remaining M4 work begins, the expanded evaluation core and its critical metrics and thresholds are frozen so later retrieval and answer comparisons use the same versioned cases.
 
 ## 9. M4 — Production-shaped direct RAG
 
@@ -223,7 +243,8 @@ The fixture corpus can be found through exact ticker lookup, lexical wording, se
 - Typed query context with workspace, company, document, and temporal filters.
 - Routing between structured lookup, hybrid research, and their explicit combination.
 - PostgreSQL lexical candidates plus Pinecone dense candidates.
-- Unweighted RRF followed by bounded multilingual cross-encoder reranking.
+- Retain or refine measured unweighted RRF and bounded multilingual cross-encoder reranking from
+  M1.5; do not assume an experiment was adopted if it failed its quality/latency/cost comparison.
 - Context assembly with deterministic eligibility and token budgets.
 - Conversation follow-ups with explicit retained context.
 - Statement-level answer generation and server-side evidence validation.
@@ -231,7 +252,8 @@ The fixture corpus can be found through exact ticker lookup, lexical wording, se
 - Public-knowledge-time and personal-archive-time modes.
 - OpenTelemetry/OpenInference traces and LangSmith inspection.
 - Per-operation latency, token, and estimated-cost recording.
-- Initial representative measurements that separate retrieval recall, reranking, answer support, citation correctness, refusal of unanswerable questions, temporal behavior, latency, and cost.
+- Extend the M1.5 and M3 measurements to separate retrieval recall, reranking, answer support,
+  citation correctness, refusal of unanswerable questions, temporal behavior, latency, and cost.
 
 ### Exit gate
 
@@ -244,7 +266,7 @@ Approved fixture cases demonstrate:
 - correct follow-up context without treating conversation history as evidence;
 - different results for public and personal archive time where expected.
 
-The initial representative evaluation baseline is recorded against one versioned dataset and configuration manifest, and every agreed critical threshold passes. This early baseline is a release gate and a regression signal, not a claim of statistical completeness.
+The expanded representative evaluation baseline is recorded against one versioned dataset and configuration manifest, and every agreed critical threshold passes. This baseline is a release gate and a regression signal, not a claim of statistical completeness.
 
 ## 10. M5 — Local release hardening
 
@@ -349,11 +371,12 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Plan M2 from the accepted M1-to-M2 handoff in `10-m1-implementation-plan.md`, keeping
-   lifecycle reliability separate from later archive discovery and advanced RAG milestones.
-2. Preserve the M1 PDF, pasted-text, citation, insufficient-answer, workspace-isolation, provider
-   failure, recovery, and cleanup gates while extending ingestion and processing behavior.
-3. Add M2 document versions, retryable stage history, durable outbox delivery, indexing receipts,
-   reconciliation, reprocessing, deletion, and restoration according to the M2 exit gate.
-4. Keep the fixed local owner and loopback-only boundary until the authentication milestone;
-   credentialed provider smokes remain bounded, manual, and public-synthetic only.
+1. Review the proposed M1.5 contracts in `13-m1-5-rag-quality-plan.md`; freeze reviewed cases,
+   expected evidence, metrics, and the current M1 baseline before changing retrieval behavior.
+2. Implement and compare RRF, citable source units, and a bounded reranking experiment while
+   preserving the M1 citation, workspace, provider-failure, and runtime gates.
+3. Record reproducible local quality, latency, cost, and limitations for a portfolio explanation;
+   keep live provider checks opt-in, bounded, and limited to approved public/synthetic data.
+4. Then review the M2 draft in `12-m2-implementation-plan.md` against the accepted M1-to-M2
+   handoff and begin its lifecycle reliability steps. Keep the fixed local owner and loopback-only
+   boundary until the authentication milestone.
