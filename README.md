@@ -429,5 +429,8 @@ The compact project specifications are the sources of truth:
 - [M0.0 implementation plan](docs/08-m0-0-implementation-plan.md)
 - [M0 implementation plan](docs/09-m0-implementation-plan.md)
 - [M1 implementation plan](docs/10-m1-implementation-plan.md)
+- [M1 contract freeze](docs/11-m1-contracts.md)
+- [M1.5 RAG quality proof plan (draft)](docs/13-m1-5-rag-quality-plan.md)
+- [M2 implementation plan (draft)](docs/12-m2-implementation-plan.md)
 
 Accepted architectural decisions are recorded in [`docs/adr/`](docs/adr/).

@@ -25,6 +25,8 @@ Use these documents as the project specification:
 - `docs/09-m0-implementation-plan.md` — implementation-ready M0 runtime topology, replacement sequence, work blocks, and verification gates.
 - `docs/10-m1-implementation-plan.md` — M1 thin-slice decisions, repository delta, implementation sequence, and verification gates.
 - `docs/11-m1-contracts.md` — frozen M1 application, provider, API, usage, tracing, and verification contracts.
+- `docs/12-m2-implementation-plan.md` — proposed M2 lifecycle sequence, repository delta, decisions to freeze, and verification gates; review its open decisions before implementation.
+- `docs/13-m1-5-rag-quality-plan.md` — proposed RAG-first evaluation, retrieval, citation-selection, and portfolio sequence between M1 and M2.
 - `docs/adr/` — accepted architectural decisions when they exist.
 
 Accepted ADRs govern the decisions they address. Keep affected compact documents synchronized with later decisions. Report conflicts instead of choosing silently.
@@ -54,10 +56,10 @@ Follow `docs/02-system-design.md`. The fixed baseline is:
 
 M0.0 is the only approved exception to this full runtime baseline. It is a local-only proof using the repository-owned frozen synthetic fixture and the minimum Next.js, FastAPI, and PostgreSQL path described in `docs/05-delivery-plan.md` and `docs/08-m0-0-implementation-plan.md`. Its parser boundary is governed by `docs/adr/0004-m0-0-parser-isolation-boundary.md`. It must not use private data, become publicly reachable, or be treated as satisfying M0 or M1. Model it as a subset of the target system and reuse production module, entity, state, and workflow names wherever their meaning is the same. Preserve reusable application contracts, then replace all M0.0-only storage and execution shortcuts during M0 before continuing to M1.
 
-M1 retains `FixedLocalIdentityContextProvider` only for the local single-user RAG slice described in
-`docs/10-m1-implementation-plan.md`. Keep the host entry point loopback-only, preserve all
-workspace-scoped contracts and isolation tests, and do not add OIDC, users, memberships, or browser
-sessions during M1. M5 must replace the fixed provider with accepted OIDC authentication,
+M1 and M1.5 retain `FixedLocalIdentityContextProvider` only for the local single-user RAG slice
+described in `docs/10-m1-implementation-plan.md` and `docs/13-m1-5-rag-quality-plan.md`. Keep the
+host entry point loopback-only, preserve all workspace-scoped contracts and isolation tests, and
+do not add OIDC, users, memberships, or browser sessions during M1.5. M5 must replace the fixed provider with accepted OIDC authentication,
 canonical memberships, and server-side sessions before any staging, shared-network, or public use.
 
 Use `pnpm` for frontend dependencies and scripts. Keep `pnpm-lock.yaml` under version control once the frontend is scaffolded; do not use npm, Yarn, Bun, or competing frontend lockfiles.
