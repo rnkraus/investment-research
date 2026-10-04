@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Draft for review — planning only; no M1.5 behavior is implemented by this document  
+**Status:** Active — Step 0 in progress; no M1.5 quality baseline recorded yet
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -71,6 +71,12 @@ rate. Small-sample statistics are descriptive, not population-level quality clai
 **Gate:** every case and expected evidence range is reviewed, the deterministic baseline is
 reproducible offline, and any live baseline is separately opt-in, bounded, and recorded without
 raw document text or secrets in logs, traces, or CI artifacts. No RRF tuning precedes this gate.
+
+**Current Step 0 status (2026-10-04):** The owner reviewed the six synthetic cases in
+[`fixtures/m1_5/evaluation.json`](../fixtures/m1_5/evaluation.json). The fixture digests and original
+source ranges have a credential-free validator, and the observation scorer has deterministic unit
+tests. See the [corpus guide](../fixtures/m1_5/README.md). No complete observation set or measured
+M1 baseline exists yet; the Step 0 gate remains open.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 

@@ -31,6 +31,22 @@ identical original occurrences. An empty list means no evidence should be cited.
 
 The repository owner accepted the six question, answer, scope, and evidence expectations on
 2026-10-04. The line-break case targets the known failure *type*; it is not a claim that the exact
-observed Luna response has been reproduced. The next work block measures the current M1 retrieval
-and answer path on these fixed cases. Keep deterministic offline results separate from any bounded,
+observed Luna response has been reproduced.
+
+`backend/scripts/score_m1_5_observations.py` defines the offline scorer for a future, complete
+observation set. Each observation names selected and cited **expected catalog passage IDs**, the
+total `citation_count` including citations that match no expected passage, a terminal coverage or
+safe-failure outcome, elapsed time, and any independently assessed statement support. Unexpected
+citations lower the citation score rather than invalidating the entire observation set.
+The run also records lexical, embedding, index, selector, model-pair, and prompt versions so
+comparison results are attributable to a specific configuration.
+The scorer checks the exact corpus digest and all six cases before reporting retrieval evidence
+recall, coverage matches, citation matches, safe failures, and latency as descriptive counts. A
+deterministic offline observation cannot claim real provider usage or cost; a separately opted-in
+live observation must record provider-reported usage and estimated cost. The scorer does not infer
+support from model output or accept raw prompts and source text in its observation schema.
+
+No observation set or baseline result has been produced yet. The next work block must run the
+current M1 path on these fixed cases and map its canonical selected candidates and validated
+citations to catalog passage IDs. Keep deterministic offline results separate from any bounded,
 opt-in live model run, and do not describe this small sample as a population-level quality estimate.
