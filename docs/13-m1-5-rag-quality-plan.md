@@ -80,8 +80,12 @@ source passages. An isolated PostgreSQL run now supplies the first retrieval-onl
 required reviewed evidence was available in context for 5/5 answerable cases, using deterministic
 embedding and SQLite vector adapters. Its measured median retrieval time was 6.5 ms on one local
 run, not a provider latency estimate. See the [corpus guide](../fixtures/m1_5/README.md) for the
-reproduction command and limitations. No end-to-end answer, citation-selection, support, or live
-provider baseline exists yet; the full Step 0 gate remains open.
+reproduction command and limitations. A separate credential-free contract test now exercises all
+six reviewed cases against the canonical evidence validator with scripted proposals: exact
+quotes, conflict and abstention shapes are accepted, while an altered quote and a rejected support
+decision fail closed. This is a validator correctness check, not an observed model-quality score;
+its support decision is fixed by the test. No end-to-end answer, citation-selection, independent
+support, or live-provider baseline exists yet; the full Step 0 gate remains open.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
