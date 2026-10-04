@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "id": "m1.5-rag-quality-v1",
+  "review_status": "reviewed",
+  "language": "en",
+  "data_classification": "public_synthetic",
+  "external_provider_use": "explicit_opt_in_only",
+  "source_manifest": {
+    "path": "fixtures/m1/manifest.yaml",
+    "sha256": "604a4ccb4d7175bf8b6031b4a70617be516a53f69af93f15248af8db7d383955"
+  },
+  "documents": [
+    {
+      "id": "fixture:northstar-grid-analytics:fy2025:earnings-brief:v1",
+      "path": "fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf",
+      "media_type": "application/pdf",
+      "sha256": "ecb709d40762dc85febc1f6be3a7d067fc8383788ceab072ac049b3e5cfaede1",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "fixture:northstar-grid-analytics:fy2026:capacity-update:v1",
+      "path": "fixtures/m1/documents/northstar-grid-analytics-fy2026-capacity-update.txt",
+      "media_type": "text/plain",
+      "sha256": "45985d7e98d74a7690513624914b49c6d9180842097f837798ce3f42803639b5",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "fixture:northstar-grid-analytics:fy2026:operations-note:v1",
+      "path": "fixtures/m1_5/documents/northstar-grid-analytics-fy2026-operations-note.txt",
+      "media_type": "text/plain",
+      "sha256": "7e08213c7128073da4aafbcd94af4be7bddf4967401977dc32d6ad8f0c96089e",
+      "license": "CC0-1.0",
+      "provenance": "Generated for this repository; all entities and claims are fictional."
+    }
+  ],
+  "passages": [
+    {
+      "id": "passage:fy2025-revenue-comparison",
+      "document_id": "fixture:northstar-grid-analytics:fy2025:earnings-brief:v1",
+      "text": "FY2025 revenue was $184.2 million, up 22.0% from $151.0 million in FY2024.",
+      "source_anchor": {
+        "kind": "PDF_PAGE",
+        "page_number": 2,
+        "start_character": 297,
+        "end_character": 371
+      }
+    },
+    {
+      "id": "passage:fy2026-transformer-constraint",
+      "document_id": "fixture:northstar-grid-analytics:fy2026:capacity-update:v1",
+      "text": "The primary constraint on new customer deployments is a shortage of high-voltage transformers.",
+      "source_anchor": {
+        "kind": "TEXT_PASSAGE",
+        "start_character": 185,
+        "end_character": 279
+      }
+    },
+    {
+      "id": "passage:fy2026-software-constraint",
+      "document_id": "fixture:northstar-grid-analytics:fy2026:operations-note:v1",
+      "text": "The primary constraint on new customer deployments is software configuration capacity, not transformer supply.",
+      "source_anchor": {
+        "kind": "TEXT_PASSAGE",
+        "start_character": 71,
+        "end_character": 181
+      }
+    },
+    {
+      "id": "passage:fy2026-european-pilot-budget-first",
+      "document_id": "fixture:northstar-grid-analytics:fy2026:operations-note:v1",
+      "text": "The European pilot budget is €12 million.",
+      "source_anchor": {
+        "kind": "TEXT_PASSAGE",
+        "start_character": 183,
+        "end_character": 224
+      }
+    },
+    {
+      "id": "passage:fy2026-european-pilot-budget-second",
+      "document_id": "fixture:northstar-grid-analytics:fy2026:operations-note:v1",
+      "text": "The European pilot budget is €12 million.",
+      "source_anchor": {
+        "kind": "TEXT_PASSAGE",
+        "start_character": 264,
+        "end_character": 305
+      }
+    },
+    {
+      "id": "passage:fy2026-battery-cabinet-window",
+      "document_id": "fixture:northstar-grid-analytics:fy2026:operations-note:v1",
+      "text": "Procurement expects the delivery window\nfor battery cabinets to shift into Q2 2027.",
+      "source_anchor": {
+        "kind": "TEXT_PASSAGE",
+        "start_character": 307,
+        "end_character": 390
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "question:fy2025-revenue",
+      "categories": ["pdf", "exact_word", "answerable"],
+      "question": "What was Northstar Grid Analytics' FY2025 revenue, and how did it change from FY2024?",
+      "scope_document_ids": ["fixture:northstar-grid-analytics:fy2025:earnings-brief:v1"],
+      "expected_coverage": "COMPLETE",
+      "expected_answer": "FY2025 revenue was $184.2 million, up 22.0% from $151.0 million in FY2024.",
+      "evidence_groups": [["passage:fy2025-revenue-comparison"]]
+    },
+    {
+      "id": "question:fy2026-rollout-constraint",
+      "categories": ["pasted_text", "paraphrase", "answerable"],
+      "question": "What is mainly holding back Northstar's rollout to new clients?",
+      "scope_document_ids": ["fixture:northstar-grid-analytics:fy2026:capacity-update:v1"],
+      "expected_coverage": "COMPLETE",
+      "expected_answer": "A shortage of high-voltage transformers is the primary constraint.",
+      "evidence_groups": [["passage:fy2026-transformer-constraint"]]
+    },
+    {
+      "id": "question:fy2026-dividend",
+      "categories": ["multiple_documents", "unanswerable"],
+      "question": "What dividend did Northstar Grid Analytics declare for FY2026?",
+      "scope_document_ids": [
+        "fixture:northstar-grid-analytics:fy2025:earnings-brief:v1",
+        "fixture:northstar-grid-analytics:fy2026:capacity-update:v1",
+        "fixture:northstar-grid-analytics:fy2026:operations-note:v1"
+      ],
+      "expected_coverage": "INSUFFICIENT",
+      "expected_answer": null,
+      "evidence_groups": []
+    },
+    {
+      "id": "question:fy2026-conflicting-constraint",
+      "categories": ["multiple_documents", "conflict"],
+      "question": "What was the primary constraint on new customer deployments in the two July 22 reports?",
+      "scope_document_ids": [
+        "fixture:northstar-grid-analytics:fy2026:capacity-update:v1",
+        "fixture:northstar-grid-analytics:fy2026:operations-note:v1"
+      ],
+      "expected_coverage": "CONFLICTING",
+      "expected_answer": "The capacity update names transformer shortage; the operations note instead names software configuration capacity. The sources disagree.",
+      "evidence_groups": [
+        ["passage:fy2026-transformer-constraint"],
+        ["passage:fy2026-software-constraint"]
+      ]
+    },
+    {
+      "id": "question:fy2026-european-pilot-budget",
+      "categories": ["pasted_text", "repeated_wording", "unicode", "answerable"],
+      "question": "What is the European pilot budget?",
+      "scope_document_ids": ["fixture:northstar-grid-analytics:fy2026:operations-note:v1"],
+      "expected_coverage": "COMPLETE",
+      "expected_answer": "The European pilot budget is €12 million.",
+      "evidence_groups": [[
+        "passage:fy2026-european-pilot-budget-first",
+        "passage:fy2026-european-pilot-budget-second"
+      ]]
+    },
+    {
+      "id": "question:fy2026-battery-cabinet-window",
+      "categories": ["pasted_text", "line_break", "quote_not_found_regression", "answerable"],
+      "question": "When is the battery-cabinet delivery window expected to shift?",
+      "scope_document_ids": ["fixture:northstar-grid-analytics:fy2026:operations-note:v1"],
+      "expected_coverage": "COMPLETE",
+      "expected_answer": "Procurement expects the delivery window to shift into Q2 2027.",
+      "evidence_groups": [["passage:fy2026-battery-cabinet-window"]]
+    }
+  ]
+}
