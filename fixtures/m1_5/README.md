@@ -46,7 +46,13 @@ deterministic offline observation cannot claim real provider usage or cost; a se
 live observation must record provider-reported usage and estimated cost. The scorer does not infer
 support from model output or accept raw prompts and source text in its observation schema.
 
+`backend/scripts/map_m1_5_passages.py` maps selected canonical chunks and validated original-source
+citation ranges to reviewed passage IDs. It requires matching document identity, source locator,
+position, and exact original text. A selected chunk may contain both repeated budget occurrences,
+but a citation maps only to the occurrence at its own original-source offsets. A full-chunk citation
+does not count as a precise reviewed passage citation.
+
 No observation set or baseline result has been produced yet. The next work block must run the
-current M1 path on these fixed cases and map its canonical selected candidates and validated
-citations to catalog passage IDs. Keep deterministic offline results separate from any bounded,
+current M1 path on these fixed cases and feed its canonical selected candidates and validated
+citations through this mapping. Keep deterministic offline results separate from any bounded,
 opt-in live model run, and do not describe this small sample as a population-level quality estimate.
