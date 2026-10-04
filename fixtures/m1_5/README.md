@@ -52,7 +52,15 @@ position, and exact original text. A selected chunk may contain both repeated bu
 but a citation maps only to the occurrence at its own original-source offsets. A full-chunk citation
 does not count as a precise reviewed passage citation.
 
+`backend/scripts/score_m1_5_retrieval.py` separately scores retrieval-only observations. It checks
+whether every required reviewed evidence group is available in the selected M1 context. The
+unanswerable case is excluded from its evidence-availability denominator. This result does not
+measure generated answers, citation selection, statement support, provider usage, or cost. Its
+schema records that the embedding and dense-index adapters are deterministic test substitutes;
+it cannot be mistaken for a live Pinecone/OpenAI run.
+
 No observation set or baseline result has been produced yet. The next work block must run the
-current M1 path on these fixed cases and feed its canonical selected candidates and validated
-citations through this mapping. Keep deterministic offline results separate from any bounded,
-opt-in live model run, and do not describe this small sample as a population-level quality estimate.
+current M1 retrieval path on these fixed cases and map its canonical selected candidates to the
+reviewed passages. A later end-to-end run must also map its validated citations before using the
+answer scorer. Keep deterministic offline results separate from any bounded, opt-in live model run,
+and do not describe this small sample as a population-level quality estimate.
