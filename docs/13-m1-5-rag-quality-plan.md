@@ -74,10 +74,14 @@ raw document text or secrets in logs, traces, or CI artifacts. No RRF tuning pre
 
 **Current Step 0 status (2026-10-05):** The owner reviewed the six synthetic cases in
 [`fixtures/m1_5/evaluation.json`](../fixtures/m1_5/evaluation.json). The fixture digests and original
-source ranges have a credential-free validator. The separate retrieval-only and end-to-end
-observation scorers have deterministic unit tests, and canonical chunks and citations can be
-mapped to reviewed source passages. See the [corpus guide](../fixtures/m1_5/README.md). No complete
-observation set or measured M1 baseline exists yet; the Step 0 gate remains open.
+source ranges have a credential-free validator. Separate retrieval-only and end-to-end observation
+scorers have deterministic unit tests, and canonical chunks and citations can be mapped to reviewed
+source passages. An isolated PostgreSQL run now supplies the first retrieval-only M1 baseline:
+required reviewed evidence was available in context for 5/5 answerable cases, using deterministic
+embedding and SQLite vector adapters. Its measured median retrieval time was 6.5 ms on one local
+run, not a provider latency estimate. See the [corpus guide](../fixtures/m1_5/README.md) for the
+reproduction command and limitations. No end-to-end answer, citation-selection, support, or live
+provider baseline exists yet; the full Step 0 gate remains open.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 

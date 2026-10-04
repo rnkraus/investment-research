@@ -59,8 +59,31 @@ measure generated answers, citation selection, statement support, provider usage
 schema records that the embedding and dense-index adapters are deterministic test substitutes;
 it cannot be mistaken for a live Pinecone/OpenAI run.
 
-No observation set or baseline result has been produced yet. The next work block must run the
-current M1 retrieval path on these fixed cases and map its canonical selected candidates to the
-reviewed passages. A later end-to-end run must also map its validated citations before using the
-answer scorer. Keep deterministic offline results separate from any bounded, opt-in live model run,
-and do not describe this small sample as a population-level quality estimate.
+Run the credential-free retrieval baseline from `backend/` with an unused output filename:
+
+```bash
+m15_observations="../tmp/m1_5_retrieval_$(date +%Y%m%d%H%M%S).json"
+INVESTMENT_RESEARCH_M1_5_RETRIEVAL_OUTPUT="$m15_observations" \
+  uv run --locked python -m scripts.verify_postgres
+uv run --locked python -m scripts.score_m1_5_retrieval \
+  --observations "$m15_observations"
+```
+
+The existing PostgreSQL verifier creates and removes an isolated database and volume. Its M1.5
+integration test parses the three approved originals, indexes their chunks with deterministic
+test adapters, and runs PostgreSQL lexical search, canonical dense qualification, and the unchanged
+M1 context selector on all six questions. It writes the observation file only when the output
+variable is set and refuses to overwrite an existing file. The normal CI integration job runs the
+same test without writing an artifact; it guards the five answerable evidence-availability cases.
+
+The first local run on 2026-10-05 found all required reviewed passages in the selected context for
+**5/5 answerable cases**; the unanswerable case has no retrieval-hit label. Its median measured
+retrieval time was 6.5 ms and maximum 11 ms. These timings cover the deterministic query embedding,
+PostgreSQL lexical search, SQLite vector lookup, canonical qualification, selection, and passage
+mapping, but exclude parsing, indexing, answer generation, support evaluation, and network providers.
+Times will vary by machine. The embedding rule explicitly aliases the known transformer paraphrase;
+neither this run nor its 5/5 count estimates OpenAI or Pinecone retrieval quality.
+
+A later end-to-end run must map validated citations before using the answer scorer. Keep offline
+results separate from any bounded, opt-in live model run, and do not describe this six-case sample
+as a population-level quality estimate.
