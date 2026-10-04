@@ -72,11 +72,12 @@ rate. Small-sample statistics are descriptive, not population-level quality clai
 reproducible offline, and any live baseline is separately opt-in, bounded, and recorded without
 raw document text or secrets in logs, traces, or CI artifacts. No RRF tuning precedes this gate.
 
-**Current Step 0 status (2026-10-04):** The owner reviewed the six synthetic cases in
+**Current Step 0 status (2026-10-05):** The owner reviewed the six synthetic cases in
 [`fixtures/m1_5/evaluation.json`](../fixtures/m1_5/evaluation.json). The fixture digests and original
-source ranges have a credential-free validator, and the observation scorer has deterministic unit
-tests. See the [corpus guide](../fixtures/m1_5/README.md). No complete observation set or measured
-M1 baseline exists yet; the Step 0 gate remains open.
+source ranges have a credential-free validator. The separate retrieval-only and end-to-end
+observation scorers have deterministic unit tests, and canonical chunks and citations can be
+mapped to reviewed source passages. See the [corpus guide](../fixtures/m1_5/README.md). No complete
+observation set or measured M1 baseline exists yet; the Step 0 gate remains open.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
