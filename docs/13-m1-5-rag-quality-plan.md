@@ -83,9 +83,15 @@ run, not a provider latency estimate. See the [corpus guide](../fixtures/m1_5/RE
 reproduction command and limitations. A separate credential-free contract test now exercises all
 six reviewed cases against the canonical evidence validator with scripted proposals: exact
 quotes, conflict and abstention shapes are accepted, while an altered quote and a rejected support
-decision fail closed. This is a validator correctness check, not an observed model-quality score;
-its support decision is fixed by the test. No end-to-end answer, citation-selection, independent
-support, or live-provider baseline exists yet; the full Step 0 gate remains open.
+decision fail closed. This is a validator correctness check; its support decision is fixed by the
+test. A complete offline application run now exercises retrieval through canonical answer
+persistence and readback: 6/6 scripted coverage and citation outcomes match, including one conflict
+and one abstention, and two injected invalid proposals persist `REJECTED` without published
+content. Its first local median was 47 ms and maximum 71 ms, including passage mapping. The
+existing PostgreSQL CI job discovers these tests automatically. The generator and support adapter
+use reviewed fixture rules, so independent support assessments, provider usage, cost, and live
+model quality remain unmeasured. The offline correctness baseline is reproducible; the full
+Step 0 gate remains open pending the separately opted-in quality measurements.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
