@@ -33,7 +33,7 @@ The repository owner accepted the six question, answer, scope, and evidence expe
 2026-10-04. The line-break case targets the known failure *type*; it is not a claim that the exact
 observed Luna response has been reproduced.
 
-`backend/scripts/score_m1_5_observations.py` defines the offline scorer for a future, complete
+`backend/scripts/score_m1_5_observations.py` defines the offline scorer for complete
 observation set. Each observation names selected and cited **expected catalog passage IDs**, the
 total `citation_count` including citations that match no expected passage, a terminal coverage or
 safe-failure outcome, elapsed time, and any independently assessed statement support. Unexpected
@@ -84,6 +84,39 @@ mapping, but exclude parsing, indexing, answer generation, support evaluation, a
 Times will vary by machine. The embedding rule explicitly aliases the known transformer paraphrase;
 neither this run nor its 5/5 count estimates OpenAI or Pinecone retrieval quality.
 
-A later end-to-end run must map validated citations before using the answer scorer. Keep offline
-results separate from any bounded, opt-in live model run, and do not describe this six-case sample
-as a population-level quality estimate.
+The complete offline answer baseline uses the same corpus setup from
+`backend/tests/integration/m1_5.py` and the actual `AnswerResearchRequestService`. It runs query
+embedding, both retrieval lanes, canonical qualification, M1 selection, generation, evidence
+validation, and atomic answer persistence. It then reads answers, statements, validations, and
+spans back from PostgreSQL and maps the selected context and exact citations to reviewed passages.
+The original parser and offline indexing setup happen before measurement. This is an application
+integration test; it does not measure browser rendering or HTTP streaming.
+
+Run it from `backend/` with an unused output filename in the existing ignored `tmp/` directory:
+
+```bash
+m15_answers="../tmp/m1_5_answers_$(date +%Y%m%d%H%M%S).json"
+INVESTMENT_RESEARCH_M1_5_ANSWER_OUTPUT="$m15_answers" \
+  uv run --locked python -m scripts.verify_postgres
+uv run --locked python -m scripts.score_m1_5_observations \
+  --observations "$m15_answers"
+```
+
+The output contains only case and passage IDs, configuration versions, terminal states, citation
+counts, and measured times. It refuses to overwrite an existing file. The CI PostgreSQL job runs
+the same test without writing an artifact. Two additional integration cases deliberately change
+a quote or reject statement support; both must persist a `REJECTED` answer without statements or
+citations.
+
+The first complete offline run on 2026-10-05 recorded **6/6 matching coverage and citation
+outcomes**, including one conflict and one abstention. All five answered cases had exact valid
+citations. Its median measured application time was 47 ms and maximum 71 ms, including canonical
+readback and passage mapping. These values describe this local scripted run only. The generator
+uses the reviewed expected answer and resolves its quotes at the reviewed source positions inside
+the actual selected context. The support adapter uses explicit fixture rules. Neither adapter
+measures model quality or discovers conflicts independently; the scorer therefore records zero
+independent support assessments and no provider usage or cost.
+
+Keep offline results separate from any bounded, opt-in live model run, and do not describe this
+six-case sample as a population-level quality estimate. Independent support assessment and live
+model baseline measurements are still pending.
