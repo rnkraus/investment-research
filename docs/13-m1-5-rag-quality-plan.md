@@ -93,6 +93,15 @@ use reviewed fixture rules, so independent support assessments, provider usage, 
 model quality remain unmeasured. The offline correctness baseline is reproducible; the full
 Step 0 gate remains open pending the separately opted-in quality measurements.
 
+A credential-free live preflight now pins this reviewed corpus digest and reports the existing
+M1 configuration and independently selected Terra/Luna model prices. Its sequential invocation
+guard reserves attempted calls before access, retains unknown-usage reservations, validates
+reported usage, and enforces role request limits and an OpenAI accounting ceiling of at most
+USD 1. The [corpus guide](../fixtures/m1_5/README.md#credential-free-live-preflight) documents the
+verified command, estimates, and limitations. It does not contact providers, authorize spend,
+replace canonical application accounting, or record a live quality baseline. Implementing the
+opt-in runner with isolated Pinecone cleanup and complete observations is the next Step 0 block.
+
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
 Add an application-owned selector that fuses lexical and dense _ranks_, not incomparable raw

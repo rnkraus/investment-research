@@ -120,3 +120,45 @@ independent support assessments and no provider usage or cost.
 Keep offline results separate from any bounded, opt-in live model run, and do not describe this
 six-case sample as a population-level quality estimate. Independent support assessment and live
 model baseline measurements are still pending.
+
+## Credential-free live preflight
+
+From `backend/`, print the approved plan without loading settings, reading keys, connecting to a
+database, or contacting a provider:
+
+```bash
+uv run --locked python -m scripts.plan_m1_5_live_baseline
+```
+
+The command pins the reviewed catalog digest, validates the original fixtures, and reports only
+case IDs, configuration versions, model choices, prices, and limits. The default model pair is
+Terra/Terra. `--answer-model gpt-5.6-luna` and `--support-model gpt-5.6-luna` independently select
+the existing Luna adapter policy. `--max-spend-usd 0.50` lowers the per-invocation OpenAI estimate
+ceiling; it cannot exceed USD 1. This is separate from the application's USD 5 monthly budget and
+does not authorize paid execution.
+
+The reusable `LiveBaselineBudget` reserves each attempted call **before** provider access: UTF-8
+payload bytes plus the existing answer/support envelope, the adapter's full output-token limit,
+and the selected model's versioned repository price. Integer micro-dollar rounding is upward.
+Reported usage must fit the reservation; an overrun stops subsequent admission. Reservations are
+never refunded, including a timeout with unknown usage, and retries would consume another request
+and reservation. This guard is for a sequential evaluation runner, not concurrent application
+requests or a replacement for the canonical production accounting service.
+
+Independent request ceilings are 64 document-embedding calls, six query-embedding calls, six
+answer-generation calls, and 48 support-evaluation calls (eight statements per case). The document
+vector ceiling is also 64; the future runner must enforce it when admitting actual chunks. These
+are safety ceilings, not predicted call counts. The USD 1 accounting ceiling can stop the run
+before every request ceiling is reached; completion is not guaranteed by preflight. Budget-limited
+cases must be recorded as failures rather than silently dropped from quality statistics.
+
+The price basis is the repository's versioned estimate, not a provider invoice or a guarantee
+against future price changes. Input envelopes are conservative estimates rather than exact API
+token counts. Output limits include hidden reasoning and formatting tokens, as described in
+[OpenAI's token-counting guide](https://developers.openai.com/api/docs/guides/token-counting).
+The OpenAI estimate excludes Pinecone billing; any later live runner must require the existing
+Starter-only confirmation and an isolated namespace with verified cleanup.
+
+The preflight and budget tests are credential-free and run in the existing unit-test CI job.
+They do not call providers or change the website. The paid live runner, actual usage recording,
+independent support review, and live quality results are **not implemented by this preflight**.
