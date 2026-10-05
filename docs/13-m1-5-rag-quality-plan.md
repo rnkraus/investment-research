@@ -97,7 +97,7 @@ A credential-free live preflight now pins this reviewed corpus digest and report
 M1 configuration and independently selected Terra/Luna model prices. Its sequential invocation
 guard reserves attempted calls before access, retains unknown-usage reservations, validates
 reported usage, and enforces role request limits and an OpenAI accounting ceiling of at most
-USD 1. The [corpus guide](../fixtures/m1_5/README.md#credential-free-live-preflight) documents the
+USD 0.30. The [corpus guide](../fixtures/m1_5/README.md#credential-free-live-preflight) documents the
 verified command, estimates, and limitations. It does not contact providers, authorize spend,
 replace canonical application accounting, or record a live quality baseline. Implementing the
 opt-in runner with isolated Pinecone cleanup and complete observations is the next Step 0 block.
