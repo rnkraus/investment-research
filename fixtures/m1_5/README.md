@@ -133,9 +133,9 @@ uv run --locked python -m scripts.plan_m1_5_live_baseline
 The command pins the reviewed catalog digest, validates the original fixtures, and reports only
 case IDs, configuration versions, model choices, prices, and limits. The default model pair is
 Terra/Terra. `--answer-model gpt-5.6-luna` and `--support-model gpt-5.6-luna` independently select
-the existing Luna adapter policy. `--max-spend-usd 0.50` lowers the per-invocation OpenAI estimate
-ceiling; it cannot exceed USD 1. This is separate from the application's USD 5 monthly budget and
-does not authorize paid execution.
+the existing Luna adapter policy. `--max-spend-usd 0.20` lowers the per-invocation OpenAI estimate
+ceiling; its default and maximum are USD 0.30. This is separate from the application's USD 5
+monthly budget and does not authorize paid execution.
 
 The reusable `LiveBaselineBudget` reserves each attempted call **before** provider access: UTF-8
 payload bytes plus the existing answer/support envelope, the adapter's full output-token limit,
@@ -148,7 +148,7 @@ requests or a replacement for the canonical production accounting service.
 Independent request ceilings are 64 document-embedding calls, six query-embedding calls, six
 answer-generation calls, and 48 support-evaluation calls (eight statements per case). The document
 vector ceiling is also 64; the future runner must enforce it when admitting actual chunks. These
-are safety ceilings, not predicted call counts. The USD 1 accounting ceiling can stop the run
+are safety ceilings, not predicted call counts. The USD 0.30 accounting ceiling can stop the run
 before every request ceiling is reached; completion is not guaranteed by preflight. Budget-limited
 cases must be recorded as failures rather than silently dropped from quality statistics.
 

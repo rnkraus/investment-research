@@ -23,7 +23,7 @@ def test_plan_freezes_the_six_reviewed_cases_and_existing_m1_policy() -> None:
     assert len(plan.case_ids) == len(set(plan.case_ids)) == 6
     assert plan.configuration.selector_config_version == "m1-lexical-first-round-robin-v1"
     assert plan.configuration.answer_prompt_version == "m1-grounded-answer-prompt-v4"
-    assert plan.maximum_spend_micro_usd == 1_000_000
+    assert plan.maximum_spend_micro_usd == 300_000
     assert {limit.role: limit.maximum_requests for limit in plan.role_limits} == {
         ProviderOperationKind.DOCUMENT_EMBEDDING: 64,
         ProviderOperationKind.QUERY_EMBEDDING: 6,
@@ -41,12 +41,12 @@ def test_preflight_cli_uses_no_network_or_environment_loader(
 
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(dotenv, "dotenv_values", forbidden)
-    monkeypatch.setattr("sys.argv", ["plan", "--max-spend-usd", "0.50"])
+    monkeypatch.setattr("sys.argv", ["plan", "--max-spend-usd", "0.20"])
 
     assert live.main() == 0
     output = capsys.readouterr().out
     data = json.loads(output)
-    assert data["maximum_spend_micro_usd"] == 500_000
+    assert data["maximum_spend_micro_usd"] == 200_000
     assert "question" not in data
     assert "exact_text" not in output
     assert "expected_answer" not in output
@@ -75,7 +75,7 @@ def test_owner_review_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
         live.build_plan()
 
 
-@pytest.mark.parametrize("amount", [0, -1, 1_000_001, True, 0.5])
+@pytest.mark.parametrize("amount", [0, -1, 300_001, 1_000_000, True, 0.5])
 def test_plan_rejects_invalid_or_expanded_budget(amount: int) -> None:
     with pytest.raises(live.LiveBaselineLimitError, match="budget"):
         live.build_plan(maximum_spend_micro_usd=amount)
@@ -89,6 +89,8 @@ def test_plan_rejects_invalid_or_expanded_budget(amount: int) -> None:
         "-1",
         "0",
         "1.01",
+        "0.300001",
+        "0.50",
         "0.0000001",
         "no",
         "1e999999999",
@@ -101,7 +103,7 @@ def test_cli_rejects_invalid_budget_without_rounding(value: str) -> None:
         live._budget_argument(value)
 
 
-@pytest.mark.parametrize("value,expected", [("1", 1_000_000), ("0.10", 100_000), ("0.000001", 1)])
+@pytest.mark.parametrize("value,expected", [("0.30", 300_000), ("0.10", 100_000), ("0.000001", 1)])
 def test_cli_parses_budget_in_exact_micro_dollars(value: str, expected: int) -> None:
     assert live._budget_argument(value) == expected
 
