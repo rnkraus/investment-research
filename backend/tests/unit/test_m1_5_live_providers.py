@@ -1,0 +1,240 @@
+"""Budgeted evaluation ports never require live credentials or network access."""
+
+import socket
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from uuid import uuid4
+
+import pytest
+
+from investment_research.modules.evidence.contracts import (
+    StatementSupportDecision,
+    StatementSupportResult,
+)
+from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
+from investment_research.modules.research.contracts import (
+    AnswerGenerationInput,
+    AnswerGenerationResult,
+    UnvalidatedGeneratedAnswer,
+)
+from investment_research.modules.research.domain import CoverageStatus
+from investment_research.modules.search.contracts import (
+    M1_EMBEDDING_DIMENSIONS,
+    EmbeddingInput,
+    EmbeddingPurpose,
+    EmbeddingRequest,
+    EmbeddingResult,
+    EmbeddingVector,
+)
+from investment_research.modules.search.ports import SearchProviderTransientError
+from scripts.m1_5_live_providers import (
+    BudgetedAnswerGenerator,
+    BudgetedEmbeddingProvider,
+    BudgetedSupportEvaluator,
+    LiveProviderCallError,
+    LiveProviderCalls,
+)
+from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveBaselineLimitError, build_plan
+
+MARKER = "synthetic-private-content-marker"
+CONFIG = "openai-text-embedding-3-small-1536-v1"
+
+
+@pytest.fixture(autouse=True)
+def prohibit_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("unit tests must not access a network")
+
+    monkeypatch.setattr(socket.socket, "connect", fail)
+
+
+@dataclass
+class RecordingProviders:
+    error: BaseException | None = None
+    usage: ProviderUsage = field(
+        default_factory=lambda: ProviderUsage(input_units=10, output_units=0)
+    )
+    requests: int = 0
+
+    def _before_call(self) -> None:
+        self.requests += 1
+        if self.error is not None:
+            raise self.error
+
+    def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        self._before_call()
+        return EmbeddingResult(
+            vectors=tuple(
+                EmbeddingVector(
+                    input_id=item.input_id,
+                    values=(0.1,) * M1_EMBEDDING_DIMENSIONS,
+                    embedding_config_version=request.embedding_config_version,
+                )
+                for item in request.inputs
+            ),
+            usage=self.usage,
+        )
+
+    def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
+        self._before_call()
+        return AnswerGenerationResult(
+            answer=UnvalidatedGeneratedAnswer(
+                coverage_status=CoverageStatus.INSUFFICIENT,
+                rendered_text="No evidence.",
+                statements=(),
+                missing_information="No evidence.",
+            ),
+            usage=self.usage,
+        )
+
+    def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        self._before_call()
+        return StatementSupportResult(
+            decision=StatementSupportDecision(supported=True), usage=self.usage
+        )
+
+
+def embedding_request(purpose: EmbeddingPurpose = EmbeddingPurpose.QUERY) -> EmbeddingRequest:
+    return EmbeddingRequest(
+        inputs=(EmbeddingInput(input_id=uuid4(), text=MARKER * 4, purpose=purpose),),
+        embedding_config_version=CONFIG,
+    )
+
+
+def generation_input() -> AnswerGenerationInput:
+    return AnswerGenerationInput(research_request_id=uuid4(), question=MARKER, sources=())
+
+
+def test_all_four_roles_reserve_and_record_reported_usage_without_content() -> None:
+    delegate = RecordingProviders()
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+    embedding = BudgetedEmbeddingProvider(delegate, calls)
+    embedding.embed(embedding_request(EmbeddingPurpose.DOCUMENT))
+    embedding.embed(embedding_request())
+    generated = BudgetedAnswerGenerator(delegate, calls).generate(generation_input())
+    supported = BudgetedSupportEvaluator(delegate, calls).evaluate(MARKER, (MARKER,))
+
+    assert generated.answer.coverage_status is CoverageStatus.INSUFFICIENT
+    assert supported.decision.supported is True
+    assert [item.role for item in calls.records] == list(ProviderOperationKind)
+    assert len(calls.records) == delegate.requests == 4
+    assert all(item.usage_state == "REPORTED" and item.input_tokens == 10 for item in calls.records)
+    assert all(item.estimated_cost_micro_usd is not None for item in calls.records)
+    assert (
+        sum(item.reserved_cost_micro_usd for item in calls.records)
+        == calls.budget.reserved_cost_micro_usd
+    )
+    assert calls.budget.reserved_cost_micro_usd > sum(
+        item.estimated_cost_micro_usd or 0 for item in calls.records
+    )
+    assert all(MARKER not in item.model_dump_json() for item in calls.records)
+
+
+@pytest.mark.parametrize("role", list(ProviderOperationKind))
+def test_budget_denial_never_dispatches_a_call(role: ProviderOperationKind) -> None:
+    delegate = RecordingProviders()
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan(maximum_spend_micro_usd=1)))
+
+    with pytest.raises(LiveBaselineLimitError, match="budget"):
+        if role in {
+            ProviderOperationKind.DOCUMENT_EMBEDDING,
+            ProviderOperationKind.QUERY_EMBEDDING,
+        }:
+            purpose = (
+                EmbeddingPurpose.DOCUMENT
+                if role is ProviderOperationKind.DOCUMENT_EMBEDDING
+                else EmbeddingPurpose.QUERY
+            )
+            BudgetedEmbeddingProvider(delegate, calls).embed(embedding_request(purpose))
+        elif role is ProviderOperationKind.ANSWER_GENERATION:
+            BudgetedAnswerGenerator(delegate, calls).generate(generation_input())
+        else:
+            BudgetedSupportEvaluator(delegate, calls).evaluate(MARKER, (MARKER,))
+    assert delegate.requests == 0
+    assert not calls.records
+    assert calls.budget.reserved_cost_micro_usd == 0
+
+
+def test_mixed_purpose_embedding_is_rejected_before_access() -> None:
+    delegate = RecordingProviders()
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+    document = embedding_request(EmbeddingPurpose.DOCUMENT)
+    query = embedding_request()
+    mixed = document.model_copy(update={"inputs": (*document.inputs, *query.inputs)})
+
+    with pytest.raises(LiveBaselineLimitError, match="one purpose"):
+        BudgetedEmbeddingProvider(delegate, calls).embed(mixed)
+    assert delegate.requests == 0
+
+
+def test_query_batch_cannot_hide_multiple_questions_in_one_request() -> None:
+    delegate = RecordingProviders()
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+    query = embedding_request()
+    batch = query.model_copy(update={"inputs": (*query.inputs, *embedding_request().inputs)})
+
+    with pytest.raises(LiveBaselineLimitError, match="one question"):
+        BudgetedEmbeddingProvider(delegate, calls).embed(batch)
+    assert delegate.requests == 0
+
+
+def test_typed_provider_failure_preserves_classification_and_unknown_usage() -> None:
+    error = SearchProviderTransientError("embedding provider timed out")
+    delegate = RecordingProviders(error=error)
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+
+    with pytest.raises(SearchProviderTransientError) as caught:
+        BudgetedEmbeddingProvider(delegate, calls).embed(embedding_request())
+    assert caught.value is error
+    record = calls.records[0]
+    assert record.usage_state == "UNKNOWN"
+    assert record.input_tokens is record.output_tokens is record.estimated_cost_micro_usd is None
+    assert record.reserved_cost_micro_usd == calls.budget.reserved_cost_micro_usd > 0
+
+
+def test_unexpected_provider_failure_does_not_expose_exception_content() -> None:
+    delegate = RecordingProviders(error=RuntimeError(MARKER))
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+
+    with pytest.raises(LiveProviderCallError) as caught:
+        BudgetedAnswerGenerator(delegate, calls).generate(generation_input())
+    assert caught.value.reason == "provider"
+    assert MARKER not in str(caught.value)
+    assert caught.value.__suppress_context__ is True
+    assert calls.records[0].usage_state == "UNKNOWN"
+
+
+def test_interruption_keeps_unknown_usage_and_the_reservation() -> None:
+    delegate = RecordingProviders(error=KeyboardInterrupt())
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+
+    with pytest.raises(KeyboardInterrupt):
+        BudgetedAnswerGenerator(delegate, calls).generate(generation_input())
+    assert calls.records[0].usage_state == "UNKNOWN"
+    assert calls.budget.reserved_cost_micro_usd > 0
+
+
+def test_usage_overrun_is_recorded_and_stops_future_calls() -> None:
+    delegate = RecordingProviders(usage=ProviderUsage(input_units=10, output_units=2_001))
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+
+    with pytest.raises(LiveProviderCallError) as caught:
+        BudgetedAnswerGenerator(delegate, calls).generate(generation_input())
+    assert caught.value.reason == "usage"
+    assert calls.records[0].usage_state == "USAGE_REJECTED"
+    assert calls.records[0].output_tokens == 2_001
+    with pytest.raises(LiveBaselineLimitError, match="stopped"):
+        BudgetedEmbeddingProvider(delegate, calls).embed(embedding_request())
+    assert delegate.requests == 1
+
+
+def test_support_validation_happens_before_reservation_or_provider_access() -> None:
+    delegate = RecordingProviders()
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+
+    with pytest.raises(LiveBaselineLimitError, match="support input is invalid") as caught:
+        BudgetedSupportEvaluator(delegate, calls).evaluate(" ", (MARKER,))
+    assert MARKER not in str(caught.value)
+    assert caught.value.__suppress_context__ is True
+    assert delegate.requests == 0
+    assert not calls.records
