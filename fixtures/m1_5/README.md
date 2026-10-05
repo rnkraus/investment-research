@@ -160,5 +160,25 @@ The OpenAI estimate excludes Pinecone billing; any later live runner must requir
 Starter-only confirmation and an isolated namespace with verified cleanup.
 
 The preflight and budget tests are credential-free and run in the existing unit-test CI job.
-They do not call providers or change the website. The paid live runner, actual usage recording,
-independent support review, and live quality results are **not implemented by this preflight**.
+They do not call providers or change the website.
+
+## Live-runner safeguards
+
+`backend/scripts/m1_5_live_providers.py` wraps the existing embedding, answer, and support ports
+with the invocation budget. It reserves before every attempted call and records only its role,
+reported token usage, estimated cost, and reservation. A failed call with unavailable usage is
+`UNKNOWN`, never zero-cost. Reported usage does not imply a correct or accepted answer. Canonical
+application accounting and evidence validation remain separate and unchanged.
+
+`backend/scripts/m1_5_live_index.py` owns a fresh random workspace namespace for each invocation.
+It rejects foreign scopes and admits at most 64 unique vector IDs. Attempted IDs are tracked
+before writes, because a timeout does not prove a write failed. Visibility polling uses one
+30-second deadline across batches, bounds each fetch by its remaining time, and rejects late
+success. After attempted writes, cleanup deletes only the owned namespace and verifies that all
+attempted IDs are absent within a separate 30-second deadline. Both index clients are closed even
+when cleanup fails; failed cleanup is reported rather than treated as success.
+
+Deterministic unit tests exercise these safeguards with injected adapters and a simulated clock;
+no live clients or credentials are used. These helpers are **not yet an executable live runner**.
+Connecting canonical research, opt-in execution, and complete observations is the next work block.
+Independent support review and live quality results remain pending.

@@ -99,8 +99,13 @@ guard reserves attempted calls before access, retains unknown-usage reservations
 reported usage, and enforces role request limits and an OpenAI accounting ceiling of at most
 USD 0.30. The [corpus guide](../fixtures/m1_5/README.md#credential-free-live-preflight) documents the
 verified command, estimates, and limitations. It does not contact providers, authorize spend,
-replace canonical application accounting, or record a live quality baseline. Implementing the
-opt-in runner with isolated Pinecone cleanup and complete observations is the next Step 0 block.
+replace canonical application accounting, or record a live quality baseline. Budgeted wrappers
+for all four provider roles and an owned Pinecone namespace lifecycle now have deterministic unit
+coverage. The lifecycle limits unique vectors, applies total visibility and cleanup deadlines,
+and reports failed cleanup while closing both index clients. These helpers do not create live
+clients or execute a paid run by themselves. Connecting them to canonical research, explicit
+opt-in execution, and complete observations is the next Step 0 block; independent support review
+and live quality measurements remain pending.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
