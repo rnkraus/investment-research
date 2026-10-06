@@ -228,11 +228,20 @@ occurred. The [live selector guide](../fixtures/m1_5/README.md#live-selector-exp
 that separate invocations are not paired candidate snapshots and that their combined spend is
 not automatically approved.
 
-Next, prepare the controlled live comparison protocol and obtain explicit spend approval before
-provider execution, without changing prompts, models, embeddings, or the corpus between policies.
-M1 remains the default. The offline retrieval-only
-report is not a v2 answer observation and cannot be compared with historical answer/citation
-scores. Step 1 is not accepted on the narrow offline comparison alone.
+**Proposed live comparison protocol (2026-10-07):**
+`m1.5-sequential-live-comparison-v1` specifies one fresh M1 run followed by one RRF run with
+Terra/Terra, all six frozen cases, unchanged configurations, and new v2 reports. Its proposed
+combined reservation envelope is USD 1.60, implemented as two existing USD 0.80 invocation caps;
+owner approval is pending. There are no selective retries, implicit budget increases, or default
+changes. Verified cleanup and compatible configurations are prerequisites for comparison.
+The [protocol](../fixtures/m1_5/README.md#proposed-live-comparison-protocol) defines the metrics,
+stop conditions, and inference limits. Separate live runs are descriptive, not a controlled
+candidate-snapshot experiment; unchanged or inconclusive results retain M1.
+
+Next, obtain explicit approval for the combined envelope before provider execution. M1 remains
+the default. The offline retrieval-only report is not a v2 answer observation and cannot be
+compared with historical answer/citation scores. Step 1 is not accepted on the narrow offline
+comparison or proposed protocol alone.
 
 ### Step 2 — Model-selectable citable source units
 
