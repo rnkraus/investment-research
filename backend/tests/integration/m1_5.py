@@ -16,9 +16,6 @@ from investment_research.infrastructure.search.deterministic import (
     DeterministicRuleEmbeddingProvider,
     DeterministicTextMatch,
 )
-from investment_research.infrastructure.search.deterministic_index import (
-    DeterministicSqliteDenseIndex,
-)
 from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.identity.domain import Workspace, WorkspaceContext
@@ -38,6 +35,7 @@ from investment_research.modules.search.contracts import (
     EmbeddingPurpose,
     EmbeddingRequest,
 )
+from investment_research.modules.search.ports import DenseIndexWriter, EmbeddingProvider
 from scripts.verify_m1_5_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, validate_corpus
 from scripts.verify_m1_5_corpus import Document as CatalogDocument
 from tests.integration.factories import FIXTURE_TIME, ResearchSource, make_research_source
@@ -184,10 +182,10 @@ def embedding_provider() -> DeterministicRuleEmbeddingProvider:
 def index_sources(
     sources: tuple[ResearchSource, ...],
     *,
-    provider: DeterministicRuleEmbeddingProvider,
-    index: DeterministicSqliteDenseIndex,
+    provider: EmbeddingProvider,
+    index: DenseIndexWriter,
 ) -> None:
-    """Index every parsed chunk with the existing deterministic vector adapter."""
+    """Index approved parsed chunks through injected, application-owned provider ports."""
 
     context = sources[0].context
     chunks = tuple((source, chunk) for source in sources for chunk in source.chunks)
