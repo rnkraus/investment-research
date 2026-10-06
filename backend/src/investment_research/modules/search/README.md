@@ -13,6 +13,8 @@ This module owns reproducible retrieval records and ranked candidates from eligi
 | `ports.py`       | Defines lexical, embedding, dense, reranking, and repository contracts.        |
 | `persistence.py` | Maps retrieval records and implements workspace-scoped repository behavior.    |
 | `selection.py`   | Applies deterministic lexical-first M1 context selection and deduplication.    |
+| `fusion_contracts.py` | Defines versioned RRF contributions, fusion ranks, and context limits. |
+| `fusion.py` | Calculates opt-in M1.5 RRF and bounded context without provider or database calls. |
 
 ## Ownership and relationships
 
@@ -75,8 +77,8 @@ bounded route limits.
 The same canonical chunk may appear once per origin, because that preserves which routes found it.
 Only the candidate chosen for context receives a `selection_rank`; selected chunks are unique and
 their ranks are contiguous. Reads return selected candidates in this final order, followed by any
-unselected candidates in stable origin and route-rank order. Fusion and reranking remain reserved
-for M4.
+unselected candidates in stable origin and route-rank order. The standalone M1.5 RRF experiment
+described below is not yet wired into this persisted runtime path; reranking remains deferred.
 
 ## Reproducibility and isolation
 
@@ -84,7 +86,8 @@ A run preserves the exact and normalized query, typed filters, retrieval mode, a
 lexical, embedding, dense-index, and selector configuration versions, independent route limits,
 context limits, and execution timing. Candidate rows preserve origin-local rank and finite raw
 score without comparing unlike score scales. `selection_rank` records M1 context order, while
-nullable fusion and reranking fields remain reserved for M4.
+nullable fusion and reranking fields remain unset in the existing M1 runtime. The M1.5 experiment
+keeps fusion values in its separate typed result until persistence and orchestration are wired.
 
 Every table and relationship carries `workspace_id`. Repository writes reject a mismatched trusted context before staging rows, and repository reads use the workspace in every query. Composite foreign keys let PostgreSQL reject cross-workspace links independently of application checks.
 
@@ -151,6 +154,35 @@ records one contiguous `selection_rank` per chosen chunk. The fixed behavior is 
 before a short PostgreSQL unit of work, then runs lexical search, dense qualification, selection,
 and atomic result persistence inside that unit of work. All qualified lane candidates remain
 auditable even when overlap deduplication excludes one from generation context.
+
+### Standalone M1.5 reciprocal-rank fusion
+
+`fuse_rrf_hits` accepts at most 20 canonical lexical hits and 20 already-qualified dense hits.
+It ranks each unique chunk by `sum(1 / (60 + lane_rank))`, with equal lane weights and one vote
+per lane. The version is `m1-5-rrf-k60-v1`. This fixed starting formula follows the
+[original RRF paper](https://cormack.uwaterloo.ca/cormack/cormacksigir09-rrf.pdf); it is not a claim
+that k = 60 is optimal for this corpus. Input rank is the one-based position after qualification,
+as in the existing M1 selector. Raw scores are retained, never used for fusion.
+
+Exact rational arithmetic determines order; equal sums use ascending chunk UUID. A shared chunk
+retains both origin/rank/raw-score contributions and the lexical hit as its representative.
+Duplicates within a lane and disagreement about the same chunk's canonical text or identifiers
+fail explicitly rather than add votes or silently choose one source. Type checks reject raw dense
+provider objects; they do not replace upstream workspace and eligibility enforcement.
+
+`select_rrf_context` applies the same 8-chunk and 24,000-code-point maxima, or smaller configured
+limits. It skips rather than truncates an oversized chunk. `fused_rank` remains its position before
+budget filtering; `selection_rank` is the contiguous context position afterward. Fusion can return
+all 40 unique hits for inspection, while selection returns only the bounded context.
+
+```text
+Canonical lexical + qualified dense hits → RRF ranks → whole-chunk budget → context
+```
+
+These pure functions make no provider calls and write no state. The current application,
+OpenAPI, persistence, and M1 default remain unchanged. Canonical revalidation and statement-support
+checks are still required before any selected text can become citation evidence. Runtime wiring
+and a same-corpus comparison against M1 must precede any default-policy decision.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders

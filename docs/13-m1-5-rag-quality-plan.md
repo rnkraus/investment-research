@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 0 accepted on 2026-10-07; Step 1 RRF comparison next
+**Status:** Active — Step 0 accepted on 2026-10-07; Step 1 RRF comparison in progress
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -155,7 +155,7 @@ demonstrated. The owner accepted the explained six-case measurement as the start
 blocker. Preserve this run, including both failures; do not tune prompts or ranking to obtain a
 selectively successful baseline. Unknown aggregate usage and cost remain unknown, and the report's
 independent-support count remains 0/6. This acceptance neither closes the two failures nor claims
-the final M1.5 quality gate. Step 1 is next; no retrieval-policy change has been implemented.
+the final M1.5 quality gate. Step 1 is in progress; no runtime retrieval-policy change is active.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
@@ -172,6 +172,18 @@ changing embeddings, corpus, or prompts between runs.
 **Gate:** all M1 correctness and isolation tests still pass. The RRF comparison is reproducible,
 and the chosen default is justified by measured quality without critical evidence regressions.
 If RRF does not help, retain M1 as the default and document the result.
+
+**Current Step 1 status (2026-10-07):** The first work block implements standalone, typed RRF
+fusion and context selection in Search. The fixed `m1-5-rrf-k60-v1` formula uses equal lane weights,
+k = 60, exact rational ordering, and chunk-UUID tie-breaking. It preserves both lane contributions,
+deduplicates chunks across lanes, rejects duplicate lane votes and inconsistent canonical payloads,
+and retains separate fusion and selection ranks under the existing context bounds. The targeted
+new-RRF and retained-M1 selector checks passed 40 tests plus formatting, lint, and typing. See the
+[Search module guide](../backend/src/investment_research/modules/search/README.md#standalone-m15-reciprocal-rank-fusion)
+for the formula and boundary. Existing M1 orchestration and persistence are unchanged; no provider
+calls, default switch, reranker, or frontend change is part of this block. Next work blocks must
+wire auditable fusion into scoped retrieval and run the frozen-corpus comparison. Step 1 is not
+accepted on unit tests alone.
 
 ### Step 2 — Model-selectable citable source units
 
