@@ -1,8 +1,9 @@
 """Shared canonical corpus setup for credential-free M1.5 integration baselines."""
 
+from collections.abc import Callable
 from dataclasses import replace
 from io import BytesIO
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import Engine
 
@@ -48,6 +49,7 @@ def source_for_catalog_document(
     *,
     workspace: Workspace,
     context: WorkspaceContext,
+    id_factory: Callable[[], UUID] = uuid4,
 ) -> ResearchSource:
     """Parse one actual catalog original into canonical M1 blocks and chunks."""
 
@@ -81,6 +83,7 @@ def source_for_catalog_document(
         run=parsing_run,
         parsed_document=parsed,
         created_at=FIXTURE_TIME,
+        id_factory=id_factory,
     )
     searchable_run = ProcessingRun.model_validate(
         parsing_run.model_dump()
