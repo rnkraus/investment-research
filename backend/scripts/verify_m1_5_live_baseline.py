@@ -6,10 +6,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from investment_research.modules.research.contracts import ResearchModel
-from investment_research.settings import load_api_settings, load_worker_settings
 from scripts.m1_5_live_providers import LiveProviderCalls
 from scripts.m1_5_live_runner import LiveBaselineReport, run_live_baseline
 from scripts.m1_5_live_runtime import isolated_database, provider_resources
+from scripts.m1_5_live_settings import EvaluationConfigurationError, load_evaluation_settings
 from scripts.plan_m1_5_live_baseline import (
     MAXIMUM_SPEND_MICRO_USD,
     LiveBaselineBudget,
@@ -77,7 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Reserve the output exclusively before any provider setup or paid call.
         with path.open("x", encoding="utf-8") as output:
             stage = "configuration"
-            worker, api = load_worker_settings(), load_api_settings()
+            worker, api = load_evaluation_settings()
             calls = LiveProviderCalls(LiveBaselineBudget(plan))
             cleanup_steps: list[str] = []
             stage = "runtime"
@@ -116,8 +116,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"cleanup={report.cleanup_status.lower()}, independent_support_review=pending"
         )
         return 1 if report.failures or cleanup_steps else 0
+    except EvaluationConfigurationError as error:
+        print(f"M1.5 live baseline failed at stage={stage}; {error}.", file=sys.stderr)
+        return 1
     except Exception:
         print(f"M1.5 live baseline failed at stage={stage}; details withheld.", file=sys.stderr)
+        if stage == "output":
+            print(
+                "Use a new .json filename beneath outputs/m1_5; "
+                "existing files are not overwritten.",
+                file=sys.stderr,
+            )
         return 1
     except KeyboardInterrupt:
         print("M1.5 live baseline interrupted; no acceptance claimed.", file=sys.stderr)

@@ -25,6 +25,7 @@ from scripts import verify_m1_5_live_baseline as cli
 from scripts.m1_5_live_index import LiveIndexCleanupError
 from scripts.m1_5_live_providers import LiveProviderCalls, ProviderCallRecord
 from scripts.m1_5_live_runner import LiveBaselineReport, summarize_usage
+from scripts.m1_5_live_settings import EvaluationConfigurationError
 from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, build_plan
 from scripts.score_m1_5_observations import ProviderUsage
 from tests.unit.test_score_m1_5_observations import (
@@ -75,8 +76,7 @@ def reject_runtime_access_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("unit test attempted runtime access")
 
     for name in (
-        "load_worker_settings",
-        "load_api_settings",
+        "load_evaluation_settings",
         "isolated_database",
         "provider_resources",
     ):
@@ -182,8 +182,7 @@ def test_recorded_results_survive_cleanup_failures(
     cleanup: str | None,
 ) -> None:
     monkeypatch.setattr(cli, "OUTPUT_ROOT", tmp_path)
-    monkeypatch.setattr(cli, "load_worker_settings", lambda: MagicMock())
-    monkeypatch.setattr(cli, "load_api_settings", lambda: MagicMock())
+    monkeypatch.setattr(cli, "load_evaluation_settings", lambda: (MagicMock(), MagicMock()))
 
     @contextmanager
     def database() -> Iterator[Engine]:
@@ -216,6 +215,60 @@ def test_recorded_results_survive_cleanup_failures(
     assert recorded.cleanup_status == ("VERIFIED" if cleanup is None else "FAILED")
     assert len(recorded.observations.cases) == 6
     assert MARKER not in output.read_text(encoding="utf-8")
+
+
+def test_configuration_failure_names_only_safe_setting_and_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "OUTPUT_ROOT", tmp_path)
+
+    def fail() -> None:
+        raise EvaluationConfigurationError(
+            "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY", "credential_missing_or_not_normalized"
+        )
+
+    monkeypatch.setattr(cli, "load_evaluation_settings", fail)
+    code = cli.main(
+        [
+            "--execute",
+            "--confirm-public-synthetic",
+            "--confirm-pinecone-starter",
+            "--output",
+            str(tmp_path / "result.json"),
+        ]
+    )
+    assert code == 1
+    error = capsys.readouterr().err
+    assert "stage=configuration" in error
+    assert "setting=INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY" in error
+    assert "reason=credential_missing_or_not_normalized" in error
+    assert MARKER not in error
+
+
+def test_existing_report_explains_new_filename_without_loading_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "OUTPUT_ROOT", tmp_path)
+    output = tmp_path / "result.json"
+    output.write_text("retained", encoding="utf-8")
+    assert (
+        cli.main(
+            [
+                "--execute",
+                "--confirm-public-synthetic",
+                "--confirm-pinecone-starter",
+                "--output",
+                str(output),
+            ]
+        )
+        == 1
+    )
+    assert "Use a new .json filename" in capsys.readouterr().err
+    assert output.read_text(encoding="utf-8") == "retained"
 
 
 def settings() -> tuple[WorkerSettings, ApiSettings]:

@@ -191,13 +191,31 @@ From `backend/`, preview the same admission plan without loading runtime setting
 uv run --locked python -m scripts.verify_m1_5_live_baseline
 ```
 
-Actual execution requires Docker, the same complete host-side M1 worker/API provider configuration,
+Actual execution requires Docker, the existing complete M1 provider configuration,
 and explicit approval to send the frozen public-synthetic corpus to the configured providers.
-Runtime settings load credentials; agents must not inspect environment or secret files. Existing
+The evaluation-only loader reads the root local configuration at runtime; agents must not inspect
+environment or secret files. Existing
 roles are document embeddings, query embeddings, Pinecone indexing/cleanup, Pinecone querying, and
 the shared answer/support credential. No new credential or provider is introduced. The Pinecone
 index must already exist with the accepted M1 configuration and Starter confirmation; this tool
 does not provision an index.
+
+The five existing `INVESTMENT_RESEARCH_*_API_KEY_SECRET_FILE` settings are supported without
+duplicating keys as direct values. Relative paths resolve from the repository root and must name
+regular, bounded, UTF-8 files directly under its real `.secrets/` directory. Absolute paths to that
+same directory are allowed; symlinks, traversal, non-regular files, and conflicting direct/file
+values are rejected. Direct `INVESTMENT_RESEARCH_*_API_KEY` values remain an alternative, not an
+additional requirement. Process variables override their corresponding local-file variables;
+credentials are never exported into the process environment. Mounted Docker `_FILE` settings stay
+exclusive to the normal application loader.
+
+The Pinecone host and `INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD` remain required.
+The latter must satisfy the existing USD 5 monthly application ceiling; the invocation guard is
+still independently capped at USD 0.30. Ordinary PostgreSQL, Redis, S3, parser, runtime-location,
+and raw-output settings are not loaded: the tool owns its evaluation database and does not execute
+the worker delivery path. Credential/model validation reuses the existing application settings.
+Configuration errors name only a fixed setting and reason, never a value, secret path, or raw
+validation exception. Free preflight does not invoke this loader.
 
 The following command enables paid calls and creates derived vectors. It has **not yet been run
 against live providers**. Use a new report filename each time:
@@ -235,7 +253,9 @@ ignored `outputs/m1_5/`; existing files and escaped/symlinked targets are reject
 
 An operational case failure or failed cleanup produces exit code 1 while retaining a completed
 measurement report. Configuration/startup failures or an interruption may leave only an empty
-reserved file; it is not an accepted result. A verified run can still have weak coverage or citation
+reserved file; it is not an accepted result. Use a new filename for a retry; do not overwrite the
+earlier file. Output errors explicitly remind the caller of this requirement. A verified run can
+still have weak coverage or citation
 scores: exit code 0 proves execution, not the M1.5 quality gate. Independent support assessment
 remains pending and is never inferred from the application's own support evaluator. Live quality
 results and independent review must be recorded separately before Step 0 closes.

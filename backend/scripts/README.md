@@ -20,6 +20,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `m1_5_live_index.py`          | Owns a fresh bounded evaluation namespace and verifies scoped cleanup.                   |
 | `m1_5_live_runner.py`         | Measures the frozen corpus through canonical M1 research and persisted-answer readback.  |
 | `m1_5_live_runtime.py`        | Owns disposable PostgreSQL and role-specific provider clients for evaluation.            |
+| `m1_5_live_settings.py`       | Loads only evaluation providers and budget, including existing local Compose secret files. |
 | `verify_m1_5_live_baseline.py` | Defaults to free preflight; paid evaluation requires explicit execution and confirmations. |
 | `verify_object_storage.py`    | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
 | `verify_parser_isolation.py`  | Exercises the final parser image, protocol, resources, and network isolation.            |
