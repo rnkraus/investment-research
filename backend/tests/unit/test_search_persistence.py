@@ -23,6 +23,7 @@ from investment_research.modules.search.domain import (
     SearchRelationshipError,
     SearchScopeError,
 )
+from investment_research.modules.search.fusion_contracts import RRF_CONFIG_VERSION
 from investment_research.modules.search.persistence import (
     RetrievalCandidateRow,
     RetrievalRunRow,
@@ -111,6 +112,7 @@ def make_candidate(
     origin: RetrievalOrigin = RetrievalOrigin.LEXICAL,
     raw_score: float = 0.75,
     selection_rank: int | None = None,
+    fused_rank: int | None = None,
 ) -> RetrievalCandidate:
     """Build one deterministic ranked retrieval candidate."""
 
@@ -123,8 +125,116 @@ def make_candidate(
         rank=rank,
         raw_score=raw_score,
         selection_rank=selection_rank,
+        fused_rank=fused_rank,
         created_at=COMPLETED_AT,
     )
+
+
+def make_rrf_candidates() -> tuple[RetrievalCandidate, ...]:
+    """Give the second lexical chunk a shared dense vote and first fusion rank."""
+
+    return (
+        make_candidate(fused_rank=2, selection_rank=2),
+        make_candidate(
+            candidate_id=OTHER_CANDIDATE_ID,
+            chunk_id=OTHER_CHUNK_ID,
+            rank=2,
+            fused_rank=1,
+            selection_rank=1,
+        ),
+        make_candidate(
+            candidate_id=OTHER_ID,
+            chunk_id=OTHER_CHUNK_ID,
+            origin=RetrievalOrigin.DENSE,
+            raw_score=-0.9,
+            fused_rank=1,
+        ),
+    )
+
+
+def test_repository_accepts_reconstructable_rrf_ranks_and_round_trips_fields() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(update={"selector_config_version": RRF_CONFIG_VERSION})
+    candidates = make_rrf_candidates()
+
+    SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, candidates)
+
+    session.add.assert_called_once()
+    assert (
+        tuple(RetrievalCandidateRow.from_domain(item).to_domain() for item in candidates)
+        == candidates
+    )
+
+
+@pytest.mark.parametrize("fused_rank", [None, 1, 3])
+def test_repository_rejects_invented_rrf_rank_before_staging(fused_rank: int | None) -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(update={"selector_config_version": RRF_CONFIG_VERSION})
+    candidates = make_rrf_candidates()
+    changed = (candidates[0].model_copy(update={"fused_rank": fused_rank}), *candidates[1:])
+
+    with pytest.raises(SearchRelationshipError, match="fusion ranks do not match"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, changed)
+    session.add.assert_not_called()
+    session.flush.assert_not_called()
+    session.add_all.assert_not_called()
+
+
+def test_repository_rejects_rrf_selection_that_reverses_fusion_order() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(update={"selector_config_version": RRF_CONFIG_VERSION})
+    first, second, dense = make_rrf_candidates()
+    changed = (
+        first.model_copy(update={"selection_rank": 1}),
+        second.model_copy(update={"selection_rank": 2}),
+        dense,
+    )
+    with pytest.raises(SearchRelationshipError, match="preserve fusion order"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, changed)
+    session.add.assert_not_called()
+
+
+def test_repository_accepts_budget_gaps_and_empty_rrf_results() -> None:
+    run = make_dual_lane_run().model_copy(update={"selector_config_version": RRF_CONFIG_VERSION})
+    first, second, dense = make_rrf_candidates()
+    for candidates in (
+        (),
+        (
+            first.model_copy(update={"selection_rank": 1}),
+            second.model_copy(update={"selection_rank": None}),
+            dense,
+        ),
+    ):
+        session = create_autospec(Session, instance=True)
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, candidates)
+        session.add.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"lexical_candidate_limit": 21},
+        {"dense_candidate_limit": 21},
+    ],
+)
+def test_repository_rejects_rrf_lane_limits_beyond_the_versioned_policy(
+    changes: dict[str, object],
+) -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_CONFIG_VERSION, **changes}
+    )
+    with pytest.raises(SearchRelationshipError, match="bounded dual-lane"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, ())
+    session.add.assert_not_called()
+
+
+def test_repository_rejects_rrf_policy_on_lexical_only_run() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_run().model_copy(update={"selector_config_version": RRF_CONFIG_VERSION})
+    with pytest.raises(SearchRelationshipError, match="bounded dual-lane"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, ())
+    session.add.assert_not_called()
 
 
 def test_retrieval_run_preserves_query_and_round_trips_filter_snapshot() -> None:

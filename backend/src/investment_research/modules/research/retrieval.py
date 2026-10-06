@@ -34,6 +34,7 @@ from investment_research.modules.search.application import (
     validate_embedding_response,
 )
 from investment_research.modules.search.contracts import (
+    M1_LANE_CANDIDATE_LIMIT,
     M1_PROVIDER_MAX_ATTEMPTS,
     M1_PROVIDER_RETRY_DELAY_SECONDS,
     DenseQualificationRequest,
@@ -46,8 +47,8 @@ from investment_research.modules.search.contracts import (
     LexicalSearchProfile,
     LexicalSearchQuery,
     M1SelectionProfile,
-    M1SelectionResult,
     QualifiedDenseHit,
+    SelectedRetrievalCandidate,
 )
 from investment_research.modules.search.domain import (
     LEXICAL_ORDER_SELECTOR_CONFIG_VERSION,
@@ -57,6 +58,8 @@ from investment_research.modules.search.domain import (
     RetrievalOrigin,
     RetrievalRun,
 )
+from investment_research.modules.search.fusion import select_rrf_context
+from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
 from investment_research.modules.search.ports import (
     DenseRetriever,
     EmbeddingProvider,
@@ -89,7 +92,7 @@ class M1QueryRetrievalDependencies:
     embedding_provider: EmbeddingProvider
     dense_retriever: DenseRetriever
     dense_profile: DenseRetrievalProfile
-    selection_profile: M1SelectionProfile
+    selection_profile: M1SelectionProfile | RrfSelectionProfile
     provider_operation_executor: ExecuteProviderOperationService
     embedding_accounting: QueryEmbeddingAccountingProfile
     retry_delay_seconds: float = M1_PROVIDER_RETRY_DELAY_SECONDS
@@ -134,6 +137,16 @@ class RetrieveResearchService:
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
+        if (
+            m1_query_retrieval is not None
+            and isinstance(m1_query_retrieval.selection_profile, RrfSelectionProfile)
+            and max(
+                search_profile.candidate_limit,
+                m1_query_retrieval.dense_profile.candidate_limit,
+            )
+            > M1_LANE_CANDIDATE_LIMIT
+        ):
+            raise ValueError("RRF requires at most twenty candidates per lane")
         self._unit_of_work_factory = unit_of_work_factory
         self._search_profile = search_profile
         self._m1_query_retrieval = m1_query_retrieval
@@ -358,7 +371,7 @@ class RetrieveResearchService:
             dense_hits = tuple(unit_of_work.dense_qualifier.qualify(context, qualification_request))
             if progress is not None:
                 progress(request.id, "SELECTING_PASSAGES")
-            selection = select_m1_context(
+            selected_candidates, fused_ranks = self._select_context(
                 lexical_hits=lexical_hits,
                 dense_hits=dense_hits,
                 profile=dependencies.selection_profile,
@@ -375,11 +388,11 @@ class RetrieveResearchService:
                 lexical_config_version=query.lexical_config_version,
                 embedding_config_version=dense_query.embedding_config_version,
                 dense_index_config_version=dense_query.dense_index_config_version,
-                selector_config_version=selection.profile.selector_config_version,
+                selector_config_version=dependencies.selection_profile.selector_config_version,
                 lexical_candidate_limit=query.candidate_limit,
                 dense_candidate_limit=dense_query.candidate_limit,
-                context_chunk_limit=selection.profile.context_chunk_limit,
-                context_character_limit=selection.profile.context_character_limit,
+                context_chunk_limit=dependencies.selection_profile.context_chunk_limit,
+                context_character_limit=dependencies.selection_profile.context_character_limit,
                 started_at=started_at,
                 completed_at=completed_at,
             )
@@ -388,7 +401,8 @@ class RetrieveResearchService:
                 run=run,
                 lexical_hits=lexical_hits,
                 dense_hits=dense_hits,
-                selection=selection,
+                selected_candidates=selected_candidates,
+                fused_ranks=fused_ranks,
             )
             unit_of_work.retrieval.add_result(context, run, candidates)
             sources = tuple(
@@ -402,7 +416,7 @@ class RetrieveResearchService:
                     page_number=selected.page_number,
                     text=selected.text,
                 )
-                for selected in selection.candidates
+                for selected in selected_candidates
             )
 
         return ResearchRetrievalResult(
@@ -412,6 +426,35 @@ class RetrieveResearchService:
             sources=sources,
         )
 
+    @staticmethod
+    def _select_context(
+        *,
+        lexical_hits: tuple[LexicalSearchHit, ...],
+        dense_hits: tuple[QualifiedDenseHit, ...],
+        profile: M1SelectionProfile | RrfSelectionProfile,
+    ) -> tuple[tuple[SelectedRetrievalCandidate, ...], dict[UUID, int]]:
+        """Normalize either policy to the existing canonical source contract."""
+
+        if isinstance(profile, M1SelectionProfile):
+            result = select_m1_context(
+                lexical_hits=lexical_hits, dense_hits=dense_hits, profile=profile
+            )
+            return result.candidates, {}
+
+        fused = select_rrf_context(
+            lexical_hits=lexical_hits, dense_hits=dense_hits, profile=profile
+        )
+        selected = tuple(
+            SelectedRetrievalCandidate(
+                **item.candidate.hit.model_dump(),
+                origin=item.candidate.contributions[0].origin,
+                rank=item.candidate.contributions[0].rank,
+                selection_rank=item.selection_rank,
+            )
+            for item in fused.candidates
+        )
+        return selected, {item.hit.chunk_id: item.fused_rank for item in fused.ranked_candidates}
+
     def _build_dual_lane_candidates(
         self,
         *,
@@ -419,7 +462,8 @@ class RetrieveResearchService:
         run: RetrievalRun,
         lexical_hits: tuple[LexicalSearchHit, ...],
         dense_hits: tuple[QualifiedDenseHit, ...],
-        selection: M1SelectionResult,
+        selected_candidates: tuple[SelectedRetrievalCandidate, ...],
+        fused_ranks: dict[UUID, int],
     ) -> tuple[
         tuple[RetrievalCandidate, ...],
         dict[tuple[RetrievalOrigin, int], RetrievalCandidate],
@@ -428,7 +472,7 @@ class RetrieveResearchService:
 
         selection_rank_by_lane = {
             (candidate.origin, candidate.rank): candidate.selection_rank
-            for candidate in selection.candidates
+            for candidate in selected_candidates
         }
         candidates: list[RetrievalCandidate] = []
         candidate_by_lane: dict[tuple[RetrievalOrigin, int], RetrievalCandidate] = {}
@@ -450,6 +494,7 @@ class RetrieveResearchService:
                     rank=rank,
                     raw_score=hit.raw_score,
                     selection_rank=selection_rank_by_lane.get((origin, rank)),
+                    fused_rank=fused_ranks.get(hit.chunk_id),
                     created_at=run.completed_at,
                 )
                 candidates.append(candidate)

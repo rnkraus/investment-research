@@ -108,4 +108,4 @@ def select_rrf_context(
             continue
         selected.append(RrfSelectedCandidate(candidate=candidate, selection_rank=len(selected) + 1))
         character_count += size
-    return RrfSelectionResult(profile=profile, candidates=tuple(selected))
+    return RrfSelectionResult(profile=profile, ranked_candidates=ranked, candidates=tuple(selected))
