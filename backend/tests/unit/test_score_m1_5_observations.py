@@ -211,6 +211,53 @@ def test_observation_schema_refuses_raw_prompt_or_source_content() -> None:
         ObservationSet.model_validate(payload)
 
 
+def test_unknown_live_usage_does_not_become_a_zero_cost_total() -> None:
+    observations = make_complete_observations()
+    cases = tuple(
+        case.model_copy(
+            update={
+                "provider_usage": ProviderUsage(
+                    input_tokens=None if index == 0 else 10,
+                    output_tokens=None if index == 0 else 5,
+                    estimated_cost_micro_usd=None if index == 0 else 100,
+                )
+            }
+        )
+        for index, case in enumerate(observations.cases)
+    )
+    live = observations.model_copy(update={"run_mode": "live_opt_in", "cases": cases})
+
+    summary = score_controlled_observations(live)
+
+    assert summary.provider_input_tokens is None
+    assert summary.provider_output_tokens is None
+    assert summary.estimated_cost_micro_usd is None
+    assert summary.case_count == 6
+
+
+def test_reported_live_usage_is_summed_without_inventing_support_review() -> None:
+    observations = make_complete_observations()
+    cases = tuple(
+        case.model_copy(
+            update={
+                "provider_usage": ProviderUsage(
+                    input_tokens=10, output_tokens=5, estimated_cost_micro_usd=100
+                )
+            }
+        )
+        for case in observations.cases
+    )
+
+    summary = score_controlled_observations(
+        observations.model_copy(update={"run_mode": "live_opt_in", "cases": cases})
+    )
+
+    assert summary.provider_input_tokens == 60
+    assert summary.provider_output_tokens == 30
+    assert summary.estimated_cost_micro_usd == 600
+    assert summary.support_assessed_count == 0
+
+
 def test_cli_prints_counts_without_question_or_source_text(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
