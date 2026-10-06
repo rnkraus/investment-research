@@ -279,6 +279,130 @@ cross-workspace IDs, changed eligibility, and multiple supporting units.
 reviewed Luna quote-failure cases are compared against the prior exact-substring contract. No
 fuzzy match or whole-chunk citation is accepted as a workaround.
 
+#### Step 2 contract — Citable units v1
+
+**Design recorded:** 2026-10-07. This is the implementation contract, not implemented behavior,
+a default-policy change, or evidence that Step 2 passed. Step 1's production-build and hosted-CI
+confirmations remain prerequisites for implementation. The existing M1 quote profile remains
+available and unchanged for comparison and historical interpretation.
+
+The design follows the source-ID/locator separation in the official
+[citation guide](https://developers.openai.com/api/docs/guides/citation-formatting). Strict
+[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)
+can restrict selection to supplied IDs, but cannot establish statement support. The exact
+granularity and limits below are project decisions to evaluate, not a claim of universal optimality
+or state-of-the-art answer quality. This internal generation policy preserves ADR-0008's adapter
+boundary and ADR-0009's canonical anchors; it does not introduce another canonical entity.
+
+**Preparation and boundaries**
+
+- Build the catalog in Research after canonical qualification and context selection, before answer
+  generation. Retain the selected context's existing bounds of 8 chunks and 24,000 Unicode code
+  points. Do not retrieve, embed, index, or call a model to create units.
+- Derive ranges from the complete immutable `StructureBlock.text`, not from a rewritten chunk.
+  The current M1 chunk equals one complete block. Reject a source that cannot be proven to map
+  to that block; future overlapping or multi-block chunk policies require explicit range mapping,
+  not an assumed zero offset.
+- Use the version `m1-5-citable-units-en-v1`. In original order, split at a run of `.`, `?`, or `!`,
+  followed by zero or more closing characters from `"'”’)]}`, then whitespace or the block end.
+  Also split at blank-line paragraph separators: two line feeds with only spaces or tabs between
+  them. A single PDF line break is not a boundary. Include terminal punctuation and closing
+  characters in the preceding range. This is a deterministic English heuristic, not linguistic
+  sentence recognition; abbreviations and list punctuation can produce short units.
+- Limit each unit to 800 code points. For a longer range, split at the last whitespace position
+  after the current start and at or before that limit; if none exists, split exactly at the limit.
+  Remove leading/trailing separator whitespace only by moving range endpoints. Never normalize,
+  dehyphenate, paraphrase, reorder, or change characters inside a range. Retain every non-whitespace
+  character, including text without sentence punctuation.
+- Units are nonempty, ordered, non-overlapping, block-relative half-open ranges `[start, end)`.
+  Each contains visible text and satisfies `unit.text == block.text[start:end]`. A short block may
+  legitimately yield one unit; do not expand another selected range to a whole chunk as recovery.
+- Deduplicate equal canonical ranges, not equal text. Two occurrences of the same sentence at
+  different offsets remain two distinct units. If future overlapping candidates expose the same
+  mapped range, offer it once and retain the first selected candidate as its retrieval provenance.
+- Offer at most 256 units per request. Overflow fails before answer generation with a safe,
+  application-owned limit error. Do not silently omit later passages, merge all units into a
+  chunk-sized fallback, or ask the model to repair the catalog. The cap and 800-character limit
+  require explicit boundary tests and quality measurement before adoption.
+
+**Identity and provider contract**
+
+The server-only canonical key is `(workspace_id, document_version_id, structure_block_id,
+start_character, end_character, unit_policy_version)`. It is independent of lexical/dense lane,
+chunk rank, and wording elsewhere. Use this key for deterministic deduplication; do not create
+a database row or log source content for it.
+
+Derive the provider-visible `source_unit_id` as UUIDv5 with the research-request UUID as namespace
+and the canonical key serialized as a fixed-order compact JSON array, using lowercase UUID strings
+and integer offsets. This gives reproducible handles within one request and distinct handles across
+requests. The canonical range stays stable across unchanged inputs; the external handle is
+request-scoped, not a permanent citation ID, secret, or authorization token. Resolve it only in the
+current server-owned catalog, never through a global lookup or by decoding model-supplied metadata.
+
+Present units in selected-source order and block-offset order, grouped under their source. Serialize
+the original source text once, with unit IDs and boundaries as metadata; do not duplicate the full
+chunk and every unit's text in the prompt. Preserve surrounding context. Quote-like instructions
+inside a source remain untrusted data. The model selects one or two distinct supplied
+`source_unit_id` values per statement; it returns neither `exact_text` nor offsets nor a
+retrieval-candidate ID for this profile. Keep the existing 8-statement limit, four coverage states,
+and `missing_information` rules. A claim requiring more than two units must be decomposed into
+independently supported statements or safely omitted, not bypass the evidence limit.
+
+The strict provider schema defines the current catalog IDs once as a shared enum and forbids extra
+fields. The adapter also checks catalog membership and duplicate IDs, independently of provider
+schema compliance. An empty catalog must not produce an empty enum or a paid generation call;
+use the existing no-evidence path. Unknown, cross-request, mixed-catalog, or duplicate references
+fail closed, with bounded content-free diagnostics.
+
+**Resolution, validation, and compatibility**
+
+Resolve each selected unit to its catalog-owned retrieval candidate, exact block range, and exact
+text. Return the existing `UnvalidatedEvidenceReference` shape to application validation. The
+statement-support evaluator still receives the statement and resolved exact evidence text outside
+the answer transaction. Before atomically storing an accepted answer, reload and revalidate all
+canonical workspace, request/candidate, active-version, processing, temporal, text, and range rules.
+A known ID is not proof of support. Do not combine separated units into a larger implied quote or
+use fuzzy matching to rescue an invalid reference.
+
+Create or reuse `EvidenceSpan` records only through the existing validated-answer persistence path.
+Offering a unit creates no evidence record. Retain the existing PDF locator, pasted-text absolute
+range calculation, evidence-span URL, HTTP/OpenAPI events, and source viewer. No migration,
+reprocessing, vector upload, frontend change, or historical answer rewrite is required by this
+contract. New generator/configuration/prompt versions must identify the unit policy; do not
+reinterpret the frozen M1 versions. Validate serialized-input/schema overhead against existing
+token reservations before enabling any paid comparison; no budget increase or live run is approved
+by this design.
+
+```mermaid
+flowchart TD
+    A[Selected canonical sources] --> B[Exact ranges and request-scoped unit catalog]
+    B --> C[Model proposes statements and unit IDs]
+    C --> D[Resolve IDs to exact original ranges]
+    D --> E[Evaluate statement support outside the answer transaction]
+    E --> F[Recheck canonical sources and persist accepted answer]
+    F --> G[Existing EvidenceSpan and original-source viewer]
+```
+
+**Work blocks and verification**
+
+1. Implement typed catalogs, deterministic range construction, identity, and resolution, with
+   unit tests for repeated text, whitespace, PDF wrapping, abbreviations, decimal numbers,
+   Unicode, long unbroken text, adjacent units, canonical deduplication, and exact cap boundaries.
+2. Add a separately versioned ID-selection generator profile and strict-schema tests; retain the
+   M1 quote profile. Prove rejection of unknown/duplicate/cross-request IDs and unchanged coverage,
+   failure, usage-accounting, local-output, and no-provider-call behavior.
+3. Wire the profile through the research workflow and evaluation runner without changing the
+   runtime default. PostgreSQL tests cover same-text/different-offset citations, reused evidence,
+   two supporting units, foreign sources, changed eligibility after support evaluation, and
+   historical PDF/text citation readback. Existing CI must discover these deterministic tests;
+   frontend contract and complete runtime gates confirm compatibility.
+4. After correctness checks, obtain separate approval for a bounded old/new live comparison on
+   unchanged cases, retrieval, and model pair. Include the repeated-budget case and observed Luna
+   PDF quote failures. Record citation validity, independently reviewed support, coverage, safe
+   failures, latency, usage, cost, and catalog size. Do not claim an evaluator false rejection or
+   improved answer quality merely because copied-quote errors disappear. Adopt only with a
+   documented benefit and no critical regression; otherwise retain M1.
+
 ### Step 3 — Bounded reranking experiment
 
 Research a maintained multilingual cross-encoder or provider behind a small typed adapter.

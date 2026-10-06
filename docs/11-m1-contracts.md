@@ -334,6 +334,13 @@ filtering.
 
 ## 8. Generation, support evaluation, and evidence
 
+This section freezes the retained M1 exact-substring profile. The separately versioned M1.5
+source-unit ID profile is specified in the
+[Step 2 design contract](./13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1).
+That design is not yet implemented or adopted as the runtime default. It resolves selected IDs
+to the same application-owned evidence-reference shape and preserves the validation and
+source-viewer contracts below; it does not reinterpret historical M1 answers.
+
 Generation receives only:
 
 - the research-request identifier;
