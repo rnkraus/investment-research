@@ -214,8 +214,23 @@ with seven unrelated SeaweedFS-only skips. The migration cycle and schema checks
 disposable database resources were removed. Existing CI discovers the paired test automatically;
 no provider call, historical report rewrite, frontend change, or default switch occurred.
 
-Next, prepare a separately approved, bounded provider-backed comparison without changing prompts,
-models, embeddings, or the corpus between policies. M1 remains the default. This retrieval-only
+**Live-selector preparation (2026-10-07):** A fourth work block adds the explicit evaluation-only
+`--retrieval-policy m1|rrf` option to the free planner and opt-in runner. The default remains M1.
+The runner uses the planned frozen selector, and its v2 observations and summary record that
+version. Models, prompts, corpus, context bounds, request ceilings, and USD 0.80 per-invocation
+budget are unchanged. Unknown selector versions fail closed. Existing CI automatically exercises
+both profiles across success, budget exhaustion, provider failures, quote rejection, and rejected
+support; PostgreSQL assertions inspect the stored selector versions and RRF fusion ranks.
+Verification passed formatting, lint, typing, 1,300 unit tests, and 126 PostgreSQL tests with seven
+separate storage skips. Migration/drift checks and owned database cleanup passed. Both free RRF
+preflight commands were executed; no paid run, browser, frontend change, or historical rewrite
+occurred. The [live selector guide](../fixtures/m1_5/README.md#live-selector-experiment) explains
+that separate invocations are not paired candidate snapshots and that their combined spend is
+not automatically approved.
+
+Next, prepare the controlled live comparison protocol and obtain explicit spend approval before
+provider execution, without changing prompts, models, embeddings, or the corpus between policies.
+M1 remains the default. The offline retrieval-only
 report is not a v2 answer observation and cannot be compared with historical answer/citation
 scores. Step 1 is not accepted on the narrow offline comparison alone.
 

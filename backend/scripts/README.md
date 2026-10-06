@@ -38,6 +38,13 @@ runner is a development tool and reuses the synthetic integration fixture builde
 application request handlers never import it. Required CI uses deterministic test ports, not
 live keys or paid calls.
 
+Both live-plan commands accept `--retrieval-policy m1|rrf`, defaulting to M1. The runner resolves
+that frozen profile into the canonical retrieval service and records its actual selector version
+in the admission plan, v2 observations, and summary. Budgets, prompts, model choices, provider
+permissions, and the application default are unchanged. Free preflight never loads keys; live
+execution still requires explicit confirmations. Separate live runs are not a paired snapshot
+comparison. See the [live selector guide](../../fixtures/m1_5/README.md#live-selector-experiment).
+
 The paired retrieval comparison uses the existing PostgreSQL verifier and optional
 `INVESTMENT_RESEARCH_M1_5_RRF_COMPARISON_OUTPUT` path. Its integration test retrieves once per case
 and supplies the same canonical lanes to the frozen M1 and RRF selectors. The scorer checks the

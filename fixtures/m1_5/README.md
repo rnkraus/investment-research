@@ -315,8 +315,8 @@ Step 0 is accepted for the starting-baseline scope. Preserve this recorded v2 ru
 comparison baseline with both failures; passing every live case is not required to preserve a
 starting measurement. Unknown aggregate usage and cost remain unknown, and canonical citation
 validity remains report-derived. Acceptance does not close either failure or the final M1.5
-quality gate. RRF work has not started and is the next work block; broader model-quality claims
-require later evaluation.
+quality gate. RRF had not started at baseline acceptance; its subsequent offline comparison is
+recorded above. Broader model-quality claims require later evaluation.
 
 ## Credential-free live preflight
 
@@ -440,6 +440,40 @@ delivery/recovery test or a replacement for normal document-ingestion accounting
 a production database URL or caller-selected namespace. By default it installs no content-output
 callback; it uses no exporter or browser. Cleanup closes clients and removes only invocation-owned
 resources.
+
+### Live selector experiment
+
+Both `plan_m1_5_live_baseline` and `verify_m1_5_live_baseline` accept
+`--retrieval-policy m1|rrf`. Omitting it preserves M1. These free RRF preflight commands were
+verified on 2026-10-07, from `backend/`:
+
+```bash
+uv run --locked python -m scripts.plan_m1_5_live_baseline --retrieval-policy rrf
+uv run --locked python -m scripts.verify_m1_5_live_baseline --retrieval-policy rrf
+```
+
+The option changes only the frozen selector: `m1-lexical-first-round-robin-v1` or
+`m1-5-rrf-k60-v1`. Corpus, prompts, models, embedding/index configuration, context limits,
+role ceilings, and the maximum USD 0.80 invocation reservation remain unchanged. Runtime
+composition resolves the recorded version rather than accepting arbitrary profiles or falling
+back silently. PostgreSQL tests verify actual retrieval versions and RRF fusion ranks, including
+budget exhaustion, provider failure, and evidence rejection. These tests use scripted adapters
+and spend no provider credits. Existing CI discovers them automatically.
+
+For a separately approved live invocation, the same option can be added to the existing explicit
+execution command above. Each invocation retains its own USD 0.80 ceiling; two invocations could
+therefore reserve up to USD 1.60 combined. No combined spend is implicitly approved. Always use a
+new report filename and the same model pair for both policies. The application default remains
+M1; this option is evaluation-only and is not a website setting.
+
+The admission plan, v2 observations, summary, and completion message name the selected version.
+Preserve the accepted historical baseline unchanged. The new option alone does not produce a
+live quality measurement or independent support review. Separate live runs have separate query
+calls, namespaces, random canonical IDs, and stochastic model answers; they are not a paired
+candidate-snapshot experiment and a score difference cannot be attributed to fusion alone.
+The paired offline comparison remains the controlled selector-mechanics check. Record these
+limitations in the eventual live comparison rather than claiming a quality improvement from
+this wiring change. No live RRF run has been performed as part of this work block.
 
 ### Interactive local inspection
 
