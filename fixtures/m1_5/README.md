@@ -118,8 +118,48 @@ measures model quality or discovers conflicts independently; the scorer therefor
 independent support assessments and no provider usage or cost.
 
 Keep offline results separate from any bounded, opt-in live model run, and do not describe this
-six-case sample as a population-level quality estimate. Independent support assessment and live
-model baseline measurements are still pending.
+six-case sample as a population-level quality estimate. Independent support assessment remains
+pending; the separately recorded live starting measurement is described below.
+
+## Recorded live starting measurement
+
+The owner executed the Terra/Terra M1 baseline on 2026-10-06. The historical, ignored report is
+`outputs/m1_5/m1-live-inspection-20261006-232325.json`; it is not a committed fixture or a source
+of product requirements. Its reviewed corpus digest is
+`ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75a96a41d5f9`. The report records the unchanged
+M1 round-robin selector, `m1-grounded-answer-prompt-v4`, and `m1-statement-support-prompt-v1`.
+Re-scoring its observations against the reviewed catalog reproduces the following counts:
+
+- Required evidence available in context: **5/5 answerable cases**.
+- Expected coverage matched: **5/6 cases**, including the expected abstention and source conflict.
+- Exact canonical citations valid: **4/4 cases with published citations**.
+- Catalog citation-match score: **4/6 cases**, including the correctly uncited abstention.
+- Safe operational failures: **1/6 cases**; no unsafe failure was recorded.
+- Median question-phase elapsed time: **4,284 ms**; maximum: **6,073 ms**. These exclude the
+  **2,754 ms** preparation phase and do not measure browser rendering.
+- Retained OpenAI reservations: **USD 0.650548**, not actual charges. Report-derived total usage
+  and usage-based cost estimate are **unknown**, not zero. Cleanup was recorded as **VERIFIED**.
+- The owner reported approximately **USD 0.07** in the OpenAI usage view for this run. This is
+  a user-reported dashboard amount, not a total reconstructed from the measurement report;
+  its attribution to this invocation has not been independently verified.
+
+The pilot-budget case failed with answer-generation contract detail `quote_ambiguous`: the same
+wording occurs twice in the selected original source. The evidence was retrieved, but no accepted
+answer or citation was published. This is a baseline citation-selection failure, not permission
+to accept an arbitrary occurrence or a whole-chunk citation.
+
+The rollout-constraint case completed with two exact valid citations but only one distinct
+reviewed passage ID. The current scorer requires total citation count to equal the number of
+distinct matched passage IDs, so it marks this case's catalog citation match false. Keep that
+metric limitation separate from canonical citation validity. Do not reinterpret historical
+scores or modify labels silently; review and version any scoring change before a comparison.
+
+This historical run used a temporary **USD 1.00** invocation ceiling. Its reservations stayed
+below the subsequently approved **USD 0.80** ceiling, but it was not executed under that new
+admission limit and is not a fresh verification of it. Preserve the original report unchanged.
+Independent support assessments are **0/6**; the application's own evaluator is not independent
+review. Step 0 remains open pending that review and resolution of the comparison-metric contract.
+These six cases provide a descriptive starting measurement, not a general RAG-quality claim.
 
 ## Credential-free live preflight
 
@@ -297,5 +337,6 @@ reserved file; it is not an accepted result. Use a new filename for a retry; do 
 earlier file. Output errors explicitly remind the caller of this requirement. A verified run can
 still have weak coverage or citation
 scores: exit code 0 proves execution, not the M1.5 quality gate. Independent support assessment
-remains pending and is never inferred from the application's own support evaluator. Live quality
-results and independent review must be recorded separately before Step 0 closes.
+remains pending and is never inferred from the application's own support evaluator. The
+[recorded live starting measurement](#recorded-live-starting-measurement) does not close Step 0;
+independent review and the comparison-metric decision must also be recorded.

@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 0 in progress; no M1.5 quality baseline recorded yet
+**Status:** Active — Step 0 in progress; live starting measurement recorded, independent review pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -90,8 +90,9 @@ and one abstention, and two injected invalid proposals persist `REJECTED` withou
 content. Its first local median was 47 ms and maximum 71 ms, including passage mapping. The
 existing PostgreSQL CI job discovers these tests automatically. The generator and support adapter
 use reviewed fixture rules, so independent support assessments, provider usage, cost, and live
-model quality remain unmeasured. The offline correctness baseline is reproducible; the full
-Step 0 gate remains open pending the separately opted-in quality measurements.
+model quality remain unmeasured by these offline runs. The offline correctness baseline is
+reproducible; the separately opted-in live starting measurement is recorded below, while the
+full Step 0 gate remains open pending independent review.
 
 A credential-free live preflight now pins this reviewed corpus digest and reports the existing
 M1 configuration and independently selected Terra/Luna model prices. Its sequential invocation
@@ -111,9 +112,16 @@ content-free JSON report records cleanup status without overwriting existing res
 unit and PostgreSQL CI jobs discover the deterministic tests automatically. The command defaults
 to credential-free preflight; paid execution requires both public-synthetic and Pinecone-Starter
 confirmations plus an explicit output path. See the
-[live-run guide](../fixtures/m1_5/README.md#opt-in-live-baseline). No live-provider quality run or
-independent support review has been executed by this implementation block. Those separately
-approved measurements remain the next Step 0 work; RRF tuning has not started.
+[live-run guide](../fixtures/m1_5/README.md#opt-in-live-baseline). The owner subsequently executed
+the bounded Terra/Terra baseline on 2026-10-06. Re-scoring its observations reproduced 5/5
+answerable retrieval hits and 5/6 expected coverage outcomes, with one safely rejected ambiguous
+quote. The measured configuration, latency, reservations, missing usage totals, historical
+invocation ceiling, verified cleanup, and citation-score limitation are recorded in the
+[live starting measurement](../fixtures/m1_5/README.md#recorded-live-starting-measurement).
+Independent support review remains pending. Review the scorer's treatment of multiple valid
+citations mapped to one reviewed passage before comparing retrieval policies; do not silently
+change the frozen metric or historical report. Step 0 is not accepted and RRF tuning has not
+started.
 
 The live runner now retains optional, allowlisted provider diagnostics and failed canonical
 validation rules, also printed per failed case. No raw error, source, answer, or model-authored
