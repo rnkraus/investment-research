@@ -118,10 +118,13 @@ answerable retrieval hits and 5/6 expected coverage outcomes, with one safely re
 quote. The measured configuration, latency, reservations, missing usage totals, historical
 invocation ceiling, verified cleanup, and citation-score limitation are recorded in the
 [live starting measurement](../fixtures/m1_5/README.md#recorded-live-starting-measurement).
-Independent support review remains pending. Review the scorer's treatment of multiple valid
-citations mapped to one reviewed passage before comparing retrieval policies; do not silently
-change the frozen metric or historical report. Step 0 is not accepted and RRF tuning has not
-started.
+Independent support review remains pending. New offline and live observations now use the
+version-2 per-citation mapping contract and explicitly record
+`m1.5-observation-score-v2`. It accepts multiple valid citations inside one expected passage while
+rejecting unmatched or unexpected citations. Version-1 observations and historical scores retain
+the old rule; no missing mapping is inferred. The contract and comparison boundary are maintained
+in the [corpus guide](../fixtures/m1_5/README.md). Future retrieval-policy comparisons require v2
+observations on both sides. Step 0 is not accepted and RRF tuning has not started.
 
 The live runner now retains optional, allowlisted provider diagnostics and failed canonical
 validation rules, also printed per failed case. No raw error, source, answer, or model-authored

@@ -46,6 +46,24 @@ deterministic offline observation cannot claim real provider usage or cost; a se
 live observation must record provider-reported usage and estimated cost. The scorer does not infer
 support from model output or accept raw prompts and source text in its observation schema.
 
+New observation sets use `schema_version: 2`. Each case also records `citation_passage_ids`:
+one tuple of reviewed passage IDs per statement-to-evidence link, in link order. A reused span
+retains one entry for each link; an unmatched citation retains an empty tuple. The tuple count
+must equal `citation_count`, and the union of all mapped IDs must equal `cited_passage_ids`.
+Mappings still require selected, in-scope evidence and exact canonical source ranges.
+
+The summary records `scoring_version: m1.5-observation-score-v2`. Citation match requires every
+citation to map to an expected passage, all required evidence groups to be present, and exact
+canonical citation validity. Multiple citations inside one expected passage are allowed; an
+unmatched or unexpected citation fails the case's citation score. Abstention requires no citations.
+Neither mapping nor scoring replaces statement-support evaluation or supplies independent review.
+
+Version-1 observations keep `m1.5-observation-score-v1` and the original count-versus-distinct-ID
+rule. Historical summaries without `scoring_version` are interpreted as version 1. Missing
+per-citation information cannot be reconstructed from aggregate IDs. Do not upgrade an old report
+or compare v1 and v2 citation-match counts as though the metric were unchanged; use v2 for both
+sides of a future policy comparison. The corpus and expected evidence labels remain unchanged.
+
 `backend/scripts/map_m1_5_passages.py` maps selected canonical chunks and validated original-source
 citation ranges to reviewed passage IDs. It requires matching document identity, source locator,
 position, and exact original text. A selected chunk may contain both repeated budget occurrences,
@@ -149,16 +167,18 @@ answer or citation was published. This is a baseline citation-selection failure,
 to accept an arbitrary occurrence or a whole-chunk citation.
 
 The rollout-constraint case completed with two exact valid citations but only one distinct
-reviewed passage ID. The current scorer requires total citation count to equal the number of
+reviewed passage ID. The version-1 scorer requires total citation count to equal the number of
 distinct matched passage IDs, so it marks this case's catalog citation match false. Keep that
-metric limitation separate from canonical citation validity. Do not reinterpret historical
-scores or modify labels silently; review and version any scoring change before a comparison.
+historical metric limitation separate from canonical citation validity. The version-2 contract
+above corrects it for new observations with explicit per-citation mappings; this report contains
+no such mappings and retains its original 4/6 citation-match score.
 
 This historical run used a temporary **USD 1.00** invocation ceiling. Its reservations stayed
 below the subsequently approved **USD 0.80** ceiling, but it was not executed under that new
 admission limit and is not a fresh verification of it. Preserve the original report unchanged.
 Independent support assessments are **0/6**; the application's own evaluator is not independent
-review. Step 0 remains open pending that review and resolution of the comparison-metric contract.
+review. Step 0 remains open pending independent review; a comparison also needs new v2
+observations on both sides rather than relabeling this historical run.
 These six cases provide a descriptive starting measurement, not a general RAG-quality claim.
 
 ## Credential-free live preflight
@@ -339,4 +359,5 @@ still have weak coverage or citation
 scores: exit code 0 proves execution, not the M1.5 quality gate. Independent support assessment
 remains pending and is never inferred from the application's own support evaluator. The
 [recorded live starting measurement](#recorded-live-starting-measurement) does not close Step 0;
-independent review and the comparison-metric decision must also be recorded.
+independent review is still required, and future comparisons must use the versioned v2 contract
+described above on both sides.
