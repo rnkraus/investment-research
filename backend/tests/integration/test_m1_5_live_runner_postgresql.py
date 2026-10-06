@@ -66,11 +66,13 @@ class ScriptedGenerator:
         fail_first: bool = False,
         altered_quote: bool = False,
         contract_failure: bool = False,
+        repeat_first_statement: bool = False,
     ) -> None:
         self.manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
         self.fail_first = fail_first
         self.altered_quote = altered_quote
         self.contract_failure = contract_failure
+        self.repeat_first_statement = repeat_first_statement
         self.count = 0
 
     def generate(self, request: AnswerGenerationInput) -> AnswerGenerationResult:
@@ -107,6 +109,8 @@ class ScriptedGenerator:
             ),
             missing_information="No reviewed evidence." if insufficient else None,
         )
+        if self.repeat_first_statement and self.count == 1:
+            proposal = proposal.model_copy(update={"statements": proposal.statements * 2})
         return AnswerGenerationResult(
             answer=proposal,
             usage=ProviderUsage(input_units=10, output_units=5),
@@ -184,6 +188,13 @@ def test_runner_records_every_case_and_never_publishes_unvalidated_output(
         local_output=local,
     )
     assert result.summary.case_count == len(result.observations.cases) == 6
+    assert result.observations.schema_version == 2
+    assert result.summary.scoring_version == "m1.5-observation-score-v2"
+    assert all(
+        case.citation_passage_ids is not None
+        and len(case.citation_passage_ids) == case.citation_count
+        for case in result.observations.cases
+    )
     assert result.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
     assert result.summary.support_assessed_count == 0
     assert result.cleanup_status == "PENDING"
@@ -242,3 +253,33 @@ def test_runner_records_every_case_and_never_publishes_unvalidated_output(
         assert all(expected_rule in item.failed_validation_rules for item in result.failures)
         assert all(item.stage == "evidence_validation" for item in result.failures)
         assert all(item.provider_failure is None for item in result.failures)
+
+
+def test_runner_maps_each_statement_citation_when_the_canonical_span_is_reused(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    plan = build_plan(answer_model=ResearchModel.LUNA, support_model=ResearchModel.LUNA)
+    calls = LiveProviderCalls(LiveBaselineBudget(plan))
+    index = ImmediateIndex(tmp_path / "reused-span.sqlite")
+    manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+    embedding = embedding_provider()
+
+    result = run_live_baseline(
+        integration_database_engine,
+        plan,
+        index=cast(IsolatedEvaluationIndex, index),
+        document_embedding=BudgetedEmbeddingProvider(embedding, calls),
+        query_embedding=BudgetedEmbeddingProvider(embedding, calls),
+        generator=BudgetedAnswerGenerator(ScriptedGenerator(repeat_first_statement=True), calls),
+        support=BudgetedSupportEvaluator(ReviewedSupportEvaluator(manifest), calls),
+        calls=calls,
+    )
+
+    first = result.observations.cases[0]
+    assert not result.failures
+    assert first.citation_count == 2
+    assert first.cited_passage_ids == ("passage:fy2025-revenue-comparison",)
+    assert first.citation_passage_ids == (first.cited_passage_ids, first.cited_passage_ids)
+    assert result.summary.citation_match_count == 6
+    assert result.summary.cases[0].exact_citation_valid is True

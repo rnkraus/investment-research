@@ -67,7 +67,7 @@ from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic, provider_fa
 from scripts.m1_5_live_index import IsolatedEvaluationIndex
 from scripts.m1_5_live_providers import LiveProviderCallError, LiveProviderCalls, ProviderCallRecord
 from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
-from scripts.map_m1_5_passages import map_cited_passages, map_selected_passages
+from scripts.map_m1_5_passages import map_citation_passages, map_selected_passages
 from scripts.plan_m1_5_live_baseline import LiveBaselineLimitError, LiveBaselinePlan, build_plan
 from scripts.score_m1_5_observations import (
     CaseObservation,
@@ -428,17 +428,21 @@ def run_live_baseline(
                     )
                 else:
                     stage = "citation_mapping"
-                    cited_ids = map_cited_passages(
+                    spans = {span.id: span for span in result.evidence_spans}
+                    citation_mappings = map_citation_passages(
                         manifest,
-                        result.evidence_spans,
+                        tuple(spans[item.evidence_span_id] for item in result.statement_evidence),
                         blocks_by_id=blocks,
                         catalog_document_version_ids=version_catalog,
                     )
+                    matched = {passage_id for ids in citation_mappings for passage_id in ids}
+                    cited_ids = tuple(item.id for item in manifest.passages if item.id in matched)
                     observation = CaseObservation(
                         case_id=case.id,
                         selected_passage_ids=selected_ids,
                         cited_passage_ids=cited_ids,
                         citation_count=len(result.statement_evidence),
+                        citation_passage_ids=citation_mappings,
                         terminal_status="COMPLETED",
                         coverage_status=(
                             OBSERVED_COVERAGE[result.answer.coverage_status]
@@ -469,6 +473,7 @@ def run_live_baseline(
                 selected_passage_ids=selected_ids,
                 cited_passage_ids=(),
                 citation_count=0,
+                citation_passage_ids=(),
                 terminal_status="FAILED",
                 coverage_status=None,
                 exact_citations_valid=None,
@@ -485,7 +490,7 @@ def run_live_baseline(
                 failed_rules=failed_rules,
             )
     observation_set = ObservationSet(
-        schema_version=1,
+        schema_version=2,
         corpus_id=plan.corpus_id,
         corpus_sha256=plan.corpus_sha256,
         configuration=plan.configuration,
