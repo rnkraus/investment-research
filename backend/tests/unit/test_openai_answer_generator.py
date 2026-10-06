@@ -651,7 +651,8 @@ def test_provider_schema_validation_failure_retains_only_a_fixed_detail() -> Non
     assert captured.value.__cause__ is None
 
 
-def test_local_debug_reads_only_raw_generated_text_from_one_request() -> None:
+@pytest.mark.parametrize("callback_kind", ["failure", "proposal"])
+def test_local_debug_reads_only_raw_generated_text_from_one_request(callback_kind: str) -> None:
     with pytest.raises(ValidationError) as invalid_output:
         openai_module._OpenAIGeneratedAnswer.model_validate(
             {"coverage_status": CoverageStatus.COMPLETE}
@@ -678,7 +679,8 @@ def test_local_debug_reads_only_raw_generated_text_from_one_request() -> None:
     with pytest.raises(OpenAIAnswerProviderContractError) as captured:
         OpenAIAnswerGenerator(
             client=cast(OpenAI, raw_client),
-            local_validation_output=output.append,
+            local_validation_output=output.append if callback_kind == "failure" else None,
+            local_proposal_output=output.append if callback_kind == "proposal" else None,
         ).generate(make_generation_input())
 
     normal_responses = RecordingResponsesResource()
@@ -690,6 +692,37 @@ def test_local_debug_reads_only_raw_generated_text_from_one_request() -> None:
     assert raw_responses.raw_route_used is True
     assert raw_responses.calls == normal_responses.calls
     assert len(raw_responses.calls) == 1
+
+
+@pytest.mark.parametrize("outcome", ["accepted", "ambiguous", "not_found"])
+def test_local_proposal_is_visible_once_before_quote_validation(outcome: str) -> None:
+    proposal = make_provider_proposal(
+        exact_text="absent quote" if outcome == "not_found" else SOURCE_TEXT
+    )
+    source_text = SOURCE_TEXT * 2 if outcome == "ambiguous" else SOURCE_TEXT
+    request = make_generation_input(source_text=source_text)
+    raw = RecordingRawResponsesResource(
+        raw_response=StubRawResponse(
+            body={"metadata": {"secret": "synthetic-private-metadata"}},
+            parsed_response=StubParsedResponse(output_parsed=proposal),
+        )
+    )
+    output: list[str] = []
+    generator = OpenAIAnswerGenerator(
+        client=cast(OpenAI, RecordingRawOpenAIClient(responses=raw)),
+        local_proposal_output=output.append,
+    )
+    if outcome == "accepted":
+        assert generator.generate(request).answer.coverage_status is CoverageStatus.COMPLETE
+    else:
+        with pytest.raises(OpenAIAnswerProviderContractError) as caught:
+            generator.generate(request)
+        assert caught.value.detail == (
+            "quote_ambiguous" if outcome == "ambiguous" else "quote_not_found"
+        )
+    assert output == [proposal.model_dump_json()]
+    assert "synthetic-private-metadata" not in output[0]
+    assert len(raw.calls) == 1
 
 
 def test_local_debug_shows_proposal_rejected_by_application_validation() -> None:

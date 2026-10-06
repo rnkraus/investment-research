@@ -39,7 +39,7 @@ from scripts.verify_m1_5_corpus import (
 )
 
 APPROVED_CORPUS_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75a96a41d5f9"
-MAXIMUM_SPEND_MICRO_USD = 300_000
+MAXIMUM_SPEND_MICRO_USD = 800_000
 MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
 
@@ -91,7 +91,7 @@ def build_plan(
     if type(maximum_spend_micro_usd) is not int or not (
         0 < maximum_spend_micro_usd <= MAXIMUM_SPEND_MICRO_USD
     ):
-        raise LiveBaselineLimitError("the invocation budget must be positive and at most USD 0.30")
+        raise LiveBaselineLimitError("the invocation budget must be positive and at most USD 0.80")
     try:
         digest = hashlib.sha256(DEFAULT_MANIFEST.read_bytes()).hexdigest()
         if digest != APPROVED_CORPUS_SHA256:
@@ -240,7 +240,7 @@ def _budget_argument(value: str) -> int:
         return amount
     except InvalidOperation, ValueError:
         raise argparse.ArgumentTypeError(
-            "use a positive USD amount at most 0.30, in micro-dollar steps"
+            "use a positive USD amount at most 0.80, in micro-dollar steps"
         ) from None
 
 

@@ -10,6 +10,7 @@ from scripts.m1_5_live_providers import LiveProviderCalls
 from scripts.m1_5_live_runner import LiveBaselineReport, run_live_baseline
 from scripts.m1_5_live_runtime import isolated_database, provider_resources
 from scripts.m1_5_live_settings import EvaluationConfigurationError, load_evaluation_settings
+from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
 from scripts.plan_m1_5_live_baseline import (
     MAXIMUM_SPEND_MICRO_USD,
     LiveBaselineBudget,
@@ -40,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--confirm-public-synthetic", action="store_true")
     parser.add_argument("--confirm-pinecone-starter", action="store_true")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--show-local-model-output",
+        action="store_true",
+        help="Inspect synthetic model output in an interactive local terminal, never CI.",
+    )
     for role in ("answer", "support"):
         parser.add_argument(
             f"--{role}-model",
@@ -52,6 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
+    if arguments.show_local_model_output:
+        if not arguments.execute:
+            print("Local model output requires --execute.", file=sys.stderr)
+            return 2
+        try:
+            require_local_terminal()
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
     if arguments.execute and (
         not arguments.confirm_public_synthetic
         or not arguments.confirm_pinecone_starter
@@ -71,6 +86,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not arguments.execute:
             print(plan.model_dump_json(indent=2))
             return 0
+        local_output = (
+            LocalEvaluationOutput(
+                answer_model=plan.configuration.answer_model,
+                support_model=plan.configuration.support_model,
+            )
+            if arguments.show_local_model_output
+            else None
+        )
         stage = "output"
         path = output_path(arguments.output)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,7 +107,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             report: LiveBaselineReport | None = None
             try:
                 with isolated_database() as engine:
-                    with provider_resources(worker, api, plan, calls, cleanup_steps) as resources:
+                    with provider_resources(
+                        worker, api, plan, calls, cleanup_steps, local_output=local_output
+                    ) as resources:
                         stage = "evaluation"
                         report = run_live_baseline(
                             engine,
@@ -95,6 +120,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             generator=resources.generator,
                             support=resources.support,
                             calls=calls,
+                            local_output=local_output,
                         )
                     stage = "database_cleanup"
             except Exception:
@@ -115,6 +141,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"reserved_micro_usd={report.reserved_cost_micro_usd}, "
             f"cleanup={report.cleanup_status.lower()}, independent_support_review=pending"
         )
+        for failure in report.failures:
+            fields = [
+                f"case={failure.case_id}",
+                f"stage={failure.stage or 'unknown'}",
+                f"reason={failure.reason}",
+            ]
+            diagnostic = failure.provider_failure
+            if diagnostic is not None:
+                fields.append(f"provider_category={diagnostic.category}")
+                if diagnostic.role is not None:
+                    fields.append(f"role={diagnostic.role.value}")
+                if diagnostic.http_status is not None:
+                    fields.append(f"http_status={diagnostic.http_status}")
+                if diagnostic.contract_detail is not None:
+                    fields.append(f"contract_detail={diagnostic.contract_detail}")
+            if failure.failed_validation_rules:
+                fields.append(
+                    "failed_rules="
+                    + ",".join(rule.value for rule in failure.failed_validation_rules)
+                )
+            print("M1.5 case failed: " + ", ".join(fields))
         return 1 if report.failures or cleanup_steps else 0
     except EvaluationConfigurationError as error:
         print(f"M1.5 live baseline failed at stage={stage}; {error}.", file=sys.stderr)
