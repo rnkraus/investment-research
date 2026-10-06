@@ -473,20 +473,22 @@ calls, namespaces, random canonical IDs, and stochastic model answers; they are 
 candidate-snapshot experiment and a score difference cannot be attributed to fusion alone.
 The paired offline comparison remains the controlled selector-mechanics check. Record these
 limitations in the eventual live comparison rather than claiming a quality improvement from
-this wiring change. No live RRF run has been performed as part of this work block.
+this wiring change. No live RRF run was performed during selector preparation; the subsequent
+owner-executed comparison is recorded below.
 
-### Proposed live comparison protocol
+### Live comparison protocol
 
-**Protocol:** `m1.5-sequential-live-comparison-v1`, proposed on 2026-10-07. Execution and the
-combined spending envelope require separate owner approval; documenting this protocol authorizes
-neither provider access nor paid calls.
+**Protocol:** `m1.5-sequential-live-comparison-v1`, proposed and approved by the owner on
+2026-10-07 for exactly two invocations under the USD 1.60 combined OpenAI reservation envelope.
+Both were owner-executed and are recorded below. This approval does not authorize additional
+invocations, providers, budget increases, or a default-policy change.
 
 1. Use one unchanged checkout for both runs. Freeze the reviewed corpus digest, processing and
    embedding/index configuration, answer/support prompts, Terra/Terra model pair, existing lane
    and context limits, and per-role request limits. Do not tune between runs.
 2. Run all six cases once with explicit `--retrieval-policy m1`, then once with
    `--retrieval-policy rrf`. Use explicit Terra models, `--max-spend-usd 0.80`, the existing
-   execution confirmations, and distinct new report filenames under `outputs/m1_5/`. The proposed
+   execution confirmations, and distinct new report filenames under `outputs/m1_5/`. The approved
    combined OpenAI reservation envelope is USD 1.60: two sequential invocations of at most
    USD 0.80 each. It is not a new application monthly limit or a price guarantee; Pinecone billing
    remains outside that estimate and requires the existing Starter-only confirmation.
@@ -513,8 +515,63 @@ latency. The repeated-budget-quote and conflict-support failures stay visible ev
 Critical evidence/isolation violations or unverified cleanup block acceptance. Better counts
 alone do not justify switching defaults. If the result is unchanged, worse, or inconclusive,
 retain M1 and record that outcome rather than tuning the corpus or extending this experiment.
-Any default change needs a reviewed decision and the full Step 1 verification gate. No live run
-or default change is recorded by this proposed protocol.
+Any default change needs a reviewed decision and the full Step 1 verification gate.
+
+### Recorded sequential live comparison (2026-10-07)
+
+The owner ran the two approved invocations without selective retries:
+
+| Policy | Ignored report | SHA-256 |
+| --- | --- | --- |
+| M1 | `outputs/m1_5/m1-comparison-20261007-011254.json` | `4946a8bf7533149f249f388d94f2da79230b490e8a8d9313a4caa74bf544547f` |
+| RRF | `outputs/m1_5/rrf-comparison-20261007-011359.json` | `35fcffb66bda3b8bbf0f3847d020661f5e9ec29e35f70b44c1a304d1eddf314b` |
+
+Both reports use v2 observations and `m1.5-observation-score-v2`. Corpus digests, six case IDs,
+and configuration fields agree except for the intended selector version. The models remain
+Terra/Terra. Recomputing both summaries with the existing scorer reproduced every recorded
+summary field. This is report validation, not an independent replay of the deleted database or
+an independent assessment of answer support. Historical reports were not modified.
+
+| Recorded measurement | M1 | RRF |
+| --- | --- | --- |
+| Required evidence available in context | 5/5 answerable cases | 5/5 answerable cases |
+| Expected coverage match | 5/6 | 3/6 |
+| Catalog citation match | 4/6 | 3/6 |
+| Reported exact canonical citation validity | 4/4 checked cases | 2/2 checked cases |
+| Abstention match | 1/1 | 1/1 |
+| Conflict match | 1/1 | 0/1 |
+| Safe failures / unsafe failures | 1 / 0 | 3 / 0 |
+| Independent support assessments | 0/6 | 0/6 |
+| Median / maximum question-phase time | 4,062 / 7,272 ms | 3,661 / 5,095 ms |
+| Preparation time | 3,474 ms | 1,946 ms |
+| Retained OpenAI reservations | USD 0.650674 | USD 0.650542 |
+| Cleanup | VERIFIED | VERIFIED |
+
+Combined reservations were USD 1.301216, within the approved USD 1.60 envelope and both individual
+USD 0.80 caps. Total usage and actual cost estimates remain unknown in both reports; reservations
+are not charges. Shorter RRF timings do not establish better performance: different outcomes and
+statement counts can change work, and each policy was observed only once.
+
+The pilot-budget quote was ambiguous in both runs. RRF additionally rejected the rollout-constraint
+and conflicting-report answers under `STATEMENT_SUPPORT` and `COVERAGE`. The transcript shows
+generated claims and quotations for those cases, but the application support evaluator returned
+false for at least one statement. These are post-retrieval failures, not missing required context.
+The reports alone do not establish whether rejection was justified or whether changing order,
+provider behavior, or model sampling caused it. Do not label them confirmed RRF defects or bypass
+support validation. M1's rollout case also failed the catalog citation-match metric despite
+reported exact canonical validity; the two metrics test different properties.
+
+**Recorded decision:** Retain M1 as the application default. The paired offline experiment showed
+identical contexts; the sequential live observation demonstrated no benefit sufficient to justify
+adopting RRF. Preserve RRF as an explicit evaluation profile, both live reports, and all failures.
+No further paid invocation is approved. The evidence-unit work targets the known ambiguous/copying
+quote limitation; support-evaluator quality remains a separate evaluation concern. This decision
+is not a general claim that M1 is superior or that the M1.5 quality gate has passed.
+
+Frontend compatibility checks passed formatting, lint, typing, contract validation, and 45 tests
+on 2026-10-07. Backend and PostgreSQL results for the implemented profiles are recorded in the
+implementation plan. The production build and final hosted Step 1 checks remain pending; no
+browser or new provider call was made while reviewing the reports.
 
 ### Interactive local inspection
 

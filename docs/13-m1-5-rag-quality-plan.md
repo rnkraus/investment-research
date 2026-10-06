@@ -228,20 +228,37 @@ occurred. The [live selector guide](../fixtures/m1_5/README.md#live-selector-exp
 that separate invocations are not paired candidate snapshots and that their combined spend is
 not automatically approved.
 
-**Proposed live comparison protocol (2026-10-07):**
+**Approved live comparison protocol (2026-10-07):**
 `m1.5-sequential-live-comparison-v1` specifies one fresh M1 run followed by one RRF run with
-Terra/Terra, all six frozen cases, unchanged configurations, and new v2 reports. Its proposed
-combined reservation envelope is USD 1.60, implemented as two existing USD 0.80 invocation caps;
-owner approval is pending. There are no selective retries, implicit budget increases, or default
+Terra/Terra, all six frozen cases, unchanged configurations, and new v2 reports. The owner approved
+the combined reservation envelope of USD 1.60 as two existing USD 0.80 invocation caps and
+executed both runs. There are no selective retries, implicit budget increases, or default
 changes. Verified cleanup and compatible configurations are prerequisites for comparison.
-The [protocol](../fixtures/m1_5/README.md#proposed-live-comparison-protocol) defines the metrics,
+The [protocol](../fixtures/m1_5/README.md#live-comparison-protocol) defines the metrics,
 stop conditions, and inference limits. Separate live runs are descriptive, not a controlled
 candidate-snapshot experiment; unchanged or inconclusive results retain M1.
 
-Next, obtain explicit approval for the combined envelope before provider execution. M1 remains
-the default. The offline retrieval-only report is not a v2 answer observation and cannot be
-compared with historical answer/citation scores. Step 1 is not accepted on the narrow offline
-comparison or proposed protocol alone.
+**Recorded live outcome and default decision (2026-10-07):** Both policies retained required
+evidence for 5/5 answerable questions. M1 matched expected coverage in 5/6 cases and catalog
+citations in 4/6; RRF matched both in 3/6. Both retained the ambiguous pilot-budget quote failure;
+RRF additionally rejected rollout and conflict statements during support/coverage validation.
+Neither report recorded an unsafe failure; both verified cleanup. Combined reservations were
+USD 1.301216, not actual charges. Aggregate usage/cost and independent answer-support review
+remain unavailable. Re-scoring reproduced both stored summaries. The
+[measurement record](../fixtures/m1_5/README.md#recorded-sequential-live-comparison-2026-10-07)
+preserves hashes, timings, configuration checks, failures, and inference limits.
+
+Retain M1 as the default: the offline comparison was unchanged and the live observations showed
+no demonstrated benefit justifying adoption. RRF remains an evaluation-only profile. This is a
+bounded negative/inconclusive experiment, not proof that RRF is generally inferior. No further
+paid run is approved, and quote or support validation is not weakened. Step 2 targets the known
+quote-selection limitation rather than repeating this ranking experiment.
+
+Frontend format, lint, typing, contract checks, and 45 tests passed. Next, finish the production
+build and confirm the required hosted checks, including the existing M1 runtime gate, before
+closing Step 1 or starting Step 2. No browser was used during report review. The offline
+retrieval-only report is not a v2 answer observation; the sequential live reports do not establish
+independent support quality or complete the M1.5 acceptance gate.
 
 ### Step 2 — Model-selectable citable source units
 
