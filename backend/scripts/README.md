@@ -15,12 +15,24 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_backend_images.py`    | Builds and exercises every backend image target in an isolated runtime.                  |
 | `verify_m0_runtime.py`        | Proves the complete fixture journey through the production-shaped M0 runtime.            |
 | `verify_m1_provider_smoke.py` | Runs one explicit, bounded M1 external-provider compatibility smoke.                     |
+| `plan_m1_5_live_baseline.py`  | Validates the approved M1.5 preflight and bounds sequential invocation reservations.      |
+| `m1_5_live_providers.py`      | Wraps existing provider ports with reservations and content-free usage records.          |
+| `m1_5_live_index.py`          | Owns a fresh bounded evaluation namespace and verifies scoped cleanup.                   |
+| `m1_5_live_runner.py`         | Measures the frozen corpus through canonical M1 research and persisted-answer readback.  |
+| `m1_5_live_runtime.py`        | Owns disposable PostgreSQL and role-specific provider clients for evaluation.            |
+| `verify_m1_5_live_baseline.py` | Defaults to free preflight; paid evaluation requires explicit execution and confirmations. |
 | `verify_object_storage.py`    | Exercises SeaweedFS S3 contracts in an isolated internal Docker network.                 |
 | `verify_parser_isolation.py`  | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`             | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`          | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 | `verify_queue_recovery.py`    | Proves live Celery redelivery and lease-based recovery after worker loss.                |
 | `verify_runtime_cleanup.py`   | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                |
+
+The M1.5 evaluation commands, fixture provenance, output schema, and opt-in boundaries are
+documented in the [corpus guide](../../fixtures/m1_5/README.md#opt-in-live-baseline). The live
+runner is a development tool and reuses the synthetic integration fixture builders; normal
+application request handlers never import it. Required CI uses deterministic test ports, not
+live keys or paid calls.
 
 ## Contract flow
 

@@ -72,7 +72,7 @@ rate. Small-sample statistics are descriptive, not population-level quality clai
 reproducible offline, and any live baseline is separately opt-in, bounded, and recorded without
 raw document text or secrets in logs, traces, or CI artifacts. No RRF tuning precedes this gate.
 
-**Current Step 0 status (2026-10-05):** The owner reviewed the six synthetic cases in
+**Current Step 0 status (2026-10-06):** The owner reviewed the six synthetic cases in
 [`fixtures/m1_5/evaluation.json`](../fixtures/m1_5/evaluation.json). The fixture digests and original
 source ranges have a credential-free validator. Separate retrieval-only and end-to-end observation
 scorers have deterministic unit tests, and canonical chunks and citations can be mapped to reviewed
@@ -102,10 +102,18 @@ verified command, estimates, and limitations. It does not contact providers, aut
 replace canonical application accounting, or record a live quality baseline. Budgeted wrappers
 for all four provider roles and an owned Pinecone namespace lifecycle now have deterministic unit
 coverage. The lifecycle limits unique vectors, applies total visibility and cleanup deadlines,
-and reports failed cleanup while closing both index clients. These helpers do not create live
-clients or execute a paid run by themselves. Connecting them to canonical research, explicit
-opt-in execution, and complete observations is the next Step 0 block; independent support review
-and live quality measurements remain pending.
+and reports failed cleanup while closing both index clients. The opt-in runner now connects the
+frozen corpus to unchanged M1 retrieval, generation, canonical accounting, evidence validation,
+and persisted-answer readback in its own migrated disposable PostgreSQL database. It records every
+case, retains budget/provider/rejection failures, separates preparation from question usage, and
+keeps unknown usage totals explicitly null. Its client and database cleanup is tested, and its
+content-free JSON report records cleanup status without overwriting existing results. Existing
+unit and PostgreSQL CI jobs discover the deterministic tests automatically. The command defaults
+to credential-free preflight; paid execution requires both public-synthetic and Pinecone-Starter
+confirmations plus an explicit output path. See the
+[live-run guide](../fixtures/m1_5/README.md#opt-in-live-baseline). No live-provider quality run or
+independent support review has been executed by this implementation block. Those separately
+approved measurements remain the next Step 0 work; RRF tuning has not started.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 

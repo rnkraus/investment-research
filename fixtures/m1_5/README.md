@@ -179,6 +179,63 @@ attempted IDs are absent within a separate 30-second deadline. Both index client
 when cleanup fails; failed cleanup is reported rather than treated as success.
 
 Deterministic unit tests exercise these safeguards with injected adapters and a simulated clock;
-no live clients or credentials are used. These helpers are **not yet an executable live runner**.
-Connecting canonical research, opt-in execution, and complete observations is the next work block.
-Independent support review and live quality results remain pending.
+no live clients or credentials are used. PostgreSQL integration tests exercise the complete runner
+with scripted providers, including budget rejection, provider failure, and changed quotes. These
+are correctness tests, not live quality measurements.
+
+## Opt-in live baseline
+
+From `backend/`, preview the same admission plan without loading runtime settings or keys:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_live_baseline
+```
+
+Actual execution requires Docker, the same complete host-side M1 worker/API provider configuration,
+and explicit approval to send the frozen public-synthetic corpus to the configured providers.
+Runtime settings load credentials; agents must not inspect environment or secret files. Existing
+roles are document embeddings, query embeddings, Pinecone indexing/cleanup, Pinecone querying, and
+the shared answer/support credential. No new credential or provider is introduced. The Pinecone
+index must already exist with the accepted M1 configuration and Starter confirmation; this tool
+does not provision an index.
+
+The following command enables paid calls and creates derived vectors. It has **not yet been run
+against live providers**. Use a new report filename each time:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --execute \
+  --confirm-public-synthetic \
+  --confirm-pinecone-starter \
+  --output ../outputs/m1_5/m1-live-baseline.json
+```
+
+Terra/Terra remains the default. Add `--answer-model gpt-5.6-luna` and/or
+`--support-model gpt-5.6-luna` for an explicitly selected lower-cost model pair; no automatic
+fallback occurs. The USD 0.30 reservation ceiling may prevent all Terra cases from completing.
+Record this as budget-limited execution, not evidence that retrieval quality is poor, and do not
+increase the approved ceiling implicitly.
+
+The tool owns a random disposable PostgreSQL project and loopback port, migrates it through
+Alembic, loads only the approved corpus, and uses a fresh Pinecone workspace namespace. It reuses
+the evaluation fixture builders and unchanged M1 retrieval, generation, canonical accounting,
+validation, and answer-persistence services. This is a development evaluation tool, not a worker
+delivery/recovery test or a replacement for normal document-ingestion accounting. It never accepts
+a production database URL or caller-selected namespace. It uses no raw-output callback, exporter,
+or browser. Cleanup closes clients and removes only invocation-owned resources.
+
+The JSON report contains the admission plan, all six case observations, their descriptive score
+summary, safe failure categories, preparation latency, per-call usage, retained reservations, and
+cleanup status. Preparation usage and total usage include document embeddings; the score summary
+counts question-phase usage only. Unavailable usage and incomplete totals are `null`, never a
+fabricated zero. Reported usage beyond a reservation remains recorded but stops future admission.
+Only IDs, configuration, counts, and measurements are written, not questions, source text,
+model proposals, answers, credentials, or provider hosts. Reports must be new `.json` files under
+ignored `outputs/m1_5/`; existing files and escaped/symlinked targets are rejected.
+
+An operational case failure or failed cleanup produces exit code 1 while retaining a completed
+measurement report. Configuration/startup failures or an interruption may leave only an empty
+reserved file; it is not an accepted result. A verified run can still have weak coverage or citation
+scores: exit code 0 proves execution, not the M1.5 quality gate. Independent support assessment
+remains pending and is never inferred from the application's own support evaluator. Live quality
+results and independent review must be recorded separately before Step 0 closes.
