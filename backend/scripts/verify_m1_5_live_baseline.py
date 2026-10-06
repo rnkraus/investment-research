@@ -37,6 +37,12 @@ def output_path(raw: Path) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--retrieval-policy",
+        choices=("m1", "rrf"),
+        default="m1",
+        help="Select a frozen evaluation policy only; the application default remains M1.",
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm-public-synthetic", action="store_true")
     parser.add_argument("--confirm-pinecone-starter", action="store_true")
@@ -82,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             answer_model=ResearchModel(arguments.answer_model),
             support_model=ResearchModel(arguments.support_model),
             maximum_spend_micro_usd=arguments.max_spend_usd,
+            retrieval_policy=arguments.retrieval_policy,
         )
         if not arguments.execute:
             print(plan.model_dump_json(indent=2))
@@ -137,6 +144,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             output.write(report.model_dump_json(indent=2))
         print(
             "M1.5 live baseline recorded: "
+            f"selector={plan.configuration.selector_config_version}, "
             f"cases={report.summary.case_count}, failures={len(report.failures)}, "
             f"reserved_micro_usd={report.reserved_cost_micro_usd}, "
             f"cleanup={report.cleanup_status.lower()}, independent_support_review=pending"

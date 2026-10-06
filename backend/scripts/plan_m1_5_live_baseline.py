@@ -29,7 +29,14 @@ from investment_research.modules.research.contracts import (
     M1_GENERATED_STATEMENT_LIMIT,
     ResearchModel,
 )
-from investment_research.modules.search.contracts import M1_SELECTOR_CONFIG_VERSION
+from investment_research.modules.search.contracts import (
+    M1_SELECTOR_CONFIG_VERSION,
+    M1SelectionProfile,
+)
+from investment_research.modules.search.fusion_contracts import (
+    RRF_CONFIG_VERSION,
+    RrfSelectionProfile,
+)
 from scripts.score_m1_5_observations import RunConfiguration
 from scripts.verify_m1_5_corpus import (
     DEFAULT_MANIFEST,
@@ -42,10 +49,33 @@ APPROVED_CORPUS_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75
 MAXIMUM_SPEND_MICRO_USD = 800_000
 MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
+type LiveRetrievalPolicy = Literal["m1", "rrf"]
 
 
 class LiveBaselineLimitError(ValueError):
     """Reject a plan or request without including provider or corpus content."""
+
+
+def selection_profile_for_policy(
+    policy: LiveRetrievalPolicy,
+) -> M1SelectionProfile | RrfSelectionProfile:
+    """Allow only the two frozen experimental profiles, without changing runtime defaults."""
+
+    if policy == "m1":
+        return M1SelectionProfile()
+    if policy == "rrf":
+        return RrfSelectionProfile()
+    raise LiveBaselineLimitError("the evaluation retrieval policy is not approved")
+
+
+def retrieval_policy_for_version(version: str) -> LiveRetrievalPolicy:
+    """Resolve a recorded configuration explicitly; never silently fall back to M1."""
+
+    if version == M1_SELECTOR_CONFIG_VERSION:
+        return "m1"
+    if version == RRF_CONFIG_VERSION:
+        return "rrf"
+    raise LiveBaselineLimitError("the evaluation selector version is not approved")
 
 
 class _FrozenModel(BaseModel):
@@ -85,9 +115,11 @@ def build_plan(
     answer_model: ResearchModel = ResearchModel.TERRA,
     support_model: ResearchModel = ResearchModel.TERRA,
     maximum_spend_micro_usd: int = MAXIMUM_SPEND_MICRO_USD,
+    retrieval_policy: LiveRetrievalPolicy = "m1",
 ) -> LiveBaselinePlan:
     """Validate only the frozen approved fixtures; never load runtime settings or keys."""
 
+    selection_profile = selection_profile_for_policy(retrieval_policy)
     if type(maximum_spend_micro_usd) is not int or not (
         0 < maximum_spend_micro_usd <= MAXIMUM_SPEND_MICRO_USD
     ):
@@ -149,7 +181,7 @@ def build_plan(
             lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
             embedding_config_version=M1_PROCESSING_PROFILE.embedding_config_version,
             dense_index_config_version=M1_PROCESSING_PROFILE.dense_index_config_version,
-            selector_config_version=M1_SELECTOR_CONFIG_VERSION,
+            selector_config_version=selection_profile.selector_config_version,
             answer_model=answer_model.value,
             support_model=support_model.value,
             answer_prompt_version=M1_ANSWER_PROMPT_VERSION,
@@ -246,6 +278,7 @@ def _budget_argument(value: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--retrieval-policy", choices=("m1", "rrf"), default="m1")
     parser.add_argument(
         "--answer-model",
         type=ResearchModel,
@@ -265,6 +298,7 @@ def main() -> int:
             answer_model=arguments.answer_model,
             support_model=arguments.support_model,
             maximum_spend_micro_usd=arguments.max_spend_usd,
+            retrieval_policy=arguments.retrieval_policy,
         )
     except CorpusValidationError, LiveBaselineLimitError:
         print(

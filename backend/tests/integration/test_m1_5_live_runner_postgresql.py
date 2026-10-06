@@ -6,8 +6,9 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
+from investment_research.infrastructure.database.session import create_session_factory
 from investment_research.infrastructure.generation.openai import OpenAIAnswerProviderContractError
 from investment_research.infrastructure.search.deterministic_index import (
     DeterministicSqliteDenseIndex,
@@ -28,6 +29,7 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedStatement,
 )
 from investment_research.modules.research.domain import CoverageStatus
+from investment_research.modules.search.persistence import RetrievalCandidateRow, RetrievalRunRow
 from investment_research.modules.search.ports import SearchProviderTransientError
 from scripts.m1_5_live_index import IsolatedEvaluationIndex
 from scripts.m1_5_live_providers import (
@@ -38,7 +40,7 @@ from scripts.m1_5_live_providers import (
 )
 from scripts.m1_5_live_runner import run_live_baseline
 from scripts.m1_5_local_output import LocalEvaluationOutput
-from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, build_plan
+from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveRetrievalPolicy, build_plan
 from scripts.verify_m1_5_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, validate_corpus
 from tests.integration.m1_5 import embedding_provider
 from tests.integration.test_m1_5_answer_baseline_postgresql import ReviewedSupportEvaluator
@@ -131,18 +133,21 @@ class RejectedSupportEvaluator:
     "failure", [None, "budget", "embedding", "answer", "quote", "contract", "support"]
 )
 @pytest.mark.parametrize("show_output", [False, True])
+@pytest.mark.parametrize("retrieval_policy", ["m1", "rrf"])
 def test_runner_records_every_case_and_never_publishes_unvalidated_output(
     integration_database_engine: Engine,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     failure: str | None,
     show_output: bool,
+    retrieval_policy: LiveRetrievalPolicy,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     plan = build_plan(
         answer_model=ResearchModel.LUNA,
         support_model=ResearchModel.LUNA,
         maximum_spend_micro_usd=1 if failure == "budget" else 300_000,
+        retrieval_policy=retrieval_policy,
     )
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     embedding = embedding_provider()
@@ -190,6 +195,34 @@ def test_runner_records_every_case_and_never_publishes_unvalidated_output(
     assert result.summary.case_count == len(result.observations.cases) == 6
     assert result.observations.schema_version == 2
     assert result.summary.scoring_version == "m1.5-observation-score-v2"
+    assert result.admission_plan == plan
+    assert result.observations.configuration == result.summary.configuration == plan.configuration
+    with create_session_factory(integration_database_engine)() as session:
+        runs = tuple(
+            session.scalars(
+                select(RetrievalRunRow).where(
+                    RetrievalRunRow.workspace_id == index.context.workspace_id
+                )
+            )
+        )
+        assert len(runs) == (0 if result.preparation_failed else 6)
+        assert all(
+            run.selector_config_version == plan.configuration.selector_config_version
+            for run in runs
+        )
+        candidates = tuple(
+            session.scalars(
+                select(RetrievalCandidateRow).where(
+                    RetrievalCandidateRow.workspace_id == index.context.workspace_id
+                )
+            )
+        )
+        if not result.preparation_failed:
+            assert candidates
+        assert all(
+            (candidate.fused_rank is not None) == (retrieval_policy == "rrf")
+            for candidate in candidates
+        )
     assert all(
         case.citation_passage_ids is not None
         and len(case.citation_passage_ids) == case.citation_count
