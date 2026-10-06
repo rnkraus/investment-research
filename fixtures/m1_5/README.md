@@ -177,11 +177,11 @@ This historical run used a temporary **USD 1.00** invocation ceiling. Its reserv
 below the subsequently approved **USD 0.80** ceiling, but it was not executed under that new
 admission limit and is not a fresh verification of it. Preserve the original report unchanged.
 Independent support assessments are **0/6**; the application's own evaluator is not independent
-review. Step 0 remains open pending independent review; a comparison also needs new v2
+review. This historical run did not close Step 0; a comparison also needs new v2
 observations on both sides rather than relabeling this historical run.
 These six cases provide a descriptive starting measurement, not a general RAG-quality claim.
 
-## Recorded version-2 baseline and review draft
+## Recorded version-2 baseline and review
 
 The owner executed `outputs/m1_5/m1-live-v2-20261006-235436.json` with Terra/Terra, the unchanged
 M1 selector and prompts, and the approved **USD 0.80** invocation ceiling. Its report SHA-256 is
@@ -202,15 +202,18 @@ Do not transfer the owner's approximately USD 0.07 dashboard observation from th
 this run. Do not compare the v1 and v2 citation-match counts as a quality improvement or infer a
 latency improvement from two small, non-identical outcome sets.
 
-### Qualitative review draft
+### Qualitative review and baseline acceptance
 
-**Reviewed on:** 2026-10-07; owner acceptance pending.
+**Reviewed and accepted as the starting baseline:** 2026-10-07.
 
 Codex compared the owner-supplied terminal transcript with the reviewed catalog and the two
-pasted-text originals, separately from the application's support-model decisions. The revenue
-comparison uses the owner-reviewed PDF passage label. This is a qualitative review draft, not
-human approval, a separately executed independent-model evaluation, or a replay of persisted
-evidence. It adds no `support_assessment` to the historical report; its count remains **0/6**.
+pasted-text originals, separately from the application's support-model decisions. The corpus
+verifier also confirmed every catalog source range, including the revenue passage against the
+actual extracted PDF page, on 2026-10-07. The owner accepted this starting measurement after the
+six-case outcomes and both retained failures were explained. This qualitative comparison and
+baseline approval are not a separately executed independent-model evaluation or a replay of
+persisted evidence. They add no `support_assessment` to the historical report; its count remains
+**0/6**.
 
 | Case | Content comparison | Recorded application outcome |
 | --- | --- | --- |
@@ -227,17 +230,21 @@ exact-substring selection limitation targeted by Step 2; neither rejected propos
 published successful answer. Preserve both failures in the baseline instead of retrying until
 they disappear or weakening validation.
 
-The pasted battery quote contains `toshift`, whereas the reviewed original contains `to shift`.
-The report records valid canonical evidence and a matched catalog passage. The pasted transcript
-alone cannot reconcile that discrepancy; content correctness does not independently establish
-exact quote identity. Confirm transcript fidelity before accepting that citation's independent
-review. No fuzzy quote resolution or source-check bypass is approved.
+The attached battery quote contains `toshift`, whereas the reviewed original contains `to shift`.
+The owner checked the original console output and reported no `toshift` occurrence, only
+`to shift`. An offline replay of the attached proposal through the current answer adapter rejected
+it with `quote_not_found`; all 41 adapter unit tests passed. This supports a transcript-transfer
+discrepancy rather than a demonstrated validation defect. The precise transfer cause was not
+established, and the historical live run was not replayed. The attached quote is therefore not
+independent proof of exact citation validity; the canonical-validity count remains report-derived.
+No fuzzy quote resolution, source-check bypass, or change to the historical report was made.
 
-Step 0 remains open for owner confirmation of this content review and clarification of the
-transcript discrepancy. Once accepted, this recorded v2 run is the comparison baseline even
-with its two failures; passing every live case is not required to preserve a starting baseline.
-RRF work has not started. Broader model-quality claims and the final M1.5 acceptance remain later
-gates.
+Step 0 is accepted for the starting-baseline scope. Preserve this recorded v2 run as the
+comparison baseline with both failures; passing every live case is not required to preserve a
+starting measurement. Unknown aggregate usage and cost remain unknown, and canonical citation
+validity remains report-derived. Acceptance does not close either failure or the final M1.5
+quality gate. RRF work has not started and is the next work block; broader model-quality claims
+require later evaluation.
 
 ## Credential-free live preflight
 
@@ -416,6 +423,7 @@ earlier file. Output errors explicitly remind the caller of this requirement. A 
 still have weak coverage or citation
 scores: exit code 0 proves execution, not the M1.5 quality gate. Independent support assessment
 remains pending and is never inferred from the application's own support evaluator. The
-[recorded live starting measurement](#recorded-live-starting-measurement) does not close Step 0;
-independent review is still required, and future comparisons must use the versioned v2 contract
-described above on both sides.
+[historical live starting measurement](#recorded-live-starting-measurement) did not close Step 0.
+The owner subsequently accepted the [v2 starting baseline](#recorded-version-2-baseline-and-review)
+with its documented limitations. Future comparisons must use the versioned v2 contract described
+above on both sides; final quality acceptance still requires independent support assessment.

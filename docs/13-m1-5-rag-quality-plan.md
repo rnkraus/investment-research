@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 0 in progress; v2 live baseline recorded, owner review pending
+**Status:** Active — Step 0 accepted on 2026-10-07; Step 1 RRF comparison next
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -91,8 +91,8 @@ content. Its first local median was 47 ms and maximum 71 ms, including passage m
 existing PostgreSQL CI job discovers these tests automatically. The generator and support adapter
 use reviewed fixture rules, so independent support assessments, provider usage, cost, and live
 model quality remain unmeasured by these offline runs. The offline correctness baseline is
-reproducible; the separately opted-in live starting measurement is recorded below, while the
-full Step 0 gate remains open pending independent review.
+reproducible; the separately opted-in live starting measurements and subsequent owner acceptance
+of the v2 baseline are recorded below. The offline runs alone did not close Step 0.
 
 A credential-free live preflight now pins this reviewed corpus digest and reports the existing
 M1 configuration and independently selected Terra/Luna model prices. Its sequential invocation
@@ -118,13 +118,14 @@ answerable retrieval hits and 5/6 expected coverage outcomes, with one safely re
 quote. The measured configuration, latency, reservations, missing usage totals, historical
 invocation ceiling, verified cleanup, and citation-score limitation are recorded in the
 [live starting measurement](../fixtures/m1_5/README.md#recorded-live-starting-measurement).
-Independent support review remains pending. New offline and live observations now use the
-version-2 per-citation mapping contract and explicitly record
+That historical report has no independent support assessments. New offline and live observations
+use the version-2 per-citation mapping contract and explicitly record
 `m1.5-observation-score-v2`. It accepts multiple valid citations inside one expected passage while
 rejecting unmatched or unexpected citations. Version-1 observations and historical scores retain
 the old rule; no missing mapping is inferred. The contract and comparison boundary are maintained
 in the [corpus guide](../fixtures/m1_5/README.md). Future retrieval-policy comparisons require v2
-observations on both sides. Step 0 is not accepted and RRF tuning has not started.
+observations on both sides. RRF tuning has not started; starting-baseline acceptance is recorded
+with the v2 run below.
 
 The live runner now retains optional, allowlisted provider diagnostics and failed canonical
 validation rules, also printed per failed case. No raw error, source, answer, or model-authored
@@ -143,12 +144,18 @@ inspection aid, not an independent quality assessment; its boundary is documente
 The owner subsequently recorded a v2 Terra/Terra baseline under the approved USD 0.80 invocation
 ceiling. It retained 5/5 answerable retrieval hits, 4/6 matching coverage and citation outcomes,
 and two safe failures: an ambiguous budget quote and a rejected conflict statement. Cleanup was
-verified. The [v2 measurement and qualitative review draft](../fixtures/m1_5/README.md#recorded-version-2-baseline-and-review-draft)
+verified. The [v2 measurement and qualitative review](../fixtures/m1_5/README.md#recorded-version-2-baseline-and-review)
 records the unchanged configuration, descriptive latency, reservations, and missing cost totals.
 The Codex content comparison is separate from the application's support decisions and is not
-human approval or a structured independent-model evaluation. Owner confirmation and a pasted
-battery-quote discrepancy remain open. Preserve this run, including both failures; do not tune
-prompts or ranking to obtain a selectively successful baseline. Step 0 is not yet accepted.
+itself human approval or a structured independent-model evaluation. The corpus verifier reconfirmed
+all six source ranges against the originals. The owner found the correct battery wording in the
+console, and an offline replay rejected the altered attached quote; no validation defect was
+demonstrated. The owner accepted the explained six-case measurement as the starting baseline on
+2026-10-07. Step 0 is accepted for this scope; the transcript discrepancy is not an open technical
+blocker. Preserve this run, including both failures; do not tune prompts or ranking to obtain a
+selectively successful baseline. Unknown aggregate usage and cost remain unknown, and the report's
+independent-support count remains 0/6. This acceptance neither closes the two failures nor claims
+the final M1.5 quality gate. Step 1 is next; no retrieval-policy change has been implemented.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
