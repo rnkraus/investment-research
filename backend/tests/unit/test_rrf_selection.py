@@ -159,6 +159,7 @@ def test_context_limits_skip_whole_chunks_and_keep_fusion_rank_separate() -> Non
     assert [item.candidate.hit.text for item in result.candidates] == ["abc", "de"]
     assert [item.candidate.fused_rank for item in result.candidates] == [2, 3]
     assert [item.selection_rank for item in result.candidates] == [1, 2]
+    assert [item.fused_rank for item in result.ranked_candidates] == [1, 2, 3]
 
 
 def test_context_counts_unicode_code_points_and_does_not_rewrite_source_text() -> None:
@@ -197,6 +198,7 @@ def test_empty_lanes_return_explicit_empty_fusion_and_context() -> None:
     result = select_rrf_context(lexical_hits=(), dense_hits=(), profile=profile)
     assert result.profile is profile
     assert result.candidates == ()
+    assert result.ranked_candidates == ()
 
 
 @pytest.mark.parametrize(
@@ -242,4 +244,28 @@ def test_result_contract_rejects_forged_context_budget() -> None:
     with pytest.raises(ValidationError, match="chunk limit"):
         RrfSelectionResult.model_validate(
             result.model_dump() | {"profile": RrfSelectionProfile(context_chunk_limit=1)}
+        )
+
+
+def test_result_contract_rejects_selection_not_in_full_ranking() -> None:
+    result = select_rrf_context(
+        lexical_hits=(lexical(1), lexical(2)), dense_hits=(), profile=RrfSelectionProfile()
+    )
+    with pytest.raises(ValidationError, match="original ranked candidate"):
+        RrfSelectionResult.model_validate(
+            result.model_dump() | {"ranked_candidates": result.ranked_candidates[:1]}
+        )
+
+
+def test_result_contract_rejects_duplicate_or_reordered_full_ranking() -> None:
+    result = select_rrf_context(
+        lexical_hits=(lexical(1), lexical(2)), dense_hits=(), profile=RrfSelectionProfile()
+    )
+    with pytest.raises(ValidationError, match="ranked chunks must be unique"):
+        RrfSelectionResult.model_validate(
+            result.model_dump() | {"ranked_candidates": result.ranked_candidates[:1] * 2}
+        )
+    with pytest.raises(ValidationError, match="fusion ranks must be contiguous"):
+        RrfSelectionResult.model_validate(
+            result.model_dump() | {"ranked_candidates": result.ranked_candidates[::-1]}
         )

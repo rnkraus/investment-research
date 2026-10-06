@@ -23,6 +23,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from investment_research.infrastructure.database.base import Base
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.search.contracts import M1_LANE_CANDIDATE_LIMIT
 from investment_research.modules.search.domain import (
     RetrievalCandidate,
     RetrievalFilters,
@@ -31,6 +32,11 @@ from investment_research.modules.search.domain import (
     RetrievalRun,
     SearchRelationshipError,
     SearchScopeError,
+)
+from investment_research.modules.search.fusion_contracts import (
+    RRF_CONFIG_VERSION,
+    RrfLaneContribution,
+    reciprocal_rank_score,
 )
 
 
@@ -321,12 +327,54 @@ class SqlAlchemyRetrievalRepository:
             raise SearchRelationshipError("selection ranks must be contiguous")
         if run.context_chunk_limit is not None and len(selection_ranks) > run.context_chunk_limit:
             raise SearchRelationshipError("selected candidate count exceeds the context limit")
+        if run.selector_config_version == RRF_CONFIG_VERSION:
+            self._require_rrf_ranks(run, candidates)
 
         self._session.add(RetrievalRunRow.from_domain(run))
         self._session.flush()
         self._session.add_all(
             RetrievalCandidateRow.from_domain(candidate) for candidate in candidates
         )
+
+    @staticmethod
+    def _require_rrf_ranks(run: RetrievalRun, candidates: Sequence[RetrievalCandidate]) -> None:
+        """Reconstruct fixed-policy ranks from every original lane contribution."""
+
+        if (
+            run.mode is not RetrievalMode.DUAL_LANE
+            or max(run.lexical_candidate_limit, run.dense_candidate_limit) > M1_LANE_CANDIDATE_LIMIT
+        ):
+            raise SearchRelationshipError("RRF requires bounded dual-lane retrieval")
+        contributions: dict[UUID, list[RrfLaneContribution]] = {}
+        for candidate in candidates:
+            contributions.setdefault(candidate.chunk_id, []).append(
+                RrfLaneContribution(
+                    origin=(
+                        RetrievalOrigin.LEXICAL
+                        if candidate.origin is RetrievalOrigin.LEXICAL
+                        else RetrievalOrigin.DENSE
+                    ),
+                    rank=candidate.rank,
+                    raw_score=candidate.raw_score,
+                )
+            )
+        ranked_ids = sorted(
+            contributions,
+            key=lambda chunk_id: (
+                -reciprocal_rank_score(tuple(contributions[chunk_id])),
+                chunk_id.int,
+            ),
+        )
+        expected = {chunk_id: rank for rank, chunk_id in enumerate(ranked_ids, start=1)}
+        if any(candidate.fused_rank != expected[candidate.chunk_id] for candidate in candidates):
+            raise SearchRelationshipError("RRF fusion ranks do not match the original lane ranks")
+        selected = sorted(
+            (candidate for candidate in candidates if candidate.selection_rank is not None),
+            key=lambda candidate: candidate.selection_rank or 0,
+        )
+        ranks = [expected[candidate.chunk_id] for candidate in selected]
+        if ranks != sorted(ranks):
+            raise SearchRelationshipError("RRF selection must preserve fusion order")
 
     def get_run_by_id(
         self,

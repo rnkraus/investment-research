@@ -81,12 +81,26 @@ class RrfSelectionResult(ImmutableSearchContract):
     """Bounded context output; this does not authorize any candidate as evidence."""
 
     profile: RrfSelectionProfile
+    ranked_candidates: tuple[RrfFusedCandidate, ...] = Field(max_length=2 * M1_LANE_CANDIDATE_LIMIT)
     candidates: tuple[RrfSelectedCandidate, ...] = Field(max_length=M1_CONTEXT_CHUNK_LIMIT)
 
     @model_validator(mode="after")
     def require_coherent_selection(self) -> RrfSelectionResult:
         """Require unique chunks, stable rank order, and both context limits."""
 
+        ranked_ids = [item.hit.chunk_id for item in self.ranked_candidates]
+        if len(ranked_ids) != len(set(ranked_ids)):
+            raise ValueError("RRF ranked chunks must be unique")
+        if [item.fused_rank for item in self.ranked_candidates] != list(
+            range(1, len(self.ranked_candidates) + 1)
+        ):
+            raise ValueError("RRF fusion ranks must be contiguous and ordered")
+        ranked_by_chunk = {item.hit.chunk_id: item for item in self.ranked_candidates}
+        if any(
+            ranked_by_chunk.get(item.candidate.hit.chunk_id) != item.candidate
+            for item in self.candidates
+        ):
+            raise ValueError("RRF selection must retain its original ranked candidate")
         chunk_ids = [item.candidate.hit.chunk_id for item in self.candidates]
         if len(chunk_ids) != len(set(chunk_ids)):
             raise ValueError("RRF selected chunks must be unique")

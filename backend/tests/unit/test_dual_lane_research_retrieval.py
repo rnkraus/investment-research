@@ -43,6 +43,10 @@ from investment_research.modules.search.contracts import (
     QualifiedDenseHit,
 )
 from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
+from investment_research.modules.search.fusion_contracts import (
+    RRF_CONFIG_VERSION,
+    RrfSelectionProfile,
+)
 from investment_research.modules.search.ports import (
     DenseCandidateQualifier,
     DenseRetriever,
@@ -202,6 +206,9 @@ def make_service(
     identifiers: tuple[UUID, ...] = (REQUEST_ID, RUN_ID),
     sleeper: Mock | None = None,
     provider_operation_executor: Mock | None = None,
+    selection_profile: M1SelectionProfile | RrfSelectionProfile | None = None,
+    lexical_limit: int = 10,
+    dense_limit: int = 10,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -212,7 +219,7 @@ def make_service(
         unit_of_work_factory=unit_of_work_factory,
         search_profile=LexicalSearchProfile(
             lexical_config_version="m1-english-lexical-v1",
-            candidate_limit=10,
+            candidate_limit=lexical_limit,
         ),
         m1_query_retrieval=M1QueryRetrievalDependencies(
             embedding_provider=embedding_provider,
@@ -220,9 +227,9 @@ def make_service(
             dense_profile=DenseRetrievalProfile(
                 embedding_config_version=EMBEDDING_CONFIG_VERSION,
                 dense_index_config_version=DENSE_INDEX_CONFIG_VERSION,
-                candidate_limit=10,
+                candidate_limit=dense_limit,
             ),
-            selection_profile=M1SelectionProfile(),
+            selection_profile=selection_profile or M1SelectionProfile(),
             provider_operation_executor=cast(
                 ExecuteProviderOperationService,
                 provider_operation_executor or make_provider_operation_executor(),
@@ -241,6 +248,116 @@ def make_service(
         clock=clock_values.__next__,
         identifier_factory=identifier_values.__next__,
     )
+
+
+@pytest.mark.parametrize(("lexical_limit", "dense_limit"), [(21, 10), (10, 21)])
+def test_rrf_service_rejects_oversized_lane_configuration_before_any_call(
+    lexical_limit: int,
+    dense_limit: int,
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    embedding, dense_provider = make_provider_mocks()
+    with pytest.raises(ValueError, match="twenty candidates"):
+        make_service(
+            unit_of_work,
+            embedding_provider=cast(EmbeddingProvider, embedding),
+            dense_retriever=cast(DenseRetriever, dense_provider),
+            selection_profile=RrfSelectionProfile(),
+            lexical_limit=lexical_limit,
+            dense_limit=dense_limit,
+        )
+    assert unit_of_work.enter_count == 0
+    embedding.embed.assert_not_called()
+    dense_provider.retrieve.assert_not_called()
+
+
+@pytest.mark.parametrize("context_chunk_limit", [1, 2])
+def test_rrf_retrieval_fuses_qualified_lanes_and_preserves_all_audit_rows(
+    context_chunk_limit: int,
+) -> None:
+    lexical_hit = make_lexical_hit()
+    second = lexical_hit.model_copy(
+        update={
+            "chunk_id": SECOND_CHUNK_ID,
+            "text": "Operating margin increased.",
+            "raw_score": 0.2,
+        }
+    )
+    shared = QualifiedDenseHit.model_validate(second.model_dump() | {"raw_score": -0.9})
+    unit_of_work = RecordingUnitOfWork(lexical_hits=(lexical_hit, second), dense_hits=(shared,))
+    embedding, dense_provider = make_provider_mocks(events=unit_of_work.events)
+    service = make_service(
+        unit_of_work,
+        embedding_provider=cast(EmbeddingProvider, embedding),
+        dense_retriever=cast(DenseRetriever, dense_provider),
+        selection_profile=RrfSelectionProfile(context_chunk_limit=context_chunk_limit),
+        identifiers=(
+            REQUEST_ID,
+            RUN_ID,
+            LEXICAL_CANDIDATE_ID,
+            DENSE_SELECTED_CANDIDATE_ID,
+            DENSE_DUPLICATE_CANDIDATE_ID,
+        ),
+    )
+
+    result = service.retrieve(make_context(), ResearchRetrievalInput(question="revenue margin"))
+
+    assert result.retrieval_run.selector_config_version == RRF_CONFIG_VERSION
+    assert [item.fused_rank for item in result.candidates] == [2, 1, 1]
+    assert [item.selection_rank for item in result.candidates] == [
+        2 if context_chunk_limit == 2 else None,
+        1,
+        None,
+    ]
+    assert [item.rank for item in result.candidates] == [1, 2, 1]
+    assert [item.raw_score for item in result.candidates] == [0.8, 0.2, -0.9]
+    assert result.sources[0].retrieval_candidate_id == DENSE_SELECTED_CANDIDATE_ID
+    assert result.sources[0].chunk_id == SECOND_CHUNK_ID
+    assert len(result.sources) == context_chunk_limit
+    assert unit_of_work.events == ["database", "embedding", "pinecone", "database"]
+    embedding.embed.assert_called_once()
+    dense_provider.retrieve.assert_called_once()
+    unit_of_work.dense_qualifier_mock.qualify.assert_called_once()
+    unit_of_work.retrieval_mock.add_result.assert_called_once_with(
+        make_context(), result.retrieval_run, result.candidates
+    )
+
+
+def test_rrf_retrieval_persists_fusion_rank_for_a_budget_excluded_chunk() -> None:
+    oversized = make_lexical_hit()
+    fitting = oversized.model_copy(update={"chunk_id": SECOND_CHUNK_ID, "text": "margin"})
+    unit_of_work = RecordingUnitOfWork(lexical_hits=(oversized, fitting))
+    embedding, dense_provider = make_provider_mocks()
+    service = make_service(
+        unit_of_work,
+        embedding_provider=cast(EmbeddingProvider, embedding),
+        dense_retriever=cast(DenseRetriever, dense_provider),
+        selection_profile=RrfSelectionProfile(context_character_limit=6),
+        identifiers=(REQUEST_ID, RUN_ID, LEXICAL_CANDIDATE_ID, DENSE_SELECTED_CANDIDATE_ID),
+    )
+
+    result = service.retrieve(make_context(), ResearchRetrievalInput(question="margin"))
+
+    assert [item.fused_rank for item in result.candidates] == [1, 2]
+    assert [item.selection_rank for item in result.candidates] == [None, 1]
+    assert result.sources[0].text == "margin"
+    # Raw dense hits exist, but none survived canonical qualification in this fixture.
+    assert all(item.origin is RetrievalOrigin.LEXICAL for item in result.candidates)
+
+
+def test_rrf_empty_qualified_lanes_preserve_an_explicit_empty_result() -> None:
+    unit_of_work = RecordingUnitOfWork()
+    embedding, dense_provider = make_provider_mocks()
+    service = make_service(
+        unit_of_work,
+        embedding_provider=cast(EmbeddingProvider, embedding),
+        dense_retriever=cast(DenseRetriever, dense_provider),
+        selection_profile=RrfSelectionProfile(),
+    )
+    result = service.retrieve(make_context(), ResearchRetrievalInput(question="unknown"))
+    assert result.retrieval_run.selector_config_version == RRF_CONFIG_VERSION
+    assert result.candidates == ()
+    assert result.sources == ()
 
 
 def test_dual_lane_retrieval_persists_request_before_providers_and_result_afterward() -> None:
