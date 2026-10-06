@@ -17,6 +17,8 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_m1_provider_smoke.py` | Runs one explicit, bounded M1 external-provider compatibility smoke.                     |
 | `plan_m1_5_live_baseline.py`  | Validates the approved M1.5 preflight and bounds sequential invocation reservations.      |
 | `m1_5_live_providers.py`      | Wraps existing provider ports with reservations and content-free usage records.          |
+| `m1_5_live_diagnostics.py`    | Classifies failures using fixed categories and allowlisted adapter metadata only.        |
+| `m1_5_local_output.py`        | Displays opt-in synthetic model proposals and decisions only in a local interactive terminal. |
 | `m1_5_live_index.py`          | Owns a fresh bounded evaluation namespace and verifies scoped cleanup.                   |
 | `m1_5_live_runner.py`         | Measures the frozen corpus through canonical M1 research and persisted-answer readback.  |
 | `m1_5_live_runtime.py`        | Owns disposable PostgreSQL and role-specific provider clients for evaluation.            |
