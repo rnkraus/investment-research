@@ -14,6 +14,7 @@ from investment_research.modules.search.contracts import SelectedRetrievalCandid
 from investment_research.modules.search.domain import RetrievalOrigin
 from scripts.map_m1_5_passages import (
     PassageMappingError,
+    map_citation_passages,
     map_cited_passages,
     map_selected_passages,
 )
@@ -121,6 +122,37 @@ def test_pdf_page_candidate_and_exact_citation_map_to_reviewed_passage() -> None
 
     assert selected == (passage.id,)
     assert cited == (passage.id,)
+
+
+@pytest.mark.parametrize("reuse_span", [False, True])
+def test_per_citation_mapping_preserves_repeats_and_unmatched_citations(reuse_span: bool) -> None:
+    manifest = _manifest()
+    passage = manifest.passages[0]
+    _, version_id, block, _ = _source(
+        text=passage.text + "\nUnreviewed source text.",
+        kind=SourceLocatorKind.PDF_PAGE,
+        start=passage.source_anchor.start_character,
+        page_number=passage.source_anchor.page_number,
+    )
+    first = _span(block, start=0, end=10)
+    second = first if reuse_span else _span(block, start=10, end=len(passage.text))
+    unmatched = _span(block, start=len(passage.text) + 1, end=len(block.text))
+
+    mappings = map_citation_passages(
+        manifest,
+        (first, second, unmatched),
+        blocks_by_id={block.id: block},
+        catalog_document_version_ids={version_id: passage.document_id},
+    )
+
+    assert mappings == ((passage.id,), (passage.id,), ())
+
+
+def test_per_citation_mapping_retains_empty_output_for_no_citations() -> None:
+    assert (
+        map_citation_passages(_manifest(), (), blocks_by_id={}, catalog_document_version_ids={})
+        == ()
+    )
 
 
 def test_repeated_unicode_text_is_selected_twice_but_citations_keep_their_range() -> None:

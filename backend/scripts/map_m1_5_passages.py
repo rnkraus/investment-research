@@ -89,16 +89,16 @@ def map_selected_passages(
     return tuple(passage.id for passage in manifest.passages if passage.id in matched)
 
 
-def map_cited_passages(
+def map_citation_passages(
     manifest: EvaluationManifest,
     spans: Sequence[EvidenceSpan],
     *,
     blocks_by_id: Mapping[UUID, StructureBlock],
     catalog_document_version_ids: Mapping[UUID, str],
-) -> tuple[str, ...]:
-    """Credit exact citations wholly inside a reviewed original-source passage."""
+) -> tuple[tuple[str, ...], ...]:
+    """Preserve one exact passage mapping per citation, including repeats and unmatched spans."""
 
-    matched: set[str] = set()
+    mappings: list[tuple[str, ...]] = []
     for span in spans:
         block = blocks_by_id.get(span.structure_block_id)
         document_id = catalog_document_version_ids.get(span.document_version_id)
@@ -118,7 +118,7 @@ def map_cited_passages(
             span.source_start_character != source_start or span.source_end_character != source_end
         ):
             raise PassageMappingError("evidence span does not match its original text offsets")
-        matched.update(
+        mappings.append(
             _matching_passages(
                 manifest,
                 document_id=document_id,
@@ -128,4 +128,23 @@ def map_cited_passages(
                 require_containment=True,
             )
         )
+    return tuple(mappings)
+
+
+def map_cited_passages(
+    manifest: EvaluationManifest,
+    spans: Sequence[EvidenceSpan],
+    *,
+    blocks_by_id: Mapping[UUID, StructureBlock],
+    catalog_document_version_ids: Mapping[UUID, str],
+) -> tuple[str, ...]:
+    """Retain the legacy aggregate mapping without losing canonical range checks."""
+
+    mappings = map_citation_passages(
+        manifest,
+        spans,
+        blocks_by_id=blocks_by_id,
+        catalog_document_version_ids=catalog_document_version_ids,
+    )
+    matched = {passage_id for ids in mappings for passage_id in ids}
     return tuple(passage.id for passage in manifest.passages if passage.id in matched)

@@ -71,10 +71,28 @@ def score_controlled_observations(observations: ObservationSet) -> ScoreSummary:
     )
 
 
+def make_v2_observations() -> ObservationSet:
+    observations = make_complete_observations()
+    return observations.model_copy(
+        update={
+            "schema_version": 2,
+            "cases": tuple(
+                case.model_copy(
+                    update={
+                        "citation_passage_ids": tuple((item,) for item in case.cited_passage_ids)
+                    }
+                )
+                for case in observations.cases
+            ),
+        }
+    )
+
+
 def test_complete_controlled_observations_have_separate_metric_denominators() -> None:
     summary = score_controlled_observations(make_complete_observations())
 
     assert summary.case_count == 6
+    assert summary.scoring_version == "m1.5-observation-score-v1"
     assert (summary.retrieval_hit_count, summary.retrieval_case_count) == (5, 5)
     assert summary.coverage_match_count == 6
     assert summary.citation_match_count == 6
@@ -163,6 +181,97 @@ def test_unexpected_citation_is_scored_as_wrong_instead_of_rejecting_run() -> No
     assert summary.cases[0].citation_match is False
     assert summary.citation_match_count == 5
     assert summary.exact_citation_valid_count == 5
+
+
+def test_v2_controlled_observations_record_the_new_policy_and_preserve_abstention() -> None:
+    summary = score_controlled_observations(make_v2_observations())
+
+    assert summary.scoring_version == "m1.5-observation-score-v2"
+    assert summary.coverage_match_count == summary.citation_match_count == 6
+    assert summary.abstention_match_count == summary.conflict_match_count == 1
+
+
+@pytest.mark.parametrize("unmatched", [False, True])
+@pytest.mark.parametrize("exact_valid", [False, True])
+def test_v2_multiple_citations_require_every_citation_to_match_expected_evidence(
+    unmatched: bool, exact_valid: bool
+) -> None:
+    observations = make_v2_observations()
+    first = observations.cases[0]
+    changed = first.model_copy(
+        update={
+            "citation_count": 2,
+            "citation_passage_ids": (
+                first.cited_passage_ids,
+                () if unmatched else first.cited_passage_ids,
+            ),
+            "exact_citations_valid": exact_valid,
+        }
+    )
+    summary = score_controlled_observations(
+        observations.model_copy(update={"cases": (changed, *observations.cases[1:])})
+    )
+
+    assert summary.cases[0].citation_match is (exact_valid and not unmatched)
+    assert summary.citation_match_count == (6 if exact_valid and not unmatched else 5)
+
+
+def test_v2_extra_known_but_unexpected_passage_is_not_credited() -> None:
+    observations = make_v2_observations()
+    conflict = observations.cases[3]
+    extra = "passage:fy2026-european-pilot-budget-first"
+    assert conflict.citation_passage_ids is not None
+    changed = conflict.model_copy(
+        update={
+            "selected_passage_ids": (*conflict.selected_passage_ids, extra),
+            "cited_passage_ids": (*conflict.cited_passage_ids, extra),
+            "citation_count": 3,
+            "citation_passage_ids": (*conflict.citation_passage_ids, (extra,)),
+        }
+    )
+    summary = score_controlled_observations(
+        observations.model_copy(
+            update={"cases": (*observations.cases[:3], changed, *observations.cases[4:])}
+        )
+    )
+
+    assert summary.cases[3].citation_match is False
+    assert summary.exact_citation_valid_count == 5
+
+
+@pytest.mark.parametrize(
+    "mappings",
+    [
+        None,
+        (),
+        ((),),
+        (("passage:fy2025-revenue-comparison", "passage:fy2025-revenue-comparison"),),
+    ],
+)
+def test_v2_incomplete_or_inconsistent_mappings_are_rejected(
+    mappings: tuple[tuple[str, ...], ...] | None,
+) -> None:
+    observations = make_v2_observations()
+    changed = observations.cases[0].model_copy(update={"citation_passage_ids": mappings})
+
+    with pytest.raises(ObservationValidationError, match="mapping"):
+        score_controlled_observations(
+            observations.model_copy(update={"cases": (changed, *observations.cases[1:])})
+        )
+
+
+def test_legacy_observations_cannot_silently_adopt_the_new_mapping_policy() -> None:
+    observations = make_v2_observations().model_copy(update={"schema_version": 1})
+
+    with pytest.raises(ObservationValidationError, match="legacy"):
+        score_controlled_observations(observations)
+
+
+def test_historical_summary_without_a_policy_version_remains_v1() -> None:
+    payload = score_controlled_observations(make_complete_observations()).model_dump()
+    payload.pop("scoring_version")
+
+    assert ScoreSummary.model_validate(payload).scoring_version == "m1.5-observation-score-v1"
 
 
 def test_failed_unanswerable_case_does_not_count_as_correct_abstention() -> None:

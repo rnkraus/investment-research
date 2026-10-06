@@ -64,7 +64,7 @@ from investment_research.modules.search.contracts import (
     SelectedRetrievalCandidate,
 )
 from investment_research.modules.search.persistence import SqlAlchemyRetrievalRepository
-from scripts.map_m1_5_passages import map_cited_passages, map_selected_passages
+from scripts.map_m1_5_passages import map_citation_passages, map_selected_passages
 from scripts.score_m1_5_observations import (
     CaseObservation,
     ObservationSet,
@@ -378,18 +378,22 @@ def test_reviewed_m1_5_answer_baseline(
         selected_ids = map_selected_passages(
             manifest, selected, blocks_by_id=blocks, catalog_document_ids=document_catalog
         )
-        cited_ids = map_cited_passages(
+        spans = {span.id: span for span in persisted_spans}
+        citation_mappings = map_citation_passages(
             manifest,
-            persisted_spans,
+            tuple(spans[item.evidence_span_id] for item in result.statement_evidence),
             blocks_by_id=blocks,
             catalog_document_version_ids=version_catalog,
         )
+        matched = {passage_id for ids in citation_mappings for passage_id in ids}
+        cited_ids = tuple(item.id for item in manifest.passages if item.id in matched)
         observations.append(
             CaseObservation(
                 case_id=case.id,
                 selected_passage_ids=selected_ids,
                 cited_passage_ids=cited_ids,
                 citation_count=len(result.statement_evidence),
+                citation_passage_ids=citation_mappings,
                 terminal_status="COMPLETED",
                 coverage_status=(
                     OBSERVED_COVERAGE[result.answer.coverage_status]
@@ -405,7 +409,7 @@ def test_reviewed_m1_5_answer_baseline(
         )
     digest = hashlib.sha256(DEFAULT_MANIFEST.read_bytes()).hexdigest()
     observation_set = ObservationSet(
-        schema_version=1,
+        schema_version=2,
         corpus_id=manifest.id,
         corpus_sha256=digest,
         configuration=RunConfiguration(
@@ -422,6 +426,7 @@ def test_reviewed_m1_5_answer_baseline(
         cases=tuple(observations),
     )
     summary = score_observations(observation_set, manifest, digest)
+    assert summary.scoring_version == "m1.5-observation-score-v2"
     assert summary.case_count == 6
     assert summary.retrieval_hit_count == summary.retrieval_case_count == 5
     assert summary.coverage_match_count == summary.citation_match_count == 6

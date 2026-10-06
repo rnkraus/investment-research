@@ -54,6 +54,7 @@ class CaseObservation(_FrozenModel):
     selected_passage_ids: tuple[str, ...]
     cited_passage_ids: tuple[str, ...]
     citation_count: int = Field(ge=0)
+    citation_passage_ids: tuple[tuple[str, ...], ...] | None = None
     terminal_status: Literal["COMPLETED", "FAILED"]
     coverage_status: Literal["COMPLETE", "PARTIAL", "CONFLICTING", "INSUFFICIENT"] | None
     exact_citations_valid: bool | None
@@ -64,7 +65,7 @@ class CaseObservation(_FrozenModel):
 
 
 class ObservationSet(_FrozenModel):
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     corpus_id: str = Field(min_length=1)
     corpus_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     configuration: RunConfiguration
@@ -85,6 +86,9 @@ class CaseScore(_FrozenModel):
 
 
 class ScoreSummary(_FrozenModel):
+    scoring_version: Literal["m1.5-observation-score-v1", "m1.5-observation-score-v2"] = (
+        "m1.5-observation-score-v1"
+    )
     corpus_id: str
     corpus_sha256: str
     configuration: RunConfiguration
@@ -143,6 +147,18 @@ def _validate_observation_set(
             raise ObservationValidationError("cited evidence was not selected into context")
         if observation.citation_count < len(cited):
             raise ObservationValidationError("citation count is smaller than matched evidence")
+        mappings = observation.citation_passage_ids
+        if observations.schema_version == 1:
+            if mappings is not None:
+                raise ObservationValidationError(
+                    "legacy observations cannot claim citation mappings"
+                )
+        elif mappings is None or len(mappings) != observation.citation_count:
+            raise ObservationValidationError("every citation needs a passage mapping entry")
+        elif any(len(ids) != len(set(ids)) for ids in mappings) or {
+            passage_id for ids in mappings for passage_id in ids
+        } != set(cited):
+            raise ObservationValidationError("citation mappings disagree with matched passage IDs")
         if (observation.exact_citations_valid is None) != (observation.citation_count == 0):
             raise ObservationValidationError("citation validity must match citation presence")
         if observation.terminal_status == "FAILED":
@@ -178,6 +194,7 @@ def score_observations(
         case = cases_by_id[observation.case_id]
         selected = set(observation.selected_passage_ids)
         cited = set(observation.cited_passage_ids)
+        expected_passages = {item for group in case.evidence_groups for item in group}
         retrieval_hit = (
             None
             if case.expected_coverage == "INSUFFICIENT"
@@ -187,7 +204,14 @@ def score_observations(
             observation.citation_count == 0
             if case.expected_coverage == "INSUFFICIENT"
             else bool(cited)
-            and observation.citation_count == len(cited)
+            and (
+                observation.citation_count == len(cited)
+                if observation.citation_passage_ids is None
+                else all(
+                    any(passage_id in expected_passages for passage_id in ids)
+                    for ids in observation.citation_passage_ids
+                )
+            )
             and observation.exact_citations_valid is True
             and _groups_present(case.evidence_groups, cited)
         )
@@ -214,6 +238,11 @@ def score_observations(
     usages = [case.provider_usage for case in observations.cases if case.provider_usage is not None]
     live = observations.run_mode == "live_opt_in"
     return ScoreSummary(
+        scoring_version=(
+            "m1.5-observation-score-v1"
+            if observations.schema_version == 1
+            else "m1.5-observation-score-v2"
+        ),
         corpus_id=observations.corpus_id,
         corpus_sha256=observations.corpus_sha256,
         configuration=observations.configuration,
