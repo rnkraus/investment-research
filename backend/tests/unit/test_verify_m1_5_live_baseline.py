@@ -97,6 +97,21 @@ def test_default_command_is_free_and_content_free(capsys: pytest.CaptureFixture[
     assert MARKER not in output
 
 
+def test_rrf_preflight_records_the_selected_policy_without_runtime_access(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["--retrieval-policy", "rrf"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["configuration"]["selector_config_version"] == "m1-5-rrf-k60-v1"
+    assert plan["maximum_spend_micro_usd"] == 800_000
+
+
+def test_unknown_policy_is_rejected_before_runtime_access() -> None:
+    with pytest.raises(SystemExit) as caught:
+        cli.main(["--retrieval-policy", "unknown"])
+    assert caught.value.code == 2
+
+
 def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> None:
     with pytest.raises(SystemExit) as caught:
         cli.main(["--max-spend-usd", "0.81"])

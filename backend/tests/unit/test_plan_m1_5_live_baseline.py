@@ -10,6 +10,7 @@ import pytest
 
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
 from investment_research.modules.research.contracts import ResearchModel
+from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
 from scripts import plan_m1_5_live_baseline as live
 from scripts.verify_m1_5_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, validate_corpus
 
@@ -32,6 +33,27 @@ def test_plan_freezes_the_six_reviewed_cases_and_existing_m1_policy() -> None:
     }
 
 
+def test_rrf_plan_changes_only_the_selector_configuration() -> None:
+    m1 = live.build_plan()
+    rrf = live.build_plan(retrieval_policy="rrf")
+
+    assert rrf.configuration.selector_config_version == "m1-5-rrf-k60-v1"
+    assert isinstance(live.selection_profile_for_policy("rrf"), RrfSelectionProfile)
+    assert live.retrieval_policy_for_version(rrf.configuration.selector_config_version) == "rrf"
+    assert live.retrieval_policy_for_version(m1.configuration.selector_config_version) == "m1"
+    assert rrf.model_dump(exclude={"configuration"}) == m1.model_dump(exclude={"configuration"})
+    assert rrf.configuration.model_dump(exclude={"selector_config_version"}) == (
+        m1.configuration.model_dump(exclude={"selector_config_version"})
+    )
+
+
+def test_unknown_policy_and_selector_version_are_rejected() -> None:
+    with pytest.raises(live.LiveBaselineLimitError, match="policy"):
+        live.build_plan(retrieval_policy="unknown")  # type: ignore[arg-type]
+    with pytest.raises(live.LiveBaselineLimitError, match="version"):
+        live.retrieval_policy_for_version("unknown")
+
+
 def test_preflight_cli_uses_no_network_or_environment_loader(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -41,12 +63,15 @@ def test_preflight_cli_uses_no_network_or_environment_loader(
 
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(dotenv, "dotenv_values", forbidden)
-    monkeypatch.setattr("sys.argv", ["plan", "--max-spend-usd", "0.20"])
+    monkeypatch.setattr(
+        "sys.argv", ["plan", "--max-spend-usd", "0.20", "--retrieval-policy", "rrf"]
+    )
 
     assert live.main() == 0
     output = capsys.readouterr().out
     data = json.loads(output)
     assert data["maximum_spend_micro_usd"] == 200_000
+    assert data["configuration"]["selector_config_version"] == "m1-5-rrf-k60-v1"
     assert "question" not in data
     assert "exact_text" not in output
     assert "expected_answer" not in output

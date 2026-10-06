@@ -59,7 +59,6 @@ from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
     DenseRetrievalProfile,
     LexicalSearchProfile,
-    M1SelectionProfile,
     SelectedRetrievalCandidate,
 )
 from investment_research.modules.search.ports import EmbeddingProvider, SearchProviderError
@@ -68,7 +67,13 @@ from scripts.m1_5_live_index import IsolatedEvaluationIndex
 from scripts.m1_5_live_providers import LiveProviderCallError, LiveProviderCalls, ProviderCallRecord
 from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
 from scripts.map_m1_5_passages import map_citation_passages, map_selected_passages
-from scripts.plan_m1_5_live_baseline import LiveBaselineLimitError, LiveBaselinePlan, build_plan
+from scripts.plan_m1_5_live_baseline import (
+    LiveBaselineLimitError,
+    LiveBaselinePlan,
+    build_plan,
+    retrieval_policy_for_version,
+    selection_profile_for_policy,
+)
 from scripts.score_m1_5_observations import (
     CaseObservation,
     ObservationSet,
@@ -166,8 +171,11 @@ def build_services(
     generator: AnswerGenerator,
     support: StatementSupportEvaluator,
 ) -> tuple[RetrieveResearchService, GenerateValidatedAnswerService]:
-    """Compose unchanged M1 services, canonical accounting, and the selected model pair."""
+    """Compose canonical services with the explicitly planned selector and model pair."""
 
+    selection_profile = selection_profile_for_policy(
+        retrieval_policy_for_version(plan.configuration.selector_config_version)
+    )
     sessions = create_session_factory(engine)
     operations = create_provider_operation_unit_of_work_factory(sessions)
     executor = ExecuteProviderOperationService(
@@ -192,7 +200,7 @@ def build_services(
                 dense_index_config_version=plan.configuration.dense_index_config_version,
                 candidate_limit=M1_LANE_CANDIDATE_LIMIT,
             ),
-            selection_profile=M1SelectionProfile(),
+            selection_profile=selection_profile,
             provider_operation_executor=executor,
             embedding_accounting=QueryEmbeddingAccountingProfile(
                 provider="openai",
@@ -316,6 +324,9 @@ def run_live_baseline(
             answer_model=ResearchModel(plan.configuration.answer_model),
             support_model=ResearchModel(plan.configuration.support_model),
             maximum_spend_micro_usd=plan.maximum_spend_micro_usd,
+            retrieval_policy=retrieval_policy_for_version(
+                plan.configuration.selector_config_version
+            ),
         )
         or calls.budget.plan != plan
     ):
