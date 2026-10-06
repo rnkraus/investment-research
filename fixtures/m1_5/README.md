@@ -102,6 +102,78 @@ mapping, but exclude parsing, indexing, answer generation, support evaluation, a
 Times will vary by machine. The embedding rule explicitly aliases the known transformer paraphrase;
 neither this run nor its 5/5 count estimates OpenAI or Pinecone retrieval quality.
 
+## Paired M1/RRF offline comparison
+
+`test_m1_5_rrf_comparison_postgresql.py` compares the two selectors without changing the approved
+originals, question catalog, embedding rules, index, or context bounds. Each question runs query
+embedding, PostgreSQL lexical retrieval, SQLite dense retrieval, and canonical qualification once;
+both selectors receive those same immutable qualified lists. Their defaults remain eight chunks
+and 24,000 Unicode code points. No answer or support model is invoked.
+
+For this comparison only, the existing fixture helper accepts a deterministic lexical-output ID
+factory. UUIDv5 IDs are derived from the corpus digest, catalog document ID, parser/chunking config,
+and output position under `m1.5-paired-identities-v1`. This keeps lexical, dense, and RRF tie-breaking
+repeatable across disposable databases. Normal fixtures and production ID generation are unchanged.
+The test reconstructs IDs and replays both selectors to check reproducibility.
+
+The new `m1.5-paired-retrieval-v1` report is separate from the legacy retrieval observations and v2
+answer observations. It records the shared processing/provider-substitute configuration, corpus
+digest, qualified-lane fingerprint, lane counts, selected chunk IDs, expected passage IDs, and each
+required evidence group's first context position. Fingerprints include lane order, stable chunk
+IDs, catalog document IDs, locators, original block starts, text digests, and raw scores; they exclude
+temporary workspace/version UUIDs and raw text. One paired case supplies the common fingerprint,
+not two independently retrieved snapshots.
+
+The measured common phase includes query embedding, both searches, canonical qualification, and
+the session boundary. Each selector is timed separately in nanoseconds. Reported retrieval time
+adds that common phase to the relevant selector time, rounded down to milliseconds. Parsing,
+indexing, passage mapping, generation, support evaluation, browser work, and real network providers
+are excluded. Single-run timing is descriptive, not a performance benchmark.
+
+Run from `backend/` with a fresh temporary output directory (the following workflow was verified
+locally on macOS):
+
+```bash
+m15_comparison_dir="$(mktemp -d /private/tmp/investment-research-rrf-compare.XXXXXX)"
+INVESTMENT_RESEARCH_M1_5_RRF_COMPARISON_OUTPUT="$m15_comparison_dir/comparison.json" \
+  uv run --locked python -m scripts.verify_postgres
+uv run --locked python -m scripts.compare_m1_5_retrieval \
+  --observations "$m15_comparison_dir/comparison.json"
+```
+
+The verifier removes only its disposable database, networks, and volume. The content-free report
+remains in the temporary directory for inspection; an existing filename is never overwritten.
+Required CI runs the same paired test through the existing PostgreSQL job without producing an
+artifact or using live providers.
+
+### Recorded paired offline result (2026-10-07)
+
+Both policies retained all required evidence for **5/5 answerable cases**. All six selected chunk
+sets and their order were identical; no default-policy change is justified by this measurement.
+
+| Case | Lexical hits | Qualified dense hits | First evidence-group ranks, M1 | First evidence-group ranks, RRF |
+| --- | --- | --- | --- | --- |
+| FY2025 revenue | 1 | 4 | 1 | 1 |
+| FY2026 rollout constraint | 0 | 4 | 1 | 1 |
+| FY2026 dividend | 0 | 12 | Not labeled as answerable | Not labeled as answerable |
+| Conflicting constraint | 0 | 8 | 5, 7 | 5, 7 |
+| European pilot budget | 1 | 4 | 1 | 1 |
+| Battery-cabinet window | 0 | 4 | 2 | 2 |
+
+Median retrieval time was 8 ms for both policies; maximum was 9 ms. Selector times ranged from
+0.030–0.039 ms for M1 and 0.069–0.188 ms for RRF, excluding mapping and report construction.
+These one-run local timings do not establish a general latency difference.
+
+Four questions had no lexical hits, so they offer no two-lane fusion comparison. The two other
+cases also produced unchanged contexts. The deterministic embedding rule still explicitly aliases
+the known transformer paraphrase. This narrow sample demonstrates paired mechanics and preserves
+known evidence; it does not show a quality improvement, estimate live provider retrieval quality,
+measure citation precision, or close the v2 answer-comparison gate. Keep M1 as the application
+default and the accepted live baseline unchanged. A separately approved, bounded provider-backed
+comparison remains necessary before any RRF default decision.
+
+## Complete offline answer baseline
+
 The complete offline answer baseline uses the same corpus setup from
 `backend/tests/integration/m1_5.py` and the actual `AnswerResearchRequestService`. It runs query
 embedding, both retrieval lanes, canonical qualification, M1 selection, generation, evidence
