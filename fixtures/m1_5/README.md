@@ -475,6 +475,47 @@ The paired offline comparison remains the controlled selector-mechanics check. R
 limitations in the eventual live comparison rather than claiming a quality improvement from
 this wiring change. No live RRF run has been performed as part of this work block.
 
+### Proposed live comparison protocol
+
+**Protocol:** `m1.5-sequential-live-comparison-v1`, proposed on 2026-10-07. Execution and the
+combined spending envelope require separate owner approval; documenting this protocol authorizes
+neither provider access nor paid calls.
+
+1. Use one unchanged checkout for both runs. Freeze the reviewed corpus digest, processing and
+   embedding/index configuration, answer/support prompts, Terra/Terra model pair, existing lane
+   and context limits, and per-role request limits. Do not tune between runs.
+2. Run all six cases once with explicit `--retrieval-policy m1`, then once with
+   `--retrieval-policy rrf`. Use explicit Terra models, `--max-spend-usd 0.80`, the existing
+   execution confirmations, and distinct new report filenames under `outputs/m1_5/`. The proposed
+   combined OpenAI reservation envelope is USD 1.60: two sequential invocations of at most
+   USD 0.80 each. It is not a new application monthly limit or a price guarantee; Pinecone billing
+   remains outside that estimate and requires the existing Starter-only confirmation.
+3. Preserve every recorded case and failure. Do not rerun failed cases or select a better run.
+   If setup prevents a report, record the interruption rather than declaring a successful
+   comparison. Do not launch RRF after failed or unverified M1 cleanup. Any additional invocation
+   requires new approval; there is no automatic retry or budget increase.
+4. Before comparing, verify both admission plans and v2 observation configurations agree on all
+   fields except the selector version, and both contain exactly the six frozen case IDs. Check
+   that each report stayed within its invocation envelope and cleanup is `VERIFIED`. Retain the
+   existing historical starting baseline as context, not as a substitute for the fresh M1 arm.
+5. Compare required evidence availability, coverage and citation matches, abstention, conflict,
+   safe/unsafe failures and their stage, question-phase latency, preparation latency, reservations,
+   and reported usage/cost. Keep preparation and question accounting separate. Unknown usage or
+   cost stays unknown. Application support checks are not independent review; inspect both arms
+   consistently before making any answer-support quality claim.
+
+This is a small sequential end-to-end observation, not a randomized trial or identical-snapshot
+comparison. Separate namespaces, random IDs, provider retrieval, model sampling, and fixed run
+order can affect results. Use the paired offline result to check selector mechanics; do not infer
+that a live answer difference proves RRF caused it. Six cases cannot establish general quality or
+latency. The repeated-budget-quote and conflict-support failures stay visible even if they recur.
+
+Critical evidence/isolation violations or unverified cleanup block acceptance. Better counts
+alone do not justify switching defaults. If the result is unchanged, worse, or inconclusive,
+retain M1 and record that outcome rather than tuning the corpus or extending this experiment.
+Any default change needs a reviewed decision and the full Step 1 verification gate. No live run
+or default change is recorded by this proposed protocol.
+
 ### Interactive local inspection
 
 Add `--show-local-model-output` to an explicitly confirmed `--execute` command to inspect the
