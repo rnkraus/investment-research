@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 0 in progress; live starting measurement recorded, independent review pending
+**Status:** Active — Step 0 in progress; v2 live baseline recorded, owner review pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -72,7 +72,7 @@ rate. Small-sample statistics are descriptive, not population-level quality clai
 reproducible offline, and any live baseline is separately opt-in, bounded, and recorded without
 raw document text or secrets in logs, traces, or CI artifacts. No RRF tuning precedes this gate.
 
-**Current Step 0 status (2026-10-06):** The owner reviewed the six synthetic cases in
+**Current Step 0 status (2026-10-07):** The owner reviewed the six synthetic cases in
 [`fixtures/m1_5/evaluation.json`](../fixtures/m1_5/evaluation.json). The fixture digests and original
 source ranges have a credential-free validator. Separate retrieval-only and end-to-end observation
 scorers have deterministic unit tests, and canonical chunks and citations can be mapped to reviewed
@@ -139,6 +139,16 @@ and displays proposals, quotes, support decisions, and canonical results without
 calls or weakening validation. The JSON measurement report remains content-free. This is a manual
 inspection aid, not an independent quality assessment; its boundary is documented in the
 [live-run guide](../fixtures/m1_5/README.md#interactive-local-inspection).
+
+The owner subsequently recorded a v2 Terra/Terra baseline under the approved USD 0.80 invocation
+ceiling. It retained 5/5 answerable retrieval hits, 4/6 matching coverage and citation outcomes,
+and two safe failures: an ambiguous budget quote and a rejected conflict statement. Cleanup was
+verified. The [v2 measurement and qualitative review draft](../fixtures/m1_5/README.md#recorded-version-2-baseline-and-review-draft)
+records the unchanged configuration, descriptive latency, reservations, and missing cost totals.
+The Codex content comparison is separate from the application's support decisions and is not
+human approval or a structured independent-model evaluation. Owner confirmation and a pasted
+battery-quote discrepancy remain open. Preserve this run, including both failures; do not tune
+prompts or ranking to obtain a selectively successful baseline. Step 0 is not yet accepted.
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
