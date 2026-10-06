@@ -181,6 +181,64 @@ review. Step 0 remains open pending independent review; a comparison also needs 
 observations on both sides rather than relabeling this historical run.
 These six cases provide a descriptive starting measurement, not a general RAG-quality claim.
 
+## Recorded version-2 baseline and review draft
+
+The owner executed `outputs/m1_5/m1-live-v2-20261006-235436.json` with Terra/Terra, the unchanged
+M1 selector and prompts, and the approved **USD 0.80** invocation ceiling. Its report SHA-256 is
+`8a88b1f5bfa23e261025368ffc3ffaa12d010047e8e9a975e1af1c733880f469`. The reviewed corpus digest
+is unchanged. Its observations use schema version 2 and `m1.5-observation-score-v2`:
+
+- Required evidence available in context: **5/5 answerable cases**.
+- Expected coverage and catalog citation match: **4/6 cases** each.
+- Reported exact canonical citation validity: **3/3 cases with published citations**.
+- Expected abstention: **1/1**; expected conflict outcome: **0/1**.
+- Safe operational failures: **2/6**; no unsafe failure was recorded.
+- Median question-phase elapsed time: **3,362.5 ms**; maximum: **7,158 ms**. Preparation took
+  **3,529 ms** separately; these values exclude browser rendering.
+- Retained reservations: **USD 0.606014**, not actual charges. Total provider usage and its
+  cost estimate remain unknown. Cleanup was **VERIFIED**.
+
+Do not transfer the owner's approximately USD 0.07 dashboard observation from the earlier run to
+this run. Do not compare the v1 and v2 citation-match counts as a quality improvement or infer a
+latency improvement from two small, non-identical outcome sets.
+
+### Qualitative review draft
+
+**Reviewed on:** 2026-10-07; owner acceptance pending.
+
+Codex compared the owner-supplied terminal transcript with the reviewed catalog and the two
+pasted-text originals, separately from the application's support-model decisions. The revenue
+comparison uses the owner-reviewed PDF passage label. This is a qualitative review draft, not
+human approval, a separately executed independent-model evaluation, or a replay of persisted
+evidence. It adds no `support_assessment` to the historical report; its count remains **0/6**.
+
+| Case | Content comparison | Recorded application outcome |
+| --- | --- | --- |
+| FY2025 revenue | Matches USD 184.2 million, 22.0% growth, and USD 151.0 million in FY2024 | Published |
+| FY2026 rollout constraint | Matches the high-voltage transformer shortage | Published |
+| FY2026 dividend | Abstention matches the reviewed absence of dividend evidence | Insufficient evidence |
+| Conflicting constraint | Both proposed claims match the two disagreeing source reports | Rejected after the transformer statement received `supported=false` |
+| European pilot budget | The proposed EUR 12 million value matches the source | Rejected because the exact quote occurs twice |
+| Battery-cabinet window | The proposed Q2 2027 timing matches the original | Published |
+
+The conflict case is a suspected support-model false rejection, not a demonstrated retrieval
+failure. Its boolean decision does not reveal the model's reason. The budget case is the known
+exact-substring selection limitation targeted by Step 2; neither rejected proposal counts as a
+published successful answer. Preserve both failures in the baseline instead of retrying until
+they disappear or weakening validation.
+
+The pasted battery quote contains `toshift`, whereas the reviewed original contains `to shift`.
+The report records valid canonical evidence and a matched catalog passage. The pasted transcript
+alone cannot reconcile that discrepancy; content correctness does not independently establish
+exact quote identity. Confirm transcript fidelity before accepting that citation's independent
+review. No fuzzy quote resolution or source-check bypass is approved.
+
+Step 0 remains open for owner confirmation of this content review and clarification of the
+transcript discrepancy. Once accepted, this recorded v2 run is the comparison baseline even
+with its two failures; passing every live case is not required to preserve a starting baseline.
+RRF work has not started. Broader model-quality claims and the final M1.5 acceptance remain later
+gates.
+
 ## Credential-free live preflight
 
 From `backend/`, print the approved plan without loading settings, reading keys, connecting to a
