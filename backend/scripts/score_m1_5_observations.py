@@ -28,9 +28,9 @@ class _FrozenModel(BaseModel):
 
 
 class ProviderUsage(_FrozenModel):
-    input_tokens: int = Field(ge=0)
-    output_tokens: int = Field(ge=0)
-    estimated_cost_micro_usd: int = Field(ge=0)
+    input_tokens: int | None = Field(ge=0)
+    output_tokens: int | None = Field(ge=0)
+    estimated_cost_micro_usd: int | None = Field(ge=0)
 
 
 class SupportAssessment(_FrozenModel):
@@ -243,10 +243,20 @@ def score_observations(
         unsafe_failure_count=sum(score.failed_safely is False for score in scores),
         median_elapsed_ms=float(statistics.median(score.elapsed_ms for score in scores)),
         maximum_elapsed_ms=max(score.elapsed_ms for score in scores),
-        provider_input_tokens=sum(usage.input_tokens for usage in usages) if live else None,
-        provider_output_tokens=sum(usage.output_tokens for usage in usages) if live else None,
+        provider_input_tokens=(
+            sum(value for usage in usages if (value := usage.input_tokens) is not None)
+            if live and all(usage.input_tokens is not None for usage in usages)
+            else None
+        ),
+        provider_output_tokens=(
+            sum(value for usage in usages if (value := usage.output_tokens) is not None)
+            if live and all(usage.output_tokens is not None for usage in usages)
+            else None
+        ),
         estimated_cost_micro_usd=(
-            sum(usage.estimated_cost_micro_usd for usage in usages) if live else None
+            sum(value for usage in usages if (value := usage.estimated_cost_micro_usd) is not None)
+            if live and all(usage.estimated_cost_micro_usd is not None for usage in usages)
+            else None
         ),
         cases=tuple(scores),
     )
