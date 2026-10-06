@@ -134,7 +134,7 @@ The command pins the reviewed catalog digest, validates the original fixtures, a
 case IDs, configuration versions, model choices, prices, and limits. The default model pair is
 Terra/Terra. `--answer-model gpt-5.6-luna` and `--support-model gpt-5.6-luna` independently select
 the existing Luna adapter policy. `--max-spend-usd 0.20` lowers the per-invocation OpenAI estimate
-ceiling; its default and maximum are USD 0.30. This is separate from the application's USD 5
+ceiling; its default and maximum are USD 0.80. This is separate from the application's USD 5
 monthly budget and does not authorize paid execution.
 
 The reusable `LiveBaselineBudget` reserves each attempted call **before** provider access: UTF-8
@@ -148,7 +148,7 @@ requests or a replacement for the canonical production accounting service.
 Independent request ceilings are 64 document-embedding calls, six query-embedding calls, six
 answer-generation calls, and 48 support-evaluation calls (eight statements per case). The document
 vector ceiling is also 64; the future runner must enforce it when admitting actual chunks. These
-are safety ceilings, not predicted call counts. The USD 0.30 accounting ceiling can stop the run
+are safety ceilings, not predicted call counts. The USD 0.80 accounting ceiling can stop the run
 before every request ceiling is reached; completion is not guaranteed by preflight. Budget-limited
 cases must be recorded as failures rather than silently dropped from quality statistics.
 
@@ -211,14 +211,15 @@ exclusive to the normal application loader.
 
 The Pinecone host and `INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD` remain required.
 The latter must satisfy the existing USD 5 monthly application ceiling; the invocation guard is
-still independently capped at USD 0.30. Ordinary PostgreSQL, Redis, S3, parser, runtime-location,
+still independently capped at USD 0.80. Ordinary PostgreSQL, Redis, S3, parser, runtime-location,
 and raw-output settings are not loaded: the tool owns its evaluation database and does not execute
 the worker delivery path. Credential/model validation reuses the existing application settings.
 Configuration errors name only a fixed setting and reason, never a value, secret path, or raw
 validation exception. Free preflight does not invoke this loader.
 
-The following command enables paid calls and creates derived vectors. It has **not yet been run
-against live providers**. Use a new report filename each time:
+The following command enables paid calls and creates derived vectors. Live measurements are
+separate from deterministic verification and do not imply quality acceptance. Use a new report
+filename each time:
 
 ```bash
 uv run --locked python -m scripts.verify_m1_5_live_baseline \
@@ -230,7 +231,7 @@ uv run --locked python -m scripts.verify_m1_5_live_baseline \
 
 Terra/Terra remains the default. Add `--answer-model gpt-5.6-luna` and/or
 `--support-model gpt-5.6-luna` for an explicitly selected lower-cost model pair; no automatic
-fallback occurs. The USD 0.30 reservation ceiling may prevent all Terra cases from completing.
+fallback occurs. The USD 0.80 reservation ceiling may prevent all Terra cases from completing.
 Record this as budget-limited execution, not evidence that retrieval quality is poor, and do not
 increase the approved ceiling implicitly.
 
@@ -239,8 +240,30 @@ Alembic, loads only the approved corpus, and uses a fresh Pinecone workspace nam
 the evaluation fixture builders and unchanged M1 retrieval, generation, canonical accounting,
 validation, and answer-persistence services. This is a development evaluation tool, not a worker
 delivery/recovery test or a replacement for normal document-ingestion accounting. It never accepts
-a production database URL or caller-selected namespace. It uses no raw-output callback, exporter,
-or browser. Cleanup closes clients and removes only invocation-owned resources.
+a production database URL or caller-selected namespace. By default it installs no content-output
+callback; it uses no exporter or browser. Cleanup closes clients and removes only invocation-owned
+resources.
+
+### Interactive local inspection
+
+Add `--show-local-model-output` to an explicitly confirmed `--execute` command to inspect the
+fixed public-synthetic corpus in your terminal. This option requires interactive standard output
+and rejects the presence of `CI` or `GITHUB_ACTIONS` before configuration or provider access,
+including when their value is `false`. Redirecting or piping the output is not supported. The
+terminal boundary is checked again at callback setup and before each content emission.
+
+The display prints each question, the complete schema-parsed model proposal including proposed
+quotes before exact-quote resolution, individual statement-support decisions, the canonically
+persisted result, and the case outcome. If SDK schema parsing fails, it prints only the available
+generated `output_text`, never HTTP headers, credentials, or complete SDK response metadata. A
+provider failure before any generated text cannot display an answer. Malformed support output
+uses the existing diagnostic callback. All proposals are labeled **Unvalidated model output**;
+local inspection does not bypass any evidence, usage, or publication check and does not supply an
+independent support assessment.
+
+No additional provider request is made for display. The JSON measurement report remains
+content-free, and normal logging is unchanged. Do not add this flag to GitHub Actions or capture
+this terminal content in shared logs. Model-authored control characters are JSON-escaped.
 
 The JSON report contains the admission plan, all six case observations, their descriptive score
 summary, safe failure categories, preparation latency, per-call usage, retained reservations, and
@@ -250,6 +273,23 @@ fabricated zero. Reported usage beyond a reservation remains recorded but stops 
 Only IDs, configuration, counts, and measurements are written, not questions, source text,
 model proposals, answers, credentials, or provider hosts. Reports must be new `.json` files under
 ignored `outputs/m1_5/`; existing files and escaped/symlinked targets are rejected.
+
+New reports retain optional, content-free diagnostics. Each failed case records its `stage`:
+preparation, index visibility, retrieval, passage mapping, generation/validation, persisted
+readback, evidence validation, or citation mapping. A provider failure additionally records the
+attempted role when known, a fixed category (`configuration`, `contract`, `output_limit`,
+`refusal`, `transient`, `unavailable`, `usage_limit`, `unexpected`, or `interrupted`), and only
+adapter-owned HTTP status or allowlisted answer-contract details when available. For example,
+`quote_not_found` and `quote_ambiguous` remain distinguishable without storing the quote. The
+diagnostic is also attached to the failed provider-call usage record.
+
+Rejected answers retain only deduplicated `failed_validation_rules`, such as
+`EXACT_SOURCE_SPAN` or `STATEMENT_SUPPORT`; raw validation reasons are excluded because they can
+contain model-authored text. The terminal prints the same fixed diagnostics per failed case.
+These optional fields preserve schema-version-1 report loading. Absent fields in older reports
+mean unknown diagnostics, not successful validation or a retrospectively established cause.
+Neither error messages, exception causes, raw SDK bodies, nor provider output are copied into the
+measurement report. The separately enabled local terminal inspection is described above.
 
 An operational case failure or failed cleanup produces exit code 1 while retaining a completed
 measurement report. Configuration/startup failures or an interruption may leave only an empty

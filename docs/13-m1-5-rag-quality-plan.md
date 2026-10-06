@@ -97,7 +97,7 @@ A credential-free live preflight now pins this reviewed corpus digest and report
 M1 configuration and independently selected Terra/Luna model prices. Its sequential invocation
 guard reserves attempted calls before access, retains unknown-usage reservations, validates
 reported usage, and enforces role request limits and an OpenAI accounting ceiling of at most
-USD 0.30. The [corpus guide](../fixtures/m1_5/README.md#credential-free-live-preflight) documents the
+USD 0.80. The [corpus guide](../fixtures/m1_5/README.md#credential-free-live-preflight) documents the
 verified command, estimates, and limitations. It does not contact providers, authorize spend,
 replace canonical application accounting, or record a live quality baseline. Budgeted wrappers
 for all four provider roles and an owned Pinecone namespace lifecycle now have deterministic unit
@@ -114,6 +114,20 @@ confirmations plus an explicit output path. See the
 [live-run guide](../fixtures/m1_5/README.md#opt-in-live-baseline). No live-provider quality run or
 independent support review has been executed by this implementation block. Those separately
 approved measurements remain the next Step 0 work; RRF tuning has not started.
+
+The live runner now retains optional, allowlisted provider diagnostics and failed canonical
+validation rules, also printed per failed case. No raw error, source, answer, or model-authored
+validation reason is retained. Older reports remain readable but their missing diagnostics
+cannot establish the cause of an earlier failure. The field contract is in the
+[live-run guide](../fixtures/m1_5/README.md#opt-in-live-baseline). This diagnostic change does not
+alter the M1 pipeline or close the independent quality-review gate.
+
+The owner approved an explicit local-only inspection option for these frozen public-synthetic
+cases. `--show-local-model-output` requires execution and an interactive terminal, rejects CI,
+and displays proposals, quotes, support decisions, and canonical results without adding provider
+calls or weakening validation. The JSON measurement report remains content-free. This is a manual
+inspection aid, not an independent quality assessment; its boundary is documented in the
+[live-run guide](../fixtures/m1_5/README.md#interactive-local-inspection).
 
 ### Step 1 — Reciprocal rank fusion of the existing two lanes
 
