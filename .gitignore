@@ -70,6 +70,7 @@ build/
 /logs/
 /local-docs/
 /output/
+/outputs/m1_5/
 /tmp/
 /temp/
 /work/
