@@ -1,6 +1,8 @@
 """Evaluation orchestration tests with no environment-file access, Docker, or providers."""
 
+import json
 import subprocess
+import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,6 +13,7 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import Engine
 
+from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.operations.domain import ProviderOperationKind
 from investment_research.settings import (
     ApiSettings,
@@ -22,10 +25,12 @@ from investment_research.settings import (
 )
 from scripts import m1_5_live_runtime as runtime
 from scripts import verify_m1_5_live_baseline as cli
+from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic
 from scripts.m1_5_live_index import LiveIndexCleanupError
 from scripts.m1_5_live_providers import LiveProviderCalls, ProviderCallRecord
-from scripts.m1_5_live_runner import LiveBaselineReport, summarize_usage
+from scripts.m1_5_live_runner import LiveBaselineReport, LiveCaseFailure, summarize_usage
 from scripts.m1_5_live_settings import EvaluationConfigurationError
+from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, build_plan
 from scripts.score_m1_5_observations import ProviderUsage
 from tests.unit.test_score_m1_5_observations import (
@@ -88,13 +93,13 @@ def test_default_command_is_free_and_content_free(capsys: pytest.CaptureFixture[
     assert cli.main([]) == 0
     output = capsys.readouterr().out
     assert '"preflight_only"' in output
-    assert '"maximum_spend_micro_usd": 300000' in output
+    assert '"maximum_spend_micro_usd": 800000' in output
     assert MARKER not in output
 
 
 def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> None:
     with pytest.raises(SystemExit) as caught:
-        cli.main(["--max-spend-usd", "0.31"])
+        cli.main(["--max-spend-usd", "0.81"])
     assert caught.value.code == 2
 
 
@@ -175,11 +180,12 @@ def test_output_path_rejects_existing_outside_and_symlink_targets(
     assert existing.read_text(encoding="utf-8") == "retained"
 
 
-@pytest.mark.parametrize("cleanup", [None, "pinecone", "database"])
+@pytest.mark.parametrize("cleanup", [None, "pinecone", "database", "case", "local"])
 def test_recorded_results_survive_cleanup_failures(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     cleanup: str | None,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(cli, "OUTPUT_ROOT", tmp_path)
     monkeypatch.setattr(cli, "load_evaluation_settings", lambda: (MagicMock(), MagicMock()))
@@ -191,7 +197,8 @@ def test_recorded_results_survive_cleanup_failures(
             raise RuntimeError(MARKER)
 
     @contextmanager
-    def resources(*args: object) -> Iterator[MagicMock]:
+    def resources(*args: object, **kwargs: object) -> Iterator[MagicMock]:
+        assert (kwargs.get("local_output") is not None) == (cleanup == "local")
         yield MagicMock()
         if cleanup == "pinecone":
             steps = cast(list[str], args[-1])
@@ -199,7 +206,46 @@ def test_recorded_results_survive_cleanup_failures(
 
     monkeypatch.setattr(cli, "isolated_database", database)
     monkeypatch.setattr(cli, "provider_resources", resources)
-    monkeypatch.setattr(cli, "run_live_baseline", lambda *args, **kwargs: report())
+    measured = report()
+    if cleanup == "case":
+        measured = measured.model_copy(
+            update={
+                "failures": (
+                    LiveCaseFailure(
+                        case_id="synthetic-contract",
+                        reason="provider",
+                        stage="answer_generation_and_validation",
+                        provider_failure=ProviderFailureDiagnostic(
+                            category="contract",
+                            role=ProviderOperationKind.ANSWER_GENERATION,
+                            contract_detail="quote_not_found",
+                        ),
+                    ),
+                    LiveCaseFailure(
+                        case_id="synthetic-rejection",
+                        reason="rejected",
+                        stage="evidence_validation",
+                        failed_validation_rules=(ValidationRule.STATEMENT_SUPPORT,),
+                    ),
+                )
+            }
+        )
+
+    def measure(*args: object, **kwargs: object) -> LiveBaselineReport:
+        local = kwargs.get("local_output")
+        if cleanup == "local":
+            assert isinstance(local, LocalEvaluationOutput)
+            local.begin_case("synthetic-case", "Public synthetic question")
+            local.answer_proposal("Public synthetic answer")
+        else:
+            assert local is None
+        return measured
+
+    monkeypatch.setattr(cli, "run_live_baseline", measure)
+    if cleanup == "local":
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     output = tmp_path / "result.json"
     code = cli.main(
         [
@@ -208,13 +254,83 @@ def test_recorded_results_survive_cleanup_failures(
             "--confirm-pinecone-starter",
             "--output",
             str(output),
+            *(["--show-local-model-output"] if cleanup == "local" else []),
         ]
     )
     recorded = LiveBaselineReport.model_validate_json(output.read_bytes())
-    assert code == (0 if cleanup is None else 1)
-    assert recorded.cleanup_status == ("VERIFIED" if cleanup is None else "FAILED")
+    assert code == (0 if cleanup in {None, "local"} else 1)
+    assert recorded.cleanup_status == (
+        "VERIFIED" if cleanup in {None, "case", "local"} else "FAILED"
+    )
     assert len(recorded.observations.cases) == 6
     assert MARKER not in output.read_text(encoding="utf-8")
+    terminal = capsys.readouterr().out
+    assert MARKER not in terminal
+    assert ("Public synthetic answer" in terminal) == (cleanup == "local")
+    assert "Public synthetic answer" not in output.read_text(encoding="utf-8")
+    assert "Public synthetic question" not in output.read_text(encoding="utf-8")
+    if cleanup == "case":
+        assert "stage=answer_generation_and_validation" in terminal
+        assert "contract_detail=quote_not_found" in terminal
+        assert "failed_rules=STATEMENT_SUPPORT" in terminal
+
+
+@pytest.mark.parametrize("environment", ["CI", "GITHUB_ACTIONS", "redirected"])
+def test_local_model_output_is_denied_before_runtime_access(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], environment: str
+) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: environment != "redirected")
+    if environment != "redirected":
+        monkeypatch.setenv(environment, "false")  # Presence is enough to deny output.
+    assert cli.main(["--execute", "--show-local-model-output"]) == 2
+    assert "interactive local terminal outside CI" in capsys.readouterr().err
+
+
+def test_local_output_requires_explicit_execution() -> None:
+    assert cli.main(["--show-local-model-output"]) == 2
+
+
+def test_local_output_rechecks_environment_and_escapes_terminal_control_characters(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    local = LocalEvaluationOutput(
+        answer_model="synthetic-answer", support_model="synthetic-support"
+    )
+    local.answer_proposal("Public answer\x1b[31m")
+    terminal = capsys.readouterr().out
+    assert "Unvalidated model output" in terminal
+    assert "\x1b" not in terminal
+    assert "\\u001b" in terminal
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    with pytest.raises(ValueError, match="outside CI"):
+        local.answer_proposal("must not appear")
+    assert "must not appear" not in capsys.readouterr().out
+
+
+def test_older_reports_do_not_invent_failure_diagnostics() -> None:
+    historical = report().model_dump(mode="json")
+    historical["failures"] = [{"case_id": "synthetic-case", "reason": "provider"}]
+    historical["provider_calls"] = [
+        {
+            "ordinal": 0,
+            "role": "ANSWER_GENERATION",
+            "usage_state": "UNKNOWN",
+            "input_tokens": None,
+            "output_tokens": None,
+            "estimated_cost_micro_usd": None,
+            "reserved_cost_micro_usd": 1,
+        }
+    ]
+    loaded = LiveBaselineReport.model_validate_json(json.dumps(historical))
+    assert loaded.failures[0].stage is None
+    assert loaded.failures[0].provider_failure is None
+    assert loaded.failures[0].failed_validation_rules == ()
+    assert loaded.provider_calls[0].failure is None
 
 
 def test_configuration_failure_names_only_safe_setting_and_reason(
@@ -297,10 +413,20 @@ def settings() -> tuple[WorkerSettings, ApiSettings]:
 
 
 @pytest.mark.parametrize("failure", [None, "retriever_setup", "cleanup"])
+@pytest.mark.parametrize("show_output", [False, True])
 def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
     failure: str | None,
+    show_output: bool,
 ) -> None:
+    local = None
+    if show_output:
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        local = LocalEvaluationOutput(
+            answer_model="synthetic-answer", support_model="synthetic-support"
+        )
     plan = build_plan()
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     worker, api = settings()
@@ -308,10 +434,10 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     monkeypatch.setattr(
         runtime, "create_openai_embedding_provider", MagicMock(side_effect=[document, query])
     )
-    monkeypatch.setattr(runtime, "create_openai_answer_generator", lambda **kwargs: answer)
-    monkeypatch.setattr(
-        runtime, "create_openai_statement_support_evaluator", lambda **kwargs: support
-    )
+    answer_factory = MagicMock(return_value=answer)
+    support_factory = MagicMock(return_value=support)
+    monkeypatch.setattr(runtime, "create_openai_answer_generator", answer_factory)
+    monkeypatch.setattr(runtime, "create_openai_statement_support_evaluator", support_factory)
     monkeypatch.setattr(runtime, "create_pinecone_dense_index_writer", lambda **kwargs: writer)
     factory = MagicMock(return_value=retriever)
     if failure == "retriever_setup":
@@ -327,17 +453,25 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     if failure == "retriever_setup":
         with (
             pytest.raises(RuntimeError),
-            runtime.provider_resources(worker, api, plan, calls, cleanup_steps),
+            runtime.provider_resources(worker, api, plan, calls, cleanup_steps, local_output=local),
         ):
             pytest.fail("partial setup must not yield resources")
         writer.close.assert_called_once()
     else:
-        with runtime.provider_resources(worker, api, plan, calls, cleanup_steps):
-            pass
+        with runtime.provider_resources(
+            worker, api, plan, calls, cleanup_steps, local_output=local
+        ) as resources:
+            assert resources.support.local_output is local
         owned_index.close.assert_called_once()
     for client in (document, query, answer, support):
         client.close.assert_called_once()
     assert cleanup_steps == (["namespace_absence"] if failure == "cleanup" else [])
+    assert answer_factory.call_args.kwargs["local_proposal_output"] == (
+        None if local is None else local.answer_proposal
+    )
+    assert support_factory.call_args.kwargs["local_validation_output"] == (
+        None if local is None else local.support_failure
+    )
 
 
 @pytest.mark.parametrize("failure", [None, "startup", "migration", "body"])

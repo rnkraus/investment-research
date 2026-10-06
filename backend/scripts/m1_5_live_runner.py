@@ -20,6 +20,7 @@ from investment_research.infrastructure.openai_models import (
 )
 from investment_research.infrastructure.operations.noop import NoopOperationTracer
 from investment_research.modules.evidence.contracts import EvidenceValidationProfile
+from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.evidence.persistence import SqlAlchemyEvidenceRepository
 from investment_research.modules.evidence.ports import (
     StatementSupportEvaluator,
@@ -62,8 +63,10 @@ from investment_research.modules.search.contracts import (
     SelectedRetrievalCandidate,
 )
 from investment_research.modules.search.ports import EmbeddingProvider, SearchProviderError
+from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic, provider_failure
 from scripts.m1_5_live_index import IsolatedEvaluationIndex
 from scripts.m1_5_live_providers import LiveProviderCallError, LiveProviderCalls, ProviderCallRecord
+from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
 from scripts.map_m1_5_passages import map_cited_passages, map_selected_passages
 from scripts.plan_m1_5_live_baseline import LiveBaselineLimitError, LiveBaselinePlan, build_plan
 from scripts.score_m1_5_observations import (
@@ -78,6 +81,16 @@ from tests.integration.factories import FIXTURE_TIME, ResearchSource
 from tests.integration.m1_5 import index_sources, persist_sources, source_for_catalog_document
 
 type FailureReason = Literal["budget", "provider", "rejected", "verification"]
+type FailureStage = Literal[
+    "preparation",
+    "index_visibility",
+    "retrieval",
+    "passage_mapping",
+    "answer_generation_and_validation",
+    "persistence_readback",
+    "evidence_validation",
+    "citation_mapping",
+]
 type ObservedCoverage = Literal["COMPLETE", "PARTIAL", "CONFLICTING", "INSUFFICIENT"]
 OBSERVED_COVERAGE: dict[CoverageStatus, ObservedCoverage] = {
     CoverageStatus.COMPLETE: "COMPLETE",
@@ -92,6 +105,9 @@ class LiveCaseFailure(BaseModel):
 
     case_id: str
     reason: FailureReason
+    stage: FailureStage | None = None
+    provider_failure: ProviderFailureDiagnostic | None = None
+    failed_validation_rules: tuple[ValidationRule, ...] = ()
 
 
 class LiveBaselineReport(BaseModel):
@@ -268,6 +284,18 @@ def _reason(error: Exception) -> FailureReason:
     return "verification"
 
 
+def _provider_diagnostic(
+    error: Exception, records: Sequence[ProviderCallRecord]
+) -> ProviderFailureDiagnostic | None:
+    """Prefer the failing call's role; never infer it from a previous successful call."""
+
+    if _reason(error) != "provider":
+        return None
+    if records and records[-1].failure is not None:
+        return records[-1].failure
+    return provider_failure(error)
+
+
 def run_live_baseline(
     engine: Engine,
     plan: LiveBaselinePlan,
@@ -278,6 +306,7 @@ def run_live_baseline(
     generator: AnswerGenerator,
     support: StatementSupportEvaluator,
     calls: LiveProviderCalls,
+    local_output: LocalEvaluationOutput | None = None,
 ) -> LiveBaselineReport:
     """Run every reviewed case without authorizing credentials, resources, or cleanup itself."""
 
@@ -292,6 +321,8 @@ def run_live_baseline(
     ):
         raise LiveBaselineLimitError("the evaluation plan is inconsistent")
     manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+    if local_output is not None:
+        require_local_terminal()
     context = index.context
     workspace = Workspace(
         id=context.workspace_id,
@@ -302,6 +333,8 @@ def run_live_baseline(
     sources: tuple[ResearchSource, ...] = ()
     preparation_failed = False
     preparation_reason: FailureReason = "verification"
+    preparation_stage: FailureStage = "preparation"
+    preparation_diagnostic: ProviderFailureDiagnostic | None = None
     started = perf_counter_ns()
     try:
         sources = tuple(
@@ -312,10 +345,12 @@ def run_live_baseline(
             raise LiveBaselineLimitError("the document vector limit is exceeded")
         persist_sources(engine, sources)
         index_sources(sources, provider=document_embedding, index=index)
+        preparation_stage = "index_visibility"
         index.wait_until_visible()
     except Exception as error:
         preparation_failed = True
         preparation_reason = _reason(error)
+        preparation_diagnostic = _provider_diagnostic(error, calls.records)
     preparation_elapsed_ms = (perf_counter_ns() - started) // 1_000_000
     preparation_records = calls.records
     documents = dict(zip((doc.id for doc in manifest.documents), sources, strict=False))
@@ -333,11 +368,16 @@ def run_live_baseline(
     observations: list[CaseObservation] = []
     failures: list[LiveCaseFailure] = []
     for case in manifest.cases:
+        if local_output is not None:
+            local_output.begin_case(case.id, case.question)
         started = perf_counter_ns()
         record_start = len(calls.records)
         selected_ids: tuple[str, ...] = ()
         observation: CaseObservation | None = None
         reason = preparation_reason
+        stage: FailureStage = preparation_stage if preparation_failed else "retrieval"
+        diagnostic = preparation_diagnostic if preparation_failed else None
+        failed_rules: tuple[ValidationRule, ...] = ()
         if not preparation_failed:
             try:
                 retrieved = retrieval.retrieve(
@@ -351,6 +391,7 @@ def run_live_baseline(
                         support_model=ResearchModel(plan.configuration.support_model),
                     ),
                 )
+                stage = "passage_mapping"
                 candidates = {candidate.id: candidate for candidate in retrieved.candidates}
                 selected = []
                 for source in retrieved.sources:
@@ -372,11 +413,21 @@ def run_live_baseline(
                     blocks_by_id=blocks,
                     catalog_document_ids=document_catalog,
                 )
+                stage = "answer_generation_and_validation"
                 result = generation.generate(context, retrieved)
+                stage = "persistence_readback"
                 _verify_persistence(engine, sources[0], result)
+                if local_output is not None:
+                    local_output.validated_result(result)
                 if result.answer.state is AnswerState.REJECTED:
                     reason = "rejected"
+                    stage = "evidence_validation"
+                    # Reasons can contain model-authored text. Retain only the rule enums.
+                    failed_rules = tuple(
+                        sorted({item.rule for item in result.validations if not item.passed})
+                    )
                 else:
+                    stage = "citation_mapping"
                     cited_ids = map_cited_passages(
                         manifest,
                         result.evidence_spans,
@@ -402,8 +453,17 @@ def run_live_baseline(
                     )
             except Exception as error:
                 reason = _reason(error)
+                diagnostic = _provider_diagnostic(error, calls.records[record_start:])
         if observation is None:
-            failures.append(LiveCaseFailure(case_id=case.id, reason=reason))
+            failures.append(
+                LiveCaseFailure(
+                    case_id=case.id,
+                    reason=reason,
+                    stage=stage,
+                    provider_failure=diagnostic,
+                    failed_validation_rules=failed_rules,
+                )
+            )
             observation = CaseObservation(
                 case_id=case.id,
                 selected_passage_ids=selected_ids,
@@ -418,6 +478,12 @@ def run_live_baseline(
                 provider_usage=summarize_usage(calls.records[record_start:]),
             )
         observations.append(observation)
+        if local_output is not None:
+            local_output.finish_case(
+                status=observation.terminal_status,
+                diagnostic=diagnostic,
+                failed_rules=failed_rules,
+            )
     observation_set = ObservationSet(
         schema_version=1,
         corpus_id=plan.corpus_id,

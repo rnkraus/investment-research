@@ -156,6 +156,7 @@ class OpenAIAnswerGenerator:
     operation_timeout_seconds: float = OPENAI_ANSWER_TIMEOUT_SECONDS
     max_output_tokens: int = OPENAI_ANSWER_MAX_OUTPUT_TOKENS
     local_validation_output: Callable[[str], None] | None = None
+    local_proposal_output: Callable[[str], None] | None = None
 
     def __post_init__(self) -> None:
         """Reject adapter settings outside the frozen M1 answer profile."""
@@ -193,7 +194,7 @@ class OpenAIAnswerGenerator:
         """Make the provider call and apply the typed response contract."""
 
         try:
-            if self.local_validation_output is None:
+            if self.local_validation_output is None and self.local_proposal_output is None:
                 response = self.client.responses.parse(
                     model=self.model,
                     instructions=_ANSWER_INSTRUCTIONS,
@@ -228,10 +229,12 @@ class OpenAIAnswerGenerator:
                         raw_body: object = raw_response.http_response.json()
                     except ValueError:
                         raw_body = None
-                    self.local_validation_output(
-                        self._output_text_from_raw_body(raw_body)
-                        or "[No generated output_text was returned.]"
-                    )
+                    output = self.local_validation_output or self.local_proposal_output
+                    if output is not None:
+                        output(
+                            self._output_text_from_raw_body(raw_body)
+                            or "[No generated output_text was returned.]"
+                        )
                     raise
         except APIConnectionError:
             raise AnswerGenerationProviderTransientError(
@@ -283,6 +286,9 @@ class OpenAIAnswerGenerator:
             raise OpenAIAnswerProviderContractError(detail="missing_typed_answer")
         if not isinstance(parsed, _OpenAIGeneratedAnswer):
             raise OpenAIAnswerProviderContractError(detail="typed_answer_validation")
+        if self.local_proposal_output is not None:
+            # Inspection grants no acceptance: usage, exact quotes, and support still follow.
+            self.local_proposal_output(parsed.model_dump_json())
         usage = response.usage
         if usage is None:
             raise OpenAIAnswerProviderContractError(detail="missing_usage")
@@ -448,6 +454,7 @@ def create_openai_answer_generator(
     operation_timeout_seconds: float = OPENAI_ANSWER_TIMEOUT_SECONDS,
     max_output_tokens: int = OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
     local_validation_output: Callable[[str], None] | None = None,
+    local_proposal_output: Callable[[str], None] | None = None,
 ) -> OpenAIAnswerGenerator:
     """Build one least-privilege synchronous client with SDK retries disabled."""
 
@@ -464,4 +471,5 @@ def create_openai_answer_generator(
         operation_timeout_seconds=operation_timeout_seconds,
         max_output_tokens=max_output_tokens,
         local_validation_output=local_validation_output,
+        local_proposal_output=local_proposal_output,
     )

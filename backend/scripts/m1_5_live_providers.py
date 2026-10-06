@@ -30,6 +30,8 @@ from investment_research.modules.search.contracts import (
     EmbeddingResult,
 )
 from investment_research.modules.search.ports import EmbeddingProvider, SearchProviderError
+from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic, provider_failure
+from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import (
     LiveBaselineBudget,
     LiveBaselineLimitError,
@@ -47,7 +49,7 @@ class LiveProviderCallError(RuntimeError):
 
 
 class ProviderCallRecord(BaseModel):
-    """Usage accounting only; REPORTED does not mean the answer is correct or accepted."""
+    """Content-free usage and failures; REPORTED does not imply a correct answer."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
@@ -58,6 +60,7 @@ class ProviderCallRecord(BaseModel):
     output_tokens: int | None
     estimated_cost_micro_usd: int | None
     reserved_cost_micro_usd: int
+    failure: ProviderFailureDiagnostic | None = None
 
 
 class _ResultWithUsage(Protocol):
@@ -87,7 +90,7 @@ class LiveProviderCalls:
         try:
             result = call()
         except BaseException as error:
-            self._record(reservation, "UNKNOWN", None)
+            self._record(reservation, "UNKNOWN", None, provider_failure(error, role=role))
             if isinstance(
                 error,
                 SearchProviderError | AnswerGenerationProviderError | StatementSupportProviderError,
@@ -97,7 +100,12 @@ class LiveProviderCalls:
         try:
             self.budget.verify_usage(reservation, result.usage)
         except LiveBaselineLimitError:
-            self._record(reservation, "USAGE_REJECTED", result.usage)
+            self._record(
+                reservation,
+                "USAGE_REJECTED",
+                result.usage,
+                ProviderFailureDiagnostic(category="usage_limit", role=role),
+            )
             raise LiveProviderCallError(role, "usage") from None
         self._record(reservation, "REPORTED", result.usage)
         return result
@@ -107,6 +115,7 @@ class LiveProviderCalls:
         reservation: RequestReservation,
         state: Literal["REPORTED", "UNKNOWN", "USAGE_REJECTED"],
         usage: ProviderUsage | None,
+        failure: ProviderFailureDiagnostic | None = None,
     ) -> None:
         cost: int | None = None
         if usage is not None:
@@ -127,6 +136,7 @@ class LiveProviderCalls:
                 output_tokens=None if usage is None else usage.output_units,
                 estimated_cost_micro_usd=cost,
                 reserved_cost_micro_usd=reservation.estimated_cost_micro_usd,
+                failure=failure,
             )
         )
 
@@ -173,6 +183,7 @@ class BudgetedAnswerGenerator:
 class BudgetedSupportEvaluator:
     delegate: StatementSupportEvaluator
     calls: LiveProviderCalls
+    local_output: LocalEvaluationOutput | None = None
 
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
         try:
@@ -181,8 +192,11 @@ class BudgetedSupportEvaluator:
             )
         except ValidationError:
             raise LiveBaselineLimitError("evaluation support input is invalid") from None
-        return self.calls.invoke(
+        result = self.calls.invoke(
             ProviderOperationKind.STATEMENT_SUPPORT,
             payload_utf8_bytes=len(request.model_dump_json().encode("utf-8")),
             call=lambda: self.delegate.evaluate(request.statement, request.evidence_texts),
         )
+        if self.local_output is not None:
+            self.local_output.support_decision(request.statement, result)
+        return result

@@ -30,6 +30,7 @@ from scripts.m1_5_live_providers import (
     BudgetedSupportEvaluator,
     LiveProviderCalls,
 )
+from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
 from scripts.plan_m1_5_live_baseline import LiveBaselinePlan
 from scripts.verify_postgres import (
     BACKEND_ROOT,
@@ -162,8 +163,13 @@ def provider_resources(
     plan: LiveBaselinePlan,
     calls: LiveProviderCalls,
     cleanup_steps: list[str],
+    *,
+    local_output: LocalEvaluationOutput | None = None,
 ) -> Iterator[ProviderResources]:
-    """Use existing restricted role credentials; no raw-output callbacks are installed."""
+    """Use restricted role credentials; content inspection is an explicit local-only option."""
+
+    if local_output is not None:
+        require_local_terminal()
 
     document = worker.require_indexing_providers()
     query = api.query_providers
@@ -208,11 +214,13 @@ def provider_resources(
         answer = create_openai_answer_generator(
             api_key=generation.api_key.get_secret_value(),
             model=plan.configuration.answer_model,
+            local_proposal_output=None if local_output is None else local_output.answer_proposal,
         )
         clients.callback(close_client, answer, "answer_client_close")
         support = create_openai_statement_support_evaluator(
             api_key=generation.api_key.get_secret_value(),
             model=plan.configuration.support_model,
+            local_validation_output=None if local_output is None else local_output.support_failure,
         )
         clients.callback(close_client, support, "support_client_close")
         with ExitStack() as index_clients:
@@ -239,5 +247,5 @@ def provider_resources(
             document_embedding=embeddings[0],
             query_embedding=embeddings[1],
             generator=BudgetedAnswerGenerator(answer, calls),
-            support=BudgetedSupportEvaluator(support, calls),
+            support=BudgetedSupportEvaluator(support, calls, local_output=local_output),
         )

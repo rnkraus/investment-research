@@ -7,9 +7,22 @@ from uuid import uuid4
 
 import pytest
 
+from investment_research.infrastructure.generation.openai import (
+    OpenAIAnswerProviderConfigurationError,
+    OpenAIAnswerProviderContractError,
+)
+from investment_research.infrastructure.search.openai import (
+    OpenAIEmbeddingProviderConfigurationError,
+)
 from investment_research.modules.evidence.contracts import (
     StatementSupportDecision,
     StatementSupportResult,
+)
+from investment_research.modules.evidence.ports import (
+    StatementSupportProviderConfigurationError,
+    StatementSupportProviderContractError,
+    StatementSupportProviderRefusalError,
+    StatementSupportProviderTransientError,
 )
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
 from investment_research.modules.research.contracts import (
@@ -18,6 +31,7 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.domain import CoverageStatus
+from investment_research.modules.research.ports import AnswerGenerationProviderOutputLimitError
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
     EmbeddingInput,
@@ -27,6 +41,7 @@ from investment_research.modules.search.contracts import (
     EmbeddingVector,
 )
 from investment_research.modules.search.ports import SearchProviderTransientError
+from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic, provider_failure
 from scripts.m1_5_live_providers import (
     BudgetedAnswerGenerator,
     BudgetedEmbeddingProvider,
@@ -238,3 +253,72 @@ def test_support_validation_happens_before_reservation_or_provider_access() -> N
     assert caught.value.__suppress_context__ is True
     assert delegate.requests == 0
     assert not calls.records
+
+
+@pytest.mark.parametrize(
+    ("error", "category", "status", "detail"),
+    [
+        (OpenAIAnswerProviderConfigurationError(http_status=401), "configuration", 401, None),
+        (OpenAIEmbeddingProviderConfigurationError(http_status=429), "configuration", 429, None),
+        (
+            OpenAIAnswerProviderContractError(detail="quote_not_found"),
+            "contract",
+            None,
+            "quote_not_found",
+        ),
+        (
+            OpenAIAnswerProviderContractError(detail="quote_ambiguous"),
+            "contract",
+            None,
+            "quote_ambiguous",
+        ),
+        (AnswerGenerationProviderOutputLimitError(MARKER), "output_limit", None, None),
+        (StatementSupportProviderConfigurationError(MARKER), "configuration", None, None),
+        (StatementSupportProviderContractError(MARKER), "contract", None, None),
+        (StatementSupportProviderRefusalError(MARKER), "refusal", None, None),
+        (StatementSupportProviderTransientError(MARKER), "transient", None, None),
+        (SearchProviderTransientError(MARKER), "transient", None, None),
+        (RuntimeError(MARKER), "unexpected", None, None),
+        (KeyboardInterrupt(MARKER), "interrupted", None, None),
+    ],
+)
+def test_failure_metadata_is_allowlisted_and_never_contains_exception_content(
+    error: BaseException, category: str, status: int | None, detail: str | None
+) -> None:
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+    delegate = RecordingProviders(error=error)
+    expected_error = LiveProviderCallError if type(error) is RuntimeError else type(error)
+    with pytest.raises(expected_error):
+        BudgetedAnswerGenerator(delegate, calls).generate(generation_input())
+    diagnostic = calls.records[0].failure
+    assert diagnostic is not None
+    assert diagnostic.category == category
+    assert diagnostic.role is ProviderOperationKind.ANSWER_GENERATION
+    assert diagnostic.http_status == status
+    assert diagnostic.contract_detail == detail
+    assert MARKER not in calls.records[0].model_dump_json()
+
+
+def test_mutated_adapter_details_and_arbitrary_exception_attributes_are_not_copied() -> None:
+    error = OpenAIAnswerProviderContractError(detail="quote_not_found")
+    error.__dict__["detail"] = MARKER
+    assert provider_failure(error).contract_detail is None
+    configuration = OpenAIAnswerProviderConfigurationError(http_status=401)
+    configuration.__dict__["http_status"] = MARKER
+    assert provider_failure(configuration).http_status is None
+    unexpected = RuntimeError(MARKER)
+    unexpected.__dict__.update(http_status=401, detail="quote_not_found")
+    assert provider_failure(unexpected) == ProviderFailureDiagnostic(category="unexpected")
+
+
+def test_usage_failure_has_its_own_diagnostic_and_success_has_none() -> None:
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+    delegate = RecordingProviders(usage=ProviderUsage(input_units=10, output_units=2_001))
+    with pytest.raises(LiveProviderCallError):
+        BudgetedAnswerGenerator(delegate, calls).generate(generation_input())
+    assert calls.records[0].failure == ProviderFailureDiagnostic(
+        category="usage_limit", role=ProviderOperationKind.ANSWER_GENERATION
+    )
+    successful = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+    BudgetedAnswerGenerator(RecordingProviders(), successful).generate(generation_input())
+    assert successful.records[0].failure is None
