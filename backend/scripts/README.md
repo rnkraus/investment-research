@@ -16,6 +16,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_m0_runtime.py`        | Proves the complete fixture journey through the production-shaped M0 runtime.            |
 | `verify_m1_provider_smoke.py` | Runs one explicit, bounded M1 external-provider compatibility smoke.                     |
 | `plan_m1_5_live_baseline.py`  | Validates the approved M1.5 preflight and bounds sequential invocation reservations.      |
+| `compare_m1_5_retrieval.py`   | Scores paired M1/RRF offline contexts from identical qualified lanes without answer-quality claims. |
 | `m1_5_live_providers.py`      | Wraps existing provider ports with reservations and content-free usage records.          |
 | `m1_5_live_diagnostics.py`    | Classifies failures using fixed categories and allowlisted adapter metadata only.        |
 | `m1_5_local_output.py`        | Displays opt-in synthetic model proposals and decisions only in a local interactive terminal. |
@@ -36,6 +37,14 @@ documented in the [corpus guide](../../fixtures/m1_5/README.md#opt-in-live-basel
 runner is a development tool and reuses the synthetic integration fixture builders; normal
 application request handlers never import it. Required CI uses deterministic test ports, not
 live keys or paid calls.
+
+The paired retrieval comparison uses the existing PostgreSQL verifier and optional
+`INVESTMENT_RESEARCH_M1_5_RRF_COMPARISON_OUTPUT` path. Its integration test retrieves once per case
+and supplies the same canonical lanes to the frozen M1 and RRF selectors. The scorer checks the
+reviewed corpus, reports evidence availability and context-order changes, and never changes the
+application default. Generation, support evaluation, provider cost, and browser behavior are not
+measured. See the [paired comparison guide](../../fixtures/m1_5/README.md#paired-m1rrf-offline-comparison)
+for the verified workflow, observations, and limitations.
 
 ## Contract flow
 

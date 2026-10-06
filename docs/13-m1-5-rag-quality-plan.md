@@ -199,8 +199,25 @@ SeaweedFS-only tests were skipped by that PostgreSQL-only gate. The disposable d
 owned resources were removed afterward. No live providers, browser, or frontend build were used
 for this backend-only work block.
 
-Next, build and run the frozen-corpus comparison without changing prompts, models, embeddings, or
-the corpus between policies. Step 1 is not accepted on correctness tests alone.
+**Paired offline comparison (2026-10-07):** A third work block records M1 and RRF selections from
+the same canonically qualified lanes for all six frozen questions. It adds a strict content-free
+comparison report and scorer, with reproducible test-only chunk identities and the unchanged
+context limits. Both policies retained all required evidence for 5/5 answerable cases; all six
+selected chunk sets and orders were identical. Four questions had no lexical hits; the other two
+had one lexical hit each. This is a weak discrimination sample using deterministic substitutes,
+not evidence of improved live retrieval or model-answer quality. The
+[paired comparison guide](../fixtures/m1_5/README.md#paired-m1rrf-offline-comparison) records the
+case-level ranks, timing boundary, verified commands, and limitations.
+
+Verification passed 1,296 backend unit tests, formatting, lint, typing, and 112 PostgreSQL tests
+with seven unrelated SeaweedFS-only skips. The migration cycle and schema checks passed, and the
+disposable database resources were removed. Existing CI discovers the paired test automatically;
+no provider call, historical report rewrite, frontend change, or default switch occurred.
+
+Next, prepare a separately approved, bounded provider-backed comparison without changing prompts,
+models, embeddings, or the corpus between policies. M1 remains the default. This retrieval-only
+report is not a v2 answer observation and cannot be compared with historical answer/citation
+scores. Step 1 is not accepted on the narrow offline comparison alone.
 
 ### Step 2 — Model-selectable citable source units
 
