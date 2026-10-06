@@ -180,10 +180,27 @@ deduplicates chunks across lanes, rejects duplicate lane votes and inconsistent 
 and retains separate fusion and selection ranks under the existing context bounds. The targeted
 new-RRF and retained-M1 selector checks passed 40 tests plus formatting, lint, and typing. See the
 [Search module guide](../backend/src/investment_research/modules/search/README.md#standalone-m15-reciprocal-rank-fusion)
-for the formula and boundary. Existing M1 orchestration and persistence are unchanged; no provider
-calls, default switch, reranker, or frontend change is part of this block. Next work blocks must
-wire auditable fusion into scoped retrieval and run the frozen-corpus comparison. Step 1 is not
-accepted on unit tests alone.
+for the formula and boundary.
+
+The second work block wires RRF as an explicit internal profile in the existing research service,
+after canonical qualification and before the unchanged context budget. Every qualified lane record
+retains its original rank and score plus the shared chunk's fusion rank, including unselected hits.
+The scoped repository reconstructs the fixed-policy ranks before staging writes; the existing
+`fused_rank` column needs no migration. The normal composition still supplies the M1 profile: no
+default switch, new provider call, environment setting, API field, reranker, or frontend change is
+included. Offline service and PostgreSQL tests cover audit round trips, source identities, budget
+exclusions, and foreign/unknown/inactive/temporal/document-filter exclusions. Existing CI discovers
+these tests through `scripts.verify_backend` and `scripts.verify_postgres`.
+
+**Second-block verification (2026-10-07):** `scripts.verify_backend` passed formatting, lint,
+typing, and 1,277 unit tests. `scripts.verify_postgres` passed the empty upgrade/downgrade/upgrade
+cycle, schema-drift checks, and 111 integration tests, including all four new RRF cases. Seven
+SeaweedFS-only tests were skipped by that PostgreSQL-only gate. The disposable database and its
+owned resources were removed afterward. No live providers, browser, or frontend build were used
+for this backend-only work block.
+
+Next, build and run the frozen-corpus comparison without changing prompts, models, embeddings, or
+the corpus between policies. Step 1 is not accepted on correctness tests alone.
 
 ### Step 2 — Model-selectable citable source units
 

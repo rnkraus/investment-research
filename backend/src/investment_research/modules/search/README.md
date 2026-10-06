@@ -77,8 +77,8 @@ bounded route limits.
 The same canonical chunk may appear once per origin, because that preserves which routes found it.
 Only the candidate chosen for context receives a `selection_rank`; selected chunks are unique and
 their ranks are contiguous. Reads return selected candidates in this final order, followed by any
-unselected candidates in stable origin and route-rank order. The standalone M1.5 RRF experiment
-described below is not yet wired into this persisted runtime path; reranking remains deferred.
+unselected candidates in stable origin and route-rank order. The opt-in M1.5 RRF experiment
+described below uses this same persisted path; reranking remains deferred.
 
 ## Reproducibility and isolation
 
@@ -86,8 +86,12 @@ A run preserves the exact and normalized query, typed filters, retrieval mode, a
 lexical, embedding, dense-index, and selector configuration versions, independent route limits,
 context limits, and execution timing. Candidate rows preserve origin-local rank and finite raw
 score without comparing unlike score scales. `selection_rank` records M1 context order, while
-nullable fusion and reranking fields remain unset in the existing M1 runtime. The M1.5 experiment
-keeps fusion values in its separate typed result until persistence and orchestration are wired.
+nullable fusion and reranking fields remain unset in the default M1 runtime. Opt-in RRF records a
+`fused_rank` on every qualified lane candidate, including both records for a shared chunk and
+unselected candidates. Before staging a run with `m1-5-rrf-k60-v1`, the repository reconstructs the
+fusion ranks from all origin-local ranks and rejects inconsistent fusion or selection order. The
+score is reproducible from those ranks and the fixed versioned formula; no new column or migration
+is needed.
 
 Every table and relationship carries `workspace_id`. Repository writes reject a mismatched trusted context before staging rows, and repository reads use the workspace in every query. Composite foreign keys let PostgreSQL reject cross-workspace links independently of application checks.
 
@@ -173,16 +177,22 @@ provider objects; they do not replace upstream workspace and eligibility enforce
 `select_rrf_context` applies the same 8-chunk and 24,000-code-point maxima, or smaller configured
 limits. It skips rather than truncates an oversized chunk. `fused_rank` remains its position before
 budget filtering; `selection_rank` is the contiguous context position afterward. Fusion can return
-all 40 unique hits for inspection, while selection returns only the bounded context.
+all 40 unique hits for inspection; the selection result retains this full ranking alongside the
+bounded context so excluded candidates remain auditable.
 
 ```text
 Canonical lexical + qualified dense hits → RRF ranks → whole-chunk budget → context
 ```
 
-These pure functions make no provider calls and write no state. The current application,
-OpenAPI, persistence, and M1 default remain unchanged. Canonical revalidation and statement-support
-checks are still required before any selected text can become citation evidence. Runtime wiring
-and a same-corpus comparison against M1 must precede any default-policy decision.
+These pure functions make no provider calls and write no state. `RetrieveResearchService` can
+explicitly receive `RrfSelectionProfile` in its query dependency bundle, after canonical lane
+qualification. It translates the selected representatives into the existing source contract and
+persists both lane contributions with their fusion ranks. The normal composition still supplies
+`M1SelectionProfile`; there is no new environment setting, browser switch, or OpenAPI change.
+Canonical revalidation and statement-support checks are still required before any selected text
+can become citation evidence. A same-corpus comparison against M1 must precede any default-policy
+decision. Offline service tests and `test_rrf_retrieval_postgresql.py` exercise the opt-in path,
+persisted ranks, budget exclusions, and canonical workspace/time/active-state boundaries.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders

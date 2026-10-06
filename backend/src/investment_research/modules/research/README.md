@@ -61,7 +61,7 @@ flowchart TD
     UOW --> LEXICAL
     PROVIDERHITS --> QUALIFY[PostgreSQL DenseCandidateQualifier]
     UOW --> QUALIFY
-    LEXICAL --> SELECT[Deterministic M1 selector]
+    LEXICAL --> SELECT[Versioned selector<br/>M1 default or opt-in RRF]
     QUALIFY --> SELECT
     SELECT --> CANDIDATES[All lane RetrievalCandidates]
     CANDIDATES --> RUN[RetrievalRun plus candidates]
@@ -87,6 +87,15 @@ canonical PostgreSQL state, applies the versioned selector, and persists every q
 candidate. A chunk found in both lanes retains one `LEXICAL` and one `DENSE` audit record, but only
 its first selected occurrence becomes a `CanonicalCandidateSource`. Empty lanes remain a valid,
 explicit retrieval result and never create invented candidates.
+
+M1 remains the normal selector. For the isolated M1.5 experiment, the same dependency bundle can
+instead receive `RrfSelectionProfile`; this is internal injection, not a new API or environment
+option. Qualified lanes are fused before the unchanged whole-chunk budget is applied. Each lane
+record retains its original rank and score plus the chunk's shared `fused_rank`; only the selected
+representative receives `selection_rank` and supplies the canonical source ID. Search verifies
+fusion ranks before persistence. No provider call, accounting rule, or evidence check is bypassed.
+See [Search](../search/README.md#standalone-m15-reciprocal-rank-fusion) for the fixed formula and
+comparison boundary.
 
 `AnswerResearchRequestService` is the route-facing application use case. It passes the committed
 retrieval result to the selected `GenerateValidatedAnswerService` and returns only the validated
