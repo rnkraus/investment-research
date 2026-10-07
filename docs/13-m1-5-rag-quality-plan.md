@@ -791,6 +791,20 @@ not inspected. The historical run still reports `independent_support_review=pend
 qualitative Codex review, not owner approval or a structured independent-model assessment. It does
 not change website defaults, close Step 2, or establish general model reliability.
 
+#### Local runtime compatibility follow-up (2026-10-08)
+
+The local M0 compatibility check initially failed during test collection: Docker preserved an
+owner-only host test-file mode while the copied file was root-owned, so the non-root verification
+runtime could not read it. The verification builder now normalizes test-tree read/traversal
+permissions, matching the existing source-tree handling; host permissions and production targets
+are unchanged. See [the backend image contract](../backend/README.md#container-image).
+
+After that correction, `scripts.verify_m0_runtime` passed the deterministic fixture journey,
+including repeated-question evidence reuse, byte-identical original retrieval, insufficient-evidence
+behavior, and sensitive-log checks. This is a local M0 regression result, not a live-provider quality
+measurement or hosted-CI confirmation. Complete M1/browser source-opening verification and the
+remaining Step 2 acceptance decisions are still pending; website defaults remain unchanged.
+
 ### Step 3 — Bounded reranking experiment
 
 Research a maintained multilingual cross-encoder or provider behind a small typed adapter.

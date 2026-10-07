@@ -26,6 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --all-groups --no-install-project
 
 COPY tests ./tests
+RUN chmod -R a+rX /app/tests
 
 FROM python:3.14.7-slim-trixie@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS runtime
 

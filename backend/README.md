@@ -46,6 +46,11 @@ contains only the virtual environment and application source. It runs as UID/GID
 user cannot modify the copied source tree. Dependencies, source, and runtime configuration remain
 separate layers so ordinary source edits do not reinstall dependencies.
 
+The separate `verification` target includes development dependencies and tests. Its builder makes
+copied tests readable and directories traversable for the non-root runtime, even when a local test
+file has owner-only permissions. This normalization changes only the image, not host permissions,
+and grants no additional write permissions. Production targets do not include the test tree.
+
 | Target      | Current entry point                          | M0 role                                                        |
 | ----------- | -------------------------------------------- | -------------------------------------------------------------- |
 | `api`       | Uvicorn with the FastAPI application factory | Public application API with liveness and readiness checks.     |
@@ -64,7 +69,8 @@ HTTP endpoint. The one-shot migration target correctly declares no healthcheck.
 
 No application configuration or credential is accepted as a build argument. Required values are
 injected only when a container starts. The build context uses a positive allowlist, so environment
-files, virtual environments, tests, documentation, caches, and local outputs never reach Docker.
+files, virtual environments, documentation, caches, and local outputs never reach Docker. Tests are
+allowlisted for the separate verification target and are not copied into production targets.
 The executable image gate and its guarantees are documented in
 [`scripts/README.md`](scripts/README.md#backend-image-verification). The final runtime isolation
 gate is documented under
