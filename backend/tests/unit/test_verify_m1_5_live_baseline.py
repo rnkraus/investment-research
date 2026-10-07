@@ -142,7 +142,7 @@ def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> No
 
 @pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
 @pytest.mark.parametrize("show_output", [False, True])
-@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
 def test_runner_accepts_matching_inspection_plan_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch,
     answer_policy: LiveAnswerPolicy,
@@ -542,7 +542,7 @@ def settings() -> tuple[WorkerSettings, ApiSettings]:
 @pytest.mark.parametrize("failure", [None, "retriever_setup", "cleanup"])
 @pytest.mark.parametrize("show_output", [False, True])
 @pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
-@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
 def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
     failure: str | None,
@@ -613,12 +613,15 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     )
     assert support_factory.call_args.kwargs["include_decision_reason"] is show_output
     assert support_factory.call_args.kwargs["include_attribution_context"] is (
-        support_policy == "attribution"
+        support_policy != "m1"
+    )
+    assert support_factory.call_args.kwargs["include_document_attribution_context"] is (
+        support_policy == "document_attribution"
     )
 
 
 @pytest.mark.parametrize("show_output", [False, True])
-@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
 def test_support_inspection_prompt_mismatch_is_rejected_before_provider_setup(
     monkeypatch: pytest.MonkeyPatch,
     show_output: bool,

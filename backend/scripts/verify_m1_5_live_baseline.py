@@ -46,9 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
         "--support-policy",
-        choices=("m1", "attribution"),
+        choices=("m1", "attribution", "document_attribution"),
         default="m1",
-        help="Opt into bounded original attribution context; normal runtime remains M1.",
+        help=(
+            "Select exact-only, same-block, or same-document attribution; "
+            "normal runtime remains M1."
+        ),
     )
     parser.add_argument(
         "--answer-policy",

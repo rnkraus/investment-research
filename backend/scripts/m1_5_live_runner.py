@@ -25,7 +25,10 @@ from investment_research.modules.evidence.ports import (
     StatementSupportEvaluator,
     StatementSupportProviderError,
 )
-from investment_research.modules.evidence.support_context import build_contextual_support_input
+from investment_research.modules.evidence.support_context import (
+    build_contextual_support_input,
+    build_document_contextual_support_input,
+)
 from investment_research.modules.identity.domain import Workspace, WorkspaceType
 from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
@@ -221,15 +224,23 @@ def build_services(
     answer_model = ResearchModel(plan.configuration.answer_model)
     support_model = ResearchModel(plan.configuration.support_model)
     answer_policy = answer_policy_for_prompt_version(plan.configuration.answer_prompt_version)
-    attribution = (
-        support_policy_for_prompt_version(plan.configuration.support_prompt_version)
-        == "attribution"
-    )
+    support_policy = support_policy_for_prompt_version(plan.configuration.support_prompt_version)
+    attribution = support_policy != "m1"
+    document_attribution = support_policy == "document_attribution"
     generation = GenerateValidatedAnswerService(
-        unit_of_work_factory=create_answer_validation_unit_of_work_factory(sessions),
+        unit_of_work_factory=create_answer_validation_unit_of_work_factory(
+            sessions,
+            include_document_attribution=document_attribution,
+        ),
         answer_generator=generator,
         support_evaluator=support,
-        support_context_builder=build_contextual_support_input if attribution else None,
+        support_context_builder=(
+            build_document_contextual_support_input
+            if document_attribution
+            else build_contextual_support_input
+            if attribution
+            else None
+        ),
         generation_profile=answer_profile_for_policy(answer_policy, answer_model),
         generation_input_builder=(
             CitableGenerationInputBuilder(create_citable_source_unit_of_work_factory(sessions))
@@ -238,7 +249,9 @@ def build_services(
         ),
         validation_profile=EvidenceValidationProfile(
             validation_config_version=(
-                f"m1-5-attribution-validation-v1-{support_model.value}"
+                f"m1-5-document-attribution-validation-v1-{support_model.value}"
+                if document_attribution
+                else f"m1-5-attribution-validation-v1-{support_model.value}"
                 if attribution
                 else "m1-evidence-validation-v1"
                 if support_model is ResearchModel.TERRA
@@ -260,7 +273,9 @@ def build_services(
             provider="openai",
             model=support_model.value,
             configuration_version=(
-                f"{support_config_version(support_model)}-attribution-v1"
+                f"{support_config_version(support_model)}-document-attribution-v1"
+                if document_attribution
+                else f"{support_config_version(support_model)}-attribution-v1"
                 if attribution
                 else support_config_version(support_model)
             ),

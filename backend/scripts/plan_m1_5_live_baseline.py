@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from investment_research.infrastructure.evidence.openai import (
     LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
     M1_5_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
+    M1_5_DOCUMENT_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
     M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
+    M1_5_LOCAL_DOCUMENT_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
     M1_STATEMENT_SUPPORT_PROMPT_VERSION,
     OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
@@ -64,7 +66,7 @@ MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
 type LiveRetrievalPolicy = Literal["m1", "rrf"]
 type LiveAnswerPolicy = Literal["m1", "citable_units"]
-type LiveSupportPolicy = Literal["m1", "attribution"]
+type LiveSupportPolicy = Literal["m1", "attribution", "document_attribution"]
 
 
 class LiveBaselineLimitError(ValueError):
@@ -122,6 +124,11 @@ def support_policy_for_prompt_version(version: str) -> LiveSupportPolicy:
         M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
     }:
         return "attribution"
+    if version in {
+        M1_5_DOCUMENT_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
+        M1_5_LOCAL_DOCUMENT_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
+    }:
+        return "document_attribution"
     raise LiveBaselineLimitError("the evaluation support prompt is not approved")
 
 
@@ -180,7 +187,7 @@ def build_plan(
     """Validate only the frozen approved fixtures; never load runtime settings or keys."""
 
     selection_profile = selection_profile_for_policy(retrieval_policy)
-    if support_policy not in {"m1", "attribution"}:
+    if support_policy not in {"m1", "attribution", "document_attribution"}:
         raise LiveBaselineLimitError("the evaluation support policy is not approved")
     if type(maximum_spend_micro_usd) is not int or not (
         0 < maximum_spend_micro_usd <= MAXIMUM_SPEND_MICRO_USD
@@ -250,7 +257,9 @@ def build_plan(
                 answer_policy, answer_model
             ).prompt_version,
             support_prompt_version=statement_support_prompt_version(
-                attribution=support_policy == "attribution", explanations=support_explanations
+                attribution=support_policy != "m1",
+                explanations=support_explanations,
+                document_attribution=support_policy == "document_attribution",
             ),
         ),
         maximum_spend_micro_usd=maximum_spend_micro_usd,
@@ -346,7 +355,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retrieval-policy", choices=("m1", "rrf"), default="m1")
     parser.add_argument("--answer-policy", choices=("m1", "citable_units"), default="m1")
-    parser.add_argument("--support-policy", choices=("m1", "attribution"), default="m1")
+    parser.add_argument(
+        "--support-policy", choices=("m1", "attribution", "document_attribution"), default="m1"
+    )
     parser.add_argument(
         "--answer-model",
         type=ResearchModel,
