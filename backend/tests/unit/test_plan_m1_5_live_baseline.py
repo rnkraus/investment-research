@@ -10,6 +10,8 @@ import pytest
 
 from investment_research.infrastructure.evidence.openai import (
     LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
+    M1_5_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
+    M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
     M1_STATEMENT_SUPPORT_PROMPT_VERSION,
 )
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
@@ -49,6 +51,40 @@ def test_rrf_plan_changes_only_the_selector_configuration() -> None:
     assert rrf.configuration.model_dump(exclude={"selector_config_version"}) == (
         m1.configuration.model_dump(exclude={"selector_config_version"})
     )
+
+
+@pytest.mark.parametrize("explanations", [False, True])
+def test_attribution_policy_is_explicit_versioned_and_does_not_raise_limits(
+    explanations: bool,
+) -> None:
+    original = live.build_plan(support_explanations=explanations)
+    selected = live.build_plan(support_policy="attribution", support_explanations=explanations)
+    assert selected.configuration.support_prompt_version == (
+        M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION
+        if explanations
+        else M1_5_ATTRIBUTION_SUPPORT_PROMPT_VERSION
+    )
+    assert (
+        live.support_policy_for_prompt_version(selected.configuration.support_prompt_version)
+        == "attribution"
+    )
+    assert (
+        live.support_policy_for_prompt_version(original.configuration.support_prompt_version)
+        == "m1"
+    )
+    assert selected.model_dump(exclude={"configuration"}) == original.model_dump(
+        exclude={"configuration"}
+    )
+    assert selected.configuration.model_dump(
+        exclude={"support_prompt_version"}
+    ) == original.configuration.model_dump(exclude={"support_prompt_version"})
+
+
+def test_unknown_support_policy_or_prompt_is_rejected() -> None:
+    with pytest.raises(live.LiveBaselineLimitError):
+        live.build_plan(support_policy="unknown")  # type: ignore[arg-type]
+    with pytest.raises(live.LiveBaselineLimitError):
+        live.support_policy_for_prompt_version("unknown")
 
 
 def test_citable_policy_changes_only_the_frozen_answer_prompt() -> None:

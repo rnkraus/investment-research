@@ -16,6 +16,36 @@ scope, and evidence references. It does **not** run retrieval, call a model, cal
 scores, or decide whether the expected answer is factually appropriate. The optional
 `--require-reviewed` flag enforces the owner's review decision recorded in the catalog.
 
+## Opt-in support attribution experiment
+
+The live evaluator defaults to `--support-policy m1` (exact quotes only). To compare the bounded
+same-block attribution profile, explicitly add `--support-policy attribution` to a separately
+authorized live invocation. This choice is independent of `--retrieval-policy` and
+`--answer-policy`; for the source-unit experiment use `--retrieval-policy rrf --answer-policy
+citable_units`. Without `--execute`, the same options produce a credential-free preflight plan:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --retrieval-policy rrf \
+  --answer-policy citable_units \
+  --support-policy attribution \
+  --answer-model gpt-5.6-luna \
+  --support-model gpt-5.6-luna
+```
+
+Each exact quote retains its own original document/version/block identity and receives a separate
+bounded original-block prefix for company/report/date attribution only. Context cannot supply
+missing operational facts, expand a stored citation, or create extra evidence spans. The full
+payload is budgeted and rechecked before storage. Normal runtime and website behavior are unchanged;
+see the [M1.5 contract](../../docs/13-m1-5-rag-quality-plan.md) for the complete restrictions.
+
+The report records the distinct support prompt version but no raw context. With the existing
+`--show-local-model-output` option, the interactive local terminal additionally displays each exact
+quote, its separately paired context, and the evaluator's bounded decision reason. This output is
+for the approved public-synthetic corpus only, is forbidden in CI or redirected output, and is not
+independent support review. Use a fresh ignored report filename for each paid run and retain the
+USD 0.80 default maximum reservation unless explicitly approving a different bound.
+
 | Case | Intended distinction |
 | --- | --- |
 | FY2025 revenue | Exact wording and an original PDF page citation |

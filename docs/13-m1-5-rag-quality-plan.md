@@ -382,11 +382,12 @@ canonical workspace, request/candidate, active-version, processing, temporal, te
 A known ID is not proof of support. Do not combine separated units into a larger implied quote or
 use fuzzy matching to rescue an invalid reference.
 
-**Support attribution context — preparation only (2026-10-07):** Local support explanations
+**Support attribution context — opt-in experiment (2026-10-07):** Local support explanations
 identified an input gap: a quote can establish a constraint while omitting the company, report
-title, or date visible to the answer generator. The prepared experimental contract is
+title, or date visible to the answer generator. The experimental contract is
 `ContextualStatementSupportInput` in Evidence; `support_context.py` builds it without database or
-provider calls. This block does not yet pass context to the evaluator or change runtime behavior.
+provider calls. The evaluation runner selects it only with `--support-policy attribution`.
+The default `--support-policy m1` and the website retain exact-text-only evaluation.
 
 For each exact reference, independently recheck canonical workspace, retrieval, active-version,
 processing, temporal, identity, media locator, text, hash, and original range eligibility. Reject
@@ -404,12 +405,28 @@ from different documents, manufacture company/date values, normalize original te
 citation to include the prefix, or create extra `EvidenceSpan` records merely for context. A block
 without identifying text remains ambiguous. Cross-page PDF header lookup is not implemented.
 
-The next integration block must use a separately versioned, opt-in support profile, include context
-in provider-input accounting and recorded-decision identity, evaluate outside the answer transaction,
-and rebuild context from freshly rechecked canonical sources before reusing a result at persistence.
-Retain the frozen M1 exact-text-only path, normal runtime defaults, local-output restrictions, and
-unchanged spend ceiling. Quality improvement remains unproven until a separately authorized live
-comparison; a local model reason is a diagnostic, not independent evidence of correctness.
+The contextual OpenAI profile is `m1-5-attribution-support-prompt-v1`; interactive local inspection
+uses `m1-5-local-attribution-support-reason-v1`. It receives the statement and separate paired
+objects containing document/version/block IDs, exact quote text, and attribution context. IDs group
+the sources but do not establish facts. The prompt restricts context use to explicit, unambiguous
+subject/report/date attribution within that paired source; operational facts, quantities, plans,
+causes, and qualifications still require exact quoted support. Ambiguity or disagreement fails
+closed rather than importing facts from another source.
+
+Both evaluation-run and canonical provider-operation accounting include the full serialized
+contextual input. No limits or prices increase. Research evaluates outside the answer transaction
+and rebuilds context from freshly rechecked canonical sources before persistence. Recorded support
+decisions are keyed by the entire immutable contextual request, including statement, exact references,
+original ranges, identities, text, and context policy. A mismatch rejects the answer without a new
+paid call inside the transaction. Validation and support-accounting configuration versions identify
+the attribution experiment separately from M1.
+
+Existing offline CI checks discover the added unit and PostgreSQL runner tests. They cover profile
+admission, source isolation, payload accounting, unchanged citations, and final decision replay; they
+do not establish real-model quality. Local-output restrictions and the USD 0.80 default run ceiling
+remain unchanged. Quality improvement remains unproven until a separately authorized live comparison;
+a local model reason is a diagnostic, not independent evidence of correctness. A block without a
+useful identifying prefix may still fail, and this experiment is not a default-policy decision.
 
 Create or reuse `EvidenceSpan` records only through the existing validated-answer persistence path.
 Offering a unit creates no evidence record. Retain the existing PDF locator, pasted-text absolute

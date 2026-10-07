@@ -13,9 +13,8 @@ from uuid import uuid4
 from sqlalchemy import URL, Engine, create_engine
 
 from investment_research.infrastructure.evidence.openai import (
-    LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
-    M1_STATEMENT_SUPPORT_PROMPT_VERSION,
     create_openai_statement_support_evaluator,
+    statement_support_prompt_version,
 )
 from investment_research.infrastructure.generation.openai import create_openai_answer_generator
 from investment_research.infrastructure.generation.openai_citable_units import (
@@ -36,7 +35,12 @@ from scripts.m1_5_live_providers import (
     LiveProviderCalls,
 )
 from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
-from scripts.plan_m1_5_live_baseline import LiveBaselinePlan, answer_policy_for_prompt_version
+from scripts.plan_m1_5_live_baseline import (
+    LiveBaselineLimitError,
+    LiveBaselinePlan,
+    answer_policy_for_prompt_version,
+    support_policy_for_prompt_version,
+)
 from scripts.verify_postgres import (
     BACKEND_ROOT,
     COMPOSE_FILE,
@@ -191,10 +195,14 @@ def provider_resources(
         for config in (document, query)
     ):
         raise LiveRuntimeError("evaluation provider versions do not match the approved plan")
-    expected_support_prompt = (
-        LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION
-        if local_output is not None
-        else M1_STATEMENT_SUPPORT_PROMPT_VERSION
+    try:
+        support_policy = support_policy_for_prompt_version(
+            plan.configuration.support_prompt_version
+        )
+    except LiveBaselineLimitError:
+        raise LiveRuntimeError("evaluation support prompt is not approved") from None
+    expected_support_prompt = statement_support_prompt_version(
+        attribution=support_policy == "attribution", explanations=local_output is not None
     )
     if plan.configuration.support_prompt_version != expected_support_prompt:
         raise LiveRuntimeError("evaluation support prompt does not match the inspection mode")
@@ -240,6 +248,7 @@ def provider_resources(
             model=plan.configuration.support_model,
             local_validation_output=None if local_output is None else local_output.support_failure,
             include_decision_reason=local_output is not None,
+            include_attribution_context=support_policy == "attribution",
         )
         clients.callback(close_client, support, "support_client_close")
         with ExitStack() as index_clients:

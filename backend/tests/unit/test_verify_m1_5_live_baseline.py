@@ -37,6 +37,7 @@ from scripts.plan_m1_5_live_baseline import (
     LiveBaselineBudget,
     LiveBaselineLimitError,
     LiveBaselinePlan,
+    LiveSupportPolicy,
     build_plan,
 )
 from scripts.score_m1_5_observations import ProviderUsage
@@ -141,10 +142,12 @@ def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> No
 
 @pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
 @pytest.mark.parametrize("show_output", [False, True])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
 def test_runner_accepts_matching_inspection_plan_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch,
     answer_policy: LiveAnswerPolicy,
     show_output: bool,
+    support_policy: LiveSupportPolicy,
 ) -> None:
     class PlanAcceptedError(Exception):
         """Stop after real runner admission, before fixtures or resources are accessed."""
@@ -162,7 +165,10 @@ def test_runner_accepts_matching_inspection_plan_before_runtime_access(
             answer_model="synthetic-answer", support_model="synthetic-support"
         )
     plan = build_plan(
-        retrieval_policy="rrf", answer_policy=answer_policy, support_explanations=show_output
+        retrieval_policy="rrf",
+        answer_policy=answer_policy,
+        support_explanations=show_output,
+        support_policy=support_policy,
     )
     with pytest.raises(PlanAcceptedError):
         runner.run_live_baseline(
@@ -536,11 +542,13 @@ def settings() -> tuple[WorkerSettings, ApiSettings]:
 @pytest.mark.parametrize("failure", [None, "retriever_setup", "cleanup"])
 @pytest.mark.parametrize("show_output", [False, True])
 @pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
 def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
     failure: str | None,
     show_output: bool,
     answer_policy: LiveAnswerPolicy,
+    support_policy: LiveSupportPolicy,
 ) -> None:
     local = None
     if show_output:
@@ -550,7 +558,9 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
         local = LocalEvaluationOutput(
             answer_model="synthetic-answer", support_model="synthetic-support"
         )
-    plan = build_plan(answer_policy=answer_policy, support_explanations=show_output)
+    plan = build_plan(
+        answer_policy=answer_policy, support_explanations=show_output, support_policy=support_policy
+    )
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     worker, api = settings()
     document, query, answer, support, writer, retriever = (MagicMock() for _ in range(6))
@@ -602,11 +612,17 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
         None if local is None else local.support_failure
     )
     assert support_factory.call_args.kwargs["include_decision_reason"] is show_output
+    assert support_factory.call_args.kwargs["include_attribution_context"] is (
+        support_policy == "attribution"
+    )
 
 
 @pytest.mark.parametrize("show_output", [False, True])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
 def test_support_inspection_prompt_mismatch_is_rejected_before_provider_setup(
-    monkeypatch: pytest.MonkeyPatch, show_output: bool
+    monkeypatch: pytest.MonkeyPatch,
+    show_output: bool,
+    support_policy: LiveSupportPolicy,
 ) -> None:
     local = None
     if show_output:
@@ -619,7 +635,7 @@ def test_support_inspection_prompt_mismatch_is_rejected_before_provider_setup(
     factory = MagicMock(side_effect=AssertionError("provider must not be constructed"))
     monkeypatch.setattr(runtime, "create_openai_embedding_provider", factory)
     worker, api = settings()
-    plan = build_plan(support_explanations=not show_output)
+    plan = build_plan(support_explanations=not show_output, support_policy=support_policy)
     with (
         pytest.raises(runtime.LiveRuntimeError, match="support prompt"),
         runtime.provider_resources(

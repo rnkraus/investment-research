@@ -6,7 +6,10 @@ import sys
 from dataclasses import dataclass
 from typing import Literal
 
-from investment_research.modules.evidence.contracts import StatementSupportResult
+from investment_research.modules.evidence.contracts import (
+    ContextualStatementSupportInput,
+    StatementSupportResult,
+)
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.research.contracts import ValidatedAnswerResult
 from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic
@@ -74,6 +77,32 @@ class LocalEvaluationOutput:
             model=self.support_model,
             statement=statement,
             evidence_texts=evidence_texts,
+            supported=result.decision.supported,
+            reason=result.diagnostic_reason,
+            notice="Application support decision, not an independent quality assessment.",
+        )
+
+    def contextual_support_decision(
+        self, request: ContextualStatementSupportInput, result: StatementSupportResult
+    ) -> None:
+        """Inspect only paired public-synthetic originals under the existing terminal guard."""
+
+        self._emit(
+            "local.evaluation.support_decision",
+            role="support",
+            model=self.support_model,
+            statement=request.statement,
+            support_policy="attribution",
+            evidence=[
+                {
+                    "document_id": str(item.reference.document_id),
+                    "document_version_id": str(item.reference.document_version_id),
+                    "structure_block_id": str(item.reference.structure_block_id),
+                    "exact_text": item.reference.exact_text,
+                    "attribution_context": item.attribution_context.text,
+                }
+                for item in request.evidence
+            ],
             supported=result.decision.supported,
             reason=result.diagnostic_reason,
             notice="Application support decision, not an independent quality assessment.",
