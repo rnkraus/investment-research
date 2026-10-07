@@ -50,6 +50,7 @@ from investment_research.settings_models import (
     PineconeProviderSettings,
     ProcessingProfileName,
     QueueSettings,
+    ResearchProfileName,
     RuntimeEnvironment,
     RuntimeLocation,
     RuntimeSettings,
@@ -100,6 +101,7 @@ __all__ = (
     "PineconeProviderSettings",
     "ProcessingProfileName",
     "QueueSettings",
+    "ResearchProfileName",
     "RuntimeEnvironment",
     "RuntimeLocation",
     "RuntimeSettings",
@@ -447,6 +449,11 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
         **_provider_budget_runtime_values(file_values),
         "processing_profile": _configuration_value(
             "INVESTMENT_RESEARCH_PROCESSING_PROFILE",
+            file_values,
+            "m1",
+        ),
+        "research_profile": _configuration_value(
+            "INVESTMENT_RESEARCH_RESEARCH_PROFILE",
             file_values,
             "m1",
         ),
