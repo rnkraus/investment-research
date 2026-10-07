@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from investment_research.infrastructure.evidence.openai import (
+    LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
     M1_STATEMENT_SUPPORT_PROMPT_VERSION,
     OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
@@ -153,6 +154,7 @@ def build_plan(
     maximum_spend_micro_usd: int = MAXIMUM_SPEND_MICRO_USD,
     retrieval_policy: LiveRetrievalPolicy = "m1",
     answer_policy: LiveAnswerPolicy = "m1",
+    support_explanations: bool = False,
 ) -> LiveBaselinePlan:
     """Validate only the frozen approved fixtures; never load runtime settings or keys."""
 
@@ -224,7 +226,11 @@ def build_plan(
             answer_prompt_version=answer_profile_for_policy(
                 answer_policy, answer_model
             ).prompt_version,
-            support_prompt_version=M1_STATEMENT_SUPPORT_PROMPT_VERSION,
+            support_prompt_version=(
+                LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION
+                if support_explanations
+                else M1_STATEMENT_SUPPORT_PROMPT_VERSION
+            ),
         ),
         maximum_spend_micro_usd=maximum_spend_micro_usd,
         role_limits=tuple(limits),

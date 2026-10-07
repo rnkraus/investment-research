@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--show-local-model-output",
         action="store_true",
-        help="Inspect synthetic model output in an interactive local terminal, never CI.",
+        help="Inspect synthetic output and request short support reasons locally, never CI.",
     )
     for role in ("answer", "support"):
         parser.add_argument(
@@ -96,6 +96,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             maximum_spend_micro_usd=arguments.max_spend_usd,
             retrieval_policy=arguments.retrieval_policy,
             answer_policy=arguments.answer_policy,
+            support_explanations=arguments.show_local_model_output,
         )
         if not arguments.execute:
             print(plan.model_dump_json(indent=2))

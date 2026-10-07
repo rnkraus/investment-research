@@ -31,7 +31,12 @@ from scripts.m1_5_live_providers import LiveProviderCalls, ProviderCallRecord
 from scripts.m1_5_live_runner import LiveBaselineReport, LiveCaseFailure, summarize_usage
 from scripts.m1_5_live_settings import EvaluationConfigurationError
 from scripts.m1_5_local_output import LocalEvaluationOutput
-from scripts.plan_m1_5_live_baseline import LiveAnswerPolicy, LiveBaselineBudget, build_plan
+from scripts.plan_m1_5_live_baseline import (
+    LiveAnswerPolicy,
+    LiveBaselineBudget,
+    LiveBaselinePlan,
+    build_plan,
+)
 from scripts.score_m1_5_observations import ProviderUsage
 from tests.unit.test_score_m1_5_observations import (
     make_complete_observations,
@@ -228,6 +233,13 @@ def test_recorded_results_survive_cleanup_failures(
     @contextmanager
     def resources(*args: object, **kwargs: object) -> Iterator[MagicMock]:
         assert (kwargs.get("local_output") is not None) == (cleanup == "local")
+        actual_plan = cast(LiveBaselinePlan, args[2])
+        assert (
+            actual_plan.configuration.support_prompt_version
+            == build_plan(
+                support_explanations=cleanup == "local"
+            ).configuration.support_prompt_version
+        )
         yield MagicMock()
         if cleanup == "pinecone":
             steps = cast(list[str], args[-1])
@@ -458,7 +470,7 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
         local = LocalEvaluationOutput(
             answer_model="synthetic-answer", support_model="synthetic-support"
         )
-    plan = build_plan(answer_policy=answer_policy)
+    plan = build_plan(answer_policy=answer_policy, support_explanations=show_output)
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     worker, api = settings()
     document, query, answer, support, writer, retriever = (MagicMock() for _ in range(6))
@@ -509,6 +521,33 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     assert support_factory.call_args.kwargs["local_validation_output"] == (
         None if local is None else local.support_failure
     )
+    assert support_factory.call_args.kwargs["include_decision_reason"] is show_output
+
+
+@pytest.mark.parametrize("show_output", [False, True])
+def test_support_inspection_prompt_mismatch_is_rejected_before_provider_setup(
+    monkeypatch: pytest.MonkeyPatch, show_output: bool
+) -> None:
+    local = None
+    if show_output:
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        local = LocalEvaluationOutput(
+            answer_model="synthetic-answer", support_model="synthetic-support"
+        )
+    factory = MagicMock(side_effect=AssertionError("provider must not be constructed"))
+    monkeypatch.setattr(runtime, "create_openai_embedding_provider", factory)
+    worker, api = settings()
+    plan = build_plan(support_explanations=not show_output)
+    with (
+        pytest.raises(runtime.LiveRuntimeError, match="support prompt"),
+        runtime.provider_resources(
+            worker, api, plan, LiveProviderCalls(LiveBaselineBudget(plan)), [], local_output=local
+        ),
+    ):
+        pytest.fail("mismatched inspection profile must not yield resources")
+    factory.assert_not_called()
 
 
 @pytest.mark.parametrize("failure", [None, "startup", "migration", "body"])

@@ -13,6 +13,8 @@ from uuid import uuid4
 from sqlalchemy import URL, Engine, create_engine
 
 from investment_research.infrastructure.evidence.openai import (
+    LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
+    M1_STATEMENT_SUPPORT_PROMPT_VERSION,
     create_openai_statement_support_evaluator,
 )
 from investment_research.infrastructure.generation.openai import create_openai_answer_generator
@@ -189,6 +191,13 @@ def provider_resources(
         for config in (document, query)
     ):
         raise LiveRuntimeError("evaluation provider versions do not match the approved plan")
+    expected_support_prompt = (
+        LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION
+        if local_output is not None
+        else M1_STATEMENT_SUPPORT_PROMPT_VERSION
+    )
+    if plan.configuration.support_prompt_version != expected_support_prompt:
+        raise LiveRuntimeError("evaluation support prompt does not match the inspection mode")
 
     def close_client(client: _Closable, label: str) -> None:
         try:
@@ -230,6 +239,7 @@ def provider_resources(
             api_key=generation.api_key.get_secret_value(),
             model=plan.configuration.support_model,
             local_validation_output=None if local_output is None else local_output.support_failure,
+            include_decision_reason=local_output is not None,
         )
         clients.callback(close_client, support, "support_client_close")
         with ExitStack() as index_clients:

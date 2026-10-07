@@ -77,10 +77,13 @@ class StatementSupportDecision(ImmutableEvidenceContract):
 
 
 class StatementSupportResult(ImmutableEvidenceContract):
-    """Schema-valid support decision plus content-free provider usage."""
+    """Support decision, usage, and an optional non-serialized local diagnostic."""
 
     decision: StatementSupportDecision
     usage: ProviderUsage
+    diagnostic_reason: str | None = Field(
+        default=None, min_length=1, max_length=500, exclude=True, repr=False
+    )
 
 
 class CanonicalEvidenceSpanSource(ImmutableEvidenceContract):
