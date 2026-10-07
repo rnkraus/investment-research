@@ -97,12 +97,17 @@ flowchart TD
 support decision plus content-free provider usage. It cannot authorize a source, document version,
 workspace, or citation range; those decisions remain with the surrounding canonical checks.
 
-The opt-in M1.5 `attribution` support policy uses `ContextualStatementSupportEvaluator` instead.
-Each exact citation is paired with a bounded prefix of its own canonical original block. The
-prefix may identify the subject, report, or date; all other factual support must come from the
-exact citation. It is untrusted text, not verified metadata. The normal M1 evaluator and website
-remain exact-text-only. See [the M1.5 contract](../../../../../docs/13-m1-5-rag-quality-plan.md)
-for prefix limits and the experiment boundary.
+The opt-in M1.5 support profiles use `ContextualStatementSupportEvaluator` instead:
+
+- `attribution` pairs each exact citation with a bounded prefix of its own original block.
+- `document_attribution` pairs it with the first block's bounded prefix from the same canonical
+  workspace, document version, and processing run, even when the quote is on another page.
+
+Neither profile guesses a header or accepts context from another report. The prefix may identify
+the subject, report, or date; all other factual support must come from exact citations. It is
+untrusted text, not verified metadata. The normal M1 evaluator and website remain exact-text-only.
+See [the M1.5 contract](../../../../../docs/13-m1-5-rag-quality-plan.md) for prefix limits and the
+experiment boundary.
 
 Research obtains a detached canonical snapshot, evaluates outside the answer transaction, and
 counts the complete contextual input in the provider reservation. It rebuilds context from fresh

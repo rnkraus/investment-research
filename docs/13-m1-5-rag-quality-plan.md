@@ -403,7 +403,7 @@ automatic header extractor. It may identify the subject/report/date of that same
 not rescue a factual claim absent from the exact cited evidence. Never combine headers and quotes
 from different documents, manufacture company/date values, normalize original text, expand a
 citation to include the prefix, or create extra `EvidenceSpan` records merely for context. A block
-without identifying text remains ambiguous. Cross-page PDF header lookup is not implemented.
+without identifying text remains ambiguous. This same-block profile performs no cross-page lookup.
 
 The contextual OpenAI profile is `m1-5-attribution-support-prompt-v1`; interactive local inspection
 uses `m1-5-local-attribution-support-reason-v1`. It receives the statement and separate paired
@@ -427,6 +427,53 @@ do not establish real-model quality. Local-output restrictions and the USD 0.80 
 remain unchanged. Quality improvement remains unproven until a separately authorized live comparison;
 a local model reason is a diagnostic, not independent evidence of correctness. A block without a
 useful identifying prefix may still fail, and this experiment is not a default-policy decision.
+
+**Document-prefix attribution follow-up (2026-10-07):** The owner's supplied Luna/Luna RRF and
+source-unit run with the same-block profile recorded six cases, two failures, 73,715 micro-USD
+reserved, and verified cleanup. Its rollout quote lacked the identifying header, and the conflict
+check could not connect a separate header citation to the factual citation in that same report.
+An additional rollout inference about another capacity not being the main constraint was not
+supported by its own quote and must not be rescued. The accepted revenue citation was exact but
+covered a wider table than the reviewed passage; independent support review and citation precision
+remain separate quality concerns. These observations do not establish evaluator correctness or a
+general model-quality rate.
+
+The separately selected `--support-policy document_attribution` tests a bounded extension without
+changing `m1`, `attribution`, or the website default. With this profile only, the canonical source
+reader loads the first `StructureBlock` by ordinal from the candidate's exact workspace, document
+version, and processing run. It applies the same unchanged-prefix algorithm and 800-code-point
+limit; it does not scan arbitrary pages, infer metadata, or retrieve another report's header.
+The context policy is `m1-5-document-prefix-attribution-v1`. A factual quote may come from a
+different block or page of that output. Preparation requires matching workspace, processing run,
+document, and version identities; missing or mismatched context fails closed without falling back
+to another profile. Mixing context policies within one request is forbidden.
+
+The new support prompt is `m1-5-document-attribution-support-prompt-v1`; interactive inspection uses
+`m1-5-local-document-attribution-support-reason-v1`. Each entry includes its exact quote block ID,
+separate attribution block ID, shared document/version IDs, and `attribution_scope` set to
+`same_document_version`. The application proves that relationship before the provider call; IDs
+still establish no factual meaning. Explicit company/report/date attribution need not be repeated
+inside the factual quote. Quotes from different blocks of the same version may jointly support
+that report's attribution and facts. Ambiguous multi-report content, a conflicting local subject,
+or attribution borrowed across documents or versions still fails. All operational facts,
+quantities, causes, qualifications, and conclusions require exact cited support; identifying context
+does not turn a claim of sufficient capacity into proof that it is not the primary constraint.
+
+Both the detached read and final persistence use the opt-in reader. The full immutable contextual
+input, including prefix ranges, text, source block, workspace, processing run, and policy, keys the
+recorded decision. A changed header is rejected without another paid call inside the transaction.
+Full-input accounting, two-reference/24,000-code-point limits, model prices, and the USD 0.80 run
+ceiling are unchanged. Existing CI discovers the added reader, profile, accounting, replay, and
+complete-runner regression tests. This is a correctness-tested experiment, not an accepted quality
+improvement; a separate live run and independent review remain necessary. No frontend change,
+schema migration, citation expansion, extra context evidence span, or reindexing is introduced.
+
+**Local correctness verification (2026-10-07):** Backend formatting, Ruff, and Mypy passed with
+1,619 unit tests. The isolated PostgreSQL verifier passed 143 integration tests, the empty
+upgrade/downgrade/upgrade cycle, and schema checks; seven separate S3 checks were intentionally
+skipped. OpenAPI drift and frontend formatting, lint, typecheck, contract, and 45 tests passed.
+The credential-free document-attribution preflight passed. No paid provider run, production build,
+hosted CI, or browser check was performed for this extension.
 
 Create or reuse `EvidenceSpan` records only through the existing validated-answer persistence path.
 Offering a unit creates no evidence record. Retain the existing PDF locator, pasted-text absolute
