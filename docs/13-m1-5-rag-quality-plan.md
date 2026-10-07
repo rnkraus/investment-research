@@ -136,8 +136,11 @@ alter the M1 pipeline or close the independent quality-review gate.
 
 The owner approved an explicit local-only inspection option for these frozen public-synthetic
 cases. `--show-local-model-output` requires execution and an interactive terminal, rejects CI,
-and displays proposals, quotes, support decisions, and canonical results without adding provider
-calls or weakening validation. The JSON measurement report remains content-free. This is a manual
+and displays proposals, quotes, support decisions with their exact canonical evidence texts, and
+canonical results without adding provider calls or weakening validation. Evidence text is displayed
+only alongside a returned support decision, not retained in the JSON measurement report or normal
+logs. This diagnostic does not establish whether an earlier rejection selected the wrong source
+unit or was an incorrect model judgment. This is a manual
 inspection aid, not an independent quality assessment; its boundary is documented in the
 [live-run guide](../fixtures/m1_5/README.md#interactive-local-inspection).
 
