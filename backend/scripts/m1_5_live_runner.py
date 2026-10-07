@@ -333,6 +333,7 @@ def run_live_baseline(
             answer_policy=answer_policy_for_prompt_version(
                 plan.configuration.answer_prompt_version
             ),
+            support_explanations=local_output is not None,
         )
         or calls.budget.plan != plan
     ):

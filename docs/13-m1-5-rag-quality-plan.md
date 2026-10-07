@@ -149,6 +149,12 @@ output limits, and spending ceilings remain unchanged. This is a manual inspecti
 independent quality assessment; its boundary is documented in the
 [live-run guide](../fixtures/m1_5/README.md#interactive-local-inspection).
 
+The diagnostic profile initially failed runner admission because the runner reconstructed the
+comparison plan without the explanation mode. Its admission check now includes the same explicit
+local mode as the CLI and provider setup. Offline regression tests exercise the real runner entry
+point for both answer policies and still reject inconsistent budgets, prompt versions, and vector
+limits before runtime access. This correction does not remove or weaken plan validation.
+
 The owner subsequently recorded a v2 Terra/Terra baseline under the approved USD 0.80 invocation
 ceiling. It retained 5/5 answerable retrieval hits, 4/6 matching coverage and citation outcomes,
 and two safe failures: an ambiguous budget quote and a rejected conflict statement. Cleanup was
