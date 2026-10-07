@@ -23,6 +23,7 @@ from investment_research.settings import (
     PineconeProviderSettings,
     WorkerSettings,
 )
+from scripts import m1_5_live_runner as runner
 from scripts import m1_5_live_runtime as runtime
 from scripts import verify_m1_5_live_baseline as cli
 from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic
@@ -34,6 +35,7 @@ from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import (
     LiveAnswerPolicy,
     LiveBaselineBudget,
+    LiveBaselineLimitError,
     LiveBaselinePlan,
     build_plan,
 )
@@ -135,6 +137,84 @@ def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> No
     with pytest.raises(SystemExit) as caught:
         cli.main(["--max-spend-usd", "0.81"])
     assert caught.value.code == 2
+
+
+@pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
+@pytest.mark.parametrize("show_output", [False, True])
+def test_runner_accepts_matching_inspection_plan_before_runtime_access(
+    monkeypatch: pytest.MonkeyPatch,
+    answer_policy: LiveAnswerPolicy,
+    show_output: bool,
+) -> None:
+    class PlanAcceptedError(Exception):
+        """Stop after real runner admission, before fixtures or resources are accessed."""
+
+    def stop_after_admission(*args: object) -> None:
+        raise PlanAcceptedError
+
+    monkeypatch.setattr(runner, "validate_corpus", stop_after_admission)
+    local = None
+    if show_output:
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        local = LocalEvaluationOutput(
+            answer_model="synthetic-answer", support_model="synthetic-support"
+        )
+    plan = build_plan(
+        retrieval_policy="rrf", answer_policy=answer_policy, support_explanations=show_output
+    )
+    with pytest.raises(PlanAcceptedError):
+        runner.run_live_baseline(
+            MagicMock(),
+            plan,
+            index=MagicMock(),
+            document_embedding=MagicMock(),
+            query_embedding=MagicMock(),
+            generator=MagicMock(),
+            support=MagicMock(),
+            calls=LiveProviderCalls(LiveBaselineBudget(plan)),
+            local_output=local,
+        )
+
+
+@pytest.mark.parametrize("mismatch", ["inspection", "budget", "prompt", "vector_limit"])
+def test_runner_rejects_inconsistent_plans_before_runtime_access(
+    monkeypatch: pytest.MonkeyPatch, mismatch: str
+) -> None:
+    def forbidden(*args: object) -> None:
+        pytest.fail("inconsistent runner plan must not access the corpus or runtime")
+
+    monkeypatch.setattr(runner, "validate_corpus", forbidden)
+    plan = build_plan(support_explanations=mismatch == "inspection")
+    budget_plan = plan
+    if mismatch == "budget":
+        budget_plan = build_plan(maximum_spend_micro_usd=200_000)
+    elif mismatch == "prompt":
+        plan = plan.model_copy(
+            update={
+                "configuration": plan.configuration.model_copy(
+                    update={"support_prompt_version": "unapproved-support-prompt"}
+                )
+            }
+        )
+        budget_plan = plan
+    elif mismatch == "vector_limit":
+        plan = plan.model_copy(
+            update={"maximum_document_vectors": plan.maximum_document_vectors + 1}
+        )
+        budget_plan = plan
+    with pytest.raises(LiveBaselineLimitError, match="plan is inconsistent"):
+        runner.run_live_baseline(
+            MagicMock(),
+            plan,
+            index=MagicMock(),
+            document_embedding=MagicMock(),
+            query_embedding=MagicMock(),
+            generator=MagicMock(),
+            support=MagicMock(),
+            calls=LiveProviderCalls(LiveBaselineBudget(budget_plan)),
+        )
 
 
 def test_rejected_usage_is_still_measured_but_missing_usage_is_not_zero() -> None:
