@@ -724,6 +724,44 @@ source opening and complete runtime/hosted compatibility, and review the earlier
 actual usage/cost, catalog sizes, and reviewed citation metrics were not provided in the terminal
 excerpts and remain unverified here. Live partial coverage was not exercised by these six cases.
 
+#### Standalone-claim v3 owner-run observations (2026-10-07)
+
+After the v2 input presentation and v3 standalone-claim instructions, the owner executed one
+Luna/Luna run and one Terra/Terra run using RRF, citable units, and document-prefix attribution.
+The supplied commands selected generator `openai-responses-citable-units-v2`, answer prompt
+`m1-5-citable-units-en-answer-prompt-v3`, model-specific `low-citable-units-en-v3` configuration,
+and unchanged `m1-5-citable-units-en-v1` unit boundaries. Interactive inspection requested the
+separate `m1-5-local-document-attribution-support-reason-v1` support profile; these are not
+Boolean-only support-profile measurements. Both invocations retained the USD 0.80 ceiling.
+
+| Answer/support models | Evidence supplied for this record | Failed cases / 6 | Reserved micro-USD | Reserved USD | Reported cleanup |
+| --------------------- | --------------------------------- | ---------------- | ------------------ | ------------ | ---------------- |
+| Luna/Luna | Detailed terminal transcript and completion summary | 0 | 73,902 | 0.073902 | Verified |
+| Terra/Terra | Completion summary only | 0 | 733,744 | 0.733744 | Verified |
+
+The Luna transcript shows five streamed results and the expected dividend abstention. Revenue
+statements explicitly identify the company and periods and select the revenue unit rather than
+a notice. The rollout answer cites the transformer constraint and preserves uncertainty about
+supplier lead times without adding an unsupported claim about another capacity. The two July 22
+reports receive separately attributed statements and `CONFLICTING` coverage. The repeated budget
+and line-break delivery cases complete with resolved IDs. All displayed support decisions are
+positive, and the terminal results report no failed validation rules. These observations describe
+the application checks; they do not replace independent verification against the originals.
+
+Terra's reported zero failures and cleanup are recorded without inferring its statement wording,
+selected units, coverage distribution, citation precision, or support decisions. Raw JSON reports
+were not inspected for this record. Reservation totals are conservative application estimates,
+not actual bills or token-based spend; their roughly tenfold difference is not a measured cost
+comparison. Latency and aggregate provider usage remain unverified here.
+
+**Disposition:** Preserve both earlier failures and these successful observations. One run per
+model pair on six known cases does not demonstrate reliability, equal model quality, RRF
+superiority, or that prompt v3 alone caused the change. The known wider revenue-unit scoring
+penalty is not cleared by a successful application result. Independent support review remains
+pending, live `PARTIAL` coverage remains unexercised, and source opening plus complete-runtime,
+build, and hosted-CI gates still require confirmation for the current revision. Retain opt-in
+use and unchanged website defaults; this record does not accept Step 2 or the M1.5 exit gate.
+
 ### Step 3 — Bounded reranking experiment
 
 Research a maintained multilingual cross-encoder or provider behind a small typed adapter.
