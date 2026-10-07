@@ -6,8 +6,13 @@ from uuid import UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import StructureBlock
-from investment_research.modules.research.contracts import CanonicalCandidateSource
+from investment_research.modules.research.contracts import (
+    AnswerGenerationInput,
+    AnswerGenerationSource,
+    CanonicalCandidateSource,
+)
 from investment_research.modules.search.contracts import (
     M1_CONTEXT_CHARACTER_LIMIT,
     M1_CONTEXT_CHUNK_LIMIT,
@@ -166,3 +171,44 @@ class CitableUnitCatalog(ImmutableCitableUnitContract):
         ):
             raise ValueError("source-unit catalog must retain every visible source character")
         return self
+
+
+class CitableAnswerGenerationInput(AnswerGenerationInput):
+    """An existing generation input bound to its trusted request-scoped unit catalog."""
+
+    context: WorkspaceContext = Field(repr=False)
+    catalog: CitableUnitCatalog = Field(repr=False)
+
+    @model_validator(mode="after")
+    def require_matching_catalog(self) -> Self:
+        """Reject mismatched request, workspace, ordering, provenance, or source content."""
+
+        if (
+            self.context.workspace_id != self.catalog.workspace_id
+            or self.research_request_id != self.catalog.research_request_id
+            or tuple(source.model_dump() for source in self.sources)
+            != tuple(item.source.model_dump() for item in self.catalog.sources)
+        ):
+            raise ValueError("generation input must match its current scoped source-unit catalog")
+        return self
+
+    @classmethod
+    def from_catalog(
+        cls,
+        *,
+        context: WorkspaceContext,
+        question: str,
+        catalog: CitableUnitCatalog,
+    ) -> Self:
+        """Project the catalog's retained sources onto the existing application input."""
+
+        return cls(
+            research_request_id=catalog.research_request_id,
+            question=question,
+            sources=tuple(
+                AnswerGenerationSource.model_validate(item.source.model_dump())
+                for item in catalog.sources
+            ),
+            context=context,
+            catalog=catalog,
+        )

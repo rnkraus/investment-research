@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from openai import (
@@ -64,6 +64,7 @@ type OpenAIAnswerContractDetail = Literal[
     "missing_typed_answer",
     "missing_usage",
     "invalid_usage",
+    "invalid_source_units",
 ]
 _ANSWER_INSTRUCTIONS = """\
 You produce an evidence-grounded answer proposal from the supplied archive sources.
@@ -151,6 +152,8 @@ class OpenAIAnswerProviderContractError(AnswerGenerationProviderContractError):
 class OpenAIAnswerGenerator:
     """Translate one retry-free OpenAI call into an untrusted answer proposal."""
 
+    instructions: ClassVar[str] = _ANSWER_INSTRUCTIONS
+
     client: OpenAI
     model: str = OPENAI_ANSWER_MODEL
     operation_timeout_seconds: float = OPENAI_ANSWER_TIMEOUT_SECONDS
@@ -193,13 +196,14 @@ class OpenAIAnswerGenerator:
     def _generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         """Make the provider call and apply the typed response contract."""
 
+        proposal_schema = self._proposal_schema(generation_input)
         try:
             if self.local_validation_output is None and self.local_proposal_output is None:
                 response = self.client.responses.parse(
                     model=self.model,
-                    instructions=_ANSWER_INSTRUCTIONS,
+                    instructions=self.instructions,
                     input=self._serialize_input(generation_input),
-                    text_format=_OpenAIGeneratedAnswer,
+                    text_format=proposal_schema,
                     reasoning={"effort": "low"},
                     max_output_tokens=self.max_output_tokens,
                     store=False,
@@ -211,9 +215,9 @@ class OpenAIAnswerGenerator:
             else:
                 raw_response = self.client.responses.with_raw_response.parse(
                     model=self.model,
-                    instructions=_ANSWER_INSTRUCTIONS,
+                    instructions=self.instructions,
                     input=self._serialize_input(generation_input),
-                    text_format=_OpenAIGeneratedAnswer,
+                    text_format=proposal_schema,
                     reasoning={"effort": "low"},
                     max_output_tokens=self.max_output_tokens,
                     store=False,
@@ -284,7 +288,7 @@ class OpenAIAnswerGenerator:
             if self._contains_refusal(response):
                 raise AnswerGenerationProviderRefusalError("answer provider refused the request")
             raise OpenAIAnswerProviderContractError(detail="missing_typed_answer")
-        if not isinstance(parsed, _OpenAIGeneratedAnswer):
+        if not isinstance(parsed, proposal_schema):
             raise OpenAIAnswerProviderContractError(detail="typed_answer_validation")
         if self.local_proposal_output is not None:
             # Inspection grants no acceptance: usage, exact quotes, and support still follow.
@@ -324,11 +328,13 @@ class OpenAIAnswerGenerator:
 
     def _resolve_evidence_ranges(
         self,
-        proposal: _OpenAIGeneratedAnswer,
+        proposal: BaseModel,
         generation_input: AnswerGenerationInput,
     ) -> UnvalidatedGeneratedAnswer:
         """Resolve only unique verbatim substrings in the named selected source."""
 
+        if not isinstance(proposal, _OpenAIGeneratedAnswer):
+            raise OpenAIAnswerProviderContractError(detail="typed_answer_validation")
         sources = {
             source.retrieval_candidate_id: source.text for source in generation_input.sources
         }
@@ -385,6 +391,11 @@ class OpenAIAnswerGenerator:
             )
         except ValidationError:
             raise OpenAIAnswerProviderContractError(detail="proposal_validation") from None
+
+    def _proposal_schema(self, generation_input: AnswerGenerationInput) -> type[BaseModel]:
+        """Keep the retained M1 schema; other profiles may provide a scoped schema."""
+
+        return _OpenAIGeneratedAnswer
 
     @staticmethod
     def _output_text_from_raw_body(body: object) -> str | None:
