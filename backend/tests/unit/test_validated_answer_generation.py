@@ -20,10 +20,12 @@ from investment_research.modules.documents.domain import (
     SourceLocatorKind,
 )
 from investment_research.modules.evidence.contracts import (
+    M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     CanonicalEvidenceSource,
     ContextualStatementSupportInput,
     EvidenceValidationDecision,
     EvidenceValidationProfile,
+    OriginalSupportContext,
     StatementSupportResult,
 )
 from investment_research.modules.evidence.ports import (
@@ -33,7 +35,10 @@ from investment_research.modules.evidence.ports import (
     StatementSupportEvaluator,
     StatementSupportProviderTransientError,
 )
-from investment_research.modules.evidence.support_context import build_contextual_support_input
+from investment_research.modules.evidence.support_context import (
+    build_contextual_support_input,
+    build_document_contextual_support_input,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
@@ -644,13 +649,34 @@ def test_source_becoming_inactive_during_support_check_rejects_answer() -> None:
 
 
 @pytest.mark.parametrize("changed_source", [False, True])
+@pytest.mark.parametrize("document_context", [False, True])
 def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
     changed_source: bool,
+    document_context: bool,
 ) -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     executor = make_provider_operation_executor()
     inputs: list[ContextualStatementSupportInput] = []
     current_source = make_canonical_source()
+    if document_context:
+        processing_id = UUID(int=100)
+        header = "Northstar Grid Analytics. Financial report."
+        current_source = current_source.model_copy(
+            update={
+                "processing_run_id": processing_id,
+                "document_attribution_context": OriginalSupportContext(
+                    policy_version=M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
+                    workspace_id=WORKSPACE_ID,
+                    processing_run_id=processing_id,
+                    document_id=DOCUMENT_ID,
+                    document_version_id=VERSION_ID,
+                    structure_block_id=UUID(int=101),
+                    start_character=0,
+                    end_character=len(header),
+                    text=header,
+                ),
+            }
+        )
 
     class MutableSourceReader:
         def get_source(
@@ -670,11 +696,24 @@ def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
             inputs.append(request)
             if changed_source:
                 # Change only the non-cited prefix, preserving the exact citation and its range.
-                current_source = current_source.model_copy(
-                    update={
-                        "structure_block_text": SOURCE_TEXT.replace("Financial", "Synthetic"),
-                    }
-                )
+                if document_context:
+                    attribution = current_source.document_attribution_context
+                    assert attribution is not None
+                    current_source = current_source.model_copy(
+                        update={
+                            "document_attribution_context": attribution.model_copy(
+                                update={
+                                    "text": attribution.text.replace("Financial", "Synthetic"),
+                                }
+                            ),
+                        }
+                    )
+                else:
+                    current_source = current_source.model_copy(
+                        update={
+                            "structure_block_text": SOURCE_TEXT.replace("Financial", "Synthetic"),
+                        }
+                    )
             return DeterministicFixtureStatementSupportEvaluator(
                 [FixtureStatementSupportRule(statement=STATEMENT, evidence_text=EVIDENCE_TEXT)]
             ).evaluate(
@@ -686,7 +725,11 @@ def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
         unit_of_work,
         make_answer_proposal(),
         support_evaluator=ContextualEvaluator(),
-        support_context_builder=build_contextual_support_input,
+        support_context_builder=(
+            build_document_contextual_support_input
+            if document_context
+            else build_contextual_support_input
+        ),
         provider_operation_executor=executor,
     )
     result = service.generate(make_context(), make_retrieval_result())

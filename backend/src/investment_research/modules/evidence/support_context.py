@@ -8,6 +8,7 @@ from uuid import UUID
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.application import ValidateGeneratedAnswerService
 from investment_research.modules.evidence.contracts import (
+    M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT,
     CanonicalEvidenceSource,
     ContextualStatementEvidence,
@@ -47,7 +48,7 @@ def build_contextual_support_input(
             or not _matches_original_reference(reference, source)
         ):
             return None
-        start, end = _first_paragraph_range(source.structure_block_text)
+        start, end = original_attribution_prefix_range(source.structure_block_text)
         evidence.append(
             ContextualStatementEvidence(
                 reference=reference,
@@ -64,7 +65,51 @@ def build_contextual_support_input(
     return ContextualStatementSupportInput(statement=statement, evidence=tuple(evidence))
 
 
-def _first_paragraph_range(text: str) -> tuple[int, int]:
+def build_document_contextual_support_input(
+    *,
+    context: WorkspaceContext,
+    retrieval_run_id: UUID,
+    statement: str,
+    references: Sequence[ValidatedEvidenceReference],
+    sources: Mapping[UUID, CanonicalEvidenceSource | None],
+) -> ContextualStatementSupportInput | None:
+    """Use only a canonical first-block prefix from the same workspace/version/processing run.
+
+    A missing prefix does not silently fall back to another policy or a guessed report identity.
+    The reader supplies an exact original range; final persistence reloads it independently.
+    """
+
+    evidence = []
+    for reference in references:
+        source = sources.get(reference.retrieval_candidate_id)
+        if (
+            source is None
+            or source.retrieval_candidate_id != reference.retrieval_candidate_id
+            or not ValidateGeneratedAnswerService.is_source_eligible(
+                context, retrieval_run_id, source
+            )
+            or not _matches_original_reference(reference, source)
+            or source.document_attribution_context is None
+        ):
+            return None
+        attribution = OriginalSupportContext.model_validate(
+            source.document_attribution_context.model_dump()
+        )
+        if (
+            attribution.policy_version != M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
+            or attribution.workspace_id != context.workspace_id
+            or attribution.processing_run_id != source.processing_run_id
+            or attribution.document_id != source.document_id
+            or attribution.document_version_id != source.document_version_id
+        ):
+            return None
+        evidence.append(
+            ContextualStatementEvidence(reference=reference, attribution_context=attribution)
+        )
+    return ContextualStatementSupportInput(statement=statement, evidence=tuple(evidence))
+
+
+def original_attribution_prefix_range(text: str) -> tuple[int, int]:
     """Select a bounded prefix by moving offsets, never by rewriting original text."""
 
     start = 0

@@ -7,10 +7,13 @@ from sqlalchemy.orm import Session
 
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.evidence.contracts import (
+    M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     CanonicalEvidenceSource,
     CanonicalEvidenceSpanSource,
+    OriginalSupportContext,
 )
 from investment_research.modules.evidence.persistence import EvidenceSpanRow, StatementEvidenceRow
+from investment_research.modules.evidence.support_context import original_attribution_prefix_range
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import StructureBlock
 from investment_research.modules.processing.persistence import (
@@ -108,8 +111,45 @@ class PostgresCanonicalEvidenceSpanReader:
 class PostgresCanonicalEvidenceSourceReader:
     """Reload one selected candidate and every canonical eligibility dependency."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, include_document_attribution: bool = False) -> None:
         self._session = session
+        self._include_document_attribution = include_document_attribution
+
+    def _document_attribution_context(
+        self,
+        context: WorkspaceContext,
+        document_id: UUID,
+        document_version_id: UUID,
+        processing_run_id: UUID,
+    ) -> OriginalSupportContext | None:
+        """Read only the first block from the candidate's own canonical processing output."""
+
+        row = self._session.scalar(
+            select(StructureBlockRow)
+            .where(
+                StructureBlockRow.workspace_id == context.workspace_id,
+                StructureBlockRow.document_version_id == document_version_id,
+                StructureBlockRow.processing_run_id == processing_run_id,
+            )
+            .order_by(StructureBlockRow.ordinal)
+            .limit(1)
+        )
+        if row is None:
+            return None
+        start, end = original_attribution_prefix_range(row.text)
+        if end <= start:
+            return None
+        return OriginalSupportContext(
+            policy_version=M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
+            workspace_id=context.workspace_id,
+            processing_run_id=processing_run_id,
+            document_id=document_id,
+            document_version_id=document_version_id,
+            structure_block_id=row.id,
+            start_character=start,
+            end_character=end,
+            text=row.text[start:end],
+        )
 
     def get_structure_block(
         self, context: WorkspaceContext, structure_block_id: UUID
@@ -226,6 +266,17 @@ class PostgresCanonicalEvidenceSourceReader:
             chunk_set_is_active=chunk_set.is_active,
             chunk_set_lexical_config_version=chunk_set.lexical_config_version,
             processing_state=processing_run.state,
+            processing_run_id=processing_run.id,
+            document_attribution_context=(
+                self._document_attribution_context(
+                    context,
+                    document.id,
+                    document_version.id,
+                    processing_run.id,
+                )
+                if self._include_document_attribution
+                else None
+            ),
             processing_lexical_config_version=processing_run.lexical_config_version,
             processing_embedding_config_version=processing_run.embedding_config_version,
             processing_dense_index_config_version=processing_run.dense_index_config_version,
