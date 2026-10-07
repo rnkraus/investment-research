@@ -60,6 +60,8 @@ from investment_research.modules.research.domain import (
     StatementType,
 )
 from investment_research.modules.research.ports import (
+    AnswerGenerationInputBuilder,
+    AnswerGenerationPreflight,
     AnswerGenerationProviderConfigurationError,
     AnswerGenerationProviderContractError,
     AnswerGenerationProviderRefusalError,
@@ -231,6 +233,7 @@ class GenerateValidatedAnswerService:
         generation_profile: AnswerGenerationProfile,
         validation_profile: EvidenceValidationProfile,
         insufficient_message: str,
+        generation_input_builder: AnswerGenerationInputBuilder | None = None,
         provider_operation_executor: ExecuteProviderOperationService | None = None,
         generation_accounting: AnswerGenerationAccountingProfile | None = None,
         statement_support_accounting: StatementSupportAccountingProfile | None = None,
@@ -252,6 +255,7 @@ class GenerateValidatedAnswerService:
             )
         self._unit_of_work_factory = unit_of_work_factory
         self._answer_generator = answer_generator
+        self._generation_input_builder = generation_input_builder
         self._support_evaluator = support_evaluator
         self._generation_profile = generation_profile
         self._validation_profile = validation_profile
@@ -287,10 +291,25 @@ class GenerateValidatedAnswerService:
             prompt_version=self._generation_profile.prompt_version,
             created_at=created_at,
         )
-        generation_input = self._build_generation_input(retrieval_result)
+        generation_input = (
+            self._build_generation_input(retrieval_result)
+            if self._generation_input_builder is None
+            else self._generation_input_builder.build(context, retrieval_result)
+        )
         if progress is not None:
             progress(retrieval_result.request.id, "GENERATING_ANSWER")
-        generated_answer = self._generate_answer(context, generation_input)
+        if self._generation_input_builder is not None and not generation_input.sources:
+            # An empty catalog cannot authorize a model call or manufacture evidence.
+            generated_answer = UnvalidatedGeneratedAnswer(
+                coverage_status=CoverageStatus.INSUFFICIENT,
+                rendered_text=self._insufficient_message,
+                statements=(),
+                missing_information=self._insufficient_message,
+            )
+        else:
+            if isinstance(self._answer_generator, AnswerGenerationPreflight):
+                self._answer_generator.preflight(generation_input)
+            generated_answer = self._generate_answer(context, generation_input)
         if progress is not None:
             progress(retrieval_result.request.id, "VALIDATING_EVIDENCE")
         source_snapshot = self._load_source_snapshot(

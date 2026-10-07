@@ -50,6 +50,11 @@ from investment_research.modules.processing.ports import (
     ProcessingUnitOfWork,
     ProcessingUnitOfWorkFactory,
 )
+from investment_research.modules.research.citable_generation import (
+    CitableSourceReader,
+    CitableSourceUnitOfWork,
+    CitableSourceUnitOfWorkFactory,
+)
 from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
 from investment_research.modules.research.ports import (
     AnswerValidationUnitOfWork,
@@ -132,6 +137,34 @@ class SqlAlchemyAnswerValidationRepositories:
         """Flush staged dependency roots while preserving the open transaction."""
 
         self._session.flush()
+
+
+@dataclass(frozen=True, slots=True)
+class SqlAlchemyCitableSourceRepositories:
+    """Canonical sources detached from one provider-free read session."""
+
+    sources: CitableSourceReader
+
+
+@contextmanager
+def sqlalchemy_citable_source_unit_of_work(
+    session_factory: SessionFactory,
+) -> Iterator[CitableSourceUnitOfWork]:
+    with session_factory() as session:
+        yield SqlAlchemyCitableSourceRepositories(
+            sources=PostgresCanonicalEvidenceSourceReader(session)
+        )
+
+
+def create_citable_source_unit_of_work_factory(
+    session_factory: SessionFactory,
+) -> CitableSourceUnitOfWorkFactory:
+    """Bind the opt-in source catalog to short canonical reads, not provider calls."""
+
+    def create_unit_of_work() -> AbstractContextManager[CitableSourceUnitOfWork]:
+        return sqlalchemy_citable_source_unit_of_work(session_factory)
+
+    return create_unit_of_work
 
 
 @contextmanager

@@ -62,6 +62,7 @@ from investment_research.modules.research.domain import (
     TemporalMode,
 )
 from investment_research.modules.research.ports import (
+    AnswerGenerationInputBuilder,
     AnswerGenerationProviderTransientError,
     AnswerGenerator,
     AnswerValidationUnitOfWork,
@@ -324,6 +325,7 @@ def make_service(
     proposal: UnvalidatedGeneratedAnswer,
     *,
     generator_error: Exception | None = None,
+    generation_input_builder: AnswerGenerationInputBuilder | None = None,
     support_evaluator: StatementSupportEvaluator | None = None,
     provider_operation_executor: Mock | None = None,
     rejection_diagnostic: (
@@ -340,6 +342,7 @@ def make_service(
     service = GenerateValidatedAnswerService(
         unit_of_work_factory=unit_of_work_factory,
         answer_generator=generator_port,
+        generation_input_builder=generation_input_builder,
         support_evaluator=(
             support_evaluator
             or DeterministicFixtureStatementSupportEvaluator(

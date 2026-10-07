@@ -12,6 +12,7 @@ from investment_research.modules.evidence.contracts import (
 )
 from investment_research.modules.evidence.persistence import EvidenceSpanRow, StatementEvidenceRow
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.domain import StructureBlock
 from investment_research.modules.processing.persistence import (
     ChunkRow,
     ChunkSetRow,
@@ -109,6 +110,19 @@ class PostgresCanonicalEvidenceSourceReader:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def get_structure_block(
+        self, context: WorkspaceContext, structure_block_id: UUID
+    ) -> StructureBlock | None:
+        """Read the immutable block without disclosing foreign or unknown identifiers."""
+
+        row = self._session.scalar(
+            select(StructureBlockRow).where(
+                StructureBlockRow.workspace_id == context.workspace_id,
+                StructureBlockRow.id == structure_block_id,
+            )
+        )
+        return None if row is None else StructureBlock.model_validate(row, from_attributes=True)
 
     def get_source(
         self,
