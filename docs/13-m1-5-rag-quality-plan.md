@@ -762,6 +762,35 @@ pending, live `PARTIAL` coverage remains unexercised, and source opening plus co
 build, and hosted-CI gates still require confirmation for the current revision. Retain opt-in
 use and unchanged website defaults; this record does not accept Step 2 or the M1.5 exit gate.
 
+#### Luna v3 transcript-to-original review (2026-10-08)
+
+Codex compared the eight displayed support-evaluated statements and the dividend abstention with
+the three original fixtures, rather than adopting the application's support decisions as truth.
+The [PDF](../fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf) was extracted
+and all four pages visually inspected; the complete
+[Capacity Update](../fixtures/m1/documents/northstar-grid-analytics-fy2026-capacity-update.txt) and
+[Operations Note](../fixtures/m1_5/documents/northstar-grid-analytics-fy2026-operations-note.txt)
+were read directly. The existing corpus verifier passed with `--require-reviewed`, confirming
+fixture hashes and all six catalog source ranges. No additional provider call was made.
+
+| Case | Statements reviewed | Content comparison |
+| ---- | ------------------- | ------------------ |
+| FY2025 revenue | 2 | PDF page 2 supports both revenue amounts, years, and 22.0% growth; the company is identified in the original report. |
+| FY2026 rollout constraint | 2 | Transformer shortage and expected supplier improvement in the first half of 2027 are supported; uncertainty is retained. |
+| FY2026 dividend | 0 | None of the three originals establishes a declared FY2026 dividend; abstention is appropriate for this corpus. |
+| Conflicting constraint | 2 | Each July 22 report supports its separately attributed finding; the disagreement is preserved. |
+| European pilot budget | 1 | The original contains EUR 12 million twice; the displayed quote supports the amount. |
+| Battery-cabinet window | 1 | The original supports an expected shift into Q2 2027, not a guaranteed delivery date. |
+
+No unsupported material claim was identified in those eight displayed statements. Citation
+precision is separate: the revenue quote also contains `PRIMARY ACCEPTANCE EVIDENCE`, making it
+wider than the frozen expected passage. Preserve that scoring penalty. This review neither reran
+the saved citation metric nor verified the run's UUID-to-offset mapping or which repeated budget
+occurrence was stored. Saved reports, source-viewer behavior, and Terra's individual answers were
+not inspected. The historical run still reports `independent_support_review=pending`; this is a
+qualitative Codex review, not owner approval or a structured independent-model assessment. It does
+not change website defaults, close Step 2, or establish general model reliability.
+
 ### Step 3 — Bounded reranking experiment
 
 Research a maintained multilingual cross-encoder or provider behind a small typed adapter.
