@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 0 accepted on 2026-10-07; Step 1 RRF comparison in progress
+**Status:** Active — RRF comparison recorded; Step 2 standalone source-unit preparation implemented
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -254,9 +254,10 @@ bounded negative/inconclusive experiment, not proof that RRF is generally inferi
 paid run is approved, and quote or support validation is not weakened. Step 2 targets the known
 quote-selection limitation rather than repeating this ranking experiment.
 
-Frontend format, lint, typing, contract checks, and 45 tests passed. Next, finish the production
-build and confirm the required hosted checks, including the existing M1 runtime gate, before
-closing Step 1 or starting Step 2. No browser was used during report review. The offline
+Frontend format, lint, typing, contract checks, and 45 tests passed. At the time of comparison
+recording, the production build and required hosted checks, including the M1 runtime gate, still
+needed confirmation. The owner subsequently reported the RRF branch merged; retain those gate
+confirmations before integrating the Step 2 provider profile. No browser was used during review. The offline
 retrieval-only report is not a v2 answer observation; the sequential live reports do not establish
 independent support quality or complete the M1.5 acceptance gate.
 
@@ -281,10 +282,12 @@ fuzzy match or whole-chunk citation is accepted as a workaround.
 
 #### Step 2 contract — Citable units v1
 
-**Design recorded:** 2026-10-07. This is the implementation contract, not implemented behavior,
-a default-policy change, or evidence that Step 2 passed. Step 1's production-build and hosted-CI
-confirmations remain prerequisites for implementation. The existing M1 quote profile remains
-available and unchanged for comparison and historical interpretation.
+**Design recorded:** 2026-10-07. The standalone preparation/resolution block below implements
+part of this contract; the provider profile and runtime integration are not implemented or adopted.
+This is not a default-policy change or evidence that Step 2 passed. Step 1's production-build and
+hosted-CI confirmations remain required for the transition; the owner subsequently reported the
+RRF branch merged. That report is not an independently executed build or hosted verification.
+The existing M1 quote profile remains available and unchanged for historical interpretation.
 
 The design follows the source-ID/locator separation in the official
 [citation guide](https://developers.openai.com/api/docs/guides/citation-formatting). Strict
@@ -402,6 +405,22 @@ flowchart TD
    failures, latency, usage, cost, and catalog size. Do not claim an evaluator false rejection or
    improved answer quality merely because copied-quote errors disappear. Adopt only with a
    documented benefit and no critical regression; otherwise retain M1.
+
+**First backend block (2026-10-07):** Research now owns standalone typed source pairs, canonical
+range keys, request-scoped UUIDv5 handles, validated catalogs, deterministic range construction,
+and resolution to the existing `UnvalidatedEvidenceReference`. They enforce the frozen bounds,
+complete block mapping, trusted workspace, exact Unicode slices, canonical deduplication, source
+order, non-overlap, and preservation of visible source content. Resolution rejects unknown,
+duplicate, foreign, mixed-catalog, and cross-request references without fuzzy recovery. See the
+[Research guide](../backend/src/investment_research/modules/research/README.md#standalone-m15-citable-unit-preparation)
+for file responsibilities and the trust boundary.
+
+The complete `scripts.verify_backend` gate passed formatting, lint, full typing, and 1,357 unit
+tests, including 57 new source-unit cases. Existing unit CI discovers the tests automatically.
+No dependency, database schema, provider adapter, bootstrap wiring, API, frontend, historical
+answer, or runtime default changed. No provider, PostgreSQL, Docker, browser, or frontend build
+was run for this pure in-memory backend block. The remaining Step 2 integration, source-opening,
+compatibility, hosted verification, and approved quality-comparison gates remain open.
 
 ### Step 3 — Bounded reranking experiment
 

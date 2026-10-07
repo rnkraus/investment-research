@@ -4,16 +4,18 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 
 ## Contents
 
-| File                   | Responsibility                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `application.py`       | Connects retrieval and answer validation and preserves existing application imports.   |
-| `retrieval.py`         | Runs lexical or dual-lane retrieval and persists qualified candidates.                 |
-| `answer_validation.py` | Accounts for generation and support, validates evidence, and saves terminal answers.   |
-| `errors.py`            | Defines the safe provider failure shared by retrieval and answer generation.           |
-| `contracts.py`         | Defines strict retrieval, generation, and validated-answer boundary values.            |
-| `domain.py`            | Defines requests, temporal modes, answer states, coverage, statements, and invariants. |
-| `ports.py`             | Defines repositories, units of work, and the answer-generator contract.                |
-| `persistence.py`       | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.      |
+| File                        | Responsibility                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------- |
+| `application.py`            | Connects retrieval and answer validation and preserves existing application imports.      |
+| `retrieval.py`              | Runs lexical or dual-lane retrieval and persists qualified candidates.                    |
+| `answer_validation.py`      | Accounts for generation and support, validates evidence, and saves terminal answers.      |
+| `errors.py`                 | Defines the safe provider failure shared by retrieval and answer generation.              |
+| `contracts.py`              | Defines strict retrieval, generation, and validated-answer boundary values.               |
+| `citable_unit_contracts.py` | Defines immutable source snapshots, exact range identities, and bounded request catalogs. |
+| `citable_units.py`          | Prepares exact source units and resolves selected IDs to unvalidated evidence references. |
+| `domain.py`                 | Defines requests, temporal modes, answer states, coverage, statements, and invariants.    |
+| `ports.py`                  | Defines repositories, units of work, and the answer-generator contract.                   |
+| `persistence.py`            | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.         |
 
 ## Ownership and traceability
 
@@ -115,6 +117,44 @@ adapters retain their distinct internal safe error categories, while the route r
 `ResearchProviderUnavailableError` with the persisted research-request ID and a bounded
 `retriable` decision. Only classified transient failures are retriable; configuration, contract,
 and refusal failures are permanent. The policy never performs a hidden retry.
+
+## Standalone M1.5 citable-unit preparation
+
+The new source-unit functions are independently tested building blocks, not yet called by the
+runtime generator or research workflow. The M1 exact-substring adapter remains unchanged. The
+versioned design and remaining integration gates are in the
+[M1.5 Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1).
+
+`CitableUnitSource` pairs one selected `CanonicalCandidateSource` with its independently loaded
+`StructureBlock`. It verifies the complete block mapping, including exact text and media locator.
+The caller must already have canonically qualified the source; this pair does not prove current
+eligibility or authorization.
+
+`build_citable_unit_catalog` requires the trusted `WorkspaceContext`, research-request UUID, and
+those pairs. It preserves the existing 8-source/24,000-code-point budget, splits unchanged block
+text under the English v1 heuristic, and retains at most 256 units of at most 800 code points each.
+Sentence-ending punctuation and blank paragraphs create boundaries; a single PDF line break does
+not. Abbreviations can create short units. This explicit heuristic is not a claim of perfect
+sentence recognition. Overflow is rejected rather than silently dropping evidence.
+
+Each unit has a canonical key identifying its workspace, immutable version, block, exact range,
+and policy. UUIDv5 derives a reproducible request-scoped handle from that key. Repeated wording at
+different offsets gets distinct handles; the same block found by both lanes is offered once with
+the first candidate's provenance. Unknown future partial/multi-block mappings are not assumed to
+start at zero.
+
+`resolve_citable_unit_ids` accepts one or two distinct IDs for the current workspace/request and
+returns the existing `UnvalidatedEvidenceReference` values. Text and offsets come from the
+server-owned catalog, not a model-authored quote. Selection order is preserved and separated
+units are not expanded into an implied combined quote. The catalog validates exact slices,
+source order, non-overlap, and preservation of every visible source character. Its source text is
+excluded from object representations and validation-error rendering, not from an explicit model
+dump; do not log or publish catalogs.
+
+These functions do not call providers, touch repositories, create `EvidenceSpan` records, or replace
+the existing support evaluation and final canonical recheck. Catalogs are temporary values, never
+new canonical tables or public citation identities. The new tests are automatically discovered by
+the existing backend-unit CI gate; no separate workflow is necessary for this standalone block.
 
 ## Answer-generation boundary
 
