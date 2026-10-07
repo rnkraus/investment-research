@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 2 source-ID workflow and evaluation integration implemented; comparison pending
+**Status:** Active — Step 2 integration and initial live comparisons recorded; review and adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -282,9 +282,10 @@ fuzzy match or whole-chunk citation is accepted as a workaround.
 
 #### Step 2 contract — Citable units v1
 
-**Design recorded:** 2026-10-07. The standalone preparation/resolution and ID-adapter blocks below
-implement part of this contract; runtime integration and adoption remain open. This is not a
-default-policy change or evidence that Step 2 passed. After reporting the RRF branch merged, the
+**Design recorded:** 2026-10-07. The preparation/resolution, ID adapter, and opt-in Research and
+evaluation integration are implemented. Initial live comparisons are recorded below; normal
+runtime adoption and remaining review gates are open. This is not a default-policy change or
+evidence that Step 2 passed. After reporting the RRF branch merged, the
 owner confirmed Step 1's production-build and hosted-CI readiness before the ID-adapter block.
 That confirmation is owner-reported, not independently executed build or hosted verification.
 The existing M1 quote profile remains available and unchanged for historical interpretation.
@@ -502,6 +503,62 @@ contract drift checks, and all 45 tests passed. The owner confirmed the producti
 agent-side sandbox build could not bind the port required by Turbopack. No paid provider requests,
 browser checks, complete M0/M1 runtime checks, or hosted CI confirmation were performed for this
 block. These results verify opt-in integration, not live quality or adoption.
+
+#### Initial owner-run live comparisons (2026-10-07)
+
+The owner executed five bounded runs on the six existing synthetic cases and supplied the terminal
+transcripts for review. The model names, source-reference shapes, selector versions, case outcomes,
+reservation totals, and reported cleanup below were checked against those transcripts. These are
+owner-run observations, not agent-executed tests or an independent review of citation support.
+Raw JSON reports remain ignored local evaluation artifacts; they were not inspected for this record.
+
+Retrieval and answer policy are separate experimental controls. `--answer-policy m1` means the
+copied-quote answer contract, not M1 retrieval. All first four runs used
+`m1-5-rrf-k60-v1`; only the fifth used `m1-lexical-first-round-robin-v1`.
+
+| Answer/support models | Retrieval | Answer policy | Failed cases / 6 | Reserved USD | Reported cleanup |
+| --------------------- | --------- | ------------- | ---------------- | ------------ | ---------------- |
+| Terra/Terra | RRF | M1 copied quotes | 3 | 0.650454 | Verified |
+| Terra/Terra | RRF | Citable units | 0 | 0.715730 | Verified |
+| Luna/Luna | RRF | M1 copied quotes | 4 | 0.069614 | Verified |
+| Luna/Luna | RRF | Citable units | 1 | 0.076194 | Verified |
+| Terra/Terra | M1 | Citable units | 0 | 0.671656 | Verified |
+
+Each invocation retained the USD 0.80 reservation ceiling. Reserved USD is a conservative
+application estimate, not actual provider billing or measured token-based spend. Completed cases
+include the expected insufficient-evidence result; zero failures does not mean six answered
+questions. Every run correctly withheld the unsupported dividend answer.
+
+**Observed failures and interpretation**
+
+- Terra/RRF/copied quotes rejected the rollout and conflicting-report cases during statement
+  support validation and failed the repeated European-budget sentence with `quote_ambiguous`.
+  Terra/RRF/citable units completed all six cases, including explicit conflicting coverage and
+  expected abstention. The same repeated-budget ambiguity disappeared in the Luna ID run.
+- Luna/RRF/copied quotes additionally rejected the revenue case, for four failures in total.
+  Luna/RRF/citable units completed five cases. Its remaining conflicting-report failure was
+  `COVERAGE,STATEMENT_SUPPORT`: the support evaluator returned false for the transformer-shortage
+  statement. It was not an unknown-ID, copied-quote, or provider-format failure. The transcript
+  alone does not establish that the evaluator falsely rejected supported evidence.
+- Terra/citable units had no case failures under either retrieval selector. This small result does
+  not demonstrate RRF superiority, equivalence of retrieved passages, or equal latency. Generator
+  statements and evidence selections varied between runs, including the number of supporting units.
+
+The runs used `scripts.verify_m1_5_live_baseline --execute` with explicit `--retrieval-policy`,
+`--answer-policy`, `--answer-model`, `--support-model`, and `--max-spend-usd 0.80`; both existing
+public-synthetic/Starter confirmations and a new JSON path beneath `outputs/m1_5` were required.
+`--show-local-model-output` displayed synthetic proposals and support decisions only in the owner's
+interactive terminal. Changing one policy while retaining the model pair gives the comparison
+matrix above; repeated runs are still stochastic, not guaranteed replays.
+
+**Disposition:** Record an initial benefit for ID-based reference resolution and fewer observed
+safe failures, but retain opt-in use and the unchanged website default. Do not weaken support
+validation to make Luna pass. Before adoption or Step 2 acceptance, independently check resolved
+original spans and supported claims, retain the known wider revenue-unit scoring penalty, verify
+source opening and complete runtime/hosted compatibility, and review the earlier Luna PDF
+`quote_not_found` scenario. These tiny fixture runs do not settle that broader PDF issue. Latency,
+actual usage/cost, catalog sizes, and reviewed citation metrics were not provided in the terminal
+excerpts and remain unverified here. Live partial coverage was not exercised by these six cases.
 
 ### Step 3 — Bounded reranking experiment
 

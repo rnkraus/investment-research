@@ -11,7 +11,7 @@ but they cannot validate, persist, or publish them.
 | `__init__.py`             | Identifies the generation-adapter package without exporting an implementation.          |
 | `deterministic.py`        | Implements the bounded synthetic M0.0 fixture case without a model or network call.     |
 | `openai.py`               | Implements the bounded M1 typed Responses API adapter behind the same application port. |
-| `openai_citable_units.py` | Implements the standalone M1.5 source-unit ID profile, not yet wired into Research.     |
+| `openai_citable_units.py` | Implements the opt-in M1.5 source-unit ID profile used by Research evaluation.           |
 
 ## Trust boundary
 
