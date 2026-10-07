@@ -15,11 +15,19 @@ from investment_research.infrastructure.evidence.openai import (
     OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
 )
 from investment_research.infrastructure.generation.openai import (
+    M1_ANSWER_GENERATOR_VERSION,
     M1_ANSWER_PROMPT_VERSION,
     OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
 )
-from investment_research.infrastructure.openai_models import RESEARCH_MODEL_PRICES
+from investment_research.infrastructure.generation.openai_citable_units import (
+    M1_5_CITABLE_ANSWER_PROMPT_VERSION,
+    citable_answer_profile,
+)
+from investment_research.infrastructure.openai_models import (
+    RESEARCH_MODEL_PRICES,
+    answer_config_version,
+)
 from investment_research.infrastructure.search.openai import (
     OPENAI_EMBEDDING_INPUT_MICRO_USD_PER_MILLION_TOKENS,
 )
@@ -27,6 +35,7 @@ from investment_research.modules.operations.domain import ProviderOperationKind,
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.research.contracts import (
     M1_GENERATED_STATEMENT_LIMIT,
+    AnswerGenerationProfile,
     ResearchModel,
 )
 from investment_research.modules.search.contracts import (
@@ -50,10 +59,37 @@ MAXIMUM_SPEND_MICRO_USD = 800_000
 MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
 type LiveRetrievalPolicy = Literal["m1", "rrf"]
+type LiveAnswerPolicy = Literal["m1", "citable_units"]
 
 
 class LiveBaselineLimitError(ValueError):
     """Reject a plan or request without including provider or corpus content."""
+
+
+def answer_profile_for_policy(
+    policy: LiveAnswerPolicy, model: ResearchModel
+) -> AnswerGenerationProfile:
+    """Freeze the answer contract independently of the retrieval selector."""
+
+    if policy == "citable_units":
+        return citable_answer_profile(model)
+    if policy == "m1":
+        return AnswerGenerationProfile(
+            generator_version=M1_ANSWER_GENERATOR_VERSION,
+            generation_config_version=answer_config_version(model),
+            prompt_version=M1_ANSWER_PROMPT_VERSION,
+        )
+    raise LiveBaselineLimitError("unknown answer policy")
+
+
+def answer_policy_for_prompt_version(version: str) -> LiveAnswerPolicy:
+    """Never silently select another generator for an unknown recorded version."""
+
+    if version == M1_ANSWER_PROMPT_VERSION:
+        return "m1"
+    if version == M1_5_CITABLE_ANSWER_PROMPT_VERSION:
+        return "citable_units"
+    raise LiveBaselineLimitError("unknown answer prompt version")
 
 
 def selection_profile_for_policy(
@@ -116,6 +152,7 @@ def build_plan(
     support_model: ResearchModel = ResearchModel.TERRA,
     maximum_spend_micro_usd: int = MAXIMUM_SPEND_MICRO_USD,
     retrieval_policy: LiveRetrievalPolicy = "m1",
+    answer_policy: LiveAnswerPolicy = "m1",
 ) -> LiveBaselinePlan:
     """Validate only the frozen approved fixtures; never load runtime settings or keys."""
 
@@ -184,7 +221,9 @@ def build_plan(
             selector_config_version=selection_profile.selector_config_version,
             answer_model=answer_model.value,
             support_model=support_model.value,
-            answer_prompt_version=M1_ANSWER_PROMPT_VERSION,
+            answer_prompt_version=answer_profile_for_policy(
+                answer_policy, answer_model
+            ).prompt_version,
             support_prompt_version=M1_STATEMENT_SUPPORT_PROMPT_VERSION,
         ),
         maximum_spend_micro_usd=maximum_spend_micro_usd,
@@ -279,6 +318,7 @@ def _budget_argument(value: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retrieval-policy", choices=("m1", "rrf"), default="m1")
+    parser.add_argument("--answer-policy", choices=("m1", "citable_units"), default="m1")
     parser.add_argument(
         "--answer-model",
         type=ResearchModel,
@@ -299,6 +339,7 @@ def main() -> int:
             support_model=arguments.support_model,
             maximum_spend_micro_usd=arguments.max_spend_usd,
             retrieval_policy=arguments.retrieval_policy,
+            answer_policy=arguments.answer_policy,
         )
     except CorpusValidationError, LiveBaselineLimitError:
         print(

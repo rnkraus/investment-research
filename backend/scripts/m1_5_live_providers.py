@@ -15,11 +15,13 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderError,
 )
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
+from investment_research.modules.research.citable_unit_contracts import CitableAnswerGenerationInput
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationResult,
 )
 from investment_research.modules.research.ports import (
+    AnswerGenerationPreflight,
     AnswerGenerationProviderError,
     AnswerGenerator,
 )
@@ -171,10 +173,25 @@ class BudgetedAnswerGenerator:
     delegate: AnswerGenerator
     calls: LiveProviderCalls
 
+    def preflight(self, generation_input: AnswerGenerationInput) -> None:
+        """Keep local schema preparation outside both paid accounting layers."""
+
+        if isinstance(self.delegate, AnswerGenerationPreflight):
+            self.delegate.preflight(generation_input)
+
     def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
+        self.preflight(generation_input)
+        # The catalog duplicates server-only text. The envelope already covers unit IDs
+        # and schema metadata; count original text and question only for this profile.
+        payload_bytes = (
+            len(generation_input.question.encode("utf-8"))
+            + sum(len(source.text.encode("utf-8")) for source in generation_input.sources)
+            if isinstance(generation_input, CitableAnswerGenerationInput)
+            else len(generation_input.model_dump_json().encode("utf-8"))
+        )
         return self.calls.invoke(
             ProviderOperationKind.ANSWER_GENERATION,
-            payload_utf8_bytes=len(generation_input.model_dump_json().encode("utf-8")),
+            payload_utf8_bytes=payload_bytes,
             call=lambda: self.delegate.generate(generation_input),
         )
 

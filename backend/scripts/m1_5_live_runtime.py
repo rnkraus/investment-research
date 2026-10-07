@@ -16,6 +16,9 @@ from investment_research.infrastructure.evidence.openai import (
     create_openai_statement_support_evaluator,
 )
 from investment_research.infrastructure.generation.openai import create_openai_answer_generator
+from investment_research.infrastructure.generation.openai_citable_units import (
+    create_openai_citable_unit_answer_generator,
+)
 from investment_research.infrastructure.search.openai import create_openai_embedding_provider
 from investment_research.infrastructure.search.pinecone import (
     create_pinecone_dense_index_writer,
@@ -31,7 +34,7 @@ from scripts.m1_5_live_providers import (
     LiveProviderCalls,
 )
 from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
-from scripts.plan_m1_5_live_baseline import LiveBaselinePlan
+from scripts.plan_m1_5_live_baseline import LiveBaselinePlan, answer_policy_for_prompt_version
 from scripts.verify_postgres import (
     BACKEND_ROOT,
     COMPOSE_FILE,
@@ -211,7 +214,13 @@ def provider_resources(
             )
             clients.callback(close_client, provider, label)
             embeddings.append(BudgetedEmbeddingProvider(provider, calls))
-        answer = create_openai_answer_generator(
+        answer_factory = (
+            create_openai_citable_unit_answer_generator
+            if answer_policy_for_prompt_version(plan.configuration.answer_prompt_version)
+            == "citable_units"
+            else create_openai_answer_generator
+        )
+        answer = answer_factory(
             api_key=generation.api_key.get_secret_value(),
             model=plan.configuration.answer_model,
             local_proposal_output=None if local_output is None else local_output.answer_proposal,
