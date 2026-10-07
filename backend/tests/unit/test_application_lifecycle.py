@@ -18,6 +18,9 @@ from investment_research.bootstrap import (
     build_api_container,
     build_worker_container,
 )
+from investment_research.infrastructure.database.unit_of_work import (
+    create_answer_validation_unit_of_work_factory,
+)
 from investment_research.infrastructure.evidence.openai import (
     OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
     OPENAI_STATEMENT_SUPPORT_MODEL,
@@ -33,6 +36,10 @@ from investment_research.infrastructure.generation.openai import (
     OPENAI_ANSWER_TIMEOUT_SECONDS,
     OpenAIAnswerGenerator,
 )
+from investment_research.infrastructure.generation.openai_citable_units import (
+    OpenAICitableUnitAnswerGenerator,
+    citable_answer_profile,
+)
 from investment_research.infrastructure.health import (
     CompositeReadinessProbe,
     PostgreSQLReadinessProbe,
@@ -42,7 +49,10 @@ from investment_research.infrastructure.object_storage.s3 import (
     S3ObjectStorage,
     S3ObjectStorageReadinessProbe,
 )
-from investment_research.infrastructure.openai_models import RESEARCH_MODEL_PRICES
+from investment_research.infrastructure.openai_models import (
+    RESEARCH_MODEL_PRICES,
+    support_config_version,
+)
 from investment_research.infrastructure.operations.opentelemetry import (
     OpenTelemetryOperationTracer,
 )
@@ -69,6 +79,9 @@ from investment_research.modules.evidence.contracts import (
     ValidationFinding,
 )
 from investment_research.modules.evidence.domain import ValidationRule
+from investment_research.modules.evidence.support_context import (
+    build_document_contextual_support_input,
+)
 from investment_research.modules.processing.application import (
     M0_0_PROCESSING_PROFILE,
     M1_PROCESSING_PROFILE,
@@ -82,6 +95,7 @@ from investment_research.modules.research.application import (
     GenerateValidatedAnswerService,
     RetrieveResearchService,
 )
+from investment_research.modules.research.citable_generation import CitableGenerationInputBuilder
 from investment_research.modules.research.contracts import (
     ResearchModel,
     UnvalidatedEvidenceReference,
@@ -89,7 +103,8 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedStatement,
 )
 from investment_research.modules.research.domain import CoverageStatus
-from investment_research.modules.search.contracts import M1_LANE_CANDIDATE_LIMIT
+from investment_research.modules.search.contracts import M1_LANE_CANDIDATE_LIMIT, M1SelectionProfile
+from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
 from investment_research.modules.search.indexing import IndexActiveChunksService
 from investment_research.settings import ApiSettings, WorkerSettings
 
@@ -153,7 +168,7 @@ def make_worker_settings(object_storage_root: Path) -> WorkerSettings:
     )
 
 
-def make_m1_api_settings(object_storage_root: Path) -> ApiSettings:
+def make_m1_api_settings(object_storage_root: Path, *, citable_units: bool = False) -> ApiSettings:
     """Build API settings with complete synthetic query-provider credentials."""
 
     return ApiSettings.model_validate(
@@ -165,6 +180,7 @@ def make_m1_api_settings(object_storage_root: Path) -> ApiSettings:
             "provider_monthly_budget_micro_usd": 5_000_000,
             "query_providers": indexing_provider_values(),
             "generation_provider": {"api_key": "synthetic-generation-key"},
+            "research_profile": "m1-5-citable-units" if citable_units else "m1",
         }
     )
 
@@ -223,14 +239,17 @@ class ApiProviderFakes:
 
 def install_api_provider_fakes(
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    citable_units: bool = False,
 ) -> ApiProviderFakes:
     """Replace provider factories with lifecycle-visible, network-free test doubles."""
 
     embedding_provider = create_autospec(OpenAIEmbeddingProvider, instance=True)
     dense_retriever = create_autospec(PineconeDenseRetriever, instance=True)
-    answer_generator = create_autospec(OpenAIAnswerGenerator, instance=True)
+    generator_type = OpenAICitableUnitAnswerGenerator if citable_units else OpenAIAnswerGenerator
+    answer_generator = create_autospec(generator_type, instance=True)
     support_evaluator = create_autospec(OpenAIStatementSupportEvaluator, instance=True)
-    luna_answer_generator = create_autospec(OpenAIAnswerGenerator, instance=True)
+    luna_answer_generator = create_autospec(generator_type, instance=True)
     luna_support_evaluator = create_autospec(OpenAIStatementSupportEvaluator, instance=True)
     embedding_factory = Mock(return_value=embedding_provider)
     dense_factory = Mock(return_value=dense_retriever)
@@ -246,7 +265,22 @@ def install_api_provider_fakes(
         "create_pinecone_dense_retriever",
         dense_factory,
     )
-    monkeypatch.setattr(bootstrap_module, "create_openai_answer_generator", answer_factory)
+    selected_factory = (
+        "create_openai_citable_unit_answer_generator"
+        if citable_units
+        else "create_openai_answer_generator"
+    )
+    unused_factory = (
+        "create_openai_answer_generator"
+        if citable_units
+        else "create_openai_citable_unit_answer_generator"
+    )
+    monkeypatch.setattr(bootstrap_module, selected_factory, answer_factory)
+    monkeypatch.setattr(
+        bootstrap_module,
+        unused_factory,
+        Mock(side_effect=AssertionError("the unselected answer factory must not be used")),
+    )
     monkeypatch.setattr(
         bootstrap_module,
         "create_openai_statement_support_evaluator",
@@ -416,6 +450,9 @@ def test_build_api_container_wires_m1_query_resources(
             is fakes.support_evaluator
         )
         assert dependencies is not None
+        assert isinstance(dependencies.selection_profile, M1SelectionProfile)
+        assert container.generate_validated_answer_service._generation_input_builder is None
+        assert container.generate_validated_answer_service._support_context_builder is None
         assert dependencies.embedding_provider is container.query_embedding_provider
         assert dependencies.dense_retriever is container.dense_retriever
         assert dependencies.provider_operation_executor is container.provider_operation_executor
@@ -470,6 +507,8 @@ def test_build_api_container_wires_m1_query_resources(
             operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
             local_validation_output=None,
+            include_attribution_context=False,
+            include_document_attribution_context=False,
         )
         fakes.support_factory.assert_any_call(
             api_key="synthetic-generation-key",
@@ -477,6 +516,8 @@ def test_build_api_container_wires_m1_query_resources(
             operation_timeout_seconds=OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
             local_validation_output=None,
+            include_attribution_context=False,
+            include_document_attribution_context=False,
         )
         services = container.answer_research_request_service.model_services
         assert services is not None
@@ -514,13 +555,85 @@ def test_build_api_container_wires_m1_query_resources(
     fakes.embedding_provider.close.assert_called_once_with()
 
 
+def test_build_api_container_wires_citable_units_for_all_model_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fakes = install_api_provider_fakes(monkeypatch, citable_units=True)
+    factory = Mock(wraps=create_answer_validation_unit_of_work_factory)
+    monkeypatch.setattr(bootstrap_module, "create_answer_validation_unit_of_work_factory", factory)
+    container = build_api_container(make_m1_api_settings(tmp_path / "objects", citable_units=True))
+
+    try:
+        dependencies = container.retrieve_research_service._m1_query_retrieval
+        assert dependencies is not None
+        assert dependencies.selection_profile == RrfSelectionProfile()
+        assert dependencies.provider_operation_executor is container.provider_operation_executor
+        assert (
+            dependencies.provider_operation_executor.reservation_service.budget_policy.monthly_limit_micro_usd
+            == 5_000_000
+        )
+        factory.assert_called_once_with(
+            container.session_factory, include_document_attribution=True
+        )
+        services = container.answer_research_request_service.model_services
+        assert services is not None and len(services) == 4
+        for (answer_model, support_model), service in services.items():
+            assert isinstance(service._generation_input_builder, CitableGenerationInputBuilder)
+            assert service._support_context_builder is build_document_contextual_support_input
+            assert service._generation_profile == citable_answer_profile(answer_model)
+            assert service._validation_profile.validation_config_version == (
+                f"m1-5-document-attribution-validation-v1-{support_model.value}"
+            )
+            assert service._answer_generator is (
+                fakes.answer_generator
+                if answer_model is ResearchModel.TERRA
+                else fakes.luna_answer_generator
+            )
+            assert service._support_evaluator is (
+                fakes.support_evaluator
+                if support_model is ResearchModel.TERRA
+                else fakes.luna_support_evaluator
+            )
+            assert service._provider_operation_executor is container.provider_operation_executor
+            accounting = service._generation_accounting
+            assert accounting is not None
+            assert accounting.model == answer_model
+            assert accounting.cost_policy.input_micro_usd_per_million_units == (
+                RESEARCH_MODEL_PRICES[answer_model].input_micro_usd_per_million_tokens
+            )
+            support_accounting = service._statement_support_accounting
+            assert support_accounting is not None
+            assert support_accounting.model == support_model
+            assert support_accounting.configuration_version == (
+                f"{support_config_version(support_model)}-document-attribution-v1"
+            )
+        for call in fakes.support_factory.call_args_list:
+            assert call.kwargs["include_attribution_context"] is True
+            assert call.kwargs["include_document_attribution_context"] is True
+            assert call.kwargs["local_validation_output"] is None
+    finally:
+        container.close()
+    for provider in (
+        fakes.answer_generator,
+        fakes.luna_answer_generator,
+        fakes.support_evaluator,
+        fakes.luna_support_evaluator,
+        fakes.embedding_provider,
+        fakes.dense_retriever,
+    ):
+        provider.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("citable_units", [False, True])
 def test_build_api_container_wires_opt_in_local_model_failure_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    citable_units: bool,
 ) -> None:
-    fakes = install_api_provider_fakes(monkeypatch)
-    values = make_m1_api_settings(tmp_path / "objects").model_dump()
+    fakes = install_api_provider_fakes(monkeypatch, citable_units=citable_units)
+    values = make_m1_api_settings(tmp_path / "objects", citable_units=citable_units).model_dump()
     values.update(
         environment="development",
         runtime_location="container",
@@ -919,12 +1032,14 @@ def test_api_container_closes_query_provider_and_database_resources(
     ]
 
 
+@pytest.mark.parametrize("citable_units", [False, True])
 def test_api_container_releases_owned_resources_when_query_setup_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    citable_units: bool,
 ) -> None:
     events: list[str] = []
-    fakes = install_api_provider_fakes(monkeypatch)
+    fakes = install_api_provider_fakes(monkeypatch, citable_units=citable_units)
     fakes.dense_factory.side_effect = RuntimeError("simulated dense query setup failure")
     original_queue_close = Celery.close
     original_database_dispose = Engine.dispose
@@ -943,17 +1058,19 @@ def test_api_container_releases_owned_resources_when_query_setup_fails(
     monkeypatch.setattr(Engine, "dispose", dispose_database)
 
     with pytest.raises(RuntimeError, match="simulated dense query setup failure"):
-        build_api_container(make_m1_api_settings(tmp_path / "objects"))
+        build_api_container(make_m1_api_settings(tmp_path / "objects", citable_units=citable_units))
 
     assert events == ["query-embedding", "queue", "database"]
 
 
+@pytest.mark.parametrize("citable_units", [False, True])
 def test_api_container_releases_all_prior_resources_when_support_setup_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    citable_units: bool,
 ) -> None:
     events: list[str] = []
-    fakes = install_api_provider_fakes(monkeypatch)
+    fakes = install_api_provider_fakes(monkeypatch, citable_units=citable_units)
     fakes.support_factory.side_effect = RuntimeError("simulated support setup failure")
     original_queue_close = Celery.close
     original_database_dispose = Engine.dispose
@@ -974,7 +1091,7 @@ def test_api_container_releases_all_prior_resources_when_support_setup_fails(
     monkeypatch.setattr(Engine, "dispose", dispose_database)
 
     with pytest.raises(RuntimeError, match="simulated support setup failure"):
-        build_api_container(make_m1_api_settings(tmp_path / "objects"))
+        build_api_container(make_m1_api_settings(tmp_path / "objects", citable_units=citable_units))
 
     assert events == [
         "answer-generation",

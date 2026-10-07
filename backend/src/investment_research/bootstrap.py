@@ -26,6 +26,7 @@ from investment_research.infrastructure.database.session import (
 from investment_research.infrastructure.database.unit_of_work import (
     create_answer_validation_unit_of_work_factory,
     create_capture_unit_of_work_factory,
+    create_citable_source_unit_of_work_factory,
     create_document_read_unit_of_work_factory,
     create_evidence_read_unit_of_work_factory,
     create_processing_read_unit_of_work_factory,
@@ -65,6 +66,11 @@ from investment_research.infrastructure.generation.openai import (
     OPENAI_ANSWER_TIMEOUT_SECONDS,
     OpenAIAnswerGenerator,
     create_openai_answer_generator,
+)
+from investment_research.infrastructure.generation.openai_citable_units import (
+    OpenAICitableUnitAnswerGenerator,
+    citable_answer_profile,
+    create_openai_citable_unit_answer_generator,
 )
 from investment_research.infrastructure.health import (
     CompositeReadinessProbe,
@@ -117,6 +123,9 @@ from investment_research.modules.evidence.contracts import (
     EvidenceValidationProfile,
 )
 from investment_research.modules.evidence.ports import StatementSupportEvaluator
+from investment_research.modules.evidence.support_context import (
+    build_document_contextual_support_input,
+)
 from investment_research.modules.identity.application import (
     FixedLocalIdentityContextProvider,
     IdentityContextProvider,
@@ -148,6 +157,7 @@ from investment_research.modules.research.application import (
     RetrieveResearchService,
     StatementSupportAccountingProfile,
 )
+from investment_research.modules.research.citable_generation import CitableGenerationInputBuilder
 from investment_research.modules.research.contracts import (
     AnswerGenerationProfile,
     ResearchModel,
@@ -160,6 +170,7 @@ from investment_research.modules.search.contracts import (
     LexicalSearchProfile,
     M1SelectionProfile,
 )
+from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
 from investment_research.modules.search.indexing import (
     DocumentEmbeddingAccountingProfile,
     IndexActiveChunksService,
@@ -174,6 +185,8 @@ from investment_research.settings import (
     ObjectStorageSettings,
     WorkerSettings,
 )
+
+type RuntimeAnswerGenerator = OpenAIAnswerGenerator | OpenAICitableUnitAnswerGenerator
 
 M0_0_GENERATION_PROFILE = AnswerGenerationProfile(
     generator_version="deterministic-fixture-v1",
@@ -327,9 +340,9 @@ class ApiContainer:
     queue_application: Celery
     query_embedding_provider: OpenAIEmbeddingProvider | None
     dense_retriever: PineconeDenseRetriever | None
-    answer_generator_provider: OpenAIAnswerGenerator | None
+    answer_generator_provider: RuntimeAnswerGenerator | None
     statement_support_provider: OpenAIStatementSupportEvaluator | None
-    luna_answer_generator_provider: OpenAIAnswerGenerator | None
+    luna_answer_generator_provider: RuntimeAnswerGenerator | None
     luna_statement_support_provider: OpenAIStatementSupportEvaluator | None
     acceptance_dense_index: DeterministicSqliteDenseIndex | None
     operation_tracer: OpenTelemetryOperationTracer
@@ -428,9 +441,9 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         readiness_probes.append(object_storage.readiness_probe)
     query_embedding_provider: OpenAIEmbeddingProvider | None = None
     dense_retriever: PineconeDenseRetriever | None = None
-    answer_generator_provider: OpenAIAnswerGenerator | None = None
+    answer_generator_provider: RuntimeAnswerGenerator | None = None
     statement_support_provider: OpenAIStatementSupportEvaluator | None = None
-    luna_answer_generator_provider: OpenAIAnswerGenerator | None = None
+    luna_answer_generator_provider: RuntimeAnswerGenerator | None = None
     luna_statement_support_provider: OpenAIStatementSupportEvaluator | None = None
     acceptance_dense_index: DeterministicSqliteDenseIndex | None = None
     provider_operation_executor: ExecuteProviderOperationService | None = None
@@ -452,6 +465,12 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     statement_support_accounting: StatementSupportAccountingProfile | None = None
     validation_profile = M0_0_EVIDENCE_VALIDATION_PROFILE
     lexical_candidate_limit = 10
+    citable_units_enabled = settings.research_profile == "m1-5-citable-units"
+    answer_factory = (
+        create_openai_citable_unit_answer_generator
+        if citable_units_enabled
+        else create_openai_answer_generator
+    )
     if settings.acceptance_dense_index_path is not None:
         monthly_budget = settings.provider_monthly_budget_micro_usd
         assert monthly_budget is not None
@@ -562,7 +581,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 index_host=provider_settings.pinecone.index_host,
                 operation_timeout_seconds=(provider_settings.pinecone.operation_timeout_seconds),
             )
-            answer_generator_provider = create_openai_answer_generator(
+            answer_generator_provider = answer_factory(
                 api_key=generation_settings.api_key.get_secret_value(),
                 model=OPENAI_ANSWER_MODEL,
                 operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
@@ -583,8 +602,10 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     if settings.local_model_failure_output
                     else None
                 ),
+                include_attribution_context=citable_units_enabled,
+                include_document_attribution_context=citable_units_enabled,
             )
-            luna_answer_generator_provider = create_openai_answer_generator(
+            luna_answer_generator_provider = answer_factory(
                 api_key=generation_settings.api_key.get_secret_value(),
                 model=ResearchModel.LUNA,
                 operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
@@ -605,6 +626,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     if settings.local_model_failure_output
                     else None
                 ),
+                include_attribution_context=citable_units_enabled,
+                include_document_attribution_context=citable_units_enabled,
             )
         except Exception:
             with ExitStack() as stack:
@@ -631,7 +654,9 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 dense_index_config_version=provider_settings.pinecone.config_version,
                 candidate_limit=M1_LANE_CANDIDATE_LIMIT,
             ),
-            selection_profile=M1SelectionProfile(),
+            selection_profile=(
+                RrfSelectionProfile() if citable_units_enabled else M1SelectionProfile()
+            ),
             provider_operation_executor=provider_operation_executor,
             embedding_accounting=QueryEmbeddingAccountingProfile(
                 provider="openai",
@@ -646,7 +671,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         )
         answer_generator = answer_generator_provider
         support_evaluator = statement_support_provider
-        generation_profile = M1_GENERATION_PROFILE
+        generation_profile = (
+            citable_answer_profile(ResearchModel.TERRA)
+            if citable_units_enabled
+            else M1_GENERATION_PROFILE
+        )
         generation_accounting = AnswerGenerationAccountingProfile(
             provider="openai",
             model=OPENAI_ANSWER_MODEL,
@@ -664,7 +693,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         statement_support_accounting = StatementSupportAccountingProfile(
             provider="openai",
             model=OPENAI_STATEMENT_SUPPORT_MODEL,
-            configuration_version=M1_STATEMENT_SUPPORT_CONFIG_VERSION,
+            configuration_version=(
+                f"{M1_STATEMENT_SUPPORT_CONFIG_VERSION}-document-attribution-v1"
+                if citable_units_enabled
+                else M1_STATEMENT_SUPPORT_CONFIG_VERSION
+            ),
             input_overhead_units=OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS,
             maximum_output_units=OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
             cost_policy=ProviderCostPolicy(
@@ -676,7 +709,15 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 ),
             ),
         )
-        validation_profile = M1_EVIDENCE_VALIDATION_PROFILE
+        validation_profile = (
+            EvidenceValidationProfile(
+                validation_config_version=(
+                    f"m1-5-document-attribution-validation-v1-{ResearchModel.TERRA.value}"
+                )
+            )
+            if citable_units_enabled
+            else M1_EVIDENCE_VALIDATION_PROFILE
+        )
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
             database.session_factory
@@ -687,10 +728,24 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         ),
         m1_query_retrieval=m1_query_retrieval,
     )
+    answer_unit_of_work_factory = create_answer_validation_unit_of_work_factory(
+        database.session_factory,
+        include_document_attribution=citable_units_enabled,
+    )
+    generation_input_builder = (
+        CitableGenerationInputBuilder(
+            create_citable_source_unit_of_work_factory(database.session_factory)
+        )
+        if citable_units_enabled
+        else None
+    )
+    support_context_builder = (
+        build_document_contextual_support_input if citable_units_enabled else None
+    )
     generate_validated_answer_service = GenerateValidatedAnswerService(
-        unit_of_work_factory=create_answer_validation_unit_of_work_factory(
-            database.session_factory
-        ),
+        unit_of_work_factory=answer_unit_of_work_factory,
+        generation_input_builder=generation_input_builder,
+        support_context_builder=support_context_builder,
         answer_generator=answer_generator,
         support_evaluator=support_evaluator,
         generation_profile=generation_profile,
@@ -725,9 +780,6 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         model_services = {
             (ResearchModel.TERRA, ResearchModel.TERRA): generate_validated_answer_service
         }
-        answer_unit_of_work_factory = create_answer_validation_unit_of_work_factory(
-            database.session_factory
-        )
         for answer_model in ResearchModel:
             for support_model in ResearchModel:
                 if (answer_model, support_model) == (ResearchModel.TERRA, ResearchModel.TERRA):
@@ -736,16 +788,22 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 support_price = RESEARCH_MODEL_PRICES[support_model]
                 model_services[(answer_model, support_model)] = GenerateValidatedAnswerService(
                     unit_of_work_factory=answer_unit_of_work_factory,
+                    generation_input_builder=generation_input_builder,
+                    support_context_builder=support_context_builder,
                     answer_generator=generators[answer_model],
                     support_evaluator=evaluators[support_model],
-                    generation_profile=AnswerGenerationProfile(
+                    generation_profile=citable_answer_profile(answer_model)
+                    if citable_units_enabled
+                    else AnswerGenerationProfile(
                         generator_version=M1_ANSWER_GENERATOR_VERSION,
                         generation_config_version=answer_config_version(answer_model),
                         prompt_version=M1_ANSWER_PROMPT_VERSION,
                     ),
                     validation_profile=EvidenceValidationProfile(
                         validation_config_version=(
-                            M1_EVIDENCE_VALIDATION_PROFILE.validation_config_version
+                            f"m1-5-document-attribution-validation-v1-{support_model.value}"
+                            if citable_units_enabled
+                            else M1_EVIDENCE_VALIDATION_PROFILE.validation_config_version
                             if support_model is ResearchModel.TERRA
                             else "m1-evidence-validation-v1-luna-support"
                         )
@@ -769,7 +827,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     statement_support_accounting=StatementSupportAccountingProfile(
                         provider="openai",
                         model=support_model,
-                        configuration_version=support_config_version(support_model),
+                        configuration_version=(
+                            f"{support_config_version(support_model)}-document-attribution-v1"
+                            if citable_units_enabled
+                            else support_config_version(support_model)
+                        ),
                         input_overhead_units=(
                             OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS
                         ),
