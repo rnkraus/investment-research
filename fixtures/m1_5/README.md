@@ -583,7 +583,13 @@ terminal boundary is checked again at callback setup and before each content emi
 
 The display prints each question, the complete schema-parsed model proposal including proposed
 quotes before exact-quote resolution, individual statement-support decisions, the canonically
-persisted result, and the case outcome. If SDK schema parsing fails, it prints only the available
+persisted result, and the case outcome. Each support decision includes its statement and
+`evidence_texts`: the exact canonical text tuple passed to the support provider, in the same order,
+without trimming or normalization. This applies to both supported and rejected statements under
+either answer policy. It does not display the question or other context as part of the support
+input. A provider failure before a decision returns produces no support-decision event; existing
+safe failure diagnostics still apply. Historical reports do not retain these texts and cannot
+reconstruct an earlier failed support input. If SDK schema parsing fails, it prints only the available
 generated `output_text`, never HTTP headers, credentials, or complete SDK response metadata. A
 provider failure before any generated text cannot display an answer. Malformed support output
 uses the existing diagnostic callback. All proposals are labeled **Unvalidated model output**;
