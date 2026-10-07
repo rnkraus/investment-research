@@ -187,8 +187,12 @@ Canonical lexical + qualified dense hits → RRF ranks → whole-chunk budget �
 These pure functions make no provider calls and write no state. `RetrieveResearchService` can
 explicitly receive `RrfSelectionProfile` in its query dependency bundle, after canonical lane
 qualification. It translates the selected representatives into the existing source contract and
-persists both lane contributions with their fusion ranks. The normal composition still supplies
-`M1SelectionProfile`; there is no new environment setting, browser switch, or OpenAPI change.
+persists both lane contributions with their fusion ranks. Default API composition still supplies
+`M1SelectionProfile`. The opt-in API `research_profile=m1-5-citable-units` supplies
+`RrfSelectionProfile` together with the source-ID generation and document-attribution support
+path described in the [Research guide](../research/README.md#opt-in-workflow-and-evaluation-integration).
+There is no browser-facing policy switch or OpenAPI change. Compose forwarding and manual runtime
+verification are pending; the M1.5 plan records the remaining adoption gate.
 Canonical revalidation and statement-support checks are still required before any selected text
 can become citation evidence. A same-corpus comparison against M1 must precede any default-policy
 decision. Offline service tests and `test_rrf_retrieval_postgresql.py` exercise the opt-in path,

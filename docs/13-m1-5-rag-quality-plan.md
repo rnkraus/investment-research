@@ -818,14 +818,47 @@ requires M1 processing and complete external API providers with the unchanged mo
 Unknown names and credential-free acceptance/regression adapters are rejected. Worker and parser
 settings do not load the profile. Processing and research profiles remain separate.
 
-This block prepares and validates configuration only. The composition root still uses the existing
-M1 adapters, and Compose does not forward the new setting yet. Do not select the new profile for a
-website test until the following wiring block is complete. No default adoption or Step 2 acceptance
-is recorded. The focused format, lint, type, and settings checks passed all 169 settings tests.
+The first block prepared and validated configuration only; it did not yet change composition or
+Compose forwarding. The following wiring record supersedes that initial backend limitation,
+not the pending Compose and manual-test gate. No default adoption or Step 2 acceptance is recorded.
+The focused format, lint, type, and settings checks passed all 169 settings tests.
 The complete backend gate passed 1,640 unit tests; frontend formatting, lint, type, contract,
 and all 45 tests passed. Existing CI invokes the same backend gate and discovers the new tests.
 No production build, Docker runtime, browser, hosted CI, or paid-provider run was executed for this
 configuration-only block; runtime/source-opening verification belongs to the wiring block.
+
+#### Opt-in API composition (2026-10-08)
+
+`build_api_container` now selects the existing RRF selector, citable-unit generator/input builder,
+canonical document-prefix reader, and contextual support evaluator when the validated API setting
+is `research_profile=m1-5-citable-units`. The default `m1` profile retains copied-quote generation,
+M1 selection, and its existing support policy. No browser policy selector, public request field,
+provider, dependency, migration, reindexing, or new canonical citation identity is introduced.
+Both profiles preserve all four Terra/Luna generation/support pairs, model-specific prices, the
+shared monthly operation ledger, provider cleanup, and opt-in local failure diagnostics.
+
+The source-ID profile records the existing generator and model-specific prompt/configuration
+versions and `m1-5-document-attribution-validation-v1-{support_model}`. Support operations record
+their model-specific configuration with the `-document-attribution-v1` suffix. The application
+reloads canonical sources before preparation, evaluates support outside the answer transaction,
+and independently rechecks exact evidence and attribution state before atomic persistence.
+
+Offline API integration tests cover PDF and pasted-text locators, every model pair, repeated
+wording resolved to the selected occurrence, canonical span opening, foreign-workspace rejection,
+RRF provenance, operation accounting, unknown IDs, and unsupported statements. Existing CI
+already discovers these tests through its backend and PostgreSQL gates; no artificial workflow
+or frontend change is required because the public contract and source viewer remain unchanged.
+
+**Verification:** `verify_backend` passed formatting, lint, typing of 281 Python files, and all
+1,644 unit tests. `verify_postgres` passed empty upgrade/downgrade/upgrade, schema checks, seed,
+all 153 PostgreSQL integration tests, and owned-resource cleanup; seven separate SeaweedFS tests
+were expected skips. Frontend formatting, lint, type checking, contract checking, and all 45
+tests passed. No production build or full Docker application-runtime gate ran in this block.
+
+Compose does not forward `INVESTMENT_RESEARCH_RESEARCH_PROFILE` yet. The next runtime block must
+add and test that forwarding, then the owner must verify PDF/text citation opening on the local
+website before deciding the default. No paid-provider, browser, hosted-CI, default-adoption, or
+Step 2 acceptance result is inferred from this backend wiring.
 
 ### Step 3 — Bounded reranking experiment
 
