@@ -1,14 +1,16 @@
 """Application-owned persistence and provider contracts for evidence validation."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
     CanonicalEvidenceSpanSource,
+    ContextualStatementSupportInput,
     StatementSupportResult,
+    ValidatedEvidenceReference,
 )
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
@@ -66,6 +68,31 @@ class StatementSupportEvaluator(Protocol):
 
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
         """Return one typed support decision and content-free provider usage."""
+
+
+@runtime_checkable
+class ContextualStatementSupportEvaluator(StatementSupportEvaluator, Protocol):
+    """Opt-in support evaluation with source-separated original attribution context."""
+
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        """Evaluate a server-prepared input without authorizing additional factual evidence."""
+
+
+class StatementSupportContextBuilder(Protocol):
+    """Prepare original context from the current canonical validation snapshot."""
+
+    def __call__(
+        self,
+        *,
+        context: WorkspaceContext,
+        retrieval_run_id: UUID,
+        statement: str,
+        references: Sequence[ValidatedEvidenceReference],
+        sources: Mapping[UUID, CanonicalEvidenceSource | None],
+    ) -> ContextualStatementSupportInput | None:
+        """Return only eligible source pairs, or no input when any reference is invalid."""
 
 
 class EvidenceRepository(Protocol):

@@ -10,7 +10,7 @@ This module owns exact source spans, statement-to-source relationships, and immu
 | `contracts.py`   | Defines canonical source snapshots, validation decisions, and resolved spans.      |
 | `domain.py`      | Defines exact spans, relationships, validation rules, hashes, and invariants.      |
 | `ports.py`       | Defines canonical source, citation-read, statement-support, and persistence ports. |
-| `support_context.py` | Prepares bounded, source-separated original attribution context for an M1.5 experiment; not yet wired to evaluation. |
+| `support_context.py` | Builds bounded, source-separated original attribution context for the opt-in M1.5 support experiment. |
 | `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.  |
 
 ## Evidence chain
@@ -96,6 +96,20 @@ flowchart TD
 `StatementSupportEvaluator` returns an application-owned `StatementSupportResult`: the typed
 support decision plus content-free provider usage. It cannot authorize a source, document version,
 workspace, or citation range; those decisions remain with the surrounding canonical checks.
+
+The opt-in M1.5 `attribution` support policy uses `ContextualStatementSupportEvaluator` instead.
+Each exact citation is paired with a bounded prefix of its own canonical original block. The
+prefix may identify the subject, report, or date; all other factual support must come from the
+exact citation. It is untrusted text, not verified metadata. The normal M1 evaluator and website
+remain exact-text-only. See [the M1.5 contract](../../../../../docs/13-m1-5-rag-quality-plan.md)
+for prefix limits and the experiment boundary.
+
+Research obtains a detached canonical snapshot, evaluates outside the answer transaction, and
+counts the complete contextual input in the provider reservation. It rebuilds context from fresh
+canonical sources before persistence. A recorded decision can be reused only for the identical
+statement, references, context text, ranges, identities, and policy. Changed context fails closed
+without another provider call inside the transaction. Context does not create additional spans
+or broaden the stored citation.
 
 Each `AnswerValidation` stores the rule, target answer and optional statement, pass/fail result, safe reason, configuration version, and validation time. Failed rules require a reason. Partial unique indexes allow one result per answer-level rule and one result per statement-level rule.
 

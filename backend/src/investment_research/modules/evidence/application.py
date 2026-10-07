@@ -3,6 +3,8 @@
 from hashlib import sha256
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from investment_research.modules.documents.domain import DocumentLifecycleState, SourceLocatorKind
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
@@ -15,7 +17,9 @@ from investment_research.modules.evidence.contracts import (
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
+    ContextualStatementSupportEvaluator,
     EvidenceReadUnitOfWorkFactory,
+    StatementSupportContextBuilder,
     StatementSupportEvaluator,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -74,9 +78,15 @@ class ValidateGeneratedAnswerService:
         *,
         source_reader: CanonicalEvidenceSourceReader,
         support_evaluator: StatementSupportEvaluator,
+        support_context_builder: StatementSupportContextBuilder | None = None,
     ) -> None:
+        if support_context_builder is not None and not isinstance(
+            support_evaluator, ContextualStatementSupportEvaluator
+        ):
+            raise ValueError("support context requires a contextual evaluator")
         self._source_reader = source_reader
         self._support_evaluator = support_evaluator
+        self._support_context_builder = support_context_builder
 
     @classmethod
     def is_source_eligible(
@@ -217,13 +227,44 @@ class ValidateGeneratedAnswerService:
             source is not None and self._is_temporally_eligible(source) for source in sources
         )
         exact_span_valid = len(validated_references) == expected_reference_count
-        support_valid = (
-            exact_span_valid
-            and self._support_evaluator.evaluate(
-                statement_text,
-                tuple(reference.exact_text for reference in validated_references),
-            ).decision.supported
-        )
+        if self._support_context_builder is None:
+            support_valid = (
+                exact_span_valid
+                and self._support_evaluator.evaluate(
+                    statement_text,
+                    tuple(reference.exact_text for reference in validated_references),
+                ).decision.supported
+            )
+        else:
+            support_valid = False
+            if all(
+                (
+                    workspace_valid,
+                    candidate_valid,
+                    active_version_valid,
+                    temporal_valid,
+                    exact_span_valid,
+                )
+            ):
+                try:
+                    support_input = self._support_context_builder(
+                        context=context,
+                        retrieval_run_id=retrieval_run_id,
+                        statement=statement_text,
+                        references=validated_references,
+                        sources={
+                            source.retrieval_candidate_id: source
+                            for source in sources
+                            if source is not None
+                        },
+                    )
+                except ValidationError:
+                    support_input = None
+                if support_input is not None:
+                    assert isinstance(self._support_evaluator, ContextualStatementSupportEvaluator)
+                    support_valid = self._support_evaluator.evaluate_contextual(
+                        support_input
+                    ).decision.supported
         return (
             (
                 ValidationRule.WORKSPACE_SCOPE,
