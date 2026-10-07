@@ -373,9 +373,9 @@ independently supported statements or safely omitted, not bypass the evidence li
 **Input presentation revision (2026-10-07):** The previous v1 adapter serialized the original block
 beside a separate ID/range catalog, requiring the model to associate character ranges with text.
 The v2 profile makes that association explicit without changing unit boundaries, request-scoped
-IDs, evidence resolution, model selection, support policies, or website defaults. Its generator
-version is `openai-responses-citable-units-v2`, its prompt is
-`m1-5-citable-units-en-answer-prompt-v2`, and its model-specific configuration ends in
+IDs, evidence resolution, model selection, support policies, or website defaults. The initial
+revision used generator `openai-responses-citable-units-v2`, prompt
+`m1-5-citable-units-en-answer-prompt-v2`, and a model-specific configuration ending in
 `low-citable-units-en-v2`. The canonical unit policy remains `m1-5-citable-units-en-v1`.
 Historical comparisons below retain their recorded versions and results; they do not establish
 v2 quality. Preflight still checks the complete serialized input, prompt, schema, and expansion
@@ -391,6 +391,37 @@ contract, and 45 tests passed. The credential-free RRF/citable-units/document-at
 reported the v2 answer prompt and unchanged USD 0.80 cap. No paid provider call, production build,
 or hosted-CI verification was performed for this revision. These results establish transport and
 validation correctness, not improved live answer or source-selection quality.
+
+**Standalone-claim prompt revision (2026-10-07):** The current prompt is
+`m1-5-citable-units-en-answer-prompt-v3`; its model-specific generation configuration ends in
+`low-citable-units-en-v3`. Generator and input presentation remain v2, canonical units and IDs
+remain v1, and historical observations are not rewritten. The prompt and statement-field schema
+description now explicitly require claims to be understandable without previous statements or
+`rendered_text`. State the supported subject, metric, period, and units when needed; select the
+supporting units before composing the claim, retain qualifications, and avoid unrelated additions.
+An absent fact in one passage or a generic notice cannot establish an archive-wide negative claim.
+
+Four short synthetic examples outside the evaluation corpus illustrate independent financial
+claims, an unsupported inference requiring `INSUFFICIENT`, a `PARTIAL` answer containing only its
+supported part, and attributed conflicting reports. Example facts are not current
+evidence. This follows the official guidance on [clear instructions and varied examples](https://developers.openai.com/api/docs/guides/prompt-engineering)
+and [concise reasoning-model prompts](https://developers.openai.com/api/docs/guides/reasoning-best-practices),
+without requesting hidden reasoning or adding another generation stage. There is no pronoun
+blacklist, regex-based truth check, automatic claim salvage, repair loop, evaluator relaxation,
+model change, budget increase, or website adoption. Instruction delivery and schema behavior can
+be tested offline; live adherence and judge agreement still require separately authorized
+evaluation and independent review.
+
+**Standalone-claim verification (2026-10-07):** Focused checks passed 245 tests. Complete backend
+formatting, linting, typing, and all 1,629 unit tests passed. The isolated PostgreSQL gate passed
+143 integration tests, with seven separate S3 tests intentionally skipped; the empty migration
+cycle, schema checks, and test-resource cleanup passed. Frontend formatting, linting, typing,
+contract generation checks, and all 45 tests passed. Credential-free preflight reported prompt v3
+and the unchanged USD 0.80 cap. Existing CI discovery covers the tests without a workflow change.
+No paid provider call, production build, browser check, or hosted-CI verification was performed
+for this revision. The longer instructions consume part of the existing input allowance; preflight
+still fails closed rather than increasing its ceiling. These checks do not establish improved
+live statement quality or source selection.
 
 The strict provider schema defines the current catalog IDs once as a shared enum and forbids extra
 fields. The adapter also checks catalog membership and duplicate IDs, independently of provider

@@ -129,9 +129,16 @@ or reverting to copied quotes. Research calls the free `preflight` before canoni
 reservation; the evaluation budget wrapper also preflights before its own reservation. An empty
 catalog is routed to the existing insufficient-result path with no generation or support call.
 
-`citable_answer_profile` identifies the selected Terra/Luna model with v2 generator, configuration,
-and prompt versions. The canonical English unit policy and request-scoped identities remain v1;
-historical v1 input-format measurements are not rewritten or treated as v2 results. Offline tests
+`citable_answer_profile` identifies the selected Terra/Luna model with the v2 generator/input and
+v3 configuration/prompt. The canonical English unit policy and request-scoped identities remain
+v1; historical measurements are not rewritten or treated as results for the current prompt. The
+v3 prompt and statement schema description require independently understandable claims with
+supported subject, metric, period, and units where needed. Four unrelated synthetic examples show
+financial claims, unsupported inference, partial coverage, and conflicting reports; their facts
+cannot become evidence for a real request. A pronoun inside a self-contained statement is not
+rejected by a word blacklist. Missing evidence must use the existing insufficient path rather
+than an unrelated quote supporting an archive-wide absence claim. These are model instructions,
+not semantic guarantees; canonical and statement-support validation remain mandatory. Offline tests
 cover ID/text pairing, repeated wording, separate sources, Unicode, PDF line breaks, exact block
 reconstruction, unchanged context/reservation bounds, and escaped-input overflow before a call.
 Live quality still requires an explicitly authorized comparison.

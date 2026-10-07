@@ -311,6 +311,45 @@ def test_json_escaping_overflow_fails_before_provider_call() -> None:
     assert not client.responses.calls
 
 
+def test_request_instructions_cover_independent_claims_and_evidence_gaps() -> None:
+    generation_input = make_input()
+    generator, client = make_generator(generation_input)
+    generator.generate(generation_input)
+    instructions = cast(str, client.responses.calls[0]["instructions"])
+    # These assertions freeze instruction delivery, not live model adherence or truth.
+    assert "Each statement is checked independently" in instructions
+    assert "subject, metric, period, and units" in instructions
+    assert "Select the supporting units before composing each statement" in instructions
+    assert "does not establish an archive-wide" in instructions
+    assert "cite no units" in instructions
+    assert "Examples illustrate wording and coverage rules only" in instructions
+    assert "Independent financial claims" in instructions
+    assert "Unsupported inference and absent evidence" in instructions
+    assert "Partially answerable question" in instructions
+    assert "Direct disagreement" in instructions
+    assert "never facts from these examples" in instructions
+    assert all(
+        str(unit.source_unit_id) not in instructions for unit in generation_input.catalog.units
+    )
+    assert len(client.responses.calls) == 1
+
+
+def test_statement_schema_describes_independent_claims_without_a_word_blacklist() -> None:
+    generation_input = make_input(text="Harbor Instruments reports that it has enough staff.")
+    payload = make_payload(generation_input)
+    statement = cast(list[dict[str, object]], payload["statements"])[0]
+    statement["text"] = "Harbor Instruments reports that it has enough staff."
+    generator, _ = make_generator(generation_input, payload=payload)
+    answer = generator.generate(generation_input).answer
+    assert answer.statements[0].text == statement["text"]
+    schema = to_strict_json_schema(adapter.citable_answer_schema(generation_input.catalog))
+    assert schema["$defs"]["_CitableStatement"]["properties"]["text"]["description"] == (
+        "Self-contained factual claim, checked independently of other statements"
+    )
+    # A pronoun inside a self-contained sentence is not forbidden by a regex or schema rule.
+    assert answer.statements[0].evidence[0].exact_text == generation_input.sources[0].text
+
+
 def test_strict_sdk_schema_has_one_shared_catalog_enum_and_required_fields() -> None:
     generation_input = make_input(text="A. " * 256)
     schema = to_strict_json_schema(adapter.citable_answer_schema(generation_input.catalog))
@@ -563,8 +602,8 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v2"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v2"
-    assert "citable-units-en-v2" in profile.generation_config_version
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v3"
+    assert "citable-units-en-v3" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v1"
 
 
