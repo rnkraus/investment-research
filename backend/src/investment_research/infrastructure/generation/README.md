@@ -6,11 +6,12 @@ but they cannot validate, persist, or publish them.
 
 ## Contents
 
-| File               | Responsibility                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| `__init__.py`      | Identifies the generation-adapter package without exporting an implementation.          |
-| `deterministic.py` | Implements the bounded synthetic M0.0 fixture case without a model or network call.     |
-| `openai.py`        | Implements the bounded M1 typed Responses API adapter behind the same application port. |
+| File                      | Responsibility                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| `__init__.py`             | Identifies the generation-adapter package without exporting an implementation.          |
+| `deterministic.py`        | Implements the bounded synthetic M0.0 fixture case without a model or network call.     |
+| `openai.py`               | Implements the bounded M1 typed Responses API adapter behind the same application port. |
+| `openai_citable_units.py` | Implements the standalone M1.5 source-unit ID profile, not yet wired into Research.     |
 
 ## Trust boundary
 
@@ -85,3 +86,43 @@ generation provider configuration is present. It then owns and closes the adapte
 lifetime. When that configuration is absent, the deterministic fixture adapter remains selected.
 Normal CI therefore performs no provider network calls; a separate explicit live-provider smoke
 check owns any real-provider verification.
+
+## Standalone M1.5 source-unit ID adapter
+
+`OpenAICitableUnitAnswerGenerator` reuses `OpenAIAnswerGenerator`'s bounded request, token-usage
+validation, safe failure mapping, and explicitly injected local-output callbacks. Its prompt,
+schema, and evidence resolution are separate extension points; M1's exact-substring behavior and
+version identifiers remain unchanged. Neither bootstrap nor the evaluation runner selects this
+new profile yet. The [Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1)
+governs integration and adoption.
+
+The adapter requires `CitableAnswerGenerationInput`, whose trusted workspace, request, ordered
+sources, and canonical catalog must agree. It revalidates that input before requesting generation.
+Each original source text appears once beside an ordered ID/range catalog. The strict provider
+schema defines the catalog's UUID strings once in a shared `SourceUnitId` enum. Each statement
+selects one or two IDs, never quote text, offsets, or candidate identifiers. Server-side membership
+and duplicate checks remain independent of schema compliance.
+
+```mermaid
+flowchart LR
+    INPUT[Scoped canonical catalog and question] --> PREFLIGHT[Validate scope and input reservation]
+    PREFLIGHT --> MODEL[One bounded Responses call]
+    MODEL --> IDS[Statements with source-unit IDs]
+    IDS --> RESOLVE[Resolve exact catalog ranges and text]
+    RESOLVE --> PROPOSAL[Existing unvalidated answer contract]
+    PROPOSAL --> VALIDATE[Mandatory canonical and support validation]
+```
+
+Catalog preparation admits at most 256 units, but a request must also fit the existing 16,000-unit
+input-overhead reservation. Preflight measures UTF-8 bytes for the serialized metadata, prompt,
+and schema, reserving 512 additional units each for SDK schema expansion and request framing.
+Question/source bytes are already reserved by M1 accounting and are not counted twice. A metadata
+overflow fails before any generation call rather than raising the budget, silently dropping units,
+or reverting to copied quotes. An empty catalog also makes no provider call; integration must route
+it to the existing no-evidence path.
+
+`citable_answer_profile` identifies the selected Terra/Luna model and English v1 unit policy with
+new generator/configuration/prompt versions. `create_openai_citable_unit_answer_generator` disables
+SDK retries and owns its client just like M1. A known ID still permits an unsupported proposal;
+only subsequent support and canonical validation can make it publishable. No migration,
+reprocessing, historical-citation rewrite, API, or frontend change is introduced here.
