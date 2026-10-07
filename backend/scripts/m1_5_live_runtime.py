@@ -202,7 +202,9 @@ def provider_resources(
     except LiveBaselineLimitError:
         raise LiveRuntimeError("evaluation support prompt is not approved") from None
     expected_support_prompt = statement_support_prompt_version(
-        attribution=support_policy == "attribution", explanations=local_output is not None
+        attribution=support_policy != "m1",
+        explanations=local_output is not None,
+        document_attribution=support_policy == "document_attribution",
     )
     if plan.configuration.support_prompt_version != expected_support_prompt:
         raise LiveRuntimeError("evaluation support prompt does not match the inspection mode")
@@ -248,7 +250,8 @@ def provider_resources(
             model=plan.configuration.support_model,
             local_validation_output=None if local_output is None else local_output.support_failure,
             include_decision_reason=local_output is not None,
-            include_attribution_context=support_policy == "attribution",
+            include_attribution_context=support_policy != "m1",
+            include_document_attribution_context=support_policy == "document_attribution",
         )
         clients.callback(close_client, support, "support_client_close")
         with ExitStack() as index_clients:

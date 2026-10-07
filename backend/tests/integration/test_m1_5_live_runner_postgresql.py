@@ -15,6 +15,7 @@ from investment_research.infrastructure.search.deterministic_index import (
     DeterministicSqliteDenseIndex,
 )
 from investment_research.modules.evidence.contracts import (
+    M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     ContextualStatementSupportInput,
     StatementSupportDecision,
     StatementSupportResult,
@@ -205,14 +206,21 @@ class ReviewedContextualSupportEvaluator(ReviewedUnitSupportEvaluator):
             assert (
                 item.reference.document_version_id == item.attribution_context.document_version_id
             )
-            assert item.reference.structure_block_id == item.attribution_context.structure_block_id
+            if item.attribution_context.policy_version == M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION:
+                assert item.attribution_context.workspace_id is not None
+                assert item.attribution_context.processing_run_id is not None
+                assert "Northstar" in item.attribution_context.text
+            else:
+                assert (
+                    item.reference.structure_block_id == item.attribution_context.structure_block_id
+                )
         return super().evaluate(
             request.statement, tuple(item.reference.exact_text for item in request.evidence)
         )
 
 
 @pytest.mark.parametrize("retrieval_policy", ["m1", "rrf"])
-@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
 def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     integration_database_engine: Engine,
     tmp_path: Path,
@@ -231,7 +239,7 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     generator = ScriptedCitableGenerator()
     support = (
         ReviewedContextualSupportEvaluator(manifest)
-        if support_policy == "attribution"
+        if support_policy != "m1"
         else ReviewedUnitSupportEvaluator(manifest)
     )
     report = run_live_baseline(

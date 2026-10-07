@@ -11,7 +11,9 @@ import pytest
 from investment_research.infrastructure.evidence.openai import (
     LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
     M1_5_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
+    M1_5_DOCUMENT_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
     M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
+    M1_5_LOCAL_DOCUMENT_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
     M1_STATEMENT_SUPPORT_PROMPT_VERSION,
 )
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
@@ -54,19 +56,28 @@ def test_rrf_plan_changes_only_the_selector_configuration() -> None:
 
 
 @pytest.mark.parametrize("explanations", [False, True])
+@pytest.mark.parametrize("support_policy", ["attribution", "document_attribution"])
 def test_attribution_policy_is_explicit_versioned_and_does_not_raise_limits(
     explanations: bool,
+    support_policy: live.LiveSupportPolicy,
 ) -> None:
     original = live.build_plan(support_explanations=explanations)
-    selected = live.build_plan(support_policy="attribution", support_explanations=explanations)
-    assert selected.configuration.support_prompt_version == (
+    selected = live.build_plan(support_policy=support_policy, support_explanations=explanations)
+    expected = (
         M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION
         if explanations
         else M1_5_ATTRIBUTION_SUPPORT_PROMPT_VERSION
     )
+    if support_policy == "document_attribution":
+        expected = (
+            M1_5_LOCAL_DOCUMENT_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION
+            if explanations
+            else M1_5_DOCUMENT_ATTRIBUTION_SUPPORT_PROMPT_VERSION
+        )
+    assert selected.configuration.support_prompt_version == expected
     assert (
         live.support_policy_for_prompt_version(selected.configuration.support_prompt_version)
-        == "attribution"
+        == support_policy
     )
     assert (
         live.support_policy_for_prompt_version(original.configuration.support_prompt_version)

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from investment_research.modules.evidence.contracts import (
+    M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     ContextualStatementSupportInput,
     StatementSupportResult,
 )
@@ -92,7 +93,12 @@ class LocalEvaluationOutput:
             role="support",
             model=self.support_model,
             statement=request.statement,
-            support_policy="attribution",
+            support_policy=(
+                "document_attribution"
+                if request.evidence[0].attribution_context.policy_version
+                == M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
+                else "attribution"
+            ),
             evidence=[
                 {
                     "document_id": str(item.reference.document_id),
@@ -100,6 +106,10 @@ class LocalEvaluationOutput:
                     "structure_block_id": str(item.reference.structure_block_id),
                     "exact_text": item.reference.exact_text,
                     "attribution_context": item.attribution_context.text,
+                    "attribution_structure_block_id": str(
+                        item.attribution_context.structure_block_id
+                    ),
+                    "context_policy_version": item.attribution_context.policy_version,
                 }
                 for item in request.evidence
             ],

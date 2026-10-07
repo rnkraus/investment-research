@@ -54,9 +54,19 @@ from scripts.m1_5_live_providers import (
     LiveProviderCalls,
 )
 from scripts.m1_5_local_output import LocalEvaluationOutput
-from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveBaselineLimitError, build_plan
+from scripts.plan_m1_5_live_baseline import (
+    LiveBaselineBudget,
+    LiveBaselineLimitError,
+    LiveSupportPolicy,
+    build_plan,
+)
 from tests.unit.test_openai_citable_unit_answer_generator import make_generator, make_input
-from tests.unit.test_statement_support_context import make_source_and_reference, prepare
+from tests.unit.test_statement_support_context import (
+    make_document_source_and_reference,
+    make_source_and_reference,
+    prepare,
+    prepare_document,
+)
 
 MARKER = "synthetic-private-content-marker"
 CONFIG = "openai-text-embedding-3-small-1536-v1"
@@ -203,11 +213,18 @@ def test_all_four_roles_reserve_and_record_reported_usage_without_content() -> N
     assert all(MARKER not in item.model_dump_json() for item in calls.records)
 
 
-def test_contextual_support_counts_complete_payload_without_recording_content() -> None:
-    request = prepare(*make_source_and_reference())
+@pytest.mark.parametrize("support_policy", ["attribution", "document_attribution"])
+def test_contextual_support_counts_complete_payload_without_recording_content(
+    support_policy: LiveSupportPolicy,
+) -> None:
+    request = (
+        prepare_document(*make_document_source_and_reference())
+        if support_policy == "document_attribution"
+        else prepare(*make_source_and_reference())
+    )
     assert request is not None
     delegate = RecordingProviders()
-    plan = build_plan(support_policy="attribution")
+    plan = build_plan(support_policy=support_policy)
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     result = BudgetedSupportEvaluator(delegate, calls).evaluate_contextual(request)
     expected = LiveBaselineBudget(plan).reserve(
@@ -222,20 +239,33 @@ def test_contextual_support_counts_complete_payload_without_recording_content() 
     assert request.evidence[0].attribution_context.text not in calls.records[0].model_dump_json()
 
 
-@pytest.mark.parametrize("failure", ["budget", "policy", "input"])
+@pytest.mark.parametrize("support_policy", ["attribution", "document_attribution"])
+@pytest.mark.parametrize("failure", ["budget", "policy", "input", "mixed_profile"])
 def test_contextual_support_rejects_invalid_admission_without_calls_or_reservations(
     failure: str,
+    support_policy: LiveSupportPolicy,
 ) -> None:
-    request = prepare(*make_source_and_reference())
+    request = (
+        prepare_document(*make_document_source_and_reference())
+        if support_policy == "document_attribution"
+        else prepare(*make_source_and_reference())
+    )
     assert request is not None
     delegate = RecordingProviders()
     plan = build_plan(
-        support_policy="m1" if failure == "policy" else "attribution",
+        support_policy="m1" if failure == "policy" else support_policy,
         maximum_spend_micro_usd=1 if failure == "budget" else 800_000,
     )
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     if failure == "input":
         request = request.model_copy(update={"evidence": ()})
+    elif failure == "mixed_profile":
+        request = (
+            prepare(*make_source_and_reference())
+            if support_policy == "document_attribution"
+            else prepare_document(*make_document_source_and_reference())
+        )
+        assert request is not None
     with pytest.raises(LiveBaselineLimitError):
         BudgetedSupportEvaluator(delegate, calls).evaluate_contextual(request)
     assert delegate.requests == 0
@@ -243,21 +273,30 @@ def test_contextual_support_rejects_invalid_admission_without_calls_or_reservati
     assert calls.budget.reserved_cost_micro_usd == 0
 
 
+@pytest.mark.parametrize("support_policy", ["attribution", "document_attribution"])
 def test_contextual_support_local_output_keeps_quote_and_attribution_separate(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    support_policy: LiveSupportPolicy,
 ) -> None:
     monkeypatch.delenv("CI", raising=False)
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    request = prepare(*make_source_and_reference())
+    request = (
+        prepare_document(*make_document_source_and_reference())
+        if support_policy == "document_attribution"
+        else prepare(*make_source_and_reference())
+    )
     assert request is not None
     delegate = RecordingProviders(diagnostic_reason="The named report identifies the subject.")
-    calls = LiveProviderCalls(LiveBaselineBudget(build_plan(support_policy="attribution")))
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan(support_policy=support_policy)))
     local = LocalEvaluationOutput(answer_model="synthetic", support_model="synthetic")
     BudgetedSupportEvaluator(delegate, calls, local).evaluate_contextual(request)
     output = json.loads(capsys.readouterr().out)
-    assert output["support_policy"] == "attribution"
+    assert output["support_policy"] == support_policy
+    assert output["evidence"][0]["attribution_structure_block_id"] == str(
+        request.evidence[0].attribution_context.structure_block_id
+    )
     assert output["evidence"][0]["exact_text"] == request.evidence[0].reference.exact_text
     assert (
         output["evidence"][0]["attribution_context"] == request.evidence[0].attribution_context.text

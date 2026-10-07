@@ -7,6 +7,8 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from investment_research.modules.evidence.contracts import (
+    M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
+    M1_5_SUPPORT_CONTEXT_POLICY_VERSION,
     ContextualStatementSupportInput,
     StatementSupportInput,
     StatementSupportResult,
@@ -234,12 +236,10 @@ class BudgetedSupportEvaluator:
     ) -> StatementSupportResult:
         """Count the complete context payload before the single opt-in provider request."""
 
-        if (
-            support_policy_for_prompt_version(
-                self.calls.budget.plan.configuration.support_prompt_version
-            )
-            != "attribution"
-        ):
+        support_policy = support_policy_for_prompt_version(
+            self.calls.budget.plan.configuration.support_prompt_version
+        )
+        if support_policy == "m1":
             raise LiveBaselineLimitError("evaluation support policy does not match the input")
         delegate = self.delegate
         if not isinstance(delegate, ContextualStatementSupportEvaluator):
@@ -248,6 +248,17 @@ class BudgetedSupportEvaluator:
             request = ContextualStatementSupportInput.model_validate(request.model_dump())
         except ValidationError:
             raise LiveBaselineLimitError("evaluation contextual support input is invalid") from None
+        expected_policy = (
+            M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
+            if support_policy == "document_attribution"
+            else M1_5_SUPPORT_CONTEXT_POLICY_VERSION
+        )
+        if any(
+            item.attribution_context.policy_version != expected_policy for item in request.evidence
+        ):
+            raise LiveBaselineLimitError(
+                "evaluation support context policy does not match the plan"
+            )
         result = self.calls.invoke(
             ProviderOperationKind.STATEMENT_SUPPORT,
             payload_utf8_bytes=len(request.model_dump_json().encode("utf-8")),
