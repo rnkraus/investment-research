@@ -382,6 +382,35 @@ canonical workspace, request/candidate, active-version, processing, temporal, te
 A known ID is not proof of support. Do not combine separated units into a larger implied quote or
 use fuzzy matching to rescue an invalid reference.
 
+**Support attribution context — preparation only (2026-10-07):** Local support explanations
+identified an input gap: a quote can establish a constraint while omitting the company, report
+title, or date visible to the answer generator. The prepared experimental contract is
+`ContextualStatementSupportInput` in Evidence; `support_context.py` builds it without database or
+provider calls. This block does not yet pass context to the evaluator or change runtime behavior.
+
+For each exact reference, independently recheck canonical workspace, retrieval, active-version,
+processing, temporal, identity, media locator, text, hash, and original range eligibility. Reject
+the complete preparation if any source or reference fails. Keep each reference paired with a
+prefix of its own immutable `StructureBlock`: start at its first non-whitespace character, stop
+at the first blank-line paragraph separator (`LF`, optional spaces/tabs, `LF`) or 800 Unicode
+code points, and exclude trailing whitespace only by reducing the range. Preserve all
+characters inside that range. The context policy is `m1-5-same-block-attribution-v1`; quotes plus
+their contexts together still fit within 24,000 code points, with at most two distinct references.
+
+This prefix is untrusted original attribution context, not a verified metadata field or an
+automatic header extractor. It may identify the subject/report/date of that same quote; it must
+not rescue a factual claim absent from the exact cited evidence. Never combine headers and quotes
+from different documents, manufacture company/date values, normalize original text, expand a
+citation to include the prefix, or create extra `EvidenceSpan` records merely for context. A block
+without identifying text remains ambiguous. Cross-page PDF header lookup is not implemented.
+
+The next integration block must use a separately versioned, opt-in support profile, include context
+in provider-input accounting and recorded-decision identity, evaluate outside the answer transaction,
+and rebuild context from freshly rechecked canonical sources before reusing a result at persistence.
+Retain the frozen M1 exact-text-only path, normal runtime defaults, local-output restrictions, and
+unchanged spend ceiling. Quality improvement remains unproven until a separately authorized live
+comparison; a local model reason is a diagnostic, not independent evidence of correctness.
+
 Create or reuse `EvidenceSpan` records only through the existing validated-answer persistence path.
 Offering a unit creates no evidence record. Retain the existing PDF locator, pasted-text absolute
 range calculation, evidence-span URL, HTTP/OpenAPI events, and source viewer. No migration,

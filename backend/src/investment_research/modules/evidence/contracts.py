@@ -1,7 +1,7 @@
 """Typed application contracts for canonical server-side evidence validation."""
 
 from datetime import UTC, datetime
-from typing import Self
+from typing import Final, Literal, Self
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -228,6 +228,95 @@ class ValidatedEvidenceReference(ImmutableEvidenceContract):
                 raise ValueError("source_end_character must follow source_start_character")
             if self.source_end_character - self.source_start_character != len(self.exact_text):
                 raise ValueError("text-passage source offsets must match exact_text length")
+        return self
+
+
+M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT = 800
+M1_5_SUPPORT_CONTEXT_POLICY_VERSION: Final = "m1-5-same-block-attribution-v1"
+
+
+class OriginalSupportContext(ImmutableEvidenceContract):
+    """Bounded original block prefix for attribution, not additional factual evidence."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    policy_version: Literal["m1-5-same-block-attribution-v1"] = M1_5_SUPPORT_CONTEXT_POLICY_VERSION
+    document_id: UUID
+    document_version_id: UUID
+    structure_block_id: UUID
+    start_character: int = Field(ge=0)
+    end_character: int = Field(gt=0)
+    text: str = Field(min_length=1, max_length=M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT, repr=False)
+
+    @model_validator(mode="after")
+    def require_exact_visible_range(self) -> Self:
+        """Use unchanged Unicode-code-point ranges without interpreting a report header."""
+
+        if self.end_character - self.start_character != len(self.text) or not self.text.strip():
+            raise ValueError("support context must contain visible text matching its range")
+        return self
+
+
+class ContextualStatementEvidence(ImmutableEvidenceContract):
+    """Keep an exact reference paired with context from that same immutable block."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    reference: ValidatedEvidenceReference
+    attribution_context: OriginalSupportContext
+
+    @model_validator(mode="after")
+    def require_same_original_block(self) -> Self:
+        """Do not attach one document's header to another document's quote."""
+
+        reference = self.reference
+        context = self.attribution_context
+        if (
+            reference.document_id,
+            reference.document_version_id,
+            reference.structure_block_id,
+        ) != (context.document_id, context.document_version_id, context.structure_block_id):
+            raise ValueError("support context must belong to the cited original block")
+        return self
+
+
+class ContextualStatementSupportInput(ImmutableEvidenceContract):
+    """Prepared M1.5 input whose context cannot replace exact cited factual evidence."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    statement: StatementText
+    evidence: tuple[ContextualStatementEvidence, ...] = Field(
+        min_length=1, max_length=M1_STATEMENT_EVIDENCE_LIMIT
+    )
+
+    @model_validator(mode="after")
+    def require_bounded_unique_evidence(self) -> Self:
+        """Retain the M1 total text bound and distinct original citation locations."""
+
+        if not self.statement.strip():
+            raise ValueError("support statement must contain a non-whitespace character")
+        if any(not item.reference.exact_text.strip() for item in self.evidence):
+            raise ValueError("contextual support evidence must contain visible quote text")
+        if (
+            sum(
+                len(item.reference.exact_text) + len(item.attribution_context.text)
+                for item in self.evidence
+            )
+            > M1_CONTEXT_CHARACTER_LIMIT
+        ):
+            raise ValueError("contextual support input exceeds the M1 context character limit")
+        keys = tuple(
+            (
+                item.reference.document_version_id,
+                item.reference.structure_block_id,
+                item.reference.start_character,
+                item.reference.end_character,
+            )
+            for item in self.evidence
+        )
+        if len(keys) != len(set(keys)):
+            raise ValueError("contextual support evidence must have distinct original ranges")
         return self
 
 
