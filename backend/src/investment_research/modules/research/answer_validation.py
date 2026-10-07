@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from investment_research.modules.evidence.application import ValidateGeneratedAnswerService
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
+    ContextualStatementSupportInput,
     EvidenceValidationDecision,
     EvidenceValidationProfile,
     StatementSupportDecision,
@@ -23,7 +24,9 @@ from investment_research.modules.evidence.domain import (
 )
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
+    ContextualStatementSupportEvaluator,
     EvidenceRepository,
+    StatementSupportContextBuilder,
     StatementSupportEvaluator,
     StatementSupportProviderConfigurationError,
     StatementSupportProviderContractError,
@@ -73,7 +76,7 @@ from investment_research.modules.research.ports import (
 
 type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
-type SupportKey = tuple[str, tuple[str, ...]]
+type SupportKey = tuple[str, tuple[str, ...]] | ContextualStatementSupportInput
 type RejectionDiagnostic = Callable[[UnvalidatedGeneratedAnswer, EvidenceValidationDecision], None]
 
 
@@ -109,6 +112,15 @@ class _RecordingStatementSupportEvaluator:
         self.results[key] = result
         return result
 
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        if not isinstance(self._evaluator, ContextualStatementSupportEvaluator):
+            raise StatementSupportProviderConfigurationError("contextual support is unavailable")
+        result = self._evaluator.evaluate_contextual(request)
+        self.results[request] = result
+        return result
+
 
 @dataclass(frozen=True, slots=True)
 class _RecordedStatementSupportEvaluator:
@@ -117,7 +129,15 @@ class _RecordedStatementSupportEvaluator:
     results: dict[SupportKey, StatementSupportResult]
 
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
-        result = self.results.get((statement, tuple(evidence_texts)))
+        return self._result_for((statement, tuple(evidence_texts)))
+
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        return self._result_for(request)
+
+    def _result_for(self, key: SupportKey) -> StatementSupportResult:
+        result = self.results.get(key)
         if result is not None:
             return result
         return StatementSupportResult(
@@ -185,6 +205,24 @@ class _AccountedStatementSupportEvaluator:
             + len(statement.encode("utf-8"))
             + sum(len(evidence_text.encode("utf-8")) for evidence_text in evidence_texts)
         )
+        return self._execute(
+            maximum_input_units, lambda: self.evaluator.evaluate(statement, evidence_texts)
+        )
+
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        evaluator = self.evaluator
+        if not isinstance(evaluator, ContextualStatementSupportEvaluator):
+            raise StatementSupportProviderConfigurationError("contextual support is unavailable")
+        maximum_input_units = self.accounting.input_overhead_units + len(
+            request.model_dump_json().encode("utf-8")
+        )
+        return self._execute(maximum_input_units, lambda: evaluator.evaluate_contextual(request))
+
+    def _execute(
+        self, maximum_input_units: int, call: Callable[[], StatementSupportResult]
+    ) -> StatementSupportResult:
         return self.executor.execute(
             self.context,
             ProviderOperationAttempt(
@@ -201,7 +239,7 @@ class _AccountedStatementSupportEvaluator:
                 ),
                 cost_policy=self.accounting.cost_policy,
             ),
-            lambda: self.evaluator.evaluate(statement, evidence_texts),
+            call,
             lambda result: result.usage,
             self._classify_error,
         )
@@ -238,6 +276,7 @@ class GenerateValidatedAnswerService:
         generation_accounting: AnswerGenerationAccountingProfile | None = None,
         statement_support_accounting: StatementSupportAccountingProfile | None = None,
         rejection_diagnostic: RejectionDiagnostic | None = None,
+        support_context_builder: StatementSupportContextBuilder | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
@@ -257,6 +296,11 @@ class GenerateValidatedAnswerService:
         self._answer_generator = answer_generator
         self._generation_input_builder = generation_input_builder
         self._support_evaluator = support_evaluator
+        if support_context_builder is not None and not isinstance(
+            support_evaluator, ContextualStatementSupportEvaluator
+        ):
+            raise ValueError("support context requires a contextual evaluator")
+        self._support_context_builder = support_context_builder
         self._generation_profile = generation_profile
         self._validation_profile = validation_profile
         self._insufficient_message = insufficient_message
@@ -323,6 +367,7 @@ class GenerateValidatedAnswerService:
         initial_decision = ValidateGeneratedAnswerService(
             source_reader=source_snapshot,
             support_evaluator=support_evaluator,
+            support_context_builder=self._support_context_builder,
         ).validate(context, retrieval_result.retrieval_run.id, generated_answer)
 
         if progress is not None:
@@ -353,6 +398,7 @@ class GenerateValidatedAnswerService:
                 decision = ValidateGeneratedAnswerService(
                     source_reader=unit_of_work.evidence_sources,
                     support_evaluator=_RecordedStatementSupportEvaluator(support_evaluator.results),
+                    support_context_builder=self._support_context_builder,
                 ).validate(
                     context,
                     retrieval_result.retrieval_run.id,

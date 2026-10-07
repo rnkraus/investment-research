@@ -27,6 +27,7 @@ from investment_research.infrastructure.evidence.openai import (
     create_openai_statement_support_evaluator,
 )
 from investment_research.modules.evidence.contracts import (
+    ContextualStatementSupportInput,
     StatementSupportDecision,
     StatementSupportResult,
 )
@@ -38,6 +39,7 @@ from investment_research.modules.evidence.ports import (
 )
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.contracts import M1_CONTEXT_CHARACTER_LIMIT
+from tests.unit.test_statement_support_context import make_source_and_reference, prepare
 
 STATEMENT = "A transformer shortage constrained new customer deployments."
 EVIDENCE_TEXTS = ("A shortage of high-voltage transformers constrained new customer deployments.",)
@@ -179,6 +181,100 @@ def test_supports_sends_one_bounded_stateless_request(supported: bool) -> None:
         "evidence_texts": list(EVIDENCE_TEXTS),
         "statement": STATEMENT,
     }
+
+
+def contextual_input() -> ContextualStatementSupportInput:
+    source, reference = make_source_and_reference()
+    request = prepare(source, reference)
+    assert request is not None
+    return request
+
+
+@pytest.mark.parametrize("supported", [False, True])
+def test_contextual_support_sends_only_source_paired_allowlisted_fields(supported: bool) -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(
+            response=StubParsedResponse(output_parsed=StatementSupportDecision(supported=supported))
+        )
+    )
+    evaluator = OpenAIStatementSupportEvaluator(
+        client=cast(OpenAI, client), include_attribution_context=True
+    )
+    request = contextual_input()
+    result = evaluator.evaluate_contextual(request)
+
+    assert result.decision.supported is supported
+    assert result.diagnostic_reason is None
+    assert result.usage == ProviderUsage(input_units=90, output_units=10)
+    assert len(client.responses.calls) == 1
+    call = client.responses.calls[0]
+    payload = json.loads(cast(str, call["input"]))
+    assert payload["statement"] == request.statement
+    reference = request.evidence[0].reference
+    assert payload["evidence"] == [
+        {
+            "document_id": str(reference.document_id),
+            "document_version_id": str(reference.document_version_id),
+            "structure_block_id": str(reference.structure_block_id),
+            "exact_text": reference.exact_text,
+            "attribution_context": request.evidence[0].attribution_context.text,
+        }
+    ]
+    instructions = cast(str, call["instructions"])
+    assert "untrusted data" in instructions
+    assert "Context cannot fill missing operational facts" in instructions
+    assert "Do not transfer" in instructions
+    assert call["text_format"] is StatementSupportDecision
+    assert call["store"] is False and call["background"] is False
+    assert call["tools"] == []
+    assert call["timeout"] == OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS
+    assert len(cast(str, call["input"]).encode("utf-8")) <= len(
+        request.model_dump_json().encode("utf-8")
+    )
+
+
+def test_support_profiles_cannot_be_silently_interchanged() -> None:
+    client = RecordingOpenAIClient()
+    with pytest.raises(StatementSupportProviderConfigurationError):
+        make_evaluator(client).evaluate_contextual(contextual_input())
+    with pytest.raises(StatementSupportProviderConfigurationError):
+        OpenAIStatementSupportEvaluator(
+            client=cast(OpenAI, client), include_attribution_context=True
+        ).evaluate(STATEMENT, EVIDENCE_TEXTS)
+    assert not client.responses.calls
+
+
+def test_contextual_invalid_input_is_rejected_before_any_sdk_call() -> None:
+    client = RecordingOpenAIClient()
+    request = contextual_input().model_copy(update={"evidence": ()})
+    with pytest.raises(ValidationError):
+        OpenAIStatementSupportEvaluator(
+            client=cast(OpenAI, client), include_attribution_context=True
+        ).evaluate_contextual(request)
+    assert not client.responses.calls
+
+
+def test_contextual_local_reason_uses_same_decision_contract_and_one_request() -> None:
+    parsed = StubParsedResponse(
+        output_parsed=openai_module._ExplainedSupportDecision(
+            supported=False, reason="The quote lacks the claimed quantity."
+        )
+    )
+    client = RecordingRawOpenAIClient(
+        RecordingRawResponsesResource(StubRawResponse(body={}, parsed_response=parsed))
+    )
+    evaluator = OpenAIStatementSupportEvaluator(
+        client=cast(OpenAI, client),
+        include_attribution_context=True,
+        include_decision_reason=True,
+        local_validation_output=lambda _: None,
+    )
+    result = evaluator.evaluate_contextual(contextual_input())
+    assert result.decision.supported is False
+    assert result.diagnostic_reason == "The quote lacks the claimed quantity."
+    assert "diagnostic_reason" not in result.model_dump()
+    assert len(client.responses.calls) == 1
+    assert client.responses.calls[0]["text_format"] is openai_module._ExplainedSupportDecision
 
 
 @pytest.mark.parametrize(

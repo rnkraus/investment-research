@@ -21,6 +21,7 @@ from investment_research.modules.documents.domain import (
 )
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
+    ContextualStatementSupportInput,
     EvidenceValidationDecision,
     EvidenceValidationProfile,
     StatementSupportResult,
@@ -28,9 +29,11 @@ from investment_research.modules.evidence.contracts import (
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
     EvidenceRepository,
+    StatementSupportContextBuilder,
     StatementSupportEvaluator,
     StatementSupportProviderTransientError,
 )
+from investment_research.modules.evidence.support_context import build_contextual_support_input
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
@@ -327,6 +330,7 @@ def make_service(
     generator_error: Exception | None = None,
     generation_input_builder: AnswerGenerationInputBuilder | None = None,
     support_evaluator: StatementSupportEvaluator | None = None,
+    support_context_builder: StatementSupportContextBuilder | None = None,
     provider_operation_executor: Mock | None = None,
     rejection_diagnostic: (
         Callable[[UnvalidatedGeneratedAnswer, EvidenceValidationDecision], None] | None
@@ -343,6 +347,7 @@ def make_service(
         unit_of_work_factory=unit_of_work_factory,
         answer_generator=generator_port,
         generation_input_builder=generation_input_builder,
+        support_context_builder=support_context_builder,
         support_evaluator=(
             support_evaluator
             or DeterministicFixtureStatementSupportEvaluator(
@@ -636,6 +641,73 @@ def test_source_becoming_inactive_during_support_check_rejects_answer() -> None:
     assert result.evidence_spans == ()
     assert any(not finding.passed for finding in result.validations)
     unit_of_work.research_mock.add_statements.assert_not_called()
+
+
+@pytest.mark.parametrize("changed_source", [False, True])
+def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
+    changed_source: bool,
+) -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    executor = make_provider_operation_executor()
+    inputs: list[ContextualStatementSupportInput] = []
+    current_source = make_canonical_source()
+
+    class MutableSourceReader:
+        def get_source(
+            self, context: WorkspaceContext, retrieval_run_id: UUID, retrieval_candidate_id: UUID
+        ) -> CanonicalEvidenceSource:
+            return current_source
+
+    class ContextualEvaluator:
+        def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+            raise AssertionError("the contextual path must not use the M1 support input")
+
+        def evaluate_contextual(
+            self, request: ContextualStatementSupportInput
+        ) -> StatementSupportResult:
+            nonlocal current_source
+            assert not unit_of_work.is_open
+            inputs.append(request)
+            if changed_source:
+                # Change only the non-cited prefix, preserving the exact citation and its range.
+                current_source = current_source.model_copy(
+                    update={
+                        "structure_block_text": SOURCE_TEXT.replace("Financial", "Synthetic"),
+                    }
+                )
+            return DeterministicFixtureStatementSupportEvaluator(
+                [FixtureStatementSupportRule(statement=STATEMENT, evidence_text=EVIDENCE_TEXT)]
+            ).evaluate(
+                request.statement, tuple(item.reference.exact_text for item in request.evidence)
+            )
+
+    unit_of_work.evidence_sources = MutableSourceReader()
+    service, _ = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        support_evaluator=ContextualEvaluator(),
+        support_context_builder=build_contextual_support_input,
+        provider_operation_executor=executor,
+    )
+    result = service.generate(make_context(), make_retrieval_result())
+    assert len(inputs) == 1  # Final canonical validation replays, never calls the provider again.
+    support_attempts = [
+        call.args[1]
+        for call in executor.execute.call_args_list
+        if call.args[1].operation.value == "STATEMENT_SUPPORT"
+    ]
+    assert len(support_attempts) == 1
+    assert support_attempts[0].maximum_usage.input_units == (
+        16_000 + len(inputs[0].model_dump_json().encode("utf-8"))
+    )
+    assert result.answer.state is (AnswerState.REJECTED if changed_source else AnswerState.STREAMED)
+    if changed_source:
+        assert result.evidence_spans == ()
+        unit_of_work.research_mock.add_statements.assert_not_called()
+    else:
+        assert len(result.evidence_spans) == 1
+        assert result.evidence_spans[0].exact_text == EVIDENCE_TEXT
+        assert result.evidence_spans[0].start_character == REFERENCE_START
 
 
 def test_insufficient_answer_uses_application_message_without_evidence_records() -> None:

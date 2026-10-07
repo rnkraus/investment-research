@@ -17,11 +17,16 @@ from investment_research.modules.documents.domain import (
 from investment_research.modules.evidence.application import ValidateGeneratedAnswerService
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
+    ContextualStatementSupportInput,
+    StatementSupportDecision,
+    StatementSupportResult,
     ValidationFinding,
 )
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.evidence.ports import CanonicalEvidenceSourceReader
+from investment_research.modules.evidence.support_context import build_contextual_support_input
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import (
     UnvalidatedEvidenceReference,
@@ -203,6 +208,76 @@ def test_valid_proposal_returns_only_canonical_exact_evidence() -> None:
     assert len(reference.text_sha256) == 64
     assert all(finding.passed for finding in decision.findings)
     assert reader.calls == [(make_context(), RUN_ID, CANDIDATE_ID)]
+
+
+class ContextualSupportEvaluator:
+    """Record the context path and forbid accidental exact-only evaluation."""
+
+    def __init__(self, supported: bool = True) -> None:
+        self.supported = supported
+        self.inputs: list[ContextualStatementSupportInput] = []
+
+    def evaluate(self, statement: str, evidence_texts: object) -> StatementSupportResult:
+        raise AssertionError("contextual validation must use the contextual port")
+
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        self.inputs.append(request)
+        return StatementSupportResult(
+            decision=StatementSupportDecision(supported=self.supported),
+            usage=ProviderUsage(input_units=0, output_units=0),
+        )
+
+
+@pytest.mark.parametrize("supported", [False, True])
+def test_contextual_validation_keeps_exact_citations_and_support_decision(supported: bool) -> None:
+    evaluator = ContextualSupportEvaluator(supported)
+    service = ValidateGeneratedAnswerService(
+        source_reader=RecordingSourceReader(make_source()),
+        support_evaluator=evaluator,
+        support_context_builder=build_contextual_support_input,
+    )
+    decision = service.validate(make_context(), RUN_ID, make_answer())
+    assert decision.accepted is supported
+    assert len(evaluator.inputs) == 1
+    paired = evaluator.inputs[0].evidence[0]
+    assert paired.reference.exact_text == EVIDENCE_TEXT
+    assert paired.reference.start_character == REFERENCE_START
+    assert paired.attribution_context.text == SOURCE_TEXT
+    assert paired.attribution_context.document_version_id == VERSION_ID
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        None,
+        make_source(workspace_id=OTHER_WORKSPACE_ID),
+        make_source(chunk_set_is_active=False),
+        make_source(document_current_version_id=OTHER_VERSION_ID),
+        make_source(structure_block_text="altered original"),
+    ],
+)
+def test_contextual_validation_never_calls_provider_for_ineligible_sources(
+    source: CanonicalEvidenceSource | None,
+) -> None:
+    evaluator = ContextualSupportEvaluator()
+    service = ValidateGeneratedAnswerService(
+        source_reader=RecordingSourceReader(source),
+        support_evaluator=evaluator,
+        support_context_builder=build_contextual_support_input,
+    )
+    assert service.validate(make_context(), RUN_ID, make_answer()).accepted is False
+    assert evaluator.inputs == []
+
+
+def test_contextual_validation_requires_an_explicit_contextual_evaluator() -> None:
+    with pytest.raises(ValueError):
+        ValidateGeneratedAnswerService(
+            source_reader=RecordingSourceReader(make_source()),
+            support_evaluator=DeterministicFixtureStatementSupportEvaluator([]),
+            support_context_builder=build_contextual_support_input,
+        )
 
 
 @pytest.mark.parametrize("origin", [RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE])
