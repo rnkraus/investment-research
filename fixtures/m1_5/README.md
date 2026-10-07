@@ -46,6 +46,34 @@ for the approved public-synthetic corpus only, is forbidden in CI or redirected 
 independent support review. Use a fresh ignored report filename for each paid run and retain the
 USD 0.80 default maximum reservation unless explicitly approving a different bound.
 
+### Document-prefix follow-up
+
+`--support-policy document_attribution` instead uses the first original block's bounded prefix
+from the quote's same workspace, document version, and processing run. It can identify a factual
+quote on another page without requiring the company/report/date inside that quote. It still cannot
+provide operational facts or infer that sufficient capacity is not the primary constraint.
+Same-block `attribution` remains available for comparison; neither option changes website defaults.
+
+Credential-free preflight from `backend/`:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --retrieval-policy rrf \
+  --answer-policy citable_units \
+  --support-policy document_attribution \
+  --answer-model gpt-5.6-luna \
+  --support-model gpt-5.6-luna
+```
+
+A separately authorized paid run additionally requires `--execute`, both existing fixture/provider
+confirmations, and a fresh ignored `--output` filename. `--show-local-model-output` remains
+interactive-local-only and shows the quote block ID, separate attribution block ID, context policy,
+exact text, original context, and bounded support reason. No raw context enters the saved report.
+The context policy is `m1-5-document-prefix-attribution-v1`; normal and local support prompt versions
+are `m1-5-document-attribution-support-prompt-v1` and
+`m1-5-local-document-attribution-support-reason-v1`. Limits and prices are unchanged. Tests prove
+correctness and isolation, not live quality; independent review remains necessary.
+
 | Case | Intended distinction |
 | --- | --- |
 | FY2025 revenue | Exact wording and an original PDF page citation |
