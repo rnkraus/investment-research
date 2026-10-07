@@ -10,6 +10,7 @@ This module owns exact source spans, statement-to-source relationships, and immu
 | `contracts.py`   | Defines canonical source snapshots, validation decisions, and resolved spans.      |
 | `domain.py`      | Defines exact spans, relationships, validation rules, hashes, and invariants.      |
 | `ports.py`       | Defines canonical source, citation-read, statement-support, and persistence ports. |
+| `support_context.py` | Prepares bounded, source-separated original attribution context for an M1.5 experiment; not yet wired to evaluation. |
 | `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.  |
 
 ## Evidence chain
