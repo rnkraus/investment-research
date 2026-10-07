@@ -15,7 +15,7 @@ from openai import APIConnectionError, APIStatusError, OpenAI
 from openai.lib._pydantic import to_strict_json_schema
 from pydantic import BaseModel, ValidationError
 
-from investment_research.infrastructure.generation import openai_citable_units as adapter
+import investment_research.infrastructure.generation.openai_citable_units as adapter
 from investment_research.infrastructure.generation.openai import (
     M1_ANSWER_GENERATOR_VERSION,
     M1_ANSWER_PROMPT_VERSION,
