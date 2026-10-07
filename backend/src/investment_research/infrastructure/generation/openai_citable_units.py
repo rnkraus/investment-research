@@ -172,6 +172,11 @@ class OpenAICitableUnitAnswerGenerator(OpenAIAnswerGenerator):
             raise CitableUnitLimitError("source-unit metadata exceeds the input reservation")
         return schema
 
+    def preflight(self, generation_input: AnswerGenerationInput) -> None:
+        """Validate the request schema and reservation ceiling without a provider call."""
+
+        self._proposal_schema(generation_input)
+
     @staticmethod
     def _serialize_input(generation_input: AnswerGenerationInput) -> str:
         scoped = _require_citable_input(generation_input)

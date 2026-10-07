@@ -78,6 +78,24 @@ class ValidateGeneratedAnswerService:
         self._source_reader = source_reader
         self._support_evaluator = support_evaluator
 
+    @classmethod
+    def is_source_eligible(
+        cls,
+        context: WorkspaceContext,
+        retrieval_run_id: UUID,
+        source: CanonicalEvidenceSource,
+    ) -> bool:
+        """Qualify a complete canonical source before exposing it to generation."""
+
+        return (
+            source.workspace_id == context.workspace_id
+            and source.document_lifecycle_state is DocumentLifecycleState.ACTIVE
+            and source.document_current_version_id == source.document_version_id
+            and source.chunk_text == source.structure_block_text
+            and cls._is_retrieval_candidate_eligible(source, retrieval_run_id)
+            and cls._is_temporally_eligible(source)
+        )
+
     def validate(
         self,
         context: WorkspaceContext,

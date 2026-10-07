@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from investment_research.modules.evidence.ports import (
@@ -13,6 +13,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationResult,
+    ResearchRetrievalResult,
 )
 from investment_research.modules.research.domain import Answer, AnswerStatement, ResearchRequest
 from investment_research.modules.search.ports import (
@@ -51,6 +52,23 @@ class AnswerGenerator(Protocol):
 
     def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         """Return a typed proposal and usage that still require application validation."""
+
+
+class AnswerGenerationInputBuilder(Protocol):
+    """Prepare detached, canonically checked input before provider accounting."""
+
+    def build(
+        self, context: WorkspaceContext, retrieval_result: ResearchRetrievalResult
+    ) -> AnswerGenerationInput:
+        """Return bounded input without keeping a database transaction open."""
+
+
+@runtime_checkable
+class AnswerGenerationPreflight(Protocol):
+    """Optional local preparation that must not call providers or reserve spend."""
+
+    def preflight(self, generation_input: AnswerGenerationInput) -> None:
+        """Reject invalid or oversized provider input before a paid attempt."""
 
 
 class ResearchRepository(Protocol):
