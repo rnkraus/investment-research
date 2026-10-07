@@ -121,9 +121,9 @@ and refusal failures are permanent. The policy never performs a hidden retry.
 
 ## Standalone M1.5 citable-unit preparation
 
-The source-unit functions and ID-selection adapter are independently tested building blocks and
-are now wired into the opt-in evaluation workflow. The normal M1 exact-substring behavior remains
-unchanged. The versioned design and remaining comparison/adoption gates are in the
+The source-unit functions and ID-selection adapter are independently tested building blocks,
+wired into the opt-in evaluation workflow and API composition. The normal M1 exact-substring
+behavior remains the default. The versioned design and remaining comparison/adoption gates are in the
 [M1.5 Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1).
 
 `CitableUnitSource` pairs one selected `CanonicalCandidateSource` with its independently loaded
@@ -195,7 +195,14 @@ flowchart LR
 The evaluation CLI independently selects `--answer-policy m1` (default) or
 `--answer-policy citable_units`; `--retrieval-policy` independently selects M1 or RRF.
 The recorded prompt version identifies the frozen answer/unit policy and resolves to a distinct
-model-specific generation profile. No bootstrap, API, environment, or website switch is added.
+model-specific generation profile. Separately, API-owned `research_profile=m1-5-citable-units`
+selects the existing RRF selector, source-unit generator, canonical document-prefix reader, and
+contextual support evaluator in `bootstrap.py`. All four generation/support model pairs share
+the unchanged monthly budget executor and retain model-specific pricing and configuration versions.
+The M1 profile remains available and is still the default. No public request field or browser
+policy switch is added; the source viewer still receives canonical evidence-span identities.
+Compose forwarding and manual PDF/text source-opening verification remain pending; this backend
+wiring does not record default adoption or quality acceptance.
 Quality scoring remains unchanged: a wider exact unit can fail the reviewed passage-containment
 metric even though canonical validation passes. The current deterministic corpus preserves this
 penalty for its revenue case; integration success is not quality acceptance.
