@@ -101,7 +101,7 @@ def test_unknown_support_policy_or_prompt_is_rejected() -> None:
 def test_citable_policy_changes_only_the_frozen_answer_prompt() -> None:
     original = live.build_plan(retrieval_policy="rrf")
     selected = live.build_plan(retrieval_policy="rrf", answer_policy="citable_units")
-    assert selected.configuration.answer_prompt_version == "m1-5-citable-units-en-answer-prompt-v1"
+    assert selected.configuration.answer_prompt_version == "m1-5-citable-units-en-answer-prompt-v2"
     assert selected.model_dump(exclude={"configuration"}) == original.model_dump(
         exclude={"configuration"}
     )
@@ -119,7 +119,7 @@ def test_citable_policy_changes_only_the_frozen_answer_prompt() -> None:
         live.answer_profile_for_policy(
             "citable_units", ResearchModel.LUNA
         ).generation_config_version
-        == "m1-5-gpt-5.6-luna-low-citable-units-en-v1"
+        == "m1-5-gpt-5.6-luna-low-citable-units-en-v2"
     )
     with pytest.raises(live.LiveBaselineLimitError):
         live.answer_policy_for_prompt_version("unknown")

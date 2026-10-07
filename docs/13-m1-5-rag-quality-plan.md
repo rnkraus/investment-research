@@ -357,14 +357,40 @@ requests. The canonical range stays stable across unchanged inputs; the external
 request-scoped, not a permanent citation ID, secret, or authorization token. Resolve it only in the
 current server-owned catalog, never through a global lookup or by decoding model-supplied metadata.
 
-Present units in selected-source order and block-offset order, grouped under their source. Serialize
-the original source text once, with unit IDs and boundaries as metadata; do not duplicate the full
-chunk and every unit's text in the prompt. Preserve surrounding context. Quote-like instructions
-inside a source remain untrusted data. The model selects one or two distinct supplied
+Present units in selected-source order and block-offset order, grouped under their source. The
+current **v2 provider input** pairs each `source_unit_id` directly with its unchanged unit `text`.
+Each entry's `separator_before` and its source's `trailing_separator` retain the original boundary
+whitespace. Concatenating those separators and texts in order reproduces the complete original
+block exactly. Do not additionally serialize the full block, send character offsets, duplicate
+unit text, or discard surrounding visible content. Canonical ranges remain server-owned;
+separators are not additional citable units. Quote-like instructions inside a source remain
+untrusted data. The model selects one or two distinct supplied
 `source_unit_id` values per statement; it returns neither `exact_text` nor offsets nor a
 retrieval-candidate ID for this profile. Keep the existing 8-statement limit, four coverage states,
 and `missing_information` rules. A claim requiring more than two units must be decomposed into
 independently supported statements or safely omitted, not bypass the evidence limit.
+
+**Input presentation revision (2026-10-07):** The previous v1 adapter serialized the original block
+beside a separate ID/range catalog, requiring the model to associate character ranges with text.
+The v2 profile makes that association explicit without changing unit boundaries, request-scoped
+IDs, evidence resolution, model selection, support policies, or website defaults. Its generator
+version is `openai-responses-citable-units-v2`, its prompt is
+`m1-5-citable-units-en-answer-prompt-v2`, and its model-specific configuration ends in
+`low-citable-units-en-v2`. The canonical unit policy remains `m1-5-citable-units-en-v1`.
+Historical comparisons below retain their recorded versions and results; they do not establish
+v2 quality. Preflight still checks the complete serialized input, prompt, schema, and expansion
+margins against the existing reservation before a paid call. A separately authorized, versioned
+live comparison is required before adopting the format in normal runtime.
+
+**V2 offline verification (2026-10-07):** Focused adapter, plan, CLI, and budget-wrapper checks passed
+243 tests. The complete backend gate passed formatting, Ruff, Mypy, and 1,627 unit tests; isolated
+PostgreSQL verification passed the empty upgrade/downgrade/upgrade cycle, metadata checks, and
+143 integration tests. Seven separate SeaweedFS tests were skipped in this PostgreSQL-only run;
+its disposable database and volume were removed. Existing frontend formatting, lint, type,
+contract, and 45 tests passed. The credential-free RRF/citable-units/document-attribution preflight
+reported the v2 answer prompt and unchanged USD 0.80 cap. No paid provider call, production build,
+or hosted-CI verification was performed for this revision. These results establish transport and
+validation correctness, not improved live answer or source-selection quality.
 
 The strict provider schema defines the current catalog IDs once as a shared enum and forbids extra
 fields. The adapter also checks catalog membership and duplicate IDs, independently of provider

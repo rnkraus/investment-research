@@ -99,7 +99,12 @@ governs comparison and adoption.
 
 The adapter requires `CitableAnswerGenerationInput`, whose trusted workspace, request, ordered
 sources, and canonical catalog must agree. It revalidates that input before requesting generation.
-Each original source text appears once beside an ordered ID/range catalog. The strict provider
+The v2 provider input pairs each offered ID directly with its exact unit text, in original source
+and range order. Character offsets remain server-side. `separator_before` on each unit and
+`trailing_separator` on each source preserve the original boundary whitespace; concatenating the
+separators and unit texts reproduces the complete block without a second full-text copy. Those
+separators are not citable units. This removes the need for the model to associate offsets with
+passages, but does not prove that its selected passage supports its claim. The strict provider
 schema defines the catalog's UUID strings once in a shared `SourceUnitId` enum. Each statement
 selects one or two IDs, never quote text, offsets, or candidate identifiers. Server-side membership
 and duplicate checks remain independent of schema compliance.
@@ -107,7 +112,8 @@ and duplicate checks remain independent of schema compliance.
 ```mermaid
 flowchart LR
     INPUT[Scoped canonical catalog and question] --> PREFLIGHT[Validate scope and input reservation]
-    PREFLIGHT --> MODEL[One bounded Responses call]
+    PREFLIGHT --> INPUT_V2[IDs paired with exact original unit text]
+    INPUT_V2 --> MODEL[One bounded Responses call]
     MODEL --> IDS[Statements with source-unit IDs]
     IDS --> RESOLVE[Resolve exact catalog ranges and text]
     RESOLVE --> PROPOSAL[Existing unvalidated answer contract]
@@ -123,8 +129,13 @@ or reverting to copied quotes. Research calls the free `preflight` before canoni
 reservation; the evaluation budget wrapper also preflights before its own reservation. An empty
 catalog is routed to the existing insufficient-result path with no generation or support call.
 
-`citable_answer_profile` identifies the selected Terra/Luna model and English v1 unit policy with
-new generator/configuration/prompt versions. `create_openai_citable_unit_answer_generator` disables
+`citable_answer_profile` identifies the selected Terra/Luna model with v2 generator, configuration,
+and prompt versions. The canonical English unit policy and request-scoped identities remain v1;
+historical v1 input-format measurements are not rewritten or treated as v2 results. Offline tests
+cover ID/text pairing, repeated wording, separate sources, Unicode, PDF line breaks, exact block
+reconstruction, unchanged context/reservation bounds, and escaped-input overflow before a call.
+Live quality still requires an explicitly authorized comparison.
+`create_openai_citable_unit_answer_generator` disables
 SDK retries and owns its client just like M1. A known ID still permits an unsupported proposal;
 only subsequent support and canonical validation can make it publishable. No migration,
 reprocessing, historical-citation rewrite, API, or frontend change is introduced here.

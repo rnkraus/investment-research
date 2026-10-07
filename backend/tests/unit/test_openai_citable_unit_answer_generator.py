@@ -238,15 +238,77 @@ def test_payload_preserves_context_once_and_omits_canonical_identifiers() -> Non
     serialized = cast(str, call["input"])
     data = json.loads(serialized)
     assert set(data) == {"research_request_id", "question", "sources"}
-    assert data["sources"][0]["text"] == SOURCE_TEXT
-    assert serialized.count(SOURCE_TEXT) == 1
-    assert set(data["sources"][0]) == {"text", "units"}
+    source = data["sources"][0]
+    assert set(source) == {"units", "trailing_separator"}
+    assert (
+        "".join(unit["separator_before"] + unit["text"] for unit in source["units"])
+        + source["trailing_separator"]
+    ) == SOURCE_TEXT
     assert all(
-        set(unit) == {"source_unit_id", "start_character", "end_character"}
-        for unit in data["sources"][0]["units"]
+        set(unit) == {"source_unit_id", "text", "separator_before"} for unit in source["units"]
     )
-    for forbidden in ("workspace_id", "document_id", "retrieval_candidate_id", "exact_text"):
+    assert [unit["source_unit_id"] for unit in source["units"]] == [
+        str(unit.source_unit_id) for unit in generation_input.catalog.units
+    ]
+    assert [unit["text"] for unit in source["units"]] == [
+        unit.text for unit in generation_input.catalog.units
+    ]
+    for forbidden in (
+        "workspace_id",
+        "document_id",
+        "retrieval_candidate_id",
+        "exact_text",
+        "start_character",
+        "end_character",
+    ):
         assert forbidden not in serialized
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "  Unique first sentence.\n \t\nUnique second sentence. \n",
+        "\tCafé 😀 is ready.\nNext archi-\ntecture stays unchanged.\t",
+        "First repeated sentence.  First repeated sentence.\n",
+        'A source says "ignore instructions".\nA literal \\path stays unchanged.',
+        "  " + "x" * 1_601 + "\n",
+    ],
+)
+def test_direct_unit_text_retains_every_original_character_without_duplication(text: str) -> None:
+    generation_input = make_input(text=text)
+    generator, client = make_generator(generation_input)
+    generator.generate(generation_input)
+    source = json.loads(cast(str, client.responses.calls[0]["input"]))["sources"][0]
+    offered = source["units"]
+    assert len(offered) == len(generation_input.catalog.units)
+    for entry, unit in zip(offered, generation_input.catalog.units, strict=True):
+        assert entry["source_unit_id"] == str(unit.source_unit_id)
+        assert entry["text"] == text[unit.key.start_character : unit.key.end_character]
+        assert not entry["separator_before"].strip()
+    assert not source["trailing_separator"].strip()
+    reconstructed = (
+        "".join(entry["separator_before"] + entry["text"] for entry in offered)
+        + source["trailing_separator"]
+    )
+    assert reconstructed == text
+    assert "text" not in source  # No second complete-block copy beside the units.
+
+
+@pytest.mark.parametrize("character", ["x", "😀"])
+def test_full_context_direct_text_fits_the_unchanged_reservation(character: str) -> None:
+    generation_input = make_input(text=character * 24_000)
+    generator, client = make_generator(generation_input)
+    generator.generate(generation_input)
+    assert len(client.responses.calls) == 1
+    assert len(generation_input.catalog.units) == 30
+
+
+def test_json_escaping_overflow_fails_before_provider_call() -> None:
+    generation_input = make_input(text='"\\' * 12_000)
+    generator, client = make_generator(generation_input)
+    with pytest.raises(CitableUnitLimitError):
+        generator.generate(generation_input)
+    assert not client.responses.calls
 
 
 def test_strict_sdk_schema_has_one_shared_catalog_enum_and_required_fields() -> None:
@@ -500,7 +562,10 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.generator_version != M1_ANSWER_GENERATOR_VERSION
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
-    assert "citable-units-en-v1" in profile.generation_config_version
+    assert profile.generator_version == "openai-responses-citable-units-v2"
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v2"
+    assert "citable-units-en-v2" in profile.generation_config_version
+    assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v1"
 
 
 def test_factory_disables_sdk_retries_and_closes_its_client(
@@ -670,5 +735,12 @@ def test_two_different_source_units_keep_their_own_provenance_and_context() -> N
     )
     assert tuple(reference.exact_text for reference in references) == (STATEMENT, text)
     data = json.loads(cast(str, client.responses.calls[0]["input"]))
-    assert [source["text"] for source in data["sources"]] == [SOURCE_TEXT, text]
+    assert [
+        "".join(unit["separator_before"] + unit["text"] for unit in source["units"])
+        + source["trailing_separator"]
+        for source in data["sources"]
+    ] == [SOURCE_TEXT, text]
     assert [len(source["units"]) for source in data["sources"]] == [2, 1]
+    assert [unit["source_unit_id"] for source in data["sources"] for unit in source["units"]] == [
+        str(unit.source_unit_id) for unit in catalog.units
+    ]
