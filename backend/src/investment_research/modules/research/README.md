@@ -13,6 +13,7 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 | `contracts.py`              | Defines strict retrieval, generation, and validated-answer boundary values.               |
 | `citable_unit_contracts.py` | Defines immutable source snapshots, exact range identities, and bounded request catalogs. |
 | `citable_units.py`          | Prepares exact source units and resolves selected IDs to unvalidated evidence references. |
+| `citable_generation.py`     | Reloads eligible canonical blocks in a short read scope and builds detached generation input. |
 | `domain.py`                 | Defines requests, temporal modes, answer states, coverage, statements, and invariants.    |
 | `ports.py`                  | Defines repositories, units of work, and the answer-generator contract.                   |
 | `persistence.py`            | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.         |
@@ -120,9 +121,9 @@ and refusal failures are permanent. The policy never performs a hidden retry.
 
 ## Standalone M1.5 citable-unit preparation
 
-The source-unit functions and ID-selection adapter are independently tested building blocks, not
-yet wired into the research workflow. The M1 exact-substring behavior remains unchanged. The
-versioned design and remaining integration gates are in the
+The source-unit functions and ID-selection adapter are independently tested building blocks and
+are now wired into the opt-in evaluation workflow. The normal M1 exact-substring behavior remains
+unchanged. The versioned design and remaining comparison/adoption gates are in the
 [M1.5 Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1).
 
 `CitableUnitSource` pairs one selected `CanonicalCandidateSource` with its independently loaded
@@ -154,16 +155,50 @@ dump; do not log or publish catalogs.
 `CitableAnswerGenerationInput` extends the existing bounded generation input with the trusted
 workspace context and catalog. `from_catalog` projects its retained sources into the existing
 source shape. Validation requires identical request, workspace, ordered provenance, and text;
-it does not establish current canonical eligibility. The standalone
+it does not establish current canonical eligibility. The
 [`OpenAICitableUnitAnswerGenerator`](../../infrastructure/generation/README.md#standalone-m15-source-unit-id-adapter)
-revalidates this input, restricts model selection to current IDs, and calls the resolver. Research
-must still integrate catalog loading, accounting, no-evidence handling, support evaluation, and
-the final canonical recheck before this profile can be used by an actual request.
+revalidates this input, restricts model selection to current IDs, and calls the resolver.
 
 These functions do not call providers, touch repositories, create `EvidenceSpan` records, or replace
 the existing support evaluation and final canonical recheck. Catalogs are temporary values, never
 new canonical tables or public citation identities. The new tests are automatically discovered by
-the existing backend-unit CI gate; no separate workflow is necessary for this standalone block.
+the existing backend-unit CI gate; PostgreSQL CI also discovers the workflow integration tests.
+
+### Opt-in workflow and evaluation integration
+
+`CitableGenerationInputBuilder` uses a short `CitableSourceUnitOfWork` to reload each selected
+candidate and its complete block. It reuses Evidence's workspace, active-version, processing,
+configuration, and temporal eligibility rules and compares every selected source identifier,
+locator, range, and text with canonical state. Missing, stale, foreign, or mismatched sources fail
+closed before generation. Catalog construction and provider preparation happen after the read
+session closes.
+
+`GenerateValidatedAnswerService` receives this builder only for the experimental profile. An
+empty catalog persists the existing insufficient result without generation or support calls.
+The optional `AnswerGenerationPreflight` rejects metadata overflow before accounting starts.
+For nonempty input the existing operation ledger, detached support evaluation, final canonical
+recheck, atomic answer aggregate, and canonical span reuse remain unchanged.
+
+```mermaid
+flowchart LR
+    SELECTED[Selected canonical sources] --> READ[Short PostgreSQL source and block read]
+    READ --> CATALOG[Detached request-scoped catalog]
+    CATALOG --> PREFLIGHT[Free schema and reservation check]
+    PREFLIGHT --> ACCOUNT[Reserve generation budget]
+    ACCOUNT --> MODEL[Model selects unit IDs]
+    MODEL --> REFERENCES[Server resolves exact ranges]
+    REFERENCES --> SUPPORT[Support check outside transaction]
+    SUPPORT --> FINAL[Canonical recheck and atomic persistence]
+    FINAL --> VIEW[Existing PDF or text citation reader]
+```
+
+The evaluation CLI independently selects `--answer-policy m1` (default) or
+`--answer-policy citable_units`; `--retrieval-policy` independently selects M1 or RRF.
+The recorded prompt version identifies the frozen answer/unit policy and resolves to a distinct
+model-specific generation profile. No bootstrap, API, environment, or website switch is added.
+Quality scoring remains unchanged: a wider exact unit can fail the reviewed passage-containment
+metric even though canonical validation passes. The current deterministic corpus preserves this
+penalty for its revenue case; integration success is not quality acceptance.
 
 ## Answer-generation boundary
 

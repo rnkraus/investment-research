@@ -92,9 +92,10 @@ check owns any real-provider verification.
 `OpenAICitableUnitAnswerGenerator` reuses `OpenAIAnswerGenerator`'s bounded request, token-usage
 validation, safe failure mapping, and explicitly injected local-output callbacks. Its prompt,
 schema, and evidence resolution are separate extension points; M1's exact-substring behavior and
-version identifiers remain unchanged. Neither bootstrap nor the evaluation runner selects this
-new profile yet. The [Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1)
-governs integration and adoption.
+version identifiers remain unchanged. The evaluation runner can select this profile explicitly
+with `--answer-policy citable_units`; bootstrap and the website still use M1.
+The [Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1)
+governs comparison and adoption.
 
 The adapter requires `CitableAnswerGenerationInput`, whose trusted workspace, request, ordered
 sources, and canonical catalog must agree. It revalidates that input before requesting generation.
@@ -118,8 +119,9 @@ input-overhead reservation. Preflight measures UTF-8 bytes for the serialized me
 and schema, reserving 512 additional units each for SDK schema expansion and request framing.
 Question/source bytes are already reserved by M1 accounting and are not counted twice. A metadata
 overflow fails before any generation call rather than raising the budget, silently dropping units,
-or reverting to copied quotes. An empty catalog also makes no provider call; integration must route
-it to the existing no-evidence path.
+or reverting to copied quotes. Research calls the free `preflight` before canonical spend
+reservation; the evaluation budget wrapper also preflights before its own reservation. An empty
+catalog is routed to the existing insufficient-result path with no generation or support call.
 
 `citable_answer_profile` identifies the selected Terra/Luna model and English v1 unit policy with
 new generator/configuration/prompt versions. `create_openai_citable_unit_answer_generator` disables

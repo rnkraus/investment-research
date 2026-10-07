@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — RRF comparison recorded; Step 2 standalone catalog and ID adapter implemented
+**Status:** Active — Step 2 source-ID workflow and evaluation integration implemented; comparison pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -442,18 +442,66 @@ contain up to 256 units, but a metadata-heavy request can hit the unchanged rese
 Empty catalogs and reservation overflows make no generation call. Integration must preserve the
 existing no-evidence path and map preparation failures safely before any paid operation.
 
-The profile is not yet wired into Research, bootstrap, or the evaluation runner. M1's quote profile,
+At the end of this second block, the profile was not yet wired into Research, bootstrap, or the
+evaluation runner; the third block below supplies opt-in workflow integration. M1's quote profile,
 normal runtime defaults, API, source viewer, persisted answers, database schema, and dependencies
 remain unchanged. Existing unit CI discovers the new adapter tests; no workflow or frontend edit
 is required for this standalone block. Workflow/ledger integration, PostgreSQL citation readback,
-complete compatibility gates, hosted confirmation, and separately approved live comparison remain
-open. See the [Generation guide](../backend/src/investment_research/infrastructure/generation/README.md#standalone-m15-source-unit-id-adapter).
+complete compatibility gates, hosted confirmation, and separately approved live comparison
+remained open for that block. See the [Generation guide](../backend/src/investment_research/infrastructure/generation/README.md#standalone-m15-source-unit-id-adapter).
 
 Verification passed `scripts.verify_paths` (153 targeted tests, including retained M1 and catalog
 regressions) and the complete `scripts.verify_backend` gate: formatting, Ruff, full typing, and
 1,412 unit tests, including 55 new adapter cases. The pinned SDK's actual strict-schema conversion
 was checked offline, including the 256-ID enum and the schema-expansion margin. No paid provider,
 PostgreSQL, Docker, browser, or frontend build was run for this standalone backend block.
+
+**Third backend block (2026-10-07):** The opt-in Research input builder reloads selected candidate
+eligibility and complete original blocks through a short workspace-scoped PostgreSQL read. It
+verifies selected provenance, media locators, ranges, and text before detaching the catalog.
+Provider preflight occurs outside that read and before canonical or evaluation spend reservation.
+An empty selection produces the existing insufficient aggregate with no generation/support calls.
+Nonempty requests retain the existing ledger, support evaluation outside a transaction, final
+canonical recheck, atomic persistence, canonical evidence-span reuse, and source-opening contract.
+
+The evaluation plan and runner now independently select M1/RRF retrieval and M1/source-unit
+answers. `--answer-policy citable_units` is explicit; M1 remains the CLI and website default.
+The frozen prompt version resolves to the separate model-specific generation profile. The
+existing 80-cent invocation ceiling and 16,000-unit generation overhead remain unchanged. The
+budget wrapper counts original source and question bytes once, not duplicate server-only catalog
+snapshots. Unknown profile versions fail instead of silently falling back. No database schema,
+dependency, bootstrap, public API, or frontend implementation changes.
+
+This free preflight prints the selected plan without keys, Docker, or provider requests:
+
+```bash
+cd backend
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --retrieval-policy rrf \
+  --answer-policy citable_units
+```
+
+Execution is still separately opt-in and requires `--execute`, both existing confirmations, and
+a new ignored JSON output path. This implementation does not approve another paid comparison.
+Existing backend-unit and PostgreSQL CI discover the new tests; no artificial CI/frontend edits
+are needed. Hosted checks and complete M0/M1 runtime compatibility remain merge gates.
+
+**Known deterministic quality limitation:** With unchanged v2 scoring, all six scripted answers
+have expected coverage and all five answered cases have exact canonical citations, but only five
+of six cases satisfy reviewed citation matching. The first PDF unit includes a heading preceding
+the reviewed FY2025 revenue passage; its wider range fails the frozen containment metric. Keep
+this penalty visible instead of changing anchors, scoring, or source text to improve the result.
+Neither scripted support nor transport correctness establishes live answer quality. Granularity,
+independent support review, bounded old/new live comparison, and adoption remain open.
+
+Verification for this third block passed the complete backend gate (308 formatted Python files,
+Ruff, Mypy over 278 source files, and 1,443 unit tests), the disposable PostgreSQL gate (136 passed,
+seven SeaweedFS-only tests intentionally skipped), migration round-trip and schema checks, the
+free RRF/source-unit preflight, and `git diff --check`. Frontend formatting, lint, type checking,
+contract drift checks, and all 45 tests passed. The owner confirmed the production build; an
+agent-side sandbox build could not bind the port required by Turbopack. No paid provider requests,
+browser checks, complete M0/M1 runtime checks, or hosted CI confirmation were performed for this
+block. These results verify opt-in integration, not live quality or adoption.
 
 ### Step 3 — Bounded reranking experiment
 
