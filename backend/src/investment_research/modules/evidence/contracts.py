@@ -103,6 +103,41 @@ class ResolvedEvidenceSpan(ImmutableEvidenceContract):
     document_id: UUID
 
 
+M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT = 800
+M1_5_SUPPORT_CONTEXT_POLICY_VERSION: Final = "m1-5-same-block-attribution-v1"
+M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION: Final = "m1-5-document-prefix-attribution-v1"
+
+
+class OriginalSupportContext(ImmutableEvidenceContract):
+    """An exact bounded original prefix; never an extracted or trusted factual assertion."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    policy_version: Literal[
+        "m1-5-same-block-attribution-v1", "m1-5-document-prefix-attribution-v1"
+    ] = M1_5_SUPPORT_CONTEXT_POLICY_VERSION
+    workspace_id: UUID | None = None
+    processing_run_id: UUID | None = None
+    document_id: UUID
+    document_version_id: UUID
+    structure_block_id: UUID
+    start_character: int = Field(ge=0)
+    end_character: int = Field(gt=0)
+    text: str = Field(min_length=1, max_length=M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT, repr=False)
+
+    @model_validator(mode="after")
+    def require_exact_visible_range(self) -> Self:
+        """Keep unchanged ranges and require scoped processing identity for document context."""
+
+        if self.end_character - self.start_character != len(self.text) or not self.text.strip():
+            raise ValueError("support context must contain visible text matching its range")
+        if self.policy_version == M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION and (
+            self.workspace_id is None or self.processing_run_id is None
+        ):
+            raise ValueError("document attribution requires workspace and processing identity")
+        return self
+
+
 class CanonicalEvidenceSource(ImmutableEvidenceContract):
     """Scoped canonical state needed to revalidate one retrieved candidate."""
 
@@ -119,6 +154,8 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
     processing_lexical_config_version: ConfigurationVersion
     processing_embedding_config_version: ConfigurationVersion
     processing_dense_index_config_version: ConfigurationVersion
+    processing_run_id: UUID | None = None
+    document_attribution_context: OriginalSupportContext | None = None
     document_id: UUID
     document_lifecycle_state: DocumentLifecycleState
     document_current_version_id: UUID | None
@@ -231,34 +268,8 @@ class ValidatedEvidenceReference(ImmutableEvidenceContract):
         return self
 
 
-M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT = 800
-M1_5_SUPPORT_CONTEXT_POLICY_VERSION: Final = "m1-5-same-block-attribution-v1"
-
-
-class OriginalSupportContext(ImmutableEvidenceContract):
-    """Bounded original block prefix for attribution, not additional factual evidence."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
-
-    policy_version: Literal["m1-5-same-block-attribution-v1"] = M1_5_SUPPORT_CONTEXT_POLICY_VERSION
-    document_id: UUID
-    document_version_id: UUID
-    structure_block_id: UUID
-    start_character: int = Field(ge=0)
-    end_character: int = Field(gt=0)
-    text: str = Field(min_length=1, max_length=M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT, repr=False)
-
-    @model_validator(mode="after")
-    def require_exact_visible_range(self) -> Self:
-        """Use unchanged Unicode-code-point ranges without interpreting a report header."""
-
-        if self.end_character - self.start_character != len(self.text) or not self.text.strip():
-            raise ValueError("support context must contain visible text matching its range")
-        return self
-
-
 class ContextualStatementEvidence(ImmutableEvidenceContract):
-    """Keep an exact reference paired with context from that same immutable block."""
+    """Pair a citation with context under an explicitly versioned original-source policy."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
@@ -266,7 +277,7 @@ class ContextualStatementEvidence(ImmutableEvidenceContract):
     attribution_context: OriginalSupportContext
 
     @model_validator(mode="after")
-    def require_same_original_block(self) -> Self:
+    def require_same_original_source(self) -> Self:
         """Do not attach one document's header to another document's quote."""
 
         reference = self.reference
@@ -274,9 +285,12 @@ class ContextualStatementEvidence(ImmutableEvidenceContract):
         if (
             reference.document_id,
             reference.document_version_id,
-            reference.structure_block_id,
-        ) != (context.document_id, context.document_version_id, context.structure_block_id):
-            raise ValueError("support context must belong to the cited original block")
+        ) != (context.document_id, context.document_version_id):
+            raise ValueError("support context must belong to the cited original version")
+        if context.policy_version == M1_5_SUPPORT_CONTEXT_POLICY_VERSION and (
+            reference.structure_block_id != context.structure_block_id
+        ):
+            raise ValueError("same-block support context must belong to the cited original block")
         return self
 
 
@@ -298,6 +312,8 @@ class ContextualStatementSupportInput(ImmutableEvidenceContract):
             raise ValueError("support statement must contain a non-whitespace character")
         if any(not item.reference.exact_text.strip() for item in self.evidence):
             raise ValueError("contextual support evidence must contain visible quote text")
+        if len({item.attribution_context.policy_version for item in self.evidence}) != 1:
+            raise ValueError("contextual support input must use one context policy")
         if (
             sum(
                 len(item.reference.exact_text) + len(item.attribution_context.text)

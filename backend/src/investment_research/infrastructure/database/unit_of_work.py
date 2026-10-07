@@ -258,6 +258,8 @@ def sqlalchemy_research_retrieval_unit_of_work(
 @contextmanager
 def sqlalchemy_answer_validation_unit_of_work(
     session_factory: SessionFactory,
+    *,
+    include_document_attribution: bool = False,
 ) -> Iterator[AnswerValidationUnitOfWork]:
     """Validate canonical evidence and commit its complete answer aggregate atomically."""
 
@@ -265,7 +267,10 @@ def sqlalchemy_answer_validation_unit_of_work(
         yield SqlAlchemyAnswerValidationRepositories(
             research=SqlAlchemyResearchRepository(session),
             evidence=SqlAlchemyEvidenceRepository(session),
-            evidence_sources=PostgresCanonicalEvidenceSourceReader(session),
+            evidence_sources=PostgresCanonicalEvidenceSourceReader(
+                session,
+                include_document_attribution=include_document_attribution,
+            ),
             _session=session,
         )
 
@@ -349,10 +354,15 @@ def create_research_retrieval_unit_of_work_factory(
 
 def create_answer_validation_unit_of_work_factory(
     session_factory: SessionFactory,
+    *,
+    include_document_attribution: bool = False,
 ) -> AnswerValidationUnitOfWorkFactory:
     """Bind answer-validation transaction creation to one process-wide session factory."""
 
     def create_unit_of_work() -> AbstractContextManager[AnswerValidationUnitOfWork]:
-        return sqlalchemy_answer_validation_unit_of_work(session_factory)
+        return sqlalchemy_answer_validation_unit_of_work(
+            session_factory,
+            include_document_attribution=include_document_attribution,
+        )
 
     return create_unit_of_work

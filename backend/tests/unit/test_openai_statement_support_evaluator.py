@@ -39,7 +39,12 @@ from investment_research.modules.evidence.ports import (
 )
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.contracts import M1_CONTEXT_CHARACTER_LIMIT
-from tests.unit.test_statement_support_context import make_source_and_reference, prepare
+from tests.unit.test_statement_support_context import (
+    make_document_source_and_reference,
+    make_source_and_reference,
+    prepare,
+    prepare_document,
+)
 
 STATEMENT = "A transformer shortage constrained new customer deployments."
 EVIDENCE_TEXTS = ("A shortage of high-voltage transformers constrained new customer deployments.",)
@@ -191,6 +196,72 @@ def contextual_input() -> ContextualStatementSupportInput:
 
 
 @pytest.mark.parametrize("supported", [False, True])
+def test_document_attribution_sends_checked_origin_and_separates_facts(supported: bool) -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(
+            response=StubParsedResponse(output_parsed=StatementSupportDecision(supported=supported))
+        )
+    )
+    request = prepare_document(*make_document_source_and_reference())
+    assert request is not None
+    result = OpenAIStatementSupportEvaluator(
+        client=cast(OpenAI, client),
+        include_attribution_context=True,
+        include_document_attribution_context=True,
+    ).evaluate_contextual(request)
+
+    assert result.decision.supported is supported
+    assert len(client.responses.calls) == 1
+    call = client.responses.calls[0]
+    item = request.evidence[0]
+    assert json.loads(cast(str, call["input"])) == {
+        "statement": request.statement,
+        "evidence": [
+            {
+                "document_id": str(item.reference.document_id),
+                "document_version_id": str(item.reference.document_version_id),
+                "structure_block_id": str(item.reference.structure_block_id),
+                "exact_text": item.reference.exact_text,
+                "attribution_context": item.attribution_context.text,
+                "attribution_structure_block_id": str(item.attribution_context.structure_block_id),
+                "attribution_scope": "same_document_version",
+            }
+        ],
+    }
+    assert item.reference.structure_block_id != item.attribution_context.structure_block_id
+    assert call["text_format"] is StatementSupportDecision
+    assert call["tools"] == [] and call["store"] is False
+    assert call["timeout"] == OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS
+    assert call["instructions"] == openai_module._document_attribution_instructions(
+        explanations=False
+    )
+    assert len(cast(str, call["input"]).encode("utf-8")) <= len(
+        request.model_dump_json().encode("utf-8")
+    )
+
+
+@pytest.mark.parametrize("document_policy", [False, True])
+def test_same_block_and_document_profiles_cannot_be_silently_interchanged(
+    document_policy: bool,
+) -> None:
+    request = (
+        contextual_input()
+        if document_policy
+        else prepare_document(*make_document_source_and_reference())
+    )
+    assert request is not None
+    client = RecordingOpenAIClient()
+
+    with pytest.raises(StatementSupportProviderConfigurationError):
+        OpenAIStatementSupportEvaluator(
+            client=cast(OpenAI, client),
+            include_attribution_context=True,
+            include_document_attribution_context=document_policy,
+        ).evaluate_contextual(request)
+    assert not client.responses.calls
+
+
+@pytest.mark.parametrize("supported", [False, True])
 def test_contextual_support_sends_only_source_paired_allowlisted_fields(supported: bool) -> None:
     client = RecordingOpenAIClient(
         responses=RecordingResponsesResource(
@@ -254,7 +325,10 @@ def test_contextual_invalid_input_is_rejected_before_any_sdk_call() -> None:
     assert not client.responses.calls
 
 
-def test_contextual_local_reason_uses_same_decision_contract_and_one_request() -> None:
+@pytest.mark.parametrize("document_policy", [False, True])
+def test_contextual_local_reason_uses_same_decision_contract_and_one_request(
+    document_policy: bool,
+) -> None:
     parsed = StubParsedResponse(
         output_parsed=openai_module._ExplainedSupportDecision(
             supported=False, reason="The quote lacks the claimed quantity."
@@ -266,15 +340,39 @@ def test_contextual_local_reason_uses_same_decision_contract_and_one_request() -
     evaluator = OpenAIStatementSupportEvaluator(
         client=cast(OpenAI, client),
         include_attribution_context=True,
+        include_document_attribution_context=document_policy,
         include_decision_reason=True,
         local_validation_output=lambda _: None,
     )
-    result = evaluator.evaluate_contextual(contextual_input())
+    request = (
+        prepare_document(*make_document_source_and_reference())
+        if document_policy
+        else contextual_input()
+    )
+    assert request is not None
+    result = evaluator.evaluate_contextual(request)
     assert result.decision.supported is False
     assert result.diagnostic_reason == "The quote lacks the claimed quantity."
     assert "diagnostic_reason" not in result.model_dump()
     assert len(client.responses.calls) == 1
     assert client.responses.calls[0]["text_format"] is openai_module._ExplainedSupportDecision
+    if document_policy:
+        assert client.responses.calls[0][
+            "instructions"
+        ] == openai_module._document_attribution_instructions(explanations=True)
+
+
+def test_document_profile_configuration_is_rejected_before_sdk_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden(**kwargs: object) -> None:
+        pytest.fail("invalid context configuration must not construct an SDK client")
+
+    monkeypatch.setattr(openai_module, "OpenAI", forbidden)
+    with pytest.raises(ValueError, match="contextual support profile"):
+        create_openai_statement_support_evaluator(
+            api_key="synthetic-test-key", include_document_attribution_context=True
+        )
 
 
 @pytest.mark.parametrize(

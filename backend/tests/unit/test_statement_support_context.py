@@ -13,6 +13,7 @@ from investment_research.modules.documents.domain import (
     SourceLocatorKind,
 )
 from investment_research.modules.evidence.contracts import (
+    M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     M1_5_SUPPORT_CONTEXT_POLICY_VERSION,
     CanonicalEvidenceSource,
     ContextualStatementEvidence,
@@ -21,7 +22,10 @@ from investment_research.modules.evidence.contracts import (
     StatementSupportInput,
     ValidatedEvidenceReference,
 )
-from investment_research.modules.evidence.support_context import build_contextual_support_input
+from investment_research.modules.evidence.support_context import (
+    build_contextual_support_input,
+    build_document_contextual_support_input,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.search.domain import (
@@ -116,6 +120,124 @@ def prepare(
         references=(reference,),
         sources={reference.retrieval_candidate_id: source},
     )
+
+
+def make_document_source_and_reference(
+    *,
+    index: int = 1,
+) -> tuple[CanonicalEvidenceSource, ValidatedEvidenceReference]:
+    """Place the original header and factual quote in different canonical blocks."""
+
+    source, reference = make_source_and_reference(QUOTE, index=index)
+    processing_id = UUID(int=100 + index)
+    attribution = OriginalSupportContext(
+        policy_version=M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
+        workspace_id=CONTEXT.workspace_id,
+        processing_run_id=processing_id,
+        document_id=source.document_id,
+        document_version_id=source.document_version_id,
+        structure_block_id=UUID(int=1000 + index),
+        start_character=0,
+        end_character=len(HEADER),
+        text=HEADER,
+    )
+    return source.model_copy(
+        update={
+            "processing_run_id": processing_id,
+            "document_attribution_context": attribution,
+        }
+    ), reference
+
+
+def prepare_document(
+    source: CanonicalEvidenceSource | None,
+    reference: ValidatedEvidenceReference,
+) -> ContextualStatementSupportInput | None:
+    """Call the distinct document-prefix policy without I/O."""
+
+    return build_document_contextual_support_input(
+        context=CONTEXT,
+        retrieval_run_id=RUN_ID,
+        statement=STATEMENT,
+        references=(reference,),
+        sources={reference.retrieval_candidate_id: source},
+    )
+
+
+def test_document_context_can_identify_a_quote_from_a_different_block() -> None:
+    source, reference = make_document_source_and_reference()
+    request = prepare_document(source, reference)
+
+    assert request is not None
+    item = request.evidence[0]
+    assert item.reference is reference
+    assert item.attribution_context.text == HEADER
+    assert item.attribution_context.structure_block_id != reference.structure_block_id
+    assert item.attribution_context.processing_run_id == source.processing_run_id
+    assert reference.exact_text == QUOTE
+    assert "Northstar" not in source.structure_block_text
+
+
+@pytest.mark.parametrize(
+    "field", ["workspace_id", "processing_run_id", "document_id", "document_version_id"]
+)
+def test_document_context_rejects_mismatched_canonical_scope(field: str) -> None:
+    source, reference = make_document_source_and_reference()
+    assert source.document_attribution_context is not None
+    attribution = source.document_attribution_context.model_copy(update={field: UUID(int=9999)})
+
+    assert (
+        prepare_document(
+            source.model_copy(update={"document_attribution_context": attribution}), reference
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("field", ["workspace_id", "processing_run_id"])
+def test_document_context_requires_explicit_workspace_and_processing_identity(field: str) -> None:
+    source, _ = make_document_source_and_reference()
+    assert source.document_attribution_context is not None
+    data = source.document_attribution_context.model_dump()
+
+    with pytest.raises(ValidationError):
+        OriginalSupportContext.model_validate(data | {field: None})
+
+
+def test_document_policy_never_falls_back_to_a_same_block_or_unknown_prefix() -> None:
+    source, reference = make_source_and_reference()
+    assert prepare_document(source, reference) is None
+    assert prepare_document(None, reference) is None
+    old_input = prepare(source, reference)
+    assert old_input is not None
+    source = source.model_copy(
+        update={"document_attribution_context": old_input.evidence[0].attribution_context}
+    )
+    assert prepare_document(source, reference) is None
+
+
+def test_document_context_revalidates_typed_data_without_exposing_source_text() -> None:
+    source, reference = make_document_source_and_reference()
+    assert source.document_attribution_context is not None
+    attribution = source.document_attribution_context.model_copy(update={"end_character": 1})
+
+    with pytest.raises(ValidationError) as captured:
+        prepare_document(
+            source.model_copy(update={"document_attribution_context": attribution}), reference
+        )
+    assert HEADER not in str(captured.value)
+
+
+def test_context_input_rejects_mixed_attribution_policies() -> None:
+    old_source, old_ref = make_source_and_reference()
+    source, reference = make_document_source_and_reference(index=2)
+    old_input, new_input = prepare(old_source, old_ref), prepare_document(source, reference)
+    assert old_input is not None and new_input is not None
+
+    with pytest.raises(ValidationError, match="one context policy"):
+        ContextualStatementSupportInput(
+            statement=STATEMENT, evidence=(old_input.evidence[0], new_input.evidence[0])
+        )
 
 
 @pytest.mark.parametrize("kind", list(SourceLocatorKind))
@@ -296,11 +418,18 @@ def test_typed_pair_rejects_cross_document_context_and_unsupported_policy() -> N
     assert request is not None
     context_data = request.evidence[0].attribution_context.model_dump()
 
-    with pytest.raises(ValidationError, match="cited original block"):
+    with pytest.raises(ValidationError, match="cited original version"):
         ContextualStatementEvidence(
             reference=reference,
             attribution_context=OriginalSupportContext(
                 **(context_data | {"document_id": UUID(int=99)})
+            ),
+        )
+    with pytest.raises(ValidationError, match="cited original block"):
+        ContextualStatementEvidence(
+            reference=reference,
+            attribution_context=OriginalSupportContext(
+                **(context_data | {"structure_block_id": UUID(int=99)})
             ),
         )
     with pytest.raises(ValidationError):
