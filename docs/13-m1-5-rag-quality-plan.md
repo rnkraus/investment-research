@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — RRF comparison recorded; Step 2 standalone source-unit preparation implemented
+**Status:** Active — RRF comparison recorded; Step 2 standalone catalog and ID adapter implemented
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -282,11 +282,11 @@ fuzzy match or whole-chunk citation is accepted as a workaround.
 
 #### Step 2 contract — Citable units v1
 
-**Design recorded:** 2026-10-07. The standalone preparation/resolution block below implements
-part of this contract; the provider profile and runtime integration are not implemented or adopted.
-This is not a default-policy change or evidence that Step 2 passed. Step 1's production-build and
-hosted-CI confirmations remain required for the transition; the owner subsequently reported the
-RRF branch merged. That report is not an independently executed build or hosted verification.
+**Design recorded:** 2026-10-07. The standalone preparation/resolution and ID-adapter blocks below
+implement part of this contract; runtime integration and adoption remain open. This is not a
+default-policy change or evidence that Step 2 passed. After reporting the RRF branch merged, the
+owner confirmed Step 1's production-build and hosted-CI readiness before the ID-adapter block.
+That confirmation is owner-reported, not independently executed build or hosted verification.
 The existing M1 quote profile remains available and unchanged for historical interpretation.
 
 The design follows the source-ID/locator separation in the official
@@ -421,6 +421,39 @@ No dependency, database schema, provider adapter, bootstrap wiring, API, fronten
 answer, or runtime default changed. No provider, PostgreSQL, Docker, browser, or frontend build
 was run for this pure in-memory backend block. The remaining Step 2 integration, source-opening,
 compatibility, hosted verification, and approved quality-comparison gates remain open.
+
+**Second backend block (2026-10-07):** The standalone `OpenAICitableUnitAnswerGenerator` now
+selects one or two request-scoped source-unit IDs per statement and resolves them to existing
+unvalidated evidence references. `CitableAnswerGenerationInput` binds the catalog to the trusted
+workspace, request, ordered source provenance, and exact text. The provider schema declares the
+current ID enum once; the application independently rejects foreign, unknown, cross-request,
+mixed, and duplicate IDs. Sources are serialized once, alongside ID/range metadata. Repeated
+wording retains distinct original offsets without copied-quote or fuzzy-match recovery.
+
+The adapter reuses M1's bounded transport, safe error categories, exact usage validation, and
+explicit local-output callbacks, while keeping separate prompt/schema/resolution hooks and new
+model-specific profile versions. All four coverage states and the existing partial-answer field
+rule remain. Neither a valid ID nor a schema-valid answer establishes statement support.
+
+Preflight retains the existing 16,000-unit input-overhead reservation. It measures serialized
+metadata, prompt, and schema bytes, with 512-unit margins each for SDK schema expansion and request
+framing; question and source bytes remain reserved separately by M1 accounting. Catalogs may
+contain up to 256 units, but a metadata-heavy request can hit the unchanged reservation sooner.
+Empty catalogs and reservation overflows make no generation call. Integration must preserve the
+existing no-evidence path and map preparation failures safely before any paid operation.
+
+The profile is not yet wired into Research, bootstrap, or the evaluation runner. M1's quote profile,
+normal runtime defaults, API, source viewer, persisted answers, database schema, and dependencies
+remain unchanged. Existing unit CI discovers the new adapter tests; no workflow or frontend edit
+is required for this standalone block. Workflow/ledger integration, PostgreSQL citation readback,
+complete compatibility gates, hosted confirmation, and separately approved live comparison remain
+open. See the [Generation guide](../backend/src/investment_research/infrastructure/generation/README.md#standalone-m15-source-unit-id-adapter).
+
+Verification passed `scripts.verify_paths` (153 targeted tests, including retained M1 and catalog
+regressions) and the complete `scripts.verify_backend` gate: formatting, Ruff, full typing, and
+1,412 unit tests, including 55 new adapter cases. The pinned SDK's actual strict-schema conversion
+was checked offline, including the 256-ID enum and the schema-expansion margin. No paid provider,
+PostgreSQL, Docker, browser, or frontend build was run for this standalone backend block.
 
 ### Step 3 — Bounded reranking experiment
 

@@ -120,8 +120,8 @@ and refusal failures are permanent. The policy never performs a hidden retry.
 
 ## Standalone M1.5 citable-unit preparation
 
-The new source-unit functions are independently tested building blocks, not yet called by the
-runtime generator or research workflow. The M1 exact-substring adapter remains unchanged. The
+The source-unit functions and ID-selection adapter are independently tested building blocks, not
+yet wired into the research workflow. The M1 exact-substring behavior remains unchanged. The
 versioned design and remaining integration gates are in the
 [M1.5 Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1).
 
@@ -150,6 +150,15 @@ units are not expanded into an implied combined quote. The catalog validates exa
 source order, non-overlap, and preservation of every visible source character. Its source text is
 excluded from object representations and validation-error rendering, not from an explicit model
 dump; do not log or publish catalogs.
+
+`CitableAnswerGenerationInput` extends the existing bounded generation input with the trusted
+workspace context and catalog. `from_catalog` projects its retained sources into the existing
+source shape. Validation requires identical request, workspace, ordered provenance, and text;
+it does not establish current canonical eligibility. The standalone
+[`OpenAICitableUnitAnswerGenerator`](../../infrastructure/generation/README.md#standalone-m15-source-unit-id-adapter)
+revalidates this input, restricts model selection to current IDs, and calls the resolver. Research
+must still integrate catalog loading, accounting, no-evidence handling, support evaluation, and
+the final canonical recheck before this profile can be used by an actual request.
 
 These functions do not call providers, touch repositories, create `EvidenceSpan` records, or replace
 the existing support evaluation and final canonical recheck. Catalogs are temporary values, never
