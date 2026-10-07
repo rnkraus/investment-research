@@ -805,6 +805,28 @@ behavior, and sensitive-log checks. This is a local M0 regression result, not a 
 measurement or hosted-CI confirmation. Complete M1/browser source-opening verification and the
 remaining Step 2 acceptance decisions are still pending; website defaults remain unchanged.
 
+#### Local runtime profile preparation (2026-10-08)
+
+The owner approved wiring the source-unit path into local website research, testing PDF and text
+source opening, and deciding the default only after that verification. Retain M1 for comparisons;
+do not add a browser-facing policy switch, provider, dependency, migration, or reindexing step.
+
+The first block adds the API-owned `research_profile` configuration contract, loaded from
+`INVESTMENT_RESEARCH_RESEARCH_PROFILE`: `m1` remains the default; `m1-5-citable-units` is reserved
+for the existing RRF, source-unit generation, and document-prefix support combination. That profile
+requires M1 processing and complete external API providers with the unchanged monthly budget.
+Unknown names and credential-free acceptance/regression adapters are rejected. Worker and parser
+settings do not load the profile. Processing and research profiles remain separate.
+
+This block prepares and validates configuration only. The composition root still uses the existing
+M1 adapters, and Compose does not forward the new setting yet. Do not select the new profile for a
+website test until the following wiring block is complete. No default adoption or Step 2 acceptance
+is recorded. The focused format, lint, type, and settings checks passed all 169 settings tests.
+The complete backend gate passed 1,640 unit tests; frontend formatting, lint, type, contract,
+and all 45 tests passed. Existing CI invokes the same backend gate and discovers the new tests.
+No production build, Docker runtime, browser, hosted CI, or paid-provider run was executed for this
+configuration-only block; runtime/source-opening verification belongs to the wiring block.
+
 ### Step 3 — Bounded reranking experiment
 
 Research a maintained multilingual cross-encoder or provider behind a small typed adapter.

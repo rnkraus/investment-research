@@ -64,6 +64,7 @@ QUEUE_SETTING_NAMES = (
     "REDIS_PORT",
 )
 PROVIDER_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_RESEARCH_PROFILE",
     "INVESTMENT_RESEARCH_LOCAL_MODEL_FAILURE_OUTPUT",
     "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
     "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
@@ -1117,6 +1118,97 @@ def test_api_requires_query_and_generation_provider_groups_together() -> None:
         ApiSettings(query_providers=providers)
     with pytest.raises(ValidationError, match="requires query and generation providers together"):
         ApiSettings(generation_provider=generation)
+
+
+def valid_live_api_values() -> dict[str, object]:
+    """Return complete synthetic provider values without opening a connection."""
+
+    return {
+        "query_providers": {
+            "embedding": {"api_key": "synthetic-query-key"},
+            "pinecone": {
+                "api_key": "synthetic-pinecone-key",
+                "index_host": "synthetic-index.example.svc.pinecone.io",
+            },
+        },
+        "generation_provider": {"api_key": "synthetic-generation-key"},
+        "provider_monthly_budget_micro_usd": 5_000_000,
+    }
+
+
+def test_research_profile_defaults_to_m1_and_is_api_owned() -> None:
+    assert ApiSettings().research_profile == "m1"
+    assert "research_profile" not in WorkerSettings.model_fields
+    assert "research_profile" not in ParserSettings.model_fields
+    assert load_api_settings(env_file=None).research_profile == "m1"
+
+
+@pytest.mark.parametrize("runtime_location", ["host", "container"])
+def test_citable_research_profile_accepts_complete_live_configuration(
+    runtime_location: str,
+) -> None:
+    settings = ApiSettings.model_validate(
+        {
+            **valid_live_api_values(),
+            "runtime_location": runtime_location,
+            "research_profile": "m1-5-citable-units",
+        }
+    )
+    assert settings.research_profile == "m1-5-citable-units"
+    assert settings.processing_profile == "m1"
+    assert settings.provider_monthly_budget_micro_usd == 5_000_000
+
+
+@pytest.mark.parametrize(
+    ("extra_values", "message"),
+    [
+        ({}, "requires external API providers"),
+        (
+            {"environment": "test", "processing_profile": "m0-regression"},
+            "requires M1 processing",
+        ),
+        (
+            {
+                "environment": "test",
+                "acceptance_dense_index_path": "/tmp/synthetic-dense-index.sqlite3",
+                "provider_monthly_budget_micro_usd": 5_000_000,
+            },
+            "requires external API providers",
+        ),
+    ],
+)
+def test_citable_research_profile_rejects_credential_free_adapters(
+    extra_values: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        ApiSettings.model_validate({"research_profile": "m1-5-citable-units", **extra_values})
+
+
+@pytest.mark.parametrize("profile", ["rrf", "citable_units", "", "M1"])
+def test_research_profile_rejects_unknown_names(profile: str) -> None:
+    with pytest.raises(ValidationError, match="research_profile"):
+        ApiSettings.model_validate({"research_profile": profile})
+
+
+def test_api_loads_research_profile_with_process_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_values = {
+        "INVESTMENT_RESEARCH_RESEARCH_PROFILE": "m1-5-citable-units",
+        "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY": "synthetic-query-key",
+        "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY": "synthetic-pinecone-key",
+        "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST": "synthetic-index.example.svc.pinecone.io",
+        "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY": "synthetic-generation-key",
+        "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD": "5000000",
+    }
+    monkeypatch.setattr(settings_module, "_read_local_values", lambda _: file_values)
+    assert load_api_settings(env_file=None).research_profile == "m1-5-citable-units"
+
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RESEARCH_PROFILE", "m1")
+    assert load_api_settings(env_file=None).research_profile == "m1"
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RESEARCH_PROFILE", "invalid")
+    with pytest.raises(ValidationError, match="research_profile"):
+        load_api_settings(env_file=None)
 
 
 def test_paid_provider_settings_require_the_shared_capped_monthly_budget() -> None:

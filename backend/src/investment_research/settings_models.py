@@ -18,6 +18,7 @@ type RuntimeLocation = Literal["host", "container"]
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 type ObjectStorageProvider = Literal["local", "s3"]
 type ProcessingProfileName = Literal["m1", "m0-regression"]
+type ResearchProfileName = Literal["m1", "m1-5-citable-units"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
@@ -437,6 +438,7 @@ class ApiSettings(ObjectStorageSettings):
     """Configuration available to the FastAPI process."""
 
     processing_profile: ProcessingProfileName = "m1"
+    research_profile: ResearchProfileName = "m1"
     app_name: str = "Investment Research Archive"
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1024, le=65535)
@@ -512,6 +514,17 @@ class ApiSettings(ObjectStorageSettings):
         budget_configured = self.provider_monthly_budget_micro_usd is not None
         if providers_enabled != budget_configured:
             raise ValueError("M1 API provider configuration requires the monthly provider budget")
+        return self
+
+    @model_validator(mode="after")
+    def require_citable_units_provider_configuration(self) -> ApiSettings:
+        """Keep the source-unit profile separate from credential-free regression adapters."""
+
+        if self.research_profile == "m1-5-citable-units":
+            if self.processing_profile != "m1":
+                raise ValueError("citable-units research_profile requires M1 processing")
+            if self.query_providers is None or self.generation_provider is None:
+                raise ValueError("citable-units research_profile requires external API providers")
         return self
 
     def require_acceptance_dense_index_path(self) -> Path:
