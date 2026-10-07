@@ -11,9 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from investment_research.infrastructure.evidence.openai import (
     LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
+    M1_5_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
+    M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
     M1_STATEMENT_SUPPORT_PROMPT_VERSION,
     OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
+    statement_support_prompt_version,
 )
 from investment_research.infrastructure.generation.openai import (
     M1_ANSWER_GENERATOR_VERSION,
@@ -61,6 +64,7 @@ MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
 type LiveRetrievalPolicy = Literal["m1", "rrf"]
 type LiveAnswerPolicy = Literal["m1", "citable_units"]
+type LiveSupportPolicy = Literal["m1", "attribution"]
 
 
 class LiveBaselineLimitError(ValueError):
@@ -103,6 +107,22 @@ def selection_profile_for_policy(
     if policy == "rrf":
         return RrfSelectionProfile()
     raise LiveBaselineLimitError("the evaluation retrieval policy is not approved")
+
+
+def support_policy_for_prompt_version(version: str) -> LiveSupportPolicy:
+    """Require a known recorded support profile before selecting input behavior."""
+
+    if version in {
+        M1_STATEMENT_SUPPORT_PROMPT_VERSION,
+        LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
+    }:
+        return "m1"
+    if version in {
+        M1_5_ATTRIBUTION_SUPPORT_PROMPT_VERSION,
+        M1_5_LOCAL_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION,
+    }:
+        return "attribution"
+    raise LiveBaselineLimitError("the evaluation support prompt is not approved")
 
 
 def retrieval_policy_for_version(version: str) -> LiveRetrievalPolicy:
@@ -155,10 +175,13 @@ def build_plan(
     retrieval_policy: LiveRetrievalPolicy = "m1",
     answer_policy: LiveAnswerPolicy = "m1",
     support_explanations: bool = False,
+    support_policy: LiveSupportPolicy = "m1",
 ) -> LiveBaselinePlan:
     """Validate only the frozen approved fixtures; never load runtime settings or keys."""
 
     selection_profile = selection_profile_for_policy(retrieval_policy)
+    if support_policy not in {"m1", "attribution"}:
+        raise LiveBaselineLimitError("the evaluation support policy is not approved")
     if type(maximum_spend_micro_usd) is not int or not (
         0 < maximum_spend_micro_usd <= MAXIMUM_SPEND_MICRO_USD
     ):
@@ -226,10 +249,8 @@ def build_plan(
             answer_prompt_version=answer_profile_for_policy(
                 answer_policy, answer_model
             ).prompt_version,
-            support_prompt_version=(
-                LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION
-                if support_explanations
-                else M1_STATEMENT_SUPPORT_PROMPT_VERSION
+            support_prompt_version=statement_support_prompt_version(
+                attribution=support_policy == "attribution", explanations=support_explanations
             ),
         ),
         maximum_spend_micro_usd=maximum_spend_micro_usd,
@@ -325,6 +346,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retrieval-policy", choices=("m1", "rrf"), default="m1")
     parser.add_argument("--answer-policy", choices=("m1", "citable_units"), default="m1")
+    parser.add_argument("--support-policy", choices=("m1", "attribution"), default="m1")
     parser.add_argument(
         "--answer-model",
         type=ResearchModel,
@@ -346,6 +368,7 @@ def main() -> int:
             maximum_spend_micro_usd=arguments.max_spend_usd,
             retrieval_policy=arguments.retrieval_policy,
             answer_policy=arguments.answer_policy,
+            support_policy=arguments.support_policy,
         )
     except CorpusValidationError, LiveBaselineLimitError:
         print(

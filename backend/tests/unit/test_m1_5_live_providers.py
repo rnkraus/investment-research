@@ -17,6 +17,7 @@ from investment_research.infrastructure.search.openai import (
     OpenAIEmbeddingProviderConfigurationError,
 )
 from investment_research.modules.evidence.contracts import (
+    ContextualStatementSupportInput,
     StatementSupportDecision,
     StatementSupportResult,
 )
@@ -55,6 +56,7 @@ from scripts.m1_5_live_providers import (
 from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveBaselineLimitError, build_plan
 from tests.unit.test_openai_citable_unit_answer_generator import make_generator, make_input
+from tests.unit.test_statement_support_context import make_source_and_reference, prepare
 
 MARKER = "synthetic-private-content-marker"
 CONFIG = "openai-text-embedding-3-small-1536-v1"
@@ -78,6 +80,7 @@ class RecordingProviders:
     supported: bool = True
     diagnostic_reason: str | None = None
     support_inputs: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
+    contextual_inputs: list[ContextualStatementSupportInput] = field(default_factory=list)
 
     def _before_call(self) -> None:
         self.requests += 1
@@ -113,6 +116,17 @@ class RecordingProviders:
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
         self._before_call()
         self.support_inputs.append((statement, tuple(evidence_texts)))
+        return StatementSupportResult(
+            decision=StatementSupportDecision(supported=self.supported),
+            usage=self.usage,
+            diagnostic_reason=self.diagnostic_reason,
+        )
+
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        self._before_call()
+        self.contextual_inputs.append(request)
         return StatementSupportResult(
             decision=StatementSupportDecision(supported=self.supported),
             usage=self.usage,
@@ -187,6 +201,67 @@ def test_all_four_roles_reserve_and_record_reported_usage_without_content() -> N
         item.estimated_cost_micro_usd or 0 for item in calls.records
     )
     assert all(MARKER not in item.model_dump_json() for item in calls.records)
+
+
+def test_contextual_support_counts_complete_payload_without_recording_content() -> None:
+    request = prepare(*make_source_and_reference())
+    assert request is not None
+    delegate = RecordingProviders()
+    plan = build_plan(support_policy="attribution")
+    calls = LiveProviderCalls(LiveBaselineBudget(plan))
+    result = BudgetedSupportEvaluator(delegate, calls).evaluate_contextual(request)
+    expected = LiveBaselineBudget(plan).reserve(
+        ProviderOperationKind.STATEMENT_SUPPORT,
+        payload_utf8_bytes=len(request.model_dump_json().encode("utf-8")),
+    )
+    assert result.decision.supported
+    assert delegate.contextual_inputs == [request]
+    assert delegate.requests == 1
+    assert calls.records[0].reserved_cost_micro_usd == expected.estimated_cost_micro_usd
+    assert request.statement not in calls.records[0].model_dump_json()
+    assert request.evidence[0].attribution_context.text not in calls.records[0].model_dump_json()
+
+
+@pytest.mark.parametrize("failure", ["budget", "policy", "input"])
+def test_contextual_support_rejects_invalid_admission_without_calls_or_reservations(
+    failure: str,
+) -> None:
+    request = prepare(*make_source_and_reference())
+    assert request is not None
+    delegate = RecordingProviders()
+    plan = build_plan(
+        support_policy="m1" if failure == "policy" else "attribution",
+        maximum_spend_micro_usd=1 if failure == "budget" else 800_000,
+    )
+    calls = LiveProviderCalls(LiveBaselineBudget(plan))
+    if failure == "input":
+        request = request.model_copy(update={"evidence": ()})
+    with pytest.raises(LiveBaselineLimitError):
+        BudgetedSupportEvaluator(delegate, calls).evaluate_contextual(request)
+    assert delegate.requests == 0
+    assert calls.records == ()
+    assert calls.budget.reserved_cost_micro_usd == 0
+
+
+def test_contextual_support_local_output_keeps_quote_and_attribution_separate(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    request = prepare(*make_source_and_reference())
+    assert request is not None
+    delegate = RecordingProviders(diagnostic_reason="The named report identifies the subject.")
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan(support_policy="attribution")))
+    local = LocalEvaluationOutput(answer_model="synthetic", support_model="synthetic")
+    BudgetedSupportEvaluator(delegate, calls, local).evaluate_contextual(request)
+    output = json.loads(capsys.readouterr().out)
+    assert output["support_policy"] == "attribution"
+    assert output["evidence"][0]["exact_text"] == request.evidence[0].reference.exact_text
+    assert (
+        output["evidence"][0]["attribution_context"] == request.evidence[0].attribution_context.text
+    )
 
 
 @pytest.mark.parametrize("role", list(ProviderOperationKind))

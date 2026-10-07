@@ -25,6 +25,7 @@ from investment_research.modules.evidence.ports import (
     StatementSupportEvaluator,
     StatementSupportProviderError,
 )
+from investment_research.modules.evidence.support_context import build_contextual_support_input
 from investment_research.modules.identity.domain import Workspace, WorkspaceType
 from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
@@ -74,6 +75,7 @@ from scripts.plan_m1_5_live_baseline import (
     build_plan,
     retrieval_policy_for_version,
     selection_profile_for_policy,
+    support_policy_for_prompt_version,
 )
 from scripts.score_m1_5_observations import (
     CaseObservation,
@@ -219,10 +221,15 @@ def build_services(
     answer_model = ResearchModel(plan.configuration.answer_model)
     support_model = ResearchModel(plan.configuration.support_model)
     answer_policy = answer_policy_for_prompt_version(plan.configuration.answer_prompt_version)
+    attribution = (
+        support_policy_for_prompt_version(plan.configuration.support_prompt_version)
+        == "attribution"
+    )
     generation = GenerateValidatedAnswerService(
         unit_of_work_factory=create_answer_validation_unit_of_work_factory(sessions),
         answer_generator=generator,
         support_evaluator=support,
+        support_context_builder=build_contextual_support_input if attribution else None,
         generation_profile=answer_profile_for_policy(answer_policy, answer_model),
         generation_input_builder=(
             CitableGenerationInputBuilder(create_citable_source_unit_of_work_factory(sessions))
@@ -231,7 +238,9 @@ def build_services(
         ),
         validation_profile=EvidenceValidationProfile(
             validation_config_version=(
-                "m1-evidence-validation-v1"
+                f"m1-5-attribution-validation-v1-{support_model.value}"
+                if attribution
+                else "m1-evidence-validation-v1"
                 if support_model is ResearchModel.TERRA
                 else "m1-evidence-validation-v1-luna-support"
             )
@@ -250,7 +259,11 @@ def build_services(
         statement_support_accounting=StatementSupportAccountingProfile(
             provider="openai",
             model=support_model.value,
-            configuration_version=support_config_version(support_model),
+            configuration_version=(
+                f"{support_config_version(support_model)}-attribution-v1"
+                if attribution
+                else support_config_version(support_model)
+            ),
             input_overhead_units=support_limit.input_envelope_units,
             maximum_output_units=support_limit.maximum_output_tokens,
             cost_policy=_cost_policy(plan, ProviderOperationKind.STATEMENT_SUPPORT),
@@ -321,9 +334,8 @@ def run_live_baseline(
 ) -> LiveBaselineReport:
     """Run every reviewed case without authorizing credentials, resources, or cleanup itself."""
 
-    if (
-        plan
-        != build_plan(
+    try:
+        approved_plan = build_plan(
             answer_model=ResearchModel(plan.configuration.answer_model),
             support_model=ResearchModel(plan.configuration.support_model),
             maximum_spend_micro_usd=plan.maximum_spend_micro_usd,
@@ -334,9 +346,13 @@ def run_live_baseline(
                 plan.configuration.answer_prompt_version
             ),
             support_explanations=local_output is not None,
+            support_policy=support_policy_for_prompt_version(
+                plan.configuration.support_prompt_version
+            ),
         )
-        or calls.budget.plan != plan
-    ):
+    except LiveBaselineLimitError:
+        raise LiveBaselineLimitError("the evaluation plan is inconsistent") from None
+    if plan != approved_plan or calls.budget.plan != plan:
         raise LiveBaselineLimitError("the evaluation plan is inconsistent")
     manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
     if local_output is not None:

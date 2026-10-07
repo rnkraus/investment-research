@@ -45,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
+        "--support-policy",
+        choices=("m1", "attribution"),
+        default="m1",
+        help="Opt into bounded original attribution context; normal runtime remains M1.",
+    )
+    parser.add_argument(
         "--answer-policy",
         choices=("m1", "citable_units"),
         default="m1",
@@ -97,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             retrieval_policy=arguments.retrieval_policy,
             answer_policy=arguments.answer_policy,
             support_explanations=arguments.show_local_model_output,
+            support_policy=arguments.support_policy,
         )
         if not arguments.execute:
             print(plan.model_dump_json(indent=2))

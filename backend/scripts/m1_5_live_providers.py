@@ -7,11 +7,14 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from investment_research.modules.evidence.contracts import (
+    ContextualStatementSupportInput,
     StatementSupportInput,
     StatementSupportResult,
 )
 from investment_research.modules.evidence.ports import (
+    ContextualStatementSupportEvaluator,
     StatementSupportEvaluator,
+    StatementSupportProviderConfigurationError,
     StatementSupportProviderError,
 )
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
@@ -38,6 +41,7 @@ from scripts.plan_m1_5_live_baseline import (
     LiveBaselineBudget,
     LiveBaselineLimitError,
     RequestReservation,
+    support_policy_for_prompt_version,
 )
 
 
@@ -203,6 +207,13 @@ class BudgetedSupportEvaluator:
     local_output: LocalEvaluationOutput | None = None
 
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        if (
+            support_policy_for_prompt_version(
+                self.calls.budget.plan.configuration.support_prompt_version
+            )
+            != "m1"
+        ):
+            raise LiveBaselineLimitError("evaluation support policy does not match the input")
         try:
             request = StatementSupportInput(
                 statement=statement, evidence_texts=tuple(evidence_texts)
@@ -216,4 +227,32 @@ class BudgetedSupportEvaluator:
         )
         if self.local_output is not None:
             self.local_output.support_decision(request.statement, request.evidence_texts, result)
+        return result
+
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        """Count the complete context payload before the single opt-in provider request."""
+
+        if (
+            support_policy_for_prompt_version(
+                self.calls.budget.plan.configuration.support_prompt_version
+            )
+            != "attribution"
+        ):
+            raise LiveBaselineLimitError("evaluation support policy does not match the input")
+        delegate = self.delegate
+        if not isinstance(delegate, ContextualStatementSupportEvaluator):
+            raise StatementSupportProviderConfigurationError("contextual support is unavailable")
+        try:
+            request = ContextualStatementSupportInput.model_validate(request.model_dump())
+        except ValidationError:
+            raise LiveBaselineLimitError("evaluation contextual support input is invalid") from None
+        result = self.calls.invoke(
+            ProviderOperationKind.STATEMENT_SUPPORT,
+            payload_utf8_bytes=len(request.model_dump_json().encode("utf-8")),
+            call=lambda: delegate.evaluate_contextual(request),
+        )
+        if self.local_output is not None:
+            self.local_output.contextual_support_decision(request, result)
         return result

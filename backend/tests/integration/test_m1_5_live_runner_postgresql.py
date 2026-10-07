@@ -15,6 +15,7 @@ from investment_research.infrastructure.search.deterministic_index import (
     DeterministicSqliteDenseIndex,
 )
 from investment_research.modules.evidence.contracts import (
+    ContextualStatementSupportInput,
     StatementSupportDecision,
     StatementSupportResult,
 )
@@ -42,7 +43,12 @@ from scripts.m1_5_live_providers import (
 )
 from scripts.m1_5_live_runner import run_live_baseline
 from scripts.m1_5_local_output import LocalEvaluationOutput
-from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveRetrievalPolicy, build_plan
+from scripts.plan_m1_5_live_baseline import (
+    LiveBaselineBudget,
+    LiveRetrievalPolicy,
+    LiveSupportPolicy,
+    build_plan,
+)
 from scripts.verify_m1_5_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, validate_corpus
 from tests.integration.m1_5 import embedding_provider
 from tests.integration.test_m1_5_answer_baseline_postgresql import ReviewedSupportEvaluator
@@ -185,21 +191,49 @@ class ReviewedUnitSupportEvaluator(ReviewedSupportEvaluator):
         )
 
 
+class ReviewedContextualSupportEvaluator(ReviewedUnitSupportEvaluator):
+    """Exercise context wiring without claiming real-model attribution quality."""
+
+    def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        raise AssertionError("contextual runner must not call the exact-only port")
+
+    def evaluate_contextual(
+        self, request: ContextualStatementSupportInput
+    ) -> StatementSupportResult:
+        for item in request.evidence:
+            assert item.reference.document_id == item.attribution_context.document_id
+            assert (
+                item.reference.document_version_id == item.attribution_context.document_version_id
+            )
+            assert item.reference.structure_block_id == item.attribution_context.structure_block_id
+        return super().evaluate(
+            request.statement, tuple(item.reference.exact_text for item in request.evidence)
+        )
+
+
 @pytest.mark.parametrize("retrieval_policy", ["m1", "rrf"])
+@pytest.mark.parametrize("support_policy", ["m1", "attribution"])
 def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     integration_database_engine: Engine,
     tmp_path: Path,
     retrieval_policy: LiveRetrievalPolicy,
+    support_policy: LiveSupportPolicy,
 ) -> None:
     plan = build_plan(
         answer_policy="citable_units",
         retrieval_policy=retrieval_policy,
         answer_model=ResearchModel.LUNA,
         support_model=ResearchModel.LUNA,
+        support_policy=support_policy,
     )
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
     generator = ScriptedCitableGenerator()
+    support = (
+        ReviewedContextualSupportEvaluator(manifest)
+        if support_policy == "attribution"
+        else ReviewedUnitSupportEvaluator(manifest)
+    )
     report = run_live_baseline(
         integration_database_engine,
         plan,
@@ -207,7 +241,7 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
         document_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
         query_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
         generator=BudgetedAnswerGenerator(generator, calls),
-        support=BudgetedSupportEvaluator(ReviewedUnitSupportEvaluator(manifest), calls),
+        support=BudgetedSupportEvaluator(support, calls),
         calls=calls,
     )
     assert not report.failures
@@ -225,6 +259,7 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     )
     assert report.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
     assert all(record.usage_state == "REPORTED" for record in report.provider_calls)
+    assert len(support.calls) == 5  # One paid-path call per answer, none on final database replay.
 
 
 @pytest.mark.parametrize(
@@ -246,6 +281,7 @@ def test_runner_records_every_case_and_never_publishes_unvalidated_output(
         support_model=ResearchModel.LUNA,
         maximum_spend_micro_usd=1 if failure == "budget" else 300_000,
         retrieval_policy=retrieval_policy,
+        support_explanations=show_output,
     )
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     embedding = embedding_provider()
