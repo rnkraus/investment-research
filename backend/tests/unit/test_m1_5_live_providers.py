@@ -1,6 +1,8 @@
 """Budgeted evaluation ports never require live credentials or network access."""
 
+import json
 import socket
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from uuid import uuid4
@@ -50,6 +52,7 @@ from scripts.m1_5_live_providers import (
     LiveProviderCallError,
     LiveProviderCalls,
 )
+from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveBaselineLimitError, build_plan
 from tests.unit.test_openai_citable_unit_answer_generator import make_generator, make_input
 
@@ -72,6 +75,8 @@ class RecordingProviders:
         default_factory=lambda: ProviderUsage(input_units=10, output_units=0)
     )
     requests: int = 0
+    supported: bool = True
+    support_inputs: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
 
     def _before_call(self) -> None:
         self.requests += 1
@@ -106,8 +111,9 @@ class RecordingProviders:
 
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
         self._before_call()
+        self.support_inputs.append((statement, tuple(evidence_texts)))
         return StatementSupportResult(
-            decision=StatementSupportDecision(supported=True), usage=self.usage
+            decision=StatementSupportDecision(supported=self.supported), usage=self.usage
         )
 
 
@@ -276,6 +282,60 @@ def test_usage_overrun_is_recorded_and_stops_future_calls() -> None:
     with pytest.raises(LiveBaselineLimitError, match="stopped"):
         BudgetedEmbeddingProvider(delegate, calls).embed(embedding_request())
     assert delegate.requests == 1
+
+
+@pytest.mark.parametrize("supported", [True, False])
+@pytest.mark.parametrize("show_local_output", [True, False])
+def test_support_inspection_displays_exact_provider_input_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    supported: bool,
+    show_local_output: bool,
+) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    local_output = (
+        LocalEvaluationOutput(answer_model="synthetic-answer", support_model="synthetic-support")
+        if show_local_output
+        else None
+    )
+    if local_output is not None:
+        local_output.case_id = "synthetic-support-inspection"
+    statement = "The pilot requires transformers."
+    evidence_texts = ("  Transformer shortage.\nNext line.  ", "Public café text\x1b[31m")
+    delegate = RecordingProviders(supported=supported)
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
+
+    result = BudgetedSupportEvaluator(delegate, calls, local_output).evaluate(
+        statement, evidence_texts
+    )
+
+    assert result.decision.supported is supported
+    assert delegate.support_inputs == [(statement, evidence_texts)]
+    assert delegate.requests == len(calls.records) == 1
+    assert all(text not in calls.records[0].model_dump_json() for text in evidence_texts)
+    terminal = capsys.readouterr().out
+    if not show_local_output:
+        assert terminal == ""
+        return
+    assert "\x1b" not in terminal
+    assert "\\u001b" in terminal
+    assert json.loads(terminal) == {
+        "event": "local.evaluation.support_decision",
+        "case_id": "synthetic-support-inspection",
+        "role": "support",
+        "model": "synthetic-support",
+        "statement": statement,
+        "evidence_texts": list(evidence_texts),
+        "supported": supported,
+        "notice": "Application support decision, not an independent quality assessment.",
+    }
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert local_output is not None
+    with pytest.raises(ValueError, match="outside CI"):
+        local_output.support_decision(statement, evidence_texts, result)
+    assert capsys.readouterr().out == ""
 
 
 def test_support_validation_happens_before_reservation_or_provider_access() -> None:

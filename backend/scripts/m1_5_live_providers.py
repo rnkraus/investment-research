@@ -215,5 +215,5 @@ class BudgetedSupportEvaluator:
             call=lambda: self.delegate.evaluate(request.statement, request.evidence_texts),
         )
         if self.local_output is not None:
-            self.local_output.support_decision(request.statement, result)
+            self.local_output.support_decision(request.statement, request.evidence_texts, result)
         return result

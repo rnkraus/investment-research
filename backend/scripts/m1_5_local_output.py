@@ -62,12 +62,18 @@ class LocalEvaluationOutput:
             output_text=output_text,
         )
 
-    def support_decision(self, statement: str, result: StatementSupportResult) -> None:
+    def support_decision(
+        self,
+        statement: str,
+        evidence_texts: tuple[str, ...],
+        result: StatementSupportResult,
+    ) -> None:
         self._emit(
             "local.evaluation.support_decision",
             role="support",
             model=self.support_model,
             statement=statement,
+            evidence_texts=evidence_texts,
             supported=result.decision.supported,
             notice="Application support decision, not an independent quality assessment.",
         )
