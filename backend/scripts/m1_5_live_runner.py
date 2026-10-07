@@ -10,12 +10,11 @@ from sqlalchemy import Engine
 from investment_research.infrastructure.database.session import create_session_factory
 from investment_research.infrastructure.database.unit_of_work import (
     create_answer_validation_unit_of_work_factory,
+    create_citable_source_unit_of_work_factory,
     create_provider_operation_unit_of_work_factory,
     create_research_retrieval_unit_of_work_factory,
 )
-from investment_research.infrastructure.generation.openai import M1_ANSWER_GENERATOR_VERSION
 from investment_research.infrastructure.openai_models import (
-    answer_config_version,
     support_config_version,
 )
 from investment_research.infrastructure.operations.noop import NoopOperationTracer
@@ -43,8 +42,8 @@ from investment_research.modules.research.application import (
     RetrieveResearchService,
     StatementSupportAccountingProfile,
 )
+from investment_research.modules.research.citable_generation import CitableGenerationInputBuilder
 from investment_research.modules.research.contracts import (
-    AnswerGenerationProfile,
     ResearchModel,
     ResearchRetrievalInput,
     ValidatedAnswerResult,
@@ -70,6 +69,8 @@ from scripts.map_m1_5_passages import map_citation_passages, map_selected_passag
 from scripts.plan_m1_5_live_baseline import (
     LiveBaselineLimitError,
     LiveBaselinePlan,
+    answer_policy_for_prompt_version,
+    answer_profile_for_policy,
     build_plan,
     retrieval_policy_for_version,
     selection_profile_for_policy,
@@ -217,14 +218,16 @@ def build_services(
     )
     answer_model = ResearchModel(plan.configuration.answer_model)
     support_model = ResearchModel(plan.configuration.support_model)
+    answer_policy = answer_policy_for_prompt_version(plan.configuration.answer_prompt_version)
     generation = GenerateValidatedAnswerService(
         unit_of_work_factory=create_answer_validation_unit_of_work_factory(sessions),
         answer_generator=generator,
         support_evaluator=support,
-        generation_profile=AnswerGenerationProfile(
-            generator_version=M1_ANSWER_GENERATOR_VERSION,
-            generation_config_version=answer_config_version(answer_model),
-            prompt_version=plan.configuration.answer_prompt_version,
+        generation_profile=answer_profile_for_policy(answer_policy, answer_model),
+        generation_input_builder=(
+            CitableGenerationInputBuilder(create_citable_source_unit_of_work_factory(sessions))
+            if answer_policy == "citable_units"
+            else None
         ),
         validation_profile=EvidenceValidationProfile(
             validation_config_version=(
@@ -326,6 +329,9 @@ def run_live_baseline(
             maximum_spend_micro_usd=plan.maximum_spend_micro_usd,
             retrieval_policy=retrieval_policy_for_version(
                 plan.configuration.selector_config_version
+            ),
+            answer_policy=answer_policy_for_prompt_version(
+                plan.configuration.answer_prompt_version
             ),
         )
         or calls.budget.plan != plan

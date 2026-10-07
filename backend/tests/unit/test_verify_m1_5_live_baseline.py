@@ -31,7 +31,7 @@ from scripts.m1_5_live_providers import LiveProviderCalls, ProviderCallRecord
 from scripts.m1_5_live_runner import LiveBaselineReport, LiveCaseFailure, summarize_usage
 from scripts.m1_5_live_settings import EvaluationConfigurationError
 from scripts.m1_5_local_output import LocalEvaluationOutput
-from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, build_plan
+from scripts.plan_m1_5_live_baseline import LiveAnswerPolicy, LiveBaselineBudget, build_plan
 from scripts.score_m1_5_observations import ProviderUsage
 from tests.unit.test_score_m1_5_observations import (
     make_complete_observations,
@@ -110,6 +110,20 @@ def test_unknown_policy_is_rejected_before_runtime_access() -> None:
     with pytest.raises(SystemExit) as caught:
         cli.main(["--retrieval-policy", "unknown"])
     assert caught.value.code == 2
+
+
+def test_citable_preflight_is_explicit_free_and_keeps_budget(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["--answer-policy", "citable_units", "--retrieval-policy", "rrf"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert (
+        plan["configuration"]["answer_prompt_version"] == "m1-5-citable-units-en-answer-prompt-v1"
+    )
+    assert plan["configuration"]["selector_config_version"] == "m1-5-rrf-k60-v1"
+    assert plan["maximum_spend_micro_usd"] == 800_000
+    with pytest.raises(SystemExit):
+        cli.main(["--answer-policy", "unknown"])
 
 
 def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> None:
@@ -429,10 +443,12 @@ def settings() -> tuple[WorkerSettings, ApiSettings]:
 
 @pytest.mark.parametrize("failure", [None, "retriever_setup", "cleanup"])
 @pytest.mark.parametrize("show_output", [False, True])
+@pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
 def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
     failure: str | None,
     show_output: bool,
+    answer_policy: LiveAnswerPolicy,
 ) -> None:
     local = None
     if show_output:
@@ -442,7 +458,7 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
         local = LocalEvaluationOutput(
             answer_model="synthetic-answer", support_model="synthetic-support"
         )
-    plan = build_plan()
+    plan = build_plan(answer_policy=answer_policy)
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
     worker, api = settings()
     document, query, answer, support, writer, retriever = (MagicMock() for _ in range(6))
@@ -451,7 +467,12 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
     )
     answer_factory = MagicMock(return_value=answer)
     support_factory = MagicMock(return_value=support)
-    monkeypatch.setattr(runtime, "create_openai_answer_generator", answer_factory)
+    legacy_factory = MagicMock(return_value=answer)
+    citable_factory = MagicMock(return_value=answer)
+    monkeypatch.setattr(runtime, "create_openai_answer_generator", legacy_factory)
+    monkeypatch.setattr(runtime, "create_openai_citable_unit_answer_generator", citable_factory)
+    answer_factory = citable_factory if answer_policy == "citable_units" else legacy_factory
+    unused_factory = legacy_factory if answer_policy == "citable_units" else citable_factory
     monkeypatch.setattr(runtime, "create_openai_statement_support_evaluator", support_factory)
     monkeypatch.setattr(runtime, "create_pinecone_dense_index_writer", lambda **kwargs: writer)
     factory = MagicMock(return_value=retriever)
@@ -480,6 +501,7 @@ def test_provider_clients_close_after_partial_setup_or_cleanup_failure(
         owned_index.close.assert_called_once()
     for client in (document, query, answer, support):
         client.close.assert_called_once()
+    unused_factory.assert_not_called()
     assert cleanup_steps == (["namespace_absence"] if failure == "cleanup" else [])
     assert answer_factory.call_args.kwargs["local_proposal_output"] == (
         None if local is None else local.answer_proposal

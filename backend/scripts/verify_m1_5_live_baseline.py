@@ -44,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Select a frozen evaluation policy only; the application default remains M1.",
     )
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument(
+        "--answer-policy",
+        choices=("m1", "citable_units"),
+        default="m1",
+        help="Select the opt-in source-unit contract; normal runtime defaults stay M1.",
+    )
     parser.add_argument("--confirm-public-synthetic", action="store_true")
     parser.add_argument("--confirm-pinecone-starter", action="store_true")
     parser.add_argument("--output", type=Path)
@@ -89,6 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             support_model=ResearchModel(arguments.support_model),
             maximum_spend_micro_usd=arguments.max_spend_usd,
             retrieval_policy=arguments.retrieval_policy,
+            answer_policy=arguments.answer_policy,
         )
         if not arguments.execute:
             print(plan.model_dump_json(indent=2))

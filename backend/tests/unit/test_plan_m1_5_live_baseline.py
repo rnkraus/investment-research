@@ -47,6 +47,35 @@ def test_rrf_plan_changes_only_the_selector_configuration() -> None:
     )
 
 
+def test_citable_policy_changes_only_the_frozen_answer_prompt() -> None:
+    original = live.build_plan(retrieval_policy="rrf")
+    selected = live.build_plan(retrieval_policy="rrf", answer_policy="citable_units")
+    assert selected.configuration.answer_prompt_version == "m1-5-citable-units-en-answer-prompt-v1"
+    assert selected.model_dump(exclude={"configuration"}) == original.model_dump(
+        exclude={"configuration"}
+    )
+    assert selected.configuration.model_dump(
+        exclude={"answer_prompt_version"}
+    ) == original.configuration.model_dump(exclude={"answer_prompt_version"})
+    assert (
+        live.answer_policy_for_prompt_version(selected.configuration.answer_prompt_version)
+        == "citable_units"
+    )
+    assert (
+        live.answer_policy_for_prompt_version(original.configuration.answer_prompt_version) == "m1"
+    )
+    assert (
+        live.answer_profile_for_policy(
+            "citable_units", ResearchModel.LUNA
+        ).generation_config_version
+        == "m1-5-gpt-5.6-luna-low-citable-units-en-v1"
+    )
+    with pytest.raises(live.LiveBaselineLimitError):
+        live.answer_policy_for_prompt_version("unknown")
+    with pytest.raises(live.LiveBaselineLimitError):
+        live.build_plan(answer_policy="unknown")  # type: ignore[arg-type]
+
+
 def test_unknown_policy_and_selector_version_are_rejected() -> None:
     with pytest.raises(live.LiveBaselineLimitError, match="policy"):
         live.build_plan(retrieval_policy="unknown")  # type: ignore[arg-type]

@@ -25,6 +25,7 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
+from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationResult,
@@ -50,6 +51,7 @@ from scripts.m1_5_live_providers import (
     LiveProviderCalls,
 )
 from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveBaselineLimitError, build_plan
+from tests.unit.test_openai_citable_unit_answer_generator import make_generator, make_input
 
 MARKER = "synthetic-private-content-marker"
 CONFIG = "openai-text-embedding-3-small-1536-v1"
@@ -118,6 +120,39 @@ def embedding_request(purpose: EmbeddingPurpose = EmbeddingPurpose.QUERY) -> Emb
 
 def generation_input() -> AnswerGenerationInput:
     return AnswerGenerationInput(research_request_id=uuid4(), question=MARKER, sources=())
+
+
+def test_citable_budget_counts_original_payload_once_and_preflights_before_reserving() -> None:
+    request = make_input()
+    delegate, client = make_generator(request)
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan(answer_policy="citable_units")))
+    BudgetedAnswerGenerator(delegate, calls).generate(request)
+    record = calls.records[0]
+    expected = LiveBaselineBudget(calls.budget.plan).reserve(
+        ProviderOperationKind.ANSWER_GENERATION,
+        payload_utf8_bytes=len(request.question.encode("utf-8"))
+        + sum(len(item.text.encode("utf-8")) for item in request.sources),
+    )
+    assert record.reserved_cost_micro_usd == expected.estimated_cost_micro_usd
+    assert len(client.responses.calls) == 1
+
+
+def test_citable_preflight_failure_does_not_reserve_or_call_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = make_input()
+    delegate, client = make_generator(request)
+
+    def reject(*args: object) -> None:
+        raise CitableUnitLimitError("source-unit metadata exceeds the input reservation")
+
+    monkeypatch.setattr(type(delegate), "preflight", reject)
+    calls = LiveProviderCalls(LiveBaselineBudget(build_plan(answer_policy="citable_units")))
+    with pytest.raises(CitableUnitLimitError):
+        BudgetedAnswerGenerator(delegate, calls).generate(request)
+    assert calls.records == ()
+    assert calls.budget.reserved_cost_micro_usd == 0
+    assert not client.responses.calls
 
 
 def test_all_four_roles_reserve_and_record_reported_usage_without_content() -> None:

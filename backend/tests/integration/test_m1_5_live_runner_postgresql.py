@@ -1,6 +1,7 @@
 """Exercise live-runner wiring with PostgreSQL and deterministic, zero-spend ports."""
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -20,6 +21,7 @@ from investment_research.modules.evidence.contracts import (
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.research.citable_unit_contracts import CitableAnswerGenerationInput
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationResult,
@@ -44,6 +46,7 @@ from scripts.plan_m1_5_live_baseline import LiveBaselineBudget, LiveRetrievalPol
 from scripts.verify_m1_5_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, validate_corpus
 from tests.integration.m1_5 import embedding_provider
 from tests.integration.test_m1_5_answer_baseline_postgresql import ReviewedSupportEvaluator
+from tests.unit.test_openai_citable_unit_answer_generator import make_generator
 
 MARKER = "synthetic-private-provider-error"
 
@@ -127,6 +130,101 @@ class RejectedSupportEvaluator:
             decision=StatementSupportDecision(supported=False),
             usage=ProviderUsage(input_units=10, output_units=5),
         )
+
+
+class ScriptedCitableGenerator(ScriptedGenerator):
+    """Drive the real ID adapter with reviewed, deterministic model proposals."""
+
+    def generate(self, request: AnswerGenerationInput) -> AnswerGenerationResult:
+        assert isinstance(request, CitableAnswerGenerationInput)
+        proposal = super().generate(request).answer
+        statements = []
+        for statement in proposal.statements:
+            selected = tuple(
+                unit
+                for unit in request.catalog.units
+                if any(
+                    unit.retrieval_candidate_id == reference.retrieval_candidate_id
+                    and unit.key.start_character < reference.end_character
+                    and unit.key.end_character > reference.start_character
+                    for reference in statement.evidence
+                )
+            )
+            assert 1 <= len(selected) <= 2
+            statements.append(
+                {
+                    "text": statement.text,
+                    "source_unit_ids": [str(unit.source_unit_id) for unit in selected],
+                }
+            )
+        generator, _ = make_generator(
+            request,
+            payload={
+                "coverage_status": proposal.coverage_status.value,
+                "rendered_text": proposal.rendered_text,
+                "statements": statements,
+                "missing_information": proposal.missing_information,
+            },
+        )
+        return generator.generate(request)
+
+
+class ReviewedUnitSupportEvaluator(ReviewedSupportEvaluator):
+    """Accept wider unchanged units only when every reviewed supporting passage is present."""
+
+    def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
+        texts = tuple(evidence_texts)
+        self.calls.append((statement, texts))
+        required = self.rules.get(statement, ())
+        return StatementSupportResult(
+            decision=StatementSupportDecision(
+                supported=bool(required)
+                and all(any(passage in text for text in texts) for passage in required)
+            ),
+            usage=ProviderUsage(input_units=0, output_units=0),
+        )
+
+
+@pytest.mark.parametrize("retrieval_policy", ["m1", "rrf"])
+def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+    retrieval_policy: LiveRetrievalPolicy,
+) -> None:
+    plan = build_plan(
+        answer_policy="citable_units",
+        retrieval_policy=retrieval_policy,
+        answer_model=ResearchModel.LUNA,
+        support_model=ResearchModel.LUNA,
+    )
+    calls = LiveProviderCalls(LiveBaselineBudget(plan))
+    manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+    generator = ScriptedCitableGenerator()
+    report = run_live_baseline(
+        integration_database_engine,
+        plan,
+        index=cast(IsolatedEvaluationIndex, ImmediateIndex(tmp_path / "citable.sqlite")),
+        document_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
+        query_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
+        generator=BudgetedAnswerGenerator(generator, calls),
+        support=BudgetedSupportEvaluator(ReviewedUnitSupportEvaluator(manifest), calls),
+        calls=calls,
+    )
+    assert not report.failures
+    assert report.summary.coverage_match_count == 6
+    # The first PDF unit includes the preceding heading. It is exact and supported,
+    # but exceeds the reviewed revenue passage. Keep the strict v2 quality penalty.
+    assert report.summary.citation_match_count == 5
+    assert tuple(case.case_id for case in report.summary.cases if not case.citation_match) == (
+        "question:fy2025-revenue",
+    )
+    assert report.summary.exact_citation_valid_count == 5
+    assert (
+        report.admission_plan.configuration.answer_prompt_version
+        == "m1-5-citable-units-en-answer-prompt-v1"
+    )
+    assert report.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
+    assert all(record.usage_state == "REPORTED" for record in report.provider_calls)
 
 
 @pytest.mark.parametrize(
