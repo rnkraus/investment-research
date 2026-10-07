@@ -8,6 +8,10 @@ from dataclasses import replace
 import dotenv
 import pytest
 
+from investment_research.infrastructure.evidence.openai import (
+    LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION,
+    M1_STATEMENT_SUPPORT_PROMPT_VERSION,
+)
 from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
 from investment_research.modules.research.contracts import ResearchModel
 from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
@@ -81,6 +85,22 @@ def test_unknown_policy_and_selector_version_are_rejected() -> None:
         live.build_plan(retrieval_policy="unknown")  # type: ignore[arg-type]
     with pytest.raises(live.LiveBaselineLimitError, match="version"):
         live.retrieval_policy_for_version("unknown")
+
+
+def test_local_support_explanations_change_only_the_recorded_prompt_version() -> None:
+    original = live.build_plan()
+    explained = live.build_plan(support_explanations=True)
+    assert original.configuration.support_prompt_version == M1_STATEMENT_SUPPORT_PROMPT_VERSION
+    assert (
+        explained.configuration.support_prompt_version
+        == LOCAL_STATEMENT_SUPPORT_REASON_PROMPT_VERSION
+    )
+    assert explained.model_dump(exclude={"configuration"}) == original.model_dump(
+        exclude={"configuration"}
+    )
+    assert explained.configuration.model_dump(
+        exclude={"support_prompt_version"}
+    ) == original.configuration.model_dump(exclude={"support_prompt_version"})
 
 
 def test_preflight_cli_uses_no_network_or_environment_loader(

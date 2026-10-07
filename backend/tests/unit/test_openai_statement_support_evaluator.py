@@ -26,7 +26,10 @@ from investment_research.infrastructure.evidence.openai import (
     OpenAIStatementSupportEvaluator,
     create_openai_statement_support_evaluator,
 )
-from investment_research.modules.evidence.contracts import StatementSupportDecision
+from investment_research.modules.evidence.contracts import (
+    StatementSupportDecision,
+    StatementSupportResult,
+)
 from investment_research.modules.evidence.ports import (
     StatementSupportProviderConfigurationError,
     StatementSupportProviderContractError,
@@ -55,8 +58,8 @@ class StubParsedResponse:
 
     model: str = OPENAI_STATEMENT_SUPPORT_MODEL
     status: str = "completed"
-    output_parsed: StatementSupportDecision | None = field(
-        default_factory=lambda: StatementSupportDecision(supported=True)
+    output_parsed: StatementSupportDecision | openai_module._ExplainedSupportDecision | None = (
+        field(default_factory=lambda: StatementSupportDecision(supported=True))
     )
     output: tuple[object, ...] = ()
     usage: StubResponseUsage | None = field(default_factory=StubResponseUsage)
@@ -158,6 +161,7 @@ def test_supports_sends_one_bounded_stateless_request(supported: bool) -> None:
     result = make_evaluator(client).evaluate(STATEMENT, EVIDENCE_TEXTS)
 
     assert result.decision.supported is supported
+    assert result.diagnostic_reason is None
     assert result.usage == ProviderUsage(input_units=90, output_units=10)
     assert len(client.responses.calls) == 1
     call = client.responses.calls[0]
@@ -384,8 +388,10 @@ def test_evaluator_rejects_configuration_outside_the_m1_profile(
         )
 
 
+@pytest.mark.parametrize("include_reason", [False, True])
 def test_factory_disables_sdk_retries_and_close_releases_client(
     monkeypatch: pytest.MonkeyPatch,
+    include_reason: bool,
 ) -> None:
     captured: dict[str, object] = {}
     client = RecordingOpenAIClient()
@@ -396,7 +402,13 @@ def test_factory_disables_sdk_retries_and_close_releases_client(
 
     monkeypatch.setattr(openai_module, "OpenAI", recording_constructor)
 
-    evaluator = create_openai_statement_support_evaluator(api_key="synthetic-test-key")
+    output: list[str] = []
+    evaluator = create_openai_statement_support_evaluator(
+        api_key="synthetic-test-key",
+        include_decision_reason=include_reason,
+        local_validation_output=output.append if include_reason else None,
+    )
+    assert evaluator.include_decision_reason is include_reason
     evaluator.close()
 
     assert captured == {
@@ -458,3 +470,125 @@ def test_local_debug_shows_parsed_support_decision_on_later_contract_failure() -
         ).evaluate(STATEMENT, EVIDENCE_TEXTS)
 
     assert output == [decision.model_dump_json()]
+
+
+@pytest.mark.parametrize("supported", [True, False])
+def test_local_support_reason_preserves_decision_and_never_serializes_diagnostic(
+    supported: bool,
+) -> None:
+    reason = "Synthetic diagnostic that grants no authority."
+    decision = openai_module._ExplainedSupportDecision(supported=supported, reason=reason)
+    client = RecordingRawOpenAIClient(
+        responses=RecordingRawResponsesResource(
+            raw_response=StubRawResponse(
+                body={"metadata": {"secret": "private provider metadata"}},
+                parsed_response=StubParsedResponse(output_parsed=decision),
+            )
+        )
+    )
+    output: list[str] = []
+
+    result = OpenAIStatementSupportEvaluator(
+        client=cast(OpenAI, client),
+        local_validation_output=output.append,
+        include_decision_reason=True,
+    ).evaluate(STATEMENT, EVIDENCE_TEXTS)
+
+    assert result.decision == StatementSupportDecision(supported=supported)
+    assert result.diagnostic_reason == reason
+    assert result.usage == ProviderUsage(input_units=90, output_units=10)
+    assert result.model_dump() == {
+        "decision": {"supported": supported},
+        "usage": {"input_units": 90, "output_units": 10},
+    }
+    assert reason not in result.model_dump_json()
+    assert reason not in repr(result)
+    assert output == []  # Successful diagnostics are displayed by the opted-in test wrapper.
+    assert len(client.responses.calls) == 1
+    call = client.responses.calls[0]
+    assert call["text_format"] is openai_module._ExplainedSupportDecision
+    assert "short English reason" in cast(str, call["instructions"])
+    assert "hidden reasoning" in cast(str, call["instructions"])
+    assert json.loads(cast(str, call["input"])) == {
+        "evidence_texts": list(EVIDENCE_TEXTS),
+        "statement": STATEMENT,
+    }
+    assert call["max_output_tokens"] == OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS
+    assert call["timeout"] == OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS
+    assert call["store"] is False
+    assert call["tools"] == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"supported": False},
+        {"supported": False, "reason": ""},
+        {"supported": False, "reason": " \n "},
+        {"supported": False, "reason": "x" * 501},
+        {"supported": False, "reason": None},
+        {"supported": "false", "reason": "Synthetic reason."},
+        {"supported": False, "reason": "Synthetic reason.", "extra": "not allowed"},
+    ],
+)
+def test_local_reason_schema_rejects_invalid_diagnostics_without_exposing_input(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError) as error:
+        openai_module._ExplainedSupportDecision.model_validate(payload)
+    assert "input_value=" not in str(error.value)
+
+
+def test_local_reason_schema_requires_both_fields_and_has_no_extra_properties() -> None:
+    schema = openai_module._ExplainedSupportDecision.model_json_schema()
+    assert schema["required"] == ["supported", "reason"]
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["reason"]["maxLength"] == 500
+    assert set(StatementSupportDecision.model_json_schema()["properties"]) == {"supported"}
+
+
+def test_local_reason_mode_requires_explicit_callback(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="local diagnostic callback"):
+        OpenAIStatementSupportEvaluator(
+            client=cast(OpenAI, RecordingOpenAIClient()), include_decision_reason=True
+        )
+
+    def forbidden(**kwargs: object) -> None:
+        pytest.fail("invalid diagnostic configuration must not construct an SDK client")
+
+    monkeypatch.setattr(openai_module, "OpenAI", forbidden)
+    with pytest.raises(ValueError, match="local diagnostic callback"):
+        create_openai_statement_support_evaluator(
+            api_key="synthetic-test-key", include_decision_reason=True
+        )
+
+
+@pytest.mark.parametrize("include_reason", [True, False])
+def test_provider_cannot_silently_switch_support_schema(include_reason: bool) -> None:
+    parsed = (
+        StatementSupportDecision(supported=True)
+        if include_reason
+        else openai_module._ExplainedSupportDecision(supported=True, reason="Synthetic reason.")
+    )
+    client = RecordingRawOpenAIClient(
+        responses=RecordingRawResponsesResource(
+            raw_response=StubRawResponse(
+                body={}, parsed_response=StubParsedResponse(output_parsed=parsed)
+            )
+        )
+    )
+    with pytest.raises(StatementSupportProviderContractError):
+        OpenAIStatementSupportEvaluator(
+            client=cast(OpenAI, client),
+            local_validation_output=lambda text: None,
+            include_decision_reason=include_reason,
+        ).evaluate(STATEMENT, EVIDENCE_TEXTS)
+
+
+def test_support_result_without_diagnostic_stays_backward_compatible() -> None:
+    result = StatementSupportResult(
+        decision=StatementSupportDecision(supported=True),
+        usage=ProviderUsage(input_units=1, output_units=0),
+    )
+    assert result.diagnostic_reason is None
+    assert "diagnostic_reason" not in result.model_dump_json()

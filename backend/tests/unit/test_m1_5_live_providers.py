@@ -76,6 +76,7 @@ class RecordingProviders:
     )
     requests: int = 0
     supported: bool = True
+    diagnostic_reason: str | None = None
     support_inputs: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
 
     def _before_call(self) -> None:
@@ -113,7 +114,9 @@ class RecordingProviders:
         self._before_call()
         self.support_inputs.append((statement, tuple(evidence_texts)))
         return StatementSupportResult(
-            decision=StatementSupportDecision(supported=self.supported), usage=self.usage
+            decision=StatementSupportDecision(supported=self.supported),
+            usage=self.usage,
+            diagnostic_reason=self.diagnostic_reason,
         )
 
 
@@ -304,7 +307,8 @@ def test_support_inspection_displays_exact_provider_input_only_when_enabled(
         local_output.case_id = "synthetic-support-inspection"
     statement = "The pilot requires transformers."
     evidence_texts = ("  Transformer shortage.\nNext line.  ", "Public café text\x1b[31m")
-    delegate = RecordingProviders(supported=supported)
+    reason = "Public synthetic reason\x1b[31m"
+    delegate = RecordingProviders(supported=supported, diagnostic_reason=reason)
     calls = LiveProviderCalls(LiveBaselineBudget(build_plan()))
 
     result = BudgetedSupportEvaluator(delegate, calls, local_output).evaluate(
@@ -315,6 +319,7 @@ def test_support_inspection_displays_exact_provider_input_only_when_enabled(
     assert delegate.support_inputs == [(statement, evidence_texts)]
     assert delegate.requests == len(calls.records) == 1
     assert all(text not in calls.records[0].model_dump_json() for text in evidence_texts)
+    assert reason not in calls.records[0].model_dump_json()
     terminal = capsys.readouterr().out
     if not show_local_output:
         assert terminal == ""
@@ -329,6 +334,7 @@ def test_support_inspection_displays_exact_provider_input_only_when_enabled(
         "statement": statement,
         "evidence_texts": list(evidence_texts),
         "supported": supported,
+        "reason": reason,
         "notice": "Application support decision, not an independent quality assessment.",
     }
     monkeypatch.setenv("GITHUB_ACTIONS", "true")

@@ -75,6 +75,7 @@ class LocalEvaluationOutput:
             statement=statement,
             evidence_texts=evidence_texts,
             supported=result.decision.supported,
+            reason=result.diagnostic_reason,
             notice="Application support decision, not an independent quality assessment.",
         )
 
