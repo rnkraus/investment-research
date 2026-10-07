@@ -586,7 +586,21 @@ quotes before exact-quote resolution, individual statement-support decisions, th
 persisted result, and the case outcome. Each support decision includes its statement and
 `evidence_texts`: the exact canonical text tuple passed to the support provider, in the same order,
 without trimming or normalization. This applies to both supported and rejected statements under
-either answer policy. It does not display the question or other context as part of the support
+either answer policy. With this flag, the support provider also returns a required short English
+`reason` (1–500 characters) alongside `supported`, displayed in the same event. The explanation is
+untrusted model text: it neither proves the cause of a decision nor overrides a rejection.
+The application carries it only as an excluded, non-repr diagnostic field; it is not stored in
+canonical validation records, the measurement JSON, normal logs, traces, or website responses.
+Deterministic test adapters without a reason display `null`.
+
+This changes the diagnostic support prompt and schema, not only the display. Reports record
+`m1-5-local-support-reason-prompt-v1`; ordinary runs retain `m1-statement-support-prompt-v1` and the
+Boolean-only contract. Asking for a reason can change the model's decision, so do not treat these
+diagnostic runs as an unchanged baseline or as an explanation of an earlier response. It uses the
+same support request, timeout, output-token ceiling, reservation policy, and invocation budget;
+extra explanation tokens may increase reported usage, but no follow-up call or retry is added.
+
+The display does not include the question or other context as part of the support
 input. A provider failure before a decision returns produces no support-decision event; existing
 safe failure diagnostics still apply. Historical reports do not retain these texts and cannot
 reconstruct an earlier failed support input. If SDK schema parsing fails, it prints only the available

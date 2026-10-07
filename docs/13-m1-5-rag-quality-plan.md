@@ -140,8 +140,13 @@ and displays proposals, quotes, support decisions with their exact canonical evi
 canonical results without adding provider calls or weakening validation. Evidence text is displayed
 only alongside a returned support decision, not retained in the JSON measurement report or normal
 logs. This diagnostic does not establish whether an earlier rejection selected the wrong source
-unit or was an incorrect model judgment. This is a manual
-inspection aid, not an independent quality assessment; its boundary is documented in the
+unit or was an incorrect model judgment. The flag now also requests a short English support
+`reason` under the separate `m1-5-local-support-reason-prompt-v1` profile. The reason remains
+non-authoritative terminal-only diagnostic text; normal runs keep the Boolean-only M1 schema and
+prompt. Requesting explanations can change decisions and token usage, so these runs must not be
+reported as unchanged baselines or proof of a previous rejection's cause. Existing request counts,
+output limits, and spending ceilings remain unchanged. This is a manual inspection aid, not an
+independent quality assessment; its boundary is documented in the
 [live-run guide](../fixtures/m1_5/README.md#interactive-local-inspection).
 
 The owner subsequently recorded a v2 Terra/Terra baseline under the approved USD 0.80 invocation
