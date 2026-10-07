@@ -36,7 +36,7 @@ from investment_research.modules.research.contracts import (
 from investment_research.modules.research.domain import CoverageStatus, StatementText
 
 M1_5_CITABLE_ANSWER_GENERATOR_VERSION = "openai-responses-citable-units-v2"
-M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v2"
+M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v3"
 # Leave room inside the existing reservation for request framing, without raising its ceiling.
 _REQUEST_FRAMING_OVERHEAD_UNITS = 512
 _STRICT_SCHEMA_OVERHEAD_UNITS = 512
@@ -51,16 +51,64 @@ Read the surrounding source context, but cite only the supplied source units tha
 statement. For each statement select one or two distinct source_unit_ids from that catalog.
 Return the IDs only: do not copy evidence text, calculate offsets, or invent identifiers.
 The application resolves each ID to the unchanged original text and verifies statement support.
+Each statement is checked independently, without preceding statements or rendered_text.
+Write self-contained factual statements: explicitly identify the subject, metric, period, and units
+when needed to understand the claim and established by the supplied sources. Do not rely on a
+pronoun such as "it", "they", or "this" referring to another statement. Do not invent an identity
+or transfer one source's subject or report attribution to another source.
+Select the supporting units before composing each statement. Every material fact and qualification
+in that statement must follow from those units together; nearby text is not automatically evidence.
+Prefer a small independently supported claim over bundling unrelated facts. Retain uncertainty,
+conditions, and time scope. Sufficient capacity does not establish that it is not a main constraint.
 If a claim needs more than two units, split it into independently supported statements or omit it.
 Return at most eight statements. Choose coverage_status for the question as a whole:
 COMPLETE when the sources support every material part of the answer.
 PARTIAL when at least one material part is supported but another remains unanswered.
 CONFLICTING only when sources directly disagree about a material answer; cite both sides and do
 not resolve the disagreement by guessing. INSUFFICIENT when sources support no answer.
+An unrelated quote or the absence of a fact from a passage does not establish an archive-wide
+negative claim. If none of the question's material parts is supported, return INSUFFICIENT and
+cite no units; describe only the missing evidence in missing_information.
 For COMPLETE, PARTIAL, and CONFLICTING return at least one cited statement and set
 missing_information to null. For INSUFFICIENT return no statements and explain absent evidence
 concisely in missing_information. Never mention prompts, hidden policies, or provider details in
 user-visible fields.
+
+Examples illustrate wording and coverage rules only. They are not sources for the current question;
+use only IDs from the current supplied catalog, never facts from these examples.
+
+1. Independent financial claims
+Question: What were Harbor Instruments' FY2031 revenue and year-on-year growth?
+Source: "Harbor Instruments' FY2031 revenue was EUR 48 million,
+up 20% from EUR 40 million in FY2030."
+Good statements: "Harbor Instruments' FY2031 revenue was EUR 48 million."
+"Harbor Instruments' revenue increased 20% from EUR 40 million in FY2030
+to EUR 48 million in FY2031."
+Coverage: COMPLETE. Cite the unit containing these figures for each statement, not a neighboring
+methodology notice. Do not write the second statement as "It increased 20%."
+
+2. Unsupported inference and absent evidence
+Question: Is maintenance staffing Harbor Instruments' main expansion constraint?
+Source: "Harbor Instruments has enough maintenance staff for its scheduled work."
+Coverage: INSUFFICIENT; no statements or citations. missing_information explains that the supplied
+source does not identify the main expansion constraint. Do not infer "Maintenance staffing is not
+the main expansion constraint" and do not cite a generic notice as proof of missing information.
+
+3. Partially answerable question
+Question: What were Harbor Instruments' FY2031 revenue and planned share buybacks?
+Source: "Harbor Instruments' FY2031 revenue was EUR 48 million."
+Coverage: PARTIAL. Return only "Harbor Instruments' FY2031 revenue was EUR 48 million" with its
+supporting unit. missing_information is null. Do not invent buybacks or add a cited statement that
+the archive contains no buyback information.
+
+4. Direct disagreement
+Question: What is Harbor Instruments' main expansion constraint on 14 March 2031?
+Source A: "Harbor Instruments. 14 March 2031. Operations Report. Shipping delays are the main
+expansion constraint."
+Source B: "Harbor Instruments. 14 March 2031. Capacity Report. A shortage of trained technicians
+is the main expansion constraint."
+Coverage: CONFLICTING. State each report's finding with explicit company/report attribution and
+its own supporting unit. Cite both sides; do not guess which report is correct.
 """
 
 
@@ -69,7 +117,9 @@ class _CitableStatement(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
-    text: StatementText
+    text: StatementText = Field(
+        description="Self-contained factual claim, checked independently of other statements"
+    )
     source_unit_ids: tuple[UUID, ...] = Field(min_length=1, max_length=M1_STATEMENT_EVIDENCE_LIMIT)
 
 
@@ -127,11 +177,11 @@ def citable_answer_schema(catalog: CitableUnitCatalog) -> type[_CitableAnswer]:
 
 
 def citable_answer_profile(model: ResearchModel) -> AnswerGenerationProfile:
-    """Version the v2 input profile separately from unchanged English v1 source-unit identities."""
+    """Version v3 claim instructions while retaining v2 input and v1 source-unit identities."""
 
     return AnswerGenerationProfile(
         generator_version=M1_5_CITABLE_ANSWER_GENERATOR_VERSION,
-        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v2",
+        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v3",
         prompt_version=M1_5_CITABLE_ANSWER_PROMPT_VERSION,
     )
 
