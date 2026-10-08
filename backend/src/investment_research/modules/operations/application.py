@@ -24,6 +24,7 @@ from investment_research.modules.operations.ports import (
 
 MAX_MICRO_USD: Final = 9_223_372_036_854_775_807
 MICRO_USD_RATE_DENOMINATOR: Final = 1_000_000
+MAX_RERANKING_REQUESTS_PER_UTC_MONTH: Final = 500
 
 type OperationClock = Callable[[], datetime]
 type MonotonicClock = Callable[[], float]
@@ -51,6 +52,10 @@ def _provider_operation_span_name(operation: ProviderOperationKind) -> Operation
 
 class ProviderBudgetExceededError(Exception):
     """Prevent an external call whose reservation would exceed the monthly budget."""
+
+
+class ProviderRequestQuotaUnavailableError(ProviderBudgetExceededError):
+    """Prevent reranking when its explicit local request quota is absent or exhausted."""
 
 
 class ProviderOperationUnavailableError(Exception):
@@ -116,6 +121,23 @@ class ProviderCostPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class RerankingRequestQuotaPolicy:
+    """Local workspace safeguard, not proof of remaining provider-account allowance."""
+
+    monthly_request_limit: int
+
+    def __post_init__(self) -> None:
+        """Require an explicit experiment ceiling; zero disables new reservations."""
+
+        if (
+            isinstance(self.monthly_request_limit, bool)
+            or not isinstance(self.monthly_request_limit, int)
+            or not 0 <= self.monthly_request_limit <= MAX_RERANKING_REQUESTS_PER_UTC_MONTH
+        ):
+            raise ValueError("local reranking request quota must be an integer from 0 to 500")
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderOperationAttempt:
     """Content-free identity, scope, and maximum usage for one provider attempt."""
 
@@ -162,6 +184,7 @@ class ReserveProviderOperationService:
 
     unit_of_work_factory: ProviderOperationUnitOfWorkFactory
     budget_policy: ProviderBudgetPolicy
+    reranking_quota_policy: RerankingRequestQuotaPolicy | None = None
 
     def reserve(
         self,
@@ -174,6 +197,11 @@ class ReserveProviderOperationService:
             raise ProviderOperationScopeError("provider operation is outside the active workspace")
         if operation.state is not ProviderOperationState.STARTED:
             raise ValueError("provider operation reservation requires STARTED state")
+        if (
+            operation.operation is ProviderOperationKind.RERANKING
+            and self.reranking_quota_policy is None
+        ):
+            raise ProviderRequestQuotaUnavailableError("local reranking quota is not configured")
 
         window_start, window_end = _utc_month_window(operation.started_at)
         with self.unit_of_work_factory() as unit_of_work:
@@ -189,6 +217,16 @@ class ReserveProviderOperationService:
             )
             if operation.reserved_cost_micro_usd > remaining_budget:
                 raise ProviderBudgetExceededError("monthly provider budget exceeded")
+            if operation.operation is ProviderOperationKind.RERANKING:
+                assert self.reranking_quota_policy is not None
+                request_count = repository.count_operations(
+                    context,
+                    operation=ProviderOperationKind.RERANKING,
+                    started_at_from=window_start,
+                    started_at_before=window_end,
+                )
+                if request_count >= self.reranking_quota_policy.monthly_request_limit:
+                    raise ProviderRequestQuotaUnavailableError("local reranking quota exhausted")
             repository.add(context, operation)
 
         return operation
