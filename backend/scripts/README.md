@@ -38,11 +38,13 @@ runner is a development tool and reuses the synthetic integration fixture builde
 application request handlers never import it. Required CI uses deterministic test ports, not
 live keys or paid calls.
 
-Both live-plan commands accept `--retrieval-policy m1|rrf`, defaulting to M1. The runner resolves
+Both live-plan commands accept `--retrieval-policy m1|rrf|rrf_rerank`, defaulting to M1. The runner resolves
 that frozen profile into the canonical retrieval service and records its actual selector version
 in the admission plan, v2 observations, and summary. Budgets, prompts, model choices, provider
 permissions, and the application default are unchanged. Free preflight never loads keys; live
-execution still requires explicit confirmations. Separate live runs are not a paired snapshot
+execution still requires explicit confirmations. Reranking additionally requires its dedicated key
+and allowance confirmation; see the [reranking guide](#standalone-m15-reranking-configuration-preparation).
+Separate live runs are not a paired snapshot
 comparison. See the [live selector guide](../../fixtures/m1_5/README.md#live-selector-experiment).
 
 The paired retrieval comparison uses the existing PostgreSQL verifier and optional
@@ -399,26 +401,64 @@ check.
 
 ## Standalone M1.5 reranking configuration preparation
 
-`load_evaluation_reranking_settings` in `m1_5_live_settings.py` is a separately callable host loader,
-not yet part of the evaluation CLI or API composition. Its default monthly request limit is zero:
+`load_evaluation_reranking_settings` in `m1_5_live_settings.py` is a separate host loader used only
+by the opt-in evaluation CLI, not normal API composition. Its default monthly request limit is zero:
 it returns `None` before reading local configuration or credentials. Positive limits require
 explicit boolean Starter-allowance and public/synthetic-content confirmations before file access.
 The local workspace/UTC-month limit is 0–500; it does not measure account-wide remaining allowance.
-The owner must check that allowance before each future live comparison.
+The owner must confirm sufficient allowance before each live comparison.
 
 The validated `RerankingProviderSettings` freezes BGE, the existing no-truncation configuration,
 the `pinecone-starter-bge-included-v1` admission policy, and a 1–20-second deadline. This policy
 does not approve paid-plan use, prove the account tariff, or guarantee zero billed cost. The
 [current pricing page](https://www.pinecone.io/pricing/), checked on 2026-10-09, lists 500 monthly
 BGE requests included in Starter; the model/operation admission and local guard remain separate.
-Canonical quota/accounting and the evaluator's unchanged USD 0.80 ceiling still need to be wired
-in the next block; this loader performs no provider call or reservation.
+The evaluator uses a six-request limit in both its retained run reservations and its disposable
+workspace's canonical operation ledger. Failed attempts count; empty eligible input skips the call.
+The unchanged USD 0.80 OpenAI ceiling and USD 5.00 workspace/month safeguard remain in force.
+The zero monetary reranking policy applies only to the explicitly confirmed included Starter
+allowance. It is not a generic price or approval for billable reranking. Reported `rerank_units`
+are stored separately from token counts, with requested/returned model and per-call elapsed time.
+The current profile expects one rerank unit per bounded request; unexpected usage halts the run.
+Unknown usage remains unknown, and no automatic retry or fallback is added.
 
 Only `INVESTMENT_RESEARCH_PINECONE_RERANK_API_KEY` or its `_SECRET_FILE` reference is loaded.
 References reuse the existing ignored `.secrets` host-file validation. Direct and file forms
 conflict, and missing keys never fall back to query/index credentials. Existing provider settings
 and normal API/worker/parser loaders are unchanged. The example file shows commented placeholders;
 do not enable or configure a new credential merely to run normal tests.
+
+From `backend/`, inspect the credential-free plan:
+
+```shell
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --retrieval-policy rrf_rerank \
+  --answer-policy citable_units \
+  --support-policy document_attribution
+```
+
+After offline checks and separate owner approval, the live form is:
+
+```shell
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --execute \
+  --retrieval-policy rrf_rerank \
+  --answer-policy citable_units \
+  --support-policy document_attribution \
+  --answer-model gpt-5.6-terra \
+  --support-model gpt-5.6-terra \
+  --max-spend-usd 0.80 \
+  --confirm-public-synthetic \
+  --confirm-pinecone-starter \
+  --confirm-reranking-allowance \
+  --output ../outputs/m1_5/rrf-rerank-terra-terra-v1.json
+```
+
+Use a new output filename for each invocation. Keep the corpus, answer/support models, source-unit
+and support policies, local-output mode, and spending ceiling identical in a paired `rrf` run;
+change only `--retrieval-policy` and the output path. Optional local model output retains its
+existing local-terminal/non-CI restrictions. Tests use deterministic ports, not paid providers.
+The live command has not yet established hosted model compatibility or a quality improvement.
 
 ## M1 provider compatibility smoke
 

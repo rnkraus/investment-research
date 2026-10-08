@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 2 comparisons recorded; Step 3 internal orchestration tested; runtime activation/adoption pending
+**Status:** Active — Step 2 comparisons recorded; Step 3 opt-in evaluator wired; live verification/adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1201,11 +1201,54 @@ and missing/conflicting keys. The targeted configuration suite passed 65 tests. 
 real configuration/credential access with synthetic values. No PostgreSQL, Docker, frontend/build,
 hosted-CI, or live-provider verification was run; normal runtime behavior remains unchanged.
 
-The remaining Block 3B work stays open: live account-allowance/usage-price confirmation,
-bounded evaluator composition and CLI activation, and optional API composition. Blocks 4–5 and
-the complete Step 3 gate remain open. No default change, hosted CI confirmation, live reranking
-result, or quality/latency improvement is claimed. Earlier source-opening/default-adoption gates
-remain open as well.
+At the end of Block 3B5, bounded evaluator composition and CLI activation remained pending;
+Block 3B6 below implements that opt-in path. Normal API composition remains unchanged.
+
+#### Opt-in evaluation composition — Block 3B6 (2026-10-09)
+
+The evaluator accepts `--retrieval-policy rrf_rerank` alongside unchanged `m1` and `rrf` choices.
+The credential-free preflight records selector `m1-5-rrf-k60-bge-none-v1`, requested model
+`bge-reranker-v2-m3`, configuration `m1-5-pinecone-bge-none-v1`, and the
+`pinecone-starter-bge-included-v1` policy. The frozen six-case corpus allows at most six reranking
+attempts per invocation, including failed/unknown attempts. Each request reserves one rerank unit
+and zero output units; unexpected usage halts the invocation. The fixed input bounds, complete
+ranking, no truncation/retry/fallback, and eight-source/24,000-code-point context limits remain.
+
+Execution requires the existing public-synthetic/Starter confirmations and the additional
+`--confirm-reranking-allowance` confirmation before output, configuration, or runtime setup. This
+confirms allowance for up to six requests, not a measured provider-account balance. Only this
+profile loads the dedicated inference credential. Normal API/worker/parser, Compose, frontend,
+and default selectors are unchanged. No live run or billing guarantee is authorized by this block.
+
+The runner composes `AccountedRerankingService` and a six-request durable quota in its isolated
+workspace. The per-invocation wrapper independently counts attempts before access. Canonical
+qualification, detached provider execution, final snapshot revalidation, and atomic ranking/source
+persistence remain application-owned. Reranker failure is recorded with role `RERANKING` and
+prevents generation; it is not silently replaced with no-rerank selection.
+
+Reports retain requested configuration, returned model, per-call elapsed time, and separate
+`rerank_units`. These units never enter OpenAI token totals. Unknown rerank usage remains unknown
+without erasing known OpenAI token measurements; any unknown attempted cost leaves the total cost
+unknown. Historical reports remain readable and do not invent reranking measurements. The USD 0.80
+run ceiling and USD 5.00 workspace/month budget are unchanged. Zero reranking monetary reservation
+applies only to explicitly confirmed included Starter usage, not to another account tariff.
+
+Offline tests cover admission, denied access, separate credentials, request exhaustion, usage
+failure, reported units, and deterministic end-to-end PostgreSQL wiring without paid providers.
+Existing CI discovers these tests. See the [execution guide](../backend/scripts/README.md#standalone-m15-reranking-configuration-preparation)
+for the plan and owner-run commands.
+
+Block 3B6 local gate passed: backend formatting/lint, strict Mypy across 293 source files, all
+1,887 unit tests, and 181 PostgreSQL integration tests. Seven separate SeaweedFS checks were
+intentionally skipped by this PostgreSQL-only gate. Empty upgrade/downgrade/upgrade, schema checks,
+seed, and disposable-resource cleanup passed. The initial PostgreSQL test queries incorrectly
+included other test workspaces; their corrected workspace-scoped assertions passed on rerun.
+The credential-free RRF-plus-rerank/source-unit/document-attribution preflight and clean diff check
+passed. No paid provider, frontend/build, full runtime, browser, or hosted-CI check was run.
+
+Live model/input compatibility, allowance confirmation for a real invocation, paired quality and
+latency measurements, independent review, source-opening, hosted CI, and default adoption remain
+open. Blocks 4–5 and the complete Step 3 gate are not closed by evaluator wiring.
 
 ### Step 4 — Quality hardening and portfolio evidence
 
