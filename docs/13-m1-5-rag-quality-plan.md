@@ -1087,8 +1087,34 @@ Seven SeaweedFS tests were correctly skipped because their separate stack was no
 Only disposable verification resources were removed. No frontend/build, full runtime, hosted-CI,
 or paid-provider check was run; no live reranking allowance or price was confirmed.
 
+#### Pure RRF-plus-rerank selection — Block 3B2 (2026-10-09)
+
+`search/reranking_contracts.py` and `search/reranking.py` prepare and apply the standalone
+`m1-5-rrf-k60-bge-none-v1` selector. Preparation retains the complete deduplicated canonical RRF
+union before context filtering; empty fusion needs no request or provider usage. The existing
+BGE model/configuration and 40/1,000/8,000/80,000 input bounds now have one shared definition used
+by both preparation and the Pinecone adapter. Source text is never truncated or rewritten.
+
+Chunk UUIDs remain server-local correlation handles, not persisted retrieval-candidate IDs or
+external payload metadata. Selection rejects incomplete, duplicate, foreign, misordered, or
+unexpected-model/configuration responses, non-finite scores, and invalid usage. Equal scores
+retain original RRF order. Whole-chunk selection keeps the existing 8-source/24,000-code-point
+maxima and preserves pre/post ranks, lane contributions, scores, and complete returned usage.
+An invalid or missing result never silently falls back to the unchanged no-rerank path.
+
+This sub-block makes no provider or database calls and adds no runtime option. Canonical
+eligibility/public-data approval before transmission, accounting around the external call,
+canonical revalidation afterward, and score persistence belong to the next integration block.
+The search-module guide documents that pending wiring. Normal tests remain offline; no new
+dependency, migration, key, live pricing decision, or frontend change is introduced.
+
+Block 3B2 local gate passed: backend formatting/lint, strict Mypy across 289 files, and all
+1,800 unit tests. The focused selector/fusion/adapter suite passed 125 tests, including 38 new
+selection regressions. No PostgreSQL/Docker, frontend/build, hosted-CI, or live-provider check
+was run in this pure selection block; the full Step 3 integration gate remains open.
+
 The remaining Block 3B work stays open: verified live price/account-quota policy, opt-in
-API/evaluator configuration, RRF-plus-rerank selection, canonical ranking persistence, and actual
+API/evaluator configuration, canonical ranking persistence, and actual
 reserve-call-finalize wiring. Blocks 4–5 and
 the complete Step 3 gate remain open. No default change, hosted CI confirmation, live reranking
 result, or quality/latency improvement is claimed. Earlier source-opening/default-adoption gates

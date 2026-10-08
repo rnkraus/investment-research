@@ -15,6 +15,8 @@ This module owns reproducible retrieval records and ranked candidates from eligi
 | `selection.py`   | Applies deterministic lexical-first M1 context selection and deduplication.    |
 | `fusion_contracts.py` | Defines versioned RRF contributions, fusion ranks, and context limits. |
 | `fusion.py` | Calculates opt-in M1.5 RRF and bounded context without provider or database calls. |
+| `reranking_contracts.py` | Freezes BGE input bounds, RRF-plus-rerank policy, correlation, and context invariants. |
+| `reranking.py` | Prepares deduplicated RRF inputs and applies a complete reranking response without external calls. |
 
 ## Ownership and relationships
 
@@ -117,7 +119,7 @@ provider-reported `ProviderUsage`; the deterministic adapter reports zero extern
 `RerankResponse` similarly keeps a complete, uniquely ranked candidate list together with the
 returned model, reranker configuration version, and provider usage. The standalone Pinecone
 M1.5 adapter reports reranking units as input units and zero output units, not token usage.
-It exists behind the port but runtime selection, canonical accounting, and adoption are still
+It exists behind the port but runtime execution/accounting wiring and adoption are still
 pending; the existing M1 and opt-in RRF paths are unchanged. Provider correlation must also prove
 that the response contains exactly the requested candidate set.
 
@@ -205,6 +207,44 @@ Canonical revalidation and statement-support checks are still required before an
 can become citation evidence. A same-corpus comparison against M1 must precede any default-policy
 decision. Offline service tests and `test_rrf_retrieval_postgresql.py` exercise the opt-in path,
 persisted ranks, budget exclusions, and canonical workspace/time/active-state boundaries.
+
+### Standalone RRF-plus-rerank context selection
+
+`prepare_rrf_reranking` fuses already-qualified lanes, preserves every unique RRF hit and both
+lane contributions, and creates a bounded `RerankRequest`. Empty fusion returns no request:
+there is no provider call or invented usage for an empty result. The frozen BGE input limits
+live in `reranking_contracts.py` and are shared with the Pinecone adapter. Invalid inputs fail
+without silently shortening passages or discarding hits.
+
+Chunk UUIDs are server-local correlation handles inside this prepared request, not persisted
+`RetrievalCandidate` IDs. The adapter sends only query/passage text and correlates provider
+positions back to those handles; it does not send canonical identifiers to Pinecone.
+
+`select_reranked_context` requires exactly the submitted candidate set, the expected model and
+configuration, finite descending scores, contiguous ranks, original RRF order for equal scores,
+and positive reranking input units with zero output units. A missing or invalid response fails
+explicitly; it never silently falls back to RRF. The selected context retains unchanged canonical
+hits, both lane contributions, fusion ranks/scores, rerank ranks/scores, and final selection ranks.
+The result also retains the complete prepared input and response, including excluded candidates
+and provider usage. Whole chunks are selected under the unchanged 8-chunk/24,000-code-point
+maxima, skipping a chunk that cannot fit rather than rewriting its text. The selector version is
+`m1-5-rrf-k60-bge-none-v1`.
+
+```mermaid
+flowchart LR
+    H[Canonical qualified hits] --> P[prepare_rrf_reranking<br/>RRF, deduplication, input limits]
+    P -. caller wiring pending .-> X[Reserve quota/cost<br/>execute Reranker outside transaction]
+    X -. complete response .-> S[select_reranked_context<br/>correlation, scores, context limits]
+    S -. caller wiring pending .-> C[Canonical revalidation and persistence]
+    C --> E[Existing source-unit and evidence checks]
+```
+
+Both functions are pure: no SDK, database, logging, retries, reservations, or external calls.
+They do not establish workspace eligibility, approve public/synthetic data exposure, or authorize
+evidence. The future caller must establish eligibility before transmission, reserve/finalize
+usage through Operations, and revalidate canonical state after the external call. Runtime
+integration, canonical reranking-score persistence, and live comparison remain pending. No API
+profile, website behavior, default selector, or provider pricing policy changes in this block.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders
