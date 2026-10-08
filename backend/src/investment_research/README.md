@@ -110,6 +110,12 @@ indexes active chunks, or commits derived output.
 `settings_models.py`. Existing callers continue to import both loaders and models from
 `investment_research.settings`; the split changes no configuration keys or defaults.
 
+The separate `RerankingProviderSettings` model prepares explicitly admitted Starter-only M1.5
+host evaluations. It is not a field on `ApiSettings`, `WorkerSettings`, or `ParserSettings` and
+does not change process startup or the normal research profile. Its independently callable,
+default-disabled loader is documented in the
+[scripts guide](../../scripts/README.md#standalone-m15-reranking-configuration-preparation).
+
 `ApiSettings` and `WorkerSettings` may load the ignored root development file. The API requires an
 authenticated Redis broker URL when its container is built; host development may derive it from
 `REDIS_PASSWORD` and `REDIS_PORT`. Optional M1 provider groups are role-specific and fail closed when
