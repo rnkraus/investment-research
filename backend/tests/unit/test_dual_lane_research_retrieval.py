@@ -15,6 +15,7 @@ from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
     ProviderBudgetExceededError,
     ProviderCostPolicy,
+    ProviderRequestQuotaUnavailableError,
     ProviderUsageCostExceededReservationError,
     ProviderUsageExceededReservationError,
 )
@@ -31,6 +32,10 @@ from investment_research.modules.research.ports import (
     ResearchRetrievalUnitOfWork,
     ResearchRetrievalUnitOfWorkFactory,
 )
+from investment_research.modules.research.reranking import (
+    AccountedRerankingService,
+    RerankingAccountingProfile,
+)
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
     DenseRetrievalHit,
@@ -42,6 +47,9 @@ from investment_research.modules.search.contracts import (
     LexicalSearchProfile,
     M1SelectionProfile,
     QualifiedDenseHit,
+    RerankRequest,
+    RerankResponse,
+    RerankResult,
 )
 from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
 from investment_research.modules.search.fusion_contracts import (
@@ -53,9 +61,17 @@ from investment_research.modules.search.ports import (
     DenseRetriever,
     EmbeddingProvider,
     LexicalSearch,
+    Reranker,
     RetrievalRepository,
     SearchProviderConfigurationError,
+    SearchProviderContractError,
+    SearchProviderError,
     SearchProviderTransientError,
+)
+from investment_research.modules.search.reranking_contracts import (
+    BGE_RERANK_CONFIG_VERSION,
+    BGE_RERANK_MODEL,
+    RrfRerankingProfile,
 )
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
@@ -99,6 +115,7 @@ class RecordingUnitOfWork:
         self.dense_qualifier_mock.qualify.return_value = dense_hits
         self.events = events if events is not None else []
         self.enter_count = 0
+        self.active = False
 
     @contextmanager
     def open(self) -> Iterator[ResearchRetrievalUnitOfWork]:
@@ -106,7 +123,11 @@ class RecordingUnitOfWork:
 
         self.enter_count += 1
         self.events.append("database")
-        yield self
+        self.active = True
+        try:
+            yield self
+        finally:
+            self.active = False
 
 
 def make_context() -> WorkspaceContext:
@@ -207,9 +228,10 @@ def make_service(
     identifiers: tuple[UUID, ...] = (REQUEST_ID, RUN_ID),
     sleeper: Mock | None = None,
     provider_operation_executor: Mock | None = None,
-    selection_profile: M1SelectionProfile | RrfSelectionProfile | None = None,
+    selection_profile: M1SelectionProfile | RrfSelectionProfile | RrfRerankingProfile | None = None,
     lexical_limit: int = 10,
     dense_limit: int = 10,
+    reranking: AccountedRerankingService | None = None,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -245,10 +267,256 @@ def make_service(
             ),
             retry_delay_seconds=0,
             sleeper=sleeper or Mock(),
+            reranking=reranking,
         ),
         clock=clock_values.__next__,
         identifier_factory=identifier_values.__next__,
     )
+
+
+def make_accounted_reranker(
+    unit_of_work: RecordingUnitOfWork,
+    executor: Mock | None = None,
+) -> tuple[Mock, AccountedRerankingService]:
+    reranker = create_autospec(Reranker, instance=True)
+
+    def rerank(request: RerankRequest) -> RerankResponse:
+        assert not unit_of_work.active
+        return RerankResponse(
+            results=tuple(
+                RerankResult(
+                    retrieval_candidate_id=item.retrieval_candidate_id, rank=rank, score=1 / rank
+                )
+                for rank, item in enumerate(reversed(request.candidates), 1)
+            ),
+            usage=ProviderUsage(input_units=1, output_units=0),
+            model=BGE_RERANK_MODEL,
+            reranker_config_version=BGE_RERANK_CONFIG_VERSION,
+        )
+
+    reranker.rerank.side_effect = rerank
+    service = AccountedRerankingService(
+        reranker=cast(Reranker, reranker),
+        executor=cast(
+            ExecuteProviderOperationService, executor or make_provider_operation_executor()
+        ),
+        accounting=RerankingAccountingProfile(
+            provider="deterministic",
+            cost_policy=ProviderCostPolicy(0, 0),
+            maximum_usage=ProviderUsage(input_units=1, output_units=0),
+        ),
+        public_synthetic_content_approved=True,
+    )
+    return reranker, service
+
+
+def test_reranking_runs_outside_transaction_revalidates_and_preserves_all_scores() -> None:
+    lexical = make_lexical_hit()
+    dense_hits = (
+        QualifiedDenseHit.model_validate(lexical.model_dump() | {"raw_score": 0.95}),
+        make_qualified_dense_hit(
+            chunk_id=SECOND_CHUNK_ID, page_number=3, text="Second source.", raw_score=0.75
+        ),
+    )
+    uow = RecordingUnitOfWork(lexical_hits=(lexical,), dense_hits=dense_hits)
+    reranker, accounted = make_accounted_reranker(uow)
+    embedding, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfRerankingProfile(),
+        reranking=accounted,
+        identifiers=(
+            REQUEST_ID,
+            RUN_ID,
+            LEXICAL_CANDIDATE_ID,
+            DENSE_DUPLICATE_CANDIDATE_ID,
+            DENSE_SELECTED_CANDIDATE_ID,
+        ),
+    )
+    result = service.retrieve(make_context(), ResearchRetrievalInput(question="revenue"))
+    assert uow.enter_count == 3
+    assert (
+        uow.lexical_search_mock.search.call_count
+        == uow.dense_qualifier_mock.qualify.call_count
+        == 2
+    )
+    reranker.rerank.assert_called_once()
+    assert [source.chunk_id for source in result.sources] == [SECOND_CHUNK_ID, FIRST_CHUNK_ID]
+    assert [item.fused_rank for item in result.candidates] == [1, 1, 2]
+    assert [item.reranker_score for item in result.candidates] == [0.5, 0.5, 1.0]
+    assert [item.selection_rank for item in result.candidates] == [2, None, 1]
+    assert result.sources[0].retrieval_candidate_id == DENSE_SELECTED_CANDIDATE_ID
+    assert result.sources[1].text == lexical.text
+
+
+@pytest.mark.parametrize("lane", ["lexical", "dense"])
+@pytest.mark.parametrize("change", ["missing", "text", "score", "version"])
+def test_changed_canonical_snapshot_rejects_reranked_result(lane: str, change: str) -> None:
+    lexical = make_lexical_hit()
+    hit = lexical if lane == "lexical" else QualifiedDenseHit.model_validate(lexical.model_dump())
+    uow = RecordingUnitOfWork()
+    values = {"text": "Changed source.", "raw_score": 0.4, "document_version_id": UUID(int=999)}
+    field = (
+        "raw_score"
+        if change == "score"
+        else "document_version_id"
+        if change == "version"
+        else "text"
+    )
+    after = () if change == "missing" else (hit.model_copy(update={field: values[field]}),)
+    target = (
+        uow.lexical_search_mock.search if lane == "lexical" else uow.dense_qualifier_mock.qualify
+    )
+    target.side_effect = [(hit,), after]
+    uow.dense_qualifier_mock.qualify.return_value = ()
+    reranker, accounted = make_accounted_reranker(uow)
+    embedding, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfRerankingProfile(),
+        reranking=accounted,
+    )
+    with pytest.raises(ResearchProviderUnavailableError) as captured:
+        service.retrieve(make_context(), ResearchRetrievalInput(question="revenue"))
+    assert captured.value.retriable is False
+    assert isinstance(captured.value.__cause__, SearchProviderContractError)
+    reranker.rerank.assert_called_once()
+    uow.retrieval_mock.add_result.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        SearchProviderTransientError("safe"),
+        SearchProviderConfigurationError("safe"),
+        SearchProviderContractError("safe"),
+    ],
+)
+def test_reranking_failure_has_no_automatic_retry_or_fallback(error: SearchProviderError) -> None:
+    uow = RecordingUnitOfWork(lexical_hits=(make_lexical_hit(),))
+    reranker, accounted = make_accounted_reranker(uow)
+    reranker.rerank.side_effect = error
+    embedding, dense = make_provider_mocks()
+    sleeper = Mock()
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfRerankingProfile(),
+        reranking=accounted,
+        sleeper=sleeper,
+    )
+    with pytest.raises(ResearchProviderUnavailableError) as captured:
+        service.retrieve(make_context(), ResearchRetrievalInput(question="revenue"))
+    assert captured.value.retriable is isinstance(error, SearchProviderTransientError)
+    reranker.rerank.assert_called_once()
+    sleeper.assert_not_called()
+    uow.retrieval_mock.add_result.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error", [ProviderBudgetExceededError("budget"), ProviderRequestQuotaUnavailableError("quota")]
+)
+def test_reranking_reservation_rejection_prevents_provider_call(
+    error: ProviderBudgetExceededError,
+) -> None:
+    uow = RecordingUnitOfWork(lexical_hits=(make_lexical_hit(),))
+    executor = make_provider_operation_executor()
+    executor.execute.side_effect = error
+    reranker, accounted = make_accounted_reranker(uow, executor)
+    embedding, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfRerankingProfile(),
+        reranking=accounted,
+    )
+    with pytest.raises(ResearchProviderUnavailableError) as captured:
+        service.retrieve(make_context(), ResearchRetrievalInput(question="revenue"))
+    assert not captured.value.retriable
+    reranker.rerank.assert_not_called()
+    uow.retrieval_mock.add_result.assert_not_called()
+
+
+def test_empty_reranking_skips_provider_and_reservation() -> None:
+    uow = RecordingUnitOfWork()
+    executor = make_provider_operation_executor()
+    reranker, accounted = make_accounted_reranker(uow, executor)
+    embedding, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfRerankingProfile(),
+        reranking=accounted,
+    )
+    result = service.retrieve(make_context(), ResearchRetrievalInput(question="revenue"))
+    assert result.sources == ()
+    assert result.candidates == ()
+    executor.execute.assert_not_called()
+    reranker.rerank.assert_not_called()
+
+
+def test_reranking_preflight_limit_rejects_before_reservation() -> None:
+    uow = RecordingUnitOfWork(
+        lexical_hits=(make_lexical_hit().model_copy(update={"text": "x" * 8_001}),)
+    )
+    executor = make_provider_operation_executor()
+    reranker, accounted = make_accounted_reranker(uow, executor)
+    embedding, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfRerankingProfile(),
+        reranking=accounted,
+    )
+    with pytest.raises(ResearchProviderUnavailableError):
+        service.retrieve(make_context(), ResearchRetrievalInput(question="revenue"))
+    executor.execute.assert_not_called()
+    reranker.rerank.assert_not_called()
+    uow.retrieval_mock.add_result.assert_not_called()
+
+
+@pytest.mark.parametrize("with_profile", [False, True])
+def test_reranking_policy_and_service_must_be_enabled_together(with_profile: bool) -> None:
+    uow = RecordingUnitOfWork()
+    _, accounted = make_accounted_reranker(uow)
+    embedding, dense = make_provider_mocks()
+    with pytest.raises(ValueError, match="configured together"):
+        make_service(
+            uow,
+            embedding_provider=embedding,
+            dense_retriever=dense,
+            selection_profile=RrfRerankingProfile() if with_profile else M1SelectionProfile(),
+            reranking=None if with_profile else accounted,
+        )
+    assert uow.enter_count == 0
+
+
+def test_accounted_reranking_requires_explicit_data_approval_and_usage_ceiling() -> None:
+    uow = RecordingUnitOfWork()
+    reranker, accounted = make_accounted_reranker(uow)
+    with pytest.raises(ValueError, match="content approval"):
+        AccountedRerankingService(
+            reranker=reranker,
+            executor=accounted.executor,
+            accounting=accounted.accounting,
+            public_synthetic_content_approved=False,
+        )
+    for usage in (
+        ProviderUsage(input_units=0, output_units=0),
+        ProviderUsage(input_units=1, output_units=1),
+    ):
+        with pytest.raises(ValueError, match="input-unit ceiling"):
+            RerankingAccountingProfile(
+                provider="deterministic", cost_policy=ProviderCostPolicy(0, 0), maximum_usage=usage
+            )
 
 
 @pytest.mark.parametrize(("lexical_limit", "dense_limit"), [(21, 10), (10, 21)])
