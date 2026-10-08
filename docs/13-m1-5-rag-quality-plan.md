@@ -1250,6 +1250,33 @@ Live model/input compatibility, allowance confirmation for a real invocation, pa
 latency measurements, independent review, source-opening, hosted CI, and default adoption remain
 open. Blocks 4–5 and the complete Step 3 gate are not closed by evaluator wiring.
 
+#### CI discovery and local compatibility — Block 4 (2026-10-09)
+
+The existing required CI workflow already discovers the new deterministic reranking checks:
+`scripts.verify_backend` runs all unit tests and `scripts.verify_postgres` runs the integration
+suite, including the opt-in runner's synthetic reranker cases. No additional workflow, credential,
+paid-provider job, frontend feature, or default-selector change is needed for this block.
+
+Local verification passed on the committed Block 3B6 implementation:
+
+- `uv run --locked python -m scripts.verify_backend`: formatting, Ruff, strict Mypy across 293
+  source files, and all 1,887 unit tests passed.
+- `uv run --locked python -m scripts.export_openapi --check`: the committed API snapshot is current.
+- `pnpm format`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`: all checks passed, including generated
+  contract checking and all 47 frontend tests.
+- `uv run --locked python -m scripts.verify_m0_runtime`: the isolated Docker runtime, migration,
+  synthetic seed, automatic fixture journey, and sensitive-log checks passed. Its Next.js
+  production build passed inside Docker; its disposable project volumes, networks, containers,
+  and invocation-specific acceptance image were removed successfully.
+
+The 181 PostgreSQL integration tests and migration round trip recorded in Block 3B6 remain the
+latest persistence verification; they were not rerun in this compatibility block. No host
+production build, browser, paid provider, or hosted CI was run. The agent did not run
+`scripts.verify_m1_runtime` because that command starts Chromium. The owner must run that existing
+complete M1 command and confirm the required hosted checks before Block 4's full gate can close.
+Live reranking compatibility, paired quality/latency/usage measurements, source-opening review,
+and default adoption remain pending under Block 5.
+
 ### Step 4 — Quality hardening and portfolio evidence
 
 Exercise the four existing coverage states (`COMPLETE`, `PARTIAL`, `CONFLICTING`,
