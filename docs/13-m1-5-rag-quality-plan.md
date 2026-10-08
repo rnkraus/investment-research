@@ -1113,8 +1113,32 @@ Block 3B2 local gate passed: backend formatting/lint, strict Mypy across 289 fil
 selection regressions. No PostgreSQL/Docker, frontend/build, hosted-CI, or live-provider check
 was run in this pure selection block; the full Step 3 integration gate remains open.
 
+#### Reranking persistence validation — Block 3B3 (2026-10-09)
+
+The existing retrieval repository now accepts `m1-5-rrf-k60-bge-none-v1` only with bounded
+dual-lane configuration and reconstructable RRF ranks. Every qualified lane record must retain
+a finite reranking score, including unselected records; both records for a shared chunk must
+agree. Selected chunks follow descending scores with original RRF rank as the tie-breaker.
+Empty results and budget exclusions remain valid. All coherence checks run before staging;
+transactions remain caller-owned and existing composite foreign keys prevent foreign-workspace
+chunk links independently. The M1 and no-rerank RRF paths remain unchanged.
+
+The current `reranker_score`, `fused_rank`, and `selection_rank` columns suffice. The complete
+reranking order is reproducible from unique chunk scores, fusion ranks, and the selector version;
+no additional rank column, migration, or model/configuration default is added. These persistence
+checks do not establish text eligibility, prove a provider call, or replace context-character
+validation. Actual retrieval orchestration and post-call canonical revalidation remain pending.
+
+Block 3B3 local gate passed: backend format/lint, strict Mypy across 290 files, all 1,818 unit
+tests, and the isolated PostgreSQL migration/seed/drift cycle with 169 integration tests.
+The 18 new unit cases and eight new PostgreSQL cases cover scores, ordering, ties, empty results,
+workspace isolation, atomic rejection, and caller-owned rollback. Seven SeaweedFS tests were
+correctly skipped because their separate stack was not active. Only disposable PostgreSQL test
+resources were removed. No frontend/build, complete runtime, hosted-CI, or paid-provider check
+was run. Existing test discovery includes these regressions without a new credentialed CI job.
+
 The remaining Block 3B work stays open: verified live price/account-quota policy, opt-in
-API/evaluator configuration, canonical ranking persistence, and actual
+API/evaluator configuration, retrieval/score-persistence orchestration, and actual
 reserve-call-finalize wiring. Blocks 4–5 and
 the complete Step 3 gate remain open. No default change, hosted CI confirmation, live reranking
 result, or quality/latency improvement is claimed. Earlier source-opening/default-adoption gates

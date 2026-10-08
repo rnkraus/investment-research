@@ -80,7 +80,7 @@ The same canonical chunk may appear once per origin, because that preserves whic
 Only the candidate chosen for context receives a `selection_rank`; selected chunks are unique and
 their ranks are contiguous. Reads return selected candidates in this final order, followed by any
 unselected candidates in stable origin and route-rank order. The opt-in M1.5 RRF experiment
-described below uses this same persisted path; reranking remains deferred.
+described below uses this same persisted path; runtime reranking remains deferred.
 
 ## Reproducibility and isolation
 
@@ -243,8 +243,25 @@ Both functions are pure: no SDK, database, logging, retries, reservations, or ex
 They do not establish workspace eligibility, approve public/synthetic data exposure, or authorize
 evidence. The future caller must establish eligibility before transmission, reserve/finalize
 usage through Operations, and revalidate canonical state after the external call. Runtime
-integration, canonical reranking-score persistence, and live comparison remain pending. No API
-profile, website behavior, default selector, or provider pricing policy changes in this block.
+integration and live comparison remain pending; the repository validation below is implemented.
+This block changes no API profile, website behavior, default selector, or provider pricing policy.
+
+### Reranking persistence validation
+
+For runs with `m1-5-rrf-k60-bge-none-v1`, `SqlAlchemyRetrievalRepository.add_result` reconstructs
+fusion ranks from the complete qualified lane records and requires a finite `reranker_score` on
+every record, including unselected candidates. A shared chunk retains both lane records with the
+same score and fusion rank. Descending scores determine the new order; original fusion rank
+breaks score ties. The selected, unique chunks must follow that order with contiguous
+`selection_rank` values; budget-based omissions are allowed. Empty results remain valid.
+
+The complete reranking order is reproducible from scores, fusion ranks, and the fixed selector
+version, so no `rerank_rank` column or schema migration is needed. Selected records are read in
+final context order; unselected records retain the existing stable origin/rank order.
+The repository validates coherence before staging any rows and never commits. The caller owns
+the transaction, and existing composite workspace foreign keys remain a second isolation boundary.
+These checks neither prove provider execution nor replace upstream character-limit and canonical
+eligibility checks. Score persistence is prepared, but the production caller is not wired yet.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders
