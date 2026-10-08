@@ -471,3 +471,23 @@ class RerankResult(ImmutableSearchContract):
     retrieval_candidate_id: UUID
     rank: int = Field(ge=1)
     score: float = Field(allow_inf_nan=False)
+
+
+class RerankResponse(ImmutableSearchContract):
+    """Complete ordered ranking and provider usage, without exposing SDK objects."""
+
+    results: tuple[RerankResult, ...] = Field(min_length=1, max_length=100)
+    usage: ProviderUsage
+    model: ConfigurationVersion
+    reranker_config_version: ConfigurationVersion
+
+    @model_validator(mode="after")
+    def require_complete_unique_ranks(self) -> RerankResponse:
+        """Require one unique candidate at each contiguous result position."""
+
+        identifiers = [result.retrieval_candidate_id for result in self.results]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("rerank result candidate IDs must be unique")
+        if [result.rank for result in self.results] != list(range(1, len(self.results) + 1)):
+            raise ValueError("rerank result ranks must be contiguous and ordered")
+        return self
