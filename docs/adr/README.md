@@ -31,6 +31,7 @@ Write the ADR immediately before the decision becomes an implementation constrai
 | [ADR-0007](./0007-local-s3-provider.md) | SeaweedFS for local S3-compatible storage and managed S3 for public deployment | Accepted |
 | [ADR-0008](./0008-application-owned-ai-and-vector-adapters.md) | Application-owned OpenAI, Pinecone, and OpenTelemetry adapters for the first dense RAG slice | Accepted |
 | [ADR-0009](./0009-stable-source-anchors.md) | Discriminated, immutable PDF-page and pasted-text passage anchors | Accepted |
+| [ADR-0018](./0018-pinecone-reranking-experiment.md) | Bounded opt-in Pinecone BGE reranking and its public/synthetic inference boundary | Accepted for M1.5 experiment; implementation/adoption pending |
 
 ## 3. Proposed ADRs
 
@@ -50,6 +51,9 @@ No ADR is currently proposed.
 | ADR-0017 | Bounded LangGraph adoption | A measured multi-step use case passes the agent admission gate | M9 |
 
 IDs are provisional until the corresponding ADR file is created. A backlog entry may be removed, combined, split, or reordered if implementation evidence changes the decision boundary.
+
+ADR-0018 records the M1.5 provider/security approval separately from the broader ADR-0011
+retrieval-baseline decision. It does not adopt reranking as the default or close the M4 gate.
 
 ## 5. ADR lifecycle
 

@@ -38,6 +38,17 @@ Before private or sensitive content is enabled, each provider must be reviewed f
 
 The demo workspace contains only synthetic, openly licensed, or otherwise redistributable material.
 
+### M1.5 reranking boundary
+
+[ADR-0018](./adr/0018-pinecone-reranking-experiment.md) permits an opt-in public/synthetic-only
+experiment sending a bounded question and canonically eligible passage text to Pinecone Inference.
+This is a separate trust boundary from vector indexing: raw text remains forbidden in vector
+metadata, normal logs, and traces. Neither the vector index's region nor the upstream model's
+Apache-2.0 license establishes inference residency or retention guarantees. The decision records
+the permitted endpoint, process-only credentials, validation, deadline/retry limits, and quota/cost
+gates. No implementation, live run, paid-plan upgrade, private-data approval, or default adoption
+is claimed by documenting this boundary.
+
 ### M0.0 proof constraints
 
 The pre-foundation M0.0 proof is not a release environment. It must:

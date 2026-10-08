@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 2 integration and initial live comparisons recorded; review and adoption pending
+**Status:** Active — Step 2 comparisons recorded; Step 3 provider boundary approved; implementation/adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -24,7 +24,10 @@ complete routed, conversational, temporal, and production-shaped direct-RAG gate
 
 Only approved public, synthetic, openly licensed, or otherwise approved non-sensitive material
 may reach external providers. Fixed local identity and loopback-only access remain in force. No
-new production dependency, paid provider, or hosted tracing service is approved by this plan.
+new production dependency, paid-plan upgrade, or hosted tracing service is approved by this plan.
+The owner separately approved the bounded Pinecone reranking experiment in
+[ADR-0018](./adr/0018-pinecone-reranking-experiment.md); that approval permits implementation,
+not live execution, private-data processing, or default adoption.
 
 ## 2. Baseline and design rules
 
@@ -974,6 +977,42 @@ added complexity and latency; a negative result is a valid documented outcome.
 
 **Gate:** deterministic CI passes without the real reranker, live checks remain separate and
 bounded, and the selected policy has a recorded quality/latency/cost comparison.
+
+#### Provider boundary and implementation blocks (2026-10-08)
+
+The owner selected Pinecone Inference's hosted `bge-reranker-v2-m3` as the first multilingual
+cross-encoder experiment. [ADR-0018](./adr/0018-pinecone-reranking-experiment.md) owns the endpoint,
+public/synthetic text exposure, credential, validation, timeout/retry, quota, and versioning rules.
+This is not integrated Pinecone search or a new text store. The existing application-owned
+`Reranker` port is the starting point; no package upgrade or local model-serving stack is approved.
+Existing Step 2 source-opening and default-adoption gates remain open rather than being silently
+closed by this provider choice.
+
+Complete one coherent block at a time:
+
+1. **Decision and security boundary:** record the provider approval and synchronize the compact
+   architecture/security references. Gate: consistent documentation and valid local links; no
+   runtime, credential, dependency, or paid-provider change.
+2. **Backend adapter and offline contract tests:** inspect the locked SDK's inference transport;
+   freeze numeric input limits and verified truncation behavior before implementing correlation,
+   complete ranking, deadlines, retry limits, safe errors, and returned usage. Gate: focused
+   formatting, lint, typing, and deterministic adapter tests; stop if a new dependency or an
+   unapproved boundary is required.
+3. **Application, configuration, and accounting:** add an explicit RRF-plus-rerank policy before
+   context selection, canonical score persistence, opt-in runtime wiring, and bounded usage/quota
+   accounting. Preserve the existing no-rerank selector and generation/source-unit bounds. Gate:
+   isolation, budget, timeout, failure, persistence, and paired-selection tests without live calls.
+4. **CI and compatibility:** make the new deterministic checks part of existing CI; do not add a
+   credentialed required job. No frontend feature is required merely to add a reranker. Gate:
+   backend/contract/frontend checks and the affected isolated runtime verification.
+5. **Owner-run comparison and review:** extend the opt-in evaluator with reranking observations;
+   freeze account/quota and spend conditions before an explicitly authorized live run. Compare
+   M1, RRF, and RRF-plus-rerank on the same reviewed cases with the same model pair and citable-unit
+   policy. Gate: reviewed quality, latency, usage/cost, failure, and source-opening evidence; record
+   adoption, rejection, or an inconclusive result without changing historical runs.
+
+This revision records the provider decision and security boundary only. The reranker is not yet
+implemented or enabled, and no live quality or latency claim follows from this approval.
 
 ### Step 4 — Quality hardening and portfolio evidence
 
