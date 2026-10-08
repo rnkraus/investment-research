@@ -55,6 +55,7 @@ from scripts.m1_5_live_providers import (
 )
 from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import (
+    M1_LIVE_OPERATION_KINDS,
     LiveBaselineBudget,
     LiveBaselineLimitError,
     LiveSupportPolicy,
@@ -199,7 +200,12 @@ def test_all_four_roles_reserve_and_record_reported_usage_without_content() -> N
 
     assert generated.answer.coverage_status is CoverageStatus.INSUFFICIENT
     assert supported.decision.supported is True
-    assert [item.role for item in calls.records] == list(ProviderOperationKind)
+    assert [item.role for item in calls.records] == [
+        ProviderOperationKind.DOCUMENT_EMBEDDING,
+        ProviderOperationKind.QUERY_EMBEDDING,
+        ProviderOperationKind.ANSWER_GENERATION,
+        ProviderOperationKind.STATEMENT_SUPPORT,
+    ]
     assert len(calls.records) == delegate.requests == 4
     assert all(item.usage_state == "REPORTED" and item.input_tokens == 10 for item in calls.records)
     assert all(item.estimated_cost_micro_usd is not None for item in calls.records)
@@ -303,7 +309,7 @@ def test_contextual_support_local_output_keeps_quote_and_attribution_separate(
     )
 
 
-@pytest.mark.parametrize("role", list(ProviderOperationKind))
+@pytest.mark.parametrize("role", M1_LIVE_OPERATION_KINDS)
 def test_budget_denial_never_dispatches_a_call(role: ProviderOperationKind) -> None:
     delegate = RecordingProviders()
     calls = LiveProviderCalls(LiveBaselineBudget(build_plan(maximum_spend_micro_usd=1)))

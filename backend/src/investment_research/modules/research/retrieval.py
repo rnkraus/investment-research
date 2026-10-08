@@ -12,7 +12,7 @@ from investment_research.modules.operations.application import (
     ProviderBudgetExceededError,
     ProviderCostPolicy,
     ProviderOperationAttempt,
-    ProviderUsageCostExceededReservationError,
+    ProviderUsageExceededReservationError,
 )
 from investment_research.modules.operations.domain import (
     ProviderOperationErrorCode,
@@ -331,7 +331,7 @@ class RetrieveResearchService:
             )
         except ProviderBudgetExceededError as error:
             raise ResearchProviderUnavailableError(request.id, retriable=False) from error
-        except ProviderUsageCostExceededReservationError as error:
+        except ProviderUsageExceededReservationError as error:
             raise ResearchProviderUnavailableError(request.id, retriable=False) from error
         except SearchProviderError as error:
             raise ResearchProviderUnavailableError(

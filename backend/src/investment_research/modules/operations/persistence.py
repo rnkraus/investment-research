@@ -56,13 +56,14 @@ class ProviderOperationRow(Base):
         CheckConstraint(
             "(operation = 'DOCUMENT_EMBEDDING' "
             "AND processing_run_id IS NOT NULL AND research_request_id IS NULL) OR "
-            "(operation IN ('QUERY_EMBEDDING', 'ANSWER_GENERATION', 'STATEMENT_SUPPORT') "
+            "(operation IN ('QUERY_EMBEDDING', 'ANSWER_GENERATION', 'STATEMENT_SUPPORT', "
+            "'RERANKING') "
             "AND research_request_id IS NOT NULL AND processing_run_id IS NULL)",
             name="coherent_owner",
         ),
         CheckConstraint(
             "operation IN ('DOCUMENT_EMBEDDING', 'QUERY_EMBEDDING', "
-            "'ANSWER_GENERATION', 'STATEMENT_SUPPORT')",
+            "'ANSWER_GENERATION', 'STATEMENT_SUPPORT', 'RERANKING')",
             name="operation",
         ),
         CheckConstraint(

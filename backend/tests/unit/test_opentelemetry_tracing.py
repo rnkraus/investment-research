@@ -128,6 +128,38 @@ def test_unknown_span_name_is_a_non_exporting_fallback() -> None:
     assert exporter.get_finished_spans() == ()
 
 
+def test_reranking_span_records_only_content_free_usage() -> None:
+    tracer, exporter, provider = _capturing_tracer()
+    try:
+        with tracer.start_span(
+            "search.rerank",
+            attributes={
+                "provider.name": "pinecone",
+                "model.name": "bge-reranker-v2-m3",
+                "operation.kind": "RERANKING",
+                "input.units": 1,
+                "output.units": 0,
+                "question": RAW_MARKER,
+            },
+        ) as span:
+            assert span.trace_id is not None
+            span.set_attribute("source_text", RAW_MARKER)
+    finally:
+        provider.shutdown()
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].name == "search.rerank"
+    assert spans[0].attributes == {
+        "provider.name": "pinecone",
+        "model.name": "bge-reranker-v2-m3",
+        "operation.kind": "RERANKING",
+        "input.units": 1,
+        "output.units": 0,
+    }
+    assert RAW_MARKER not in repr(spans[0])
+
+
 def test_tracer_start_failure_does_not_fail_product_behavior() -> None:
     class FailingTracer:
         def start_as_current_span(self, *_args: object, **_kwargs: object) -> None:
