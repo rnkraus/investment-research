@@ -80,7 +80,8 @@ The same canonical chunk may appear once per origin, because that preserves whic
 Only the candidate chosen for context receives a `selection_rank`; selected chunks are unique and
 their ranks are contiguous. Reads return selected candidates in this final order, followed by any
 unselected candidates in stable origin and route-rank order. The opt-in M1.5 RRF experiment
-described below uses this same persisted path; runtime reranking remains deferred.
+described below uses this same persisted path. Internally injected reranking also uses it;
+runtime profile/configuration activation remains deferred.
 
 ## Reproducibility and isolation
 
@@ -119,8 +120,9 @@ provider-reported `ProviderUsage`; the deterministic adapter reports zero extern
 `RerankResponse` similarly keeps a complete, uniquely ranked candidate list together with the
 returned model, reranker configuration version, and provider usage. The standalone Pinecone
 M1.5 adapter reports reranking units as input units and zero output units, not token usage.
-It exists behind the port but runtime execution/accounting wiring and adoption are still
-pending; the existing M1 and opt-in RRF paths are unchanged. Provider correlation must also prove
+Research now wires execution/accounting through an explicitly injected service; runtime profile
+activation and adoption are still pending. The existing M1 and opt-in RRF paths are unchanged.
+Provider correlation must also prove
 that the response contains exactly the requested candidate set.
 
 ```mermaid
@@ -143,7 +145,7 @@ flowchart LR
     FILTERS --> QUALIFY
     QUALIFY --> ELIGIBLE[Qualified canonical dense hits]
     ELIGIBLE --> SELECT[M1 deterministic selector]
-    ELIGIBLE -. M1.5 experiment wiring pending .-> RERANK[Reranker]
+    ELIGIBLE -. explicit RRF-plus-rerank injection .-> RERANK[Accounted Reranker]
 ```
 
 The deterministic M1 vector identity hashes the trusted workspace ID, canonical chunk ID, and
@@ -233,17 +235,20 @@ maxima, skipping a chunk that cannot fit rather than rewriting its text. The sel
 ```mermaid
 flowchart LR
     H[Canonical qualified hits] --> P[prepare_rrf_reranking<br/>RRF, deduplication, input limits]
-    P -. caller wiring pending .-> X[Reserve quota/cost<br/>execute Reranker outside transaction]
-    X -. complete response .-> S[select_reranked_context<br/>correlation, scores, context limits]
-    S -. caller wiring pending .-> C[Canonical revalidation and persistence]
+    P --> X[Reserve quota/cost<br/>execute Reranker outside transaction]
+    X --> S[select_reranked_context<br/>correlation, scores, context limits]
+    S --> C[Canonical revalidation and persistence]
     C --> E[Existing source-unit and evidence checks]
 ```
 
 Both functions are pure: no SDK, database, logging, retries, reservations, or external calls.
 They do not establish workspace eligibility, approve public/synthetic data exposure, or authorize
-evidence. The future caller must establish eligibility before transmission, reserve/finalize
-usage through Operations, and revalidate canonical state after the external call. Runtime
-integration and live comparison remain pending; the repository validation below is implemented.
+evidence. Research's internally injected `AccountedRerankingService` and
+`RetrieveResearchService` now connect these functions to quota/cost reservation, a detached
+external call, canonical lane rereads, and atomic score persistence. The
+[Research guide](../research/README.md#internally-injected-accounted-reranking) owns that flow
+and its explicit public/synthetic approval boundary. Runtime profile/configuration activation,
+reviewed live pricing/account allowance, and live comparison remain pending.
 This block changes no API profile, website behavior, default selector, or provider pricing policy.
 
 ### Reranking persistence validation
@@ -261,7 +266,8 @@ final context order; unselected records retain the existing stable origin/rank o
 The repository validates coherence before staging any rows and never commits. The caller owns
 the transaction, and existing composite workspace foreign keys remain a second isolation boundary.
 These checks neither prove provider execution nor replace upstream character-limit and canonical
-eligibility checks. Score persistence is prepared, but the production caller is not wired yet.
+eligibility checks. Research exercises score persistence through the internally injected
+orchestrator; normal runtime composition still does not enable reranking.
 
 `IndexActiveChunksService` owns the document-index sequence without importing a provider SDK. It
 requires one leased `LEXICAL_READY` or `INDEXING` run and one coherent active chunk set, orders

@@ -8,6 +8,7 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 | --------------------------- | ----------------------------------------------------------------------------------------- |
 | `application.py`            | Connects retrieval and answer validation and preserves existing application imports.      |
 | `retrieval.py`              | Runs lexical or dual-lane retrieval and persists qualified candidates.                    |
+| `reranking.py`              | Reserves quota/cost, validates one reranking attempt, and finalizes usage outside retrieval transactions. |
 | `answer_validation.py`      | Accounts for generation and support, validates evidence, and saves terminal answers.      |
 | `errors.py`                 | Defines the safe provider failure shared by retrieval and answer generation.              |
 | `contracts.py`              | Defines strict retrieval, generation, and validated-answer boundary values.               |
@@ -99,6 +100,46 @@ representative receives `selection_rank` and supplies the canonical source ID. S
 fusion ranks before persistence. No provider call, accounting rule, or evidence check is bypassed.
 See [Search](../search/README.md#standalone-m15-reciprocal-rank-fusion) for the fixed formula and
 comparison boundary.
+
+### Internally injected accounted reranking
+
+The query dependency bundle can instead receive `RrfRerankingProfile` together with
+`AccountedRerankingService`; either without the other is rejected. This internal opt-in is tested,
+but bootstrap, API profiles, and evaluator configuration do not enable it yet. M1 and plain RRF
+keep their existing behavior.
+
+```mermaid
+flowchart LR
+    Q[Query embedding and dense retrieval] --> READ[Short canonical lexical and dense read]
+    READ --> SNAPSHOT[Detached lane snapshots and bounded RRF input]
+    SNAPSHOT --> RESERVE[Commit quota and cost reservation]
+    RESERVE --> CALL[One reranking call outside transaction]
+    CALL --> CHECK[Validate complete response and finalize usage]
+    CHECK --> RECHECK[Short canonical reread]
+    RECHECK --> MATCH{Both snapshots unchanged?}
+    MATCH -->|yes| SAVE[Atomically save all lane ranks and scores]
+    MATCH -->|no| STOP[Abort retrieval persistence; retain paid usage]
+    SAVE --> SOURCES[Bounded selected sources; existing evidence checks]
+```
+
+Composition must explicitly supply a reviewed provider identity, unit-price policy, positive
+input-unit ceiling with zero output units, and server-owned approval scoped to the reviewed
+public/synthetic corpus. This approval is not a client flag, authorization proof, or permission
+to transmit private archive content. Operations independently denies reranking when the durable
+monthly request policy is absent or exhausted; budget protection also applies. Synthetic test
+rates are not an approved live price or proof of provider-account allowance.
+
+The reranking call runs once, after the read session closes. It validates correlation, model,
+configuration, scores, and context bounds before recording success. Empty eligible input skips
+reranking reservations and calls. Failure never silently falls back to RRF or automatically
+retries; unknown failed usage retains its reservation through the existing ledger policy.
+
+Before saving the retrieval result, the service rereads both canonical lanes and requires exact
+snapshot equality, including membership, order, provenance, text, and raw scores. Any change
+aborts without replacing sources or repeating the paid call. A successful provider operation
+remains charged even when that later check rejects persistence. All qualified lane records retain
+shared fusion ranks and reranking scores; only chosen representatives supply source identities.
+Subsequent source-unit preparation, support evaluation, and final evidence rechecks stay unchanged.
 
 `AnswerResearchRequestService` is the route-facing application use case. It passes the committed
 retrieval result to the selected `GenerateValidatedAnswerService` and returns only the validated

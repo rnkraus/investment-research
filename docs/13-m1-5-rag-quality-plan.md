@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 2 comparisons recorded; Step 3 adapter implemented; runtime integration/adoption pending
+**Status:** Active — Step 2 comparisons recorded; Step 3 internal orchestration tested; runtime activation/adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1127,7 +1127,8 @@ The current `reranker_score`, `fused_rank`, and `selection_rank` columns suffice
 reranking order is reproducible from unique chunk scores, fusion ranks, and the selector version;
 no additional rank column, migration, or model/configuration default is added. These persistence
 checks do not establish text eligibility, prove a provider call, or replace context-character
-validation. Actual retrieval orchestration and post-call canonical revalidation remain pending.
+validation. At this block's completion, retrieval orchestration and post-call canonical
+revalidation remained pending; Block 3B4 below implements that internal caller.
 
 Block 3B3 local gate passed: backend format/lint, strict Mypy across 290 files, all 1,818 unit
 tests, and the isolated PostgreSQL migration/seed/drift cycle with 169 integration tests.
@@ -1137,9 +1138,41 @@ correctly skipped because their separate stack was not active. Only disposable P
 resources were removed. No frontend/build, complete runtime, hosted-CI, or paid-provider check
 was run. Existing test discovery includes these regressions without a new credentialed CI job.
 
-The remaining Block 3B work stays open: verified live price/account-quota policy, opt-in
-API/evaluator configuration, retrieval/score-persistence orchestration, and actual
-reserve-call-finalize wiring. Blocks 4–5 and
+#### Accounted retrieval orchestration — Block 3B4 (2026-10-09)
+
+`research/reranking.py` introduces `AccountedRerankingService` with explicitly supplied provider
+identity, unit-price policy, positive input-unit ceiling, and zero output units. It requires
+server-owned public/synthetic approval scoped to the reviewed corpus, never a client flag or
+permission to send private data. Operations separately enforces the durable request quota and
+monthly workspace budget. No live price, free allowance, or new runtime default is inferred.
+
+`RetrieveResearchService` accepts `RrfRerankingProfile` only together with this service. After
+the existing query embedding and dense retrieval, it loads canonical lexical/dense snapshots
+in a short read transaction and closes it before preparing RRF input and reranking. The service
+reserves quota/cost, makes one external call, validates the complete result, and finalizes usage
+outside any retrieval transaction. Empty eligible input consumes no reranking reservation/call.
+Reranking has no automatic retry or silent RRF fallback; existing query-provider retry rules are
+unchanged. Synthetic test rates are not approved live pricing.
+
+A final short transaction rereads both canonical lanes and requires unchanged membership, order,
+provenance, text, and raw scores before atomically saving the complete lane records, shared fusion
+ranks/reranking scores, and bounded selected sources. Any snapshot change aborts persistence;
+the successful provider operation and its cost remain recorded. No source is substituted and
+no paid call is repeated. Existing citable-unit, support, and final evidence checks remain intact.
+
+Block 3B4 local gate passed: backend format/lint, strict Mypy across 291 source files, all 1,837
+unit tests, and the isolated PostgreSQL migration/seed/drift cycle with 177 integration tests.
+The 19 new unit cases and eight new PostgreSQL cases cover detached execution, committed
+reservation visibility, durable quota/budget denial, one-attempt failure accounting, empty
+inputs, snapshot changes, complete score round-trips, and workspace isolation. Seven SeaweedFS
+tests were correctly skipped because their separate stack was not active. Only disposable
+PostgreSQL test resources were removed. Existing test discovery includes these cases without
+a new credentialed CI job. No frontend/build, complete runtime, hosted-CI, or paid-provider
+verification was run. Bootstrap, API profiles, and evaluator configuration do not yet activate
+the new service; normal website behavior is unchanged.
+
+The remaining Block 3B work stays open: verified live price/account-quota policy and opt-in
+API/evaluator configuration and composition. Blocks 4–5 and
 the complete Step 3 gate remain open. No default change, hosted CI confirmation, live reranking
 result, or quality/latency improvement is claimed. Earlier source-opening/default-adoption gates
 remain open as well.
