@@ -1171,8 +1171,38 @@ a new credentialed CI job. No frontend/build, complete runtime, hosted-CI, or pa
 verification was run. Bootstrap, API profiles, and evaluator configuration do not yet activate
 the new service; normal website behavior is unchanged.
 
-The remaining Block 3B work stays open: verified live price/account-quota policy and opt-in
-API/evaluator configuration and composition. Blocks 4–5 and
+#### Default-disabled host configuration — Block 3B5 (2026-10-09)
+
+`RerankingProviderSettings` freezes the existing BGE model/no-truncation configuration,
+`pinecone-starter-bge-included-v1` admission policy, and a 1–20-second deadline. Its strict local
+monthly request limit is 0–500, defaulting to zero. A positive limit requires explicit boolean
+Starter-allowance and public/synthetic-content approval; neither is inferred from existing keys.
+The model does not measure provider-account usage or grant permission to transmit private data.
+
+The separate `load_evaluation_reranking_settings` host loader validates admission before reading
+local configuration. Zero quota returns `None` without reading configuration or secret files.
+Admitted calls load only `INVESTMENT_RESEARCH_PINECONE_RERANK_API_KEY` or its `_SECRET_FILE`
+reference through the existing host-secret boundary. Direct/file conflicts and missing keys fail
+with fixed names/reasons; query and index keys are never reused. `.env.example` contains only
+commented placeholders. No field is added to normal API/worker/parser settings, and no CLI,
+bootstrap, Compose, provider call, reservation, or website activation is changed.
+
+The owner confirmed the Starter tariff, not a numeric remaining allowance. The
+[pricing page](https://www.pinecone.io/pricing/), checked on 2026-10-09, still lists 500 BGE requests
+included monthly. Account-wide remaining allowance must be checked before a future live run;
+this admission policy is not proof of zero billing or approval of a paid-plan upgrade. The next
+block must wire bounded reranking-unit accounting and request ceilings without changing the
+existing monthly workspace budget or USD 0.80 evaluation ceiling.
+
+Block 3B5 local gate passed: backend format/lint, strict Mypy across 292 source files, all 1,874
+unit tests, and a clean diff check. The 37 new cases cover disabled no-access behavior, strict
+limits/approvals, fixed model/policy, credential masking, separate-role loading, precedence,
+and missing/conflicting keys. The targeted configuration suite passed 65 tests. Tests replace
+real configuration/credential access with synthetic values. No PostgreSQL, Docker, frontend/build,
+hosted-CI, or live-provider verification was run; normal runtime behavior remains unchanged.
+
+The remaining Block 3B work stays open: live account-allowance/usage-price confirmation,
+bounded evaluator composition and CLI activation, and optional API composition. Blocks 4–5 and
 the complete Step 3 gate remain open. No default change, hosted CI confirmation, live reranking
 result, or quality/latency improvement is claimed. Earlier source-opening/default-adoption gates
 remain open as well.

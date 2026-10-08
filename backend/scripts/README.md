@@ -397,6 +397,29 @@ environment-variable names but never their values. Cleanup removes only the reso
 image tags, and secret directory owned by that invocation, including after a failed build or runtime
 check.
 
+## Standalone M1.5 reranking configuration preparation
+
+`load_evaluation_reranking_settings` in `m1_5_live_settings.py` is a separately callable host loader,
+not yet part of the evaluation CLI or API composition. Its default monthly request limit is zero:
+it returns `None` before reading local configuration or credentials. Positive limits require
+explicit boolean Starter-allowance and public/synthetic-content confirmations before file access.
+The local workspace/UTC-month limit is 0–500; it does not measure account-wide remaining allowance.
+The owner must check that allowance before each future live comparison.
+
+The validated `RerankingProviderSettings` freezes BGE, the existing no-truncation configuration,
+the `pinecone-starter-bge-included-v1` admission policy, and a 1–20-second deadline. This policy
+does not approve paid-plan use, prove the account tariff, or guarantee zero billed cost. The
+[current pricing page](https://www.pinecone.io/pricing/), checked on 2026-10-09, lists 500 monthly
+BGE requests included in Starter; the model/operation admission and local guard remain separate.
+Canonical quota/accounting and the evaluator's unchanged USD 0.80 ceiling still need to be wired
+in the next block; this loader performs no provider call or reservation.
+
+Only `INVESTMENT_RESEARCH_PINECONE_RERANK_API_KEY` or its `_SECRET_FILE` reference is loaded.
+References reuse the existing ignored `.secrets` host-file validation. Direct and file forms
+conflict, and missing keys never fall back to query/index credentials. Existing provider settings
+and normal API/worker/parser loaders are unchanged. The example file shows commented placeholders;
+do not enable or configure a new credential merely to run normal tests.
+
 ## M1 provider compatibility smoke
 
 `verify_m1_provider_smoke.py` is an optional live-provider compatibility check. It is never part of
