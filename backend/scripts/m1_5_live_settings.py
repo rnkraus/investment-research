@@ -15,6 +15,7 @@ from investment_research.settings import (
     EmbeddingProviderSettings,
     GenerationProviderSettings,
     PineconeProviderSettings,
+    RerankingProviderSettings,
     WorkerSettings,
 )
 
@@ -25,6 +26,7 @@ INDEX_KEY = "INVESTMENT_RESEARCH_PINECONE_INDEX_API_KEY"
 QUERY_KEY = "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY"
 QUERY_INDEX_KEY = "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY"
 GENERATION_KEY = "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY"
+RERANKING_KEY = "INVESTMENT_RESEARCH_PINECONE_RERANK_API_KEY"
 HOST_NAME = "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST"
 BUDGET_NAME = "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD"
 
@@ -72,15 +74,54 @@ def _credential(name: str, values: dict[str, str | None]) -> SecretStr:
     return SecretStr(direct)
 
 
-def load_evaluation_settings() -> tuple[WorkerSettings, ApiSettings]:
-    """Never load the ordinary database, broker, S3, parser, or diagnostic configuration."""
-
+def _local_values() -> dict[str, str | None]:
+    """Load host evaluation configuration without mutating the process environment."""
     try:
-        values = dict(dotenv_values(ROOT_ENV_FILE)) if ROOT_ENV_FILE.is_file() else {}
+        return dict(dotenv_values(ROOT_ENV_FILE)) if ROOT_ENV_FILE.is_file() else {}
     except OSError, UnicodeError:
         raise EvaluationConfigurationError(
             "local_configuration", "unavailable_or_invalid"
         ) from None
+
+
+def load_evaluation_reranking_settings(
+    *,
+    monthly_request_limit: int = 0,
+    starter_allowance_confirmed: bool = False,
+    public_synthetic_content_approved: bool = False,
+) -> RerankingProviderSettings | None:
+    """Load one separate inference credential only after explicit host-run admission.
+
+    Default/zero quota returns before accessing local configuration or secret files.
+    This loader does not enable a runtime profile, check account usage, or make a call.
+    """
+
+    admission = {
+        "monthly_request_limit": monthly_request_limit,
+        "starter_allowance_confirmed": starter_allowance_confirmed,
+        "public_synthetic_content_approved": public_synthetic_content_approved,
+    }
+    try:
+        checked = RerankingProviderSettings.model_validate(
+            admission | {"api_key": SecretStr("validation-only")}
+        )
+    except ValidationError:
+        raise EvaluationConfigurationError("reranking_admission", "missing_or_invalid") from None
+    if checked.monthly_request_limit == 0:
+        return None
+    values = _local_values()
+    try:
+        return RerankingProviderSettings.model_validate(
+            admission | {"api_key": _credential(RERANKING_KEY, values)}
+        )
+    except ValidationError:
+        raise EvaluationConfigurationError(RERANKING_KEY, "missing_or_invalid") from None
+
+
+def load_evaluation_settings() -> tuple[WorkerSettings, ApiSettings]:
+    """Never load the ordinary database, broker, S3, parser, or diagnostic configuration."""
+
+    values = _local_values()
     host = os.environ.get(HOST_NAME, values.get(HOST_NAME))
     try:
         validated_host = PineconeProviderSettings.model_validate(

@@ -12,6 +12,10 @@ from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
     MAX_CONFIGURABLE_PDF_PAGES,
 )
+from investment_research.modules.search.reranking_contracts import (
+    BGE_RERANK_CONFIG_VERSION,
+    BGE_RERANK_MODEL,
+)
 
 type RuntimeEnvironment = Literal["development", "test"]
 type RuntimeLocation = Literal["host", "container"]
@@ -432,6 +436,41 @@ class GenerationProviderSettings(BaseModel):
         if not secret or secret != secret.strip():
             raise ValueError("generation API key must be a non-empty normalized value")
         return value
+
+
+class RerankingProviderSettings(BaseModel):
+    """Explicit Starter-only experiment admission; never an account-quota measurement."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    api_key: SecretStr
+    model: Literal["bge-reranker-v2-m3"] = BGE_RERANK_MODEL
+    config_version: Literal["m1-5-pinecone-bge-none-v1"] = BGE_RERANK_CONFIG_VERSION
+    billing_policy: Literal["pinecone-starter-bge-included-v1"] = "pinecone-starter-bge-included-v1"
+    timeout_seconds: int = Field(default=20, ge=1, le=20, strict=True)
+    monthly_request_limit: int = Field(default=0, ge=0, le=500, strict=True)
+    starter_allowance_confirmed: bool = Field(default=False, strict=True)
+    public_synthetic_content_approved: bool = Field(default=False, strict=True)
+
+    @field_validator("api_key")
+    @classmethod
+    def require_normalized_api_key(cls, value: SecretStr) -> SecretStr:
+        """Reject blank or padded inference credentials without rendering their value."""
+
+        secret = value.get_secret_value()
+        if not secret or secret != secret.strip():
+            raise ValueError("reranking API key must be a non-empty normalized value")
+        return value
+
+    @model_validator(mode="after")
+    def require_explicit_admission(self) -> RerankingProviderSettings:
+        """A positive local quota requires both owner attestations, not an inferred allowance."""
+
+        if self.monthly_request_limit > 0 and not (
+            self.starter_allowance_confirmed and self.public_synthetic_content_approved
+        ):
+            raise ValueError("reranking requires Starter allowance and public/synthetic approval")
+        return self
 
 
 class ApiSettings(ObjectStorageSettings):
