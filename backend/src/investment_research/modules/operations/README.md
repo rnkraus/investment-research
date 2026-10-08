@@ -9,7 +9,7 @@ usage; traces add diagnostic context but never replace that canonical record.
 | File             | Responsibility                                                                 |
 | ---------------- | ------------------------------------------------------------------------------ |
 | `__init__.py`    | Marks the application-owned operations package.                                |
-| `application.py` | Reserves monthly budget and finalizes canonical usage in short transactions.   |
+| `application.py` | Reserves monthly budget/request quota and finalizes usage in short transactions. |
 | `domain.py`      | Defines provider-operation kinds, lifecycle rules, usage, and safe failures.   |
 | `ports.py`       | Defines the canonical repository and optional tracing contracts.               |
 | `persistence.py` | Maps provider operations to PostgreSQL and implements workspace-scoped access. |
@@ -30,10 +30,15 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    REQUEST[Bounded operation] --> LOCK[Lock workspace budget]
+    REQUEST[Bounded operation] --> POLICY[Validate scope and required quota policy]
+    POLICY --> LOCK[Lock workspace budget and quota]
     LOCK --> SUM[Sum UTC-month actual cost and active reservations]
-    SUM -->|fits| RESERVE[Commit STARTED with reserved cost]
+    SUM -->|fits| KIND{Reranking?}
     SUM -->|exceeds| REJECT[Reject before provider call]
+    KIND -->|no| RESERVE[Commit STARTED with reserved cost]
+    KIND -->|yes| QUOTA[Count all reserved reranking attempts this UTC month]
+    QUOTA -->|below explicit limit| RESERVE
+    QUOTA -->|exhausted| REJECT
     RESERVE --> CALL[Call external provider outside transaction]
     CALL -->|valid result| SUCCESS[Finalize SUCCEEDED with actual usage]
     CALL -->|safe classified error| FAILURE[Finalize FAILED]
@@ -73,5 +78,16 @@ reservation without recording untrustworthy usage.
 
 Migration `0009_m1_5_reranking_operations` extends the named operation and ownership checks.
 It preserves historical accounting records; downgrade refuses to remove the operation kind while
-reranking records exist. Runtime reranking wiring, a live pricing policy, and quota enforcement
-remain separate implementation work. The existing monthly workspace budget is unchanged.
+reranking records exist. The existing monthly workspace budget is unchanged.
+
+`ReserveProviderOperationService` requires an explicit `RerankingRequestQuotaPolicy` for reranking
+and checks it under the existing workspace budget lock before committing `STARTED`. The policy
+accepts a local ceiling of 0–500 requests per workspace and UTC month; zero disables admission,
+and there is no implicit 500-request default. Every reserved reranking attempt counts, including
+failed/unknown-usage and still-active attempts. Changing keys, providers, or configuration versions
+does not reset the count. A rejected reservation creates no operation and makes no provider call.
+The repository reads the canonical ledger, so process restarts do not erase consumption.
+
+This is a local application safeguard, not Pinecone's account-wide quota or a statement of free
+allowance remaining. Runtime wiring, the verified account/month allowance, and a live pricing
+policy remain pending. No new table, migration, provider call, or credential is needed for counting.

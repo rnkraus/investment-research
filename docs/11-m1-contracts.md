@@ -429,7 +429,17 @@ Exactly one of `research_request_id` or `processing_run_id` is required. `operat
 The additive M1.5 accounting extension introduces research-owned `RERANKING` through migration
 `0009_m1_5_reranking_operations`. Its input units are provider-reported reranking units and its
 output units are zero. These units are not interchangeable with embedding or generation tokens.
-This ledger extension does not activate runtime reranking or define its live pricing/quota policy.
+This ledger extension does not activate runtime reranking or define its live pricing policy.
+
+The local M1.5 reservation service additionally requires an explicit
+`RerankingRequestQuotaPolicy` for reranking. Its 0–500-request experiment ceiling applies to one
+workspace and UTC month, with zero disabling admission and no implicit default. Every reserved
+attempt counts regardless of lifecycle state, provider, or configuration version. Counting and
+insertion share the existing workspace budget transaction lock; rejection occurs before an
+external call and does not create a ledger row. Other operation kinds are unaffected.
+This local safeguard does not verify Pinecone's remaining account-wide quota, external usage, or
+billing month. Verified account/quota conditions and runtime configuration remain prerequisites
+for live reranking; an included allowance cannot be silently treated as an unlimited zero rate.
 
 Before a paid call, the application commits `STARTED` with the maximum reserved cost allowed by the
 bounded request. Budget checks include completed actual cost plus active reservations. After the

@@ -1061,8 +1061,35 @@ Seven SeaweedFS tests were correctly skipped because their separate verification
 active. The dedicated migration regression passed, and only disposable PostgreSQL resources were
 removed. No frontend/build, complete runtime, hosted-CI, or paid-provider verification was run.
 
-Block 3B remains open: live price/quota policy, opt-in API/evaluator configuration, RRF-plus-rerank
-selection, canonical ranking persistence, and actual reserve-call-finalize wiring. Blocks 4–5 and
+#### Local request-quota guard — Block 3B1 (2026-10-08)
+
+The next sub-block adds `ProviderOperationRepository.count_operations` and an explicit
+`RerankingRequestQuotaPolicy` to the reservation service. Reranking is denied when the policy is
+absent. The local experiment ceiling must be an integer from 0 to 500 requests per workspace and
+UTC month; zero disables new reservations, and no runtime default or environment key is added.
+The existing budget lock serializes cost checking, request counting, and insertion of `STARTED`.
+Every reserved reranking attempt counts, including failures, unknown usage, and active calls;
+changing keys or configuration does not reset it. Canonical PostgreSQL history survives restarts.
+Other provider operations and the existing dollar budgets remain unchanged.
+
+The [Pinecone pricing page](https://www.pinecone.io/pricing/), rechecked on 2026-10-08, still lists
+500 monthly BGE requests for Starter. The local workspace guard is not a provider-account meter:
+other workspaces, installations, evaluation databases, and external calls may consume the same
+account allowance. Do not equate a local UTC month to a verified provider billing period. Account
+and remaining-quota confirmation and an approved live pricing policy remain required before use.
+This block creates no new schema or service and performs no live provider call.
+
+Block 3B1 local gate passed: backend formatting/lint, strict Mypy across 286 files, all 1,762
+unit tests, and the isolated PostgreSQL migration/seed/drift cycle with 161 integration tests.
+The three new PostgreSQL tests prove lifecycle/window/workspace counting, durable consumption
+after failure and service recreation, and serialization of concurrent zero-priced reservations.
+Seven SeaweedFS tests were correctly skipped because their separate stack was not active.
+Only disposable verification resources were removed. No frontend/build, full runtime, hosted-CI,
+or paid-provider check was run; no live reranking allowance or price was confirmed.
+
+The remaining Block 3B work stays open: verified live price/account-quota policy, opt-in
+API/evaluator configuration, RRF-plus-rerank selection, canonical ranking persistence, and actual
+reserve-call-finalize wiring. Blocks 4–5 and
 the complete Step 3 gate remain open. No default change, hosted CI confirmation, live reranking
 result, or quality/latency improvement is claimed. Earlier source-opening/default-adoption gates
 remain open as well.
