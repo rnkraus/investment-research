@@ -25,12 +25,14 @@ from investment_research.infrastructure.search.pinecone import (
     create_pinecone_dense_index_writer,
     create_pinecone_dense_retriever,
 )
-from investment_research.settings import ApiSettings, WorkerSettings
+from investment_research.infrastructure.search.pinecone_reranking import create_pinecone_reranker
+from investment_research.settings import ApiSettings, RerankingProviderSettings, WorkerSettings
 from scripts.docker_secrets import COMPOSE_SECRET_FILES, disposable_compose_secret_environment
 from scripts.m1_5_live_index import IsolatedEvaluationIndex, LiveIndexCleanupError
 from scripts.m1_5_live_providers import (
     BudgetedAnswerGenerator,
     BudgetedEmbeddingProvider,
+    BudgetedReranker,
     BudgetedSupportEvaluator,
     LiveProviderCalls,
 )
@@ -163,6 +165,7 @@ class ProviderResources:
     query_embedding: BudgetedEmbeddingProvider
     generator: BudgetedAnswerGenerator
     support: BudgetedSupportEvaluator
+    reranker: BudgetedReranker | None = None
 
 
 @contextmanager
@@ -174,11 +177,28 @@ def provider_resources(
     cleanup_steps: list[str],
     *,
     local_output: LocalEvaluationOutput | None = None,
+    reranking_settings: RerankingProviderSettings | None = None,
 ) -> Iterator[ProviderResources]:
     """Use restricted role credentials; content inspection is an explicit local-only option."""
 
     if local_output is not None:
         require_local_terminal()
+    limit = plan.reranking_limit
+    if (limit is None) != (reranking_settings is None):
+        raise LiveRuntimeError("reranking configuration does not match the evaluation plan")
+    if (
+        limit is not None
+        and reranking_settings is not None
+        and (
+            not reranking_settings.starter_allowance_confirmed
+            or not reranking_settings.public_synthetic_content_approved
+            or reranking_settings.monthly_request_limit != limit.maximum_requests
+            or reranking_settings.model != limit.model
+            or reranking_settings.config_version != limit.configuration_version
+            or reranking_settings.billing_policy != limit.billing_policy
+        )
+    ):
+        raise LiveRuntimeError("reranking admission does not match the evaluation plan")
 
     document = worker.require_indexing_providers()
     query = api.query_providers
@@ -224,6 +244,17 @@ def provider_resources(
             cleanup_steps.append("index_cleanup")
 
     with ExitStack() as clients:
+        reranker = (
+            BudgetedReranker(
+                create_pinecone_reranker(
+                    api_key=reranking_settings.api_key,
+                    operation_timeout_seconds=reranking_settings.timeout_seconds,
+                ),
+                calls,
+            )
+            if reranking_settings is not None
+            else None
+        )
         embeddings = []
         for label, config in (("document_client_close", document), ("query_client_close", query)):
             provider = create_openai_embedding_provider(
@@ -279,4 +310,5 @@ def provider_resources(
             query_embedding=embeddings[1],
             generator=BudgetedAnswerGenerator(answer, calls),
             support=BudgetedSupportEvaluator(support, calls, local_output=local_output),
+            reranker=reranker,
         )

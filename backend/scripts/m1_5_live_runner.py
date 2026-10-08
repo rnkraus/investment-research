@@ -35,9 +35,15 @@ from investment_research.modules.operations.application import (
     FinalizeProviderOperationService,
     ProviderBudgetPolicy,
     ProviderCostPolicy,
+    RerankingRequestQuotaPolicy,
     ReserveProviderOperationService,
 )
-from investment_research.modules.operations.domain import ProviderOperationKind
+from investment_research.modules.operations.domain import (
+    ProviderOperationKind,
+)
+from investment_research.modules.operations.domain import (
+    ProviderUsage as OperationUsage,
+)
 from investment_research.modules.research.application import (
     AnswerGenerationAccountingProfile,
     GenerateValidatedAnswerService,
@@ -53,10 +59,15 @@ from investment_research.modules.research.contracts import (
     ValidatedAnswerResult,
 )
 from investment_research.modules.research.domain import AnswerState, CoverageStatus
+from investment_research.modules.research.errors import ResearchProviderUnavailableError
 from investment_research.modules.research.persistence import SqlAlchemyResearchRepository
 from investment_research.modules.research.ports import (
     AnswerGenerationProviderError,
     AnswerGenerator,
+)
+from investment_research.modules.research.reranking import (
+    AccountedRerankingService,
+    RerankingAccountingProfile,
 )
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
@@ -64,7 +75,11 @@ from investment_research.modules.search.contracts import (
     LexicalSearchProfile,
     SelectedRetrievalCandidate,
 )
-from investment_research.modules.search.ports import EmbeddingProvider, SearchProviderError
+from investment_research.modules.search.ports import (
+    EmbeddingProvider,
+    Reranker,
+    SearchProviderError,
+)
 from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic, provider_failure
 from scripts.m1_5_live_index import IsolatedEvaluationIndex
 from scripts.m1_5_live_providers import LiveProviderCallError, LiveProviderCalls, ProviderCallRecord
@@ -143,20 +158,33 @@ class LiveBaselineReport(BaseModel):
 
 
 def summarize_usage(records: Sequence[ProviderCallRecord]) -> ProviderUsage:
-    """Unknown usage poisons totals; no attempted calls means a known zero."""
+    """Keep token and rerank units separate; unknown costs still poison the cost total."""
 
-    known = all(
-        record.input_tokens is not None
-        and record.output_tokens is not None
-        and record.estimated_cost_micro_usd is not None
-        for record in records
+    token_records = [
+        record for record in records if record.role is not ProviderOperationKind.RERANKING
+    ]
+    rerank_records = [
+        record for record in records if record.role is ProviderOperationKind.RERANKING
+    ]
+    known_tokens = all(
+        record.input_tokens is not None and record.output_tokens is not None
+        for record in token_records
     )
+    known_cost = all(record.estimated_cost_micro_usd is not None for record in records)
+    known_rerank = all(record.rerank_units is not None for record in rerank_records)
     return ProviderUsage(
-        input_tokens=sum(record.input_tokens or 0 for record in records) if known else None,
-        output_tokens=sum(record.output_tokens or 0 for record in records) if known else None,
+        input_tokens=sum(record.input_tokens or 0 for record in token_records)
+        if known_tokens
+        else None,
+        output_tokens=sum(record.output_tokens or 0 for record in token_records)
+        if known_tokens
+        else None,
         estimated_cost_micro_usd=(
-            sum(record.estimated_cost_micro_usd or 0 for record in records) if known else None
+            sum(record.estimated_cost_micro_usd or 0 for record in records) if known_cost else None
         ),
+        rerank_units=sum(record.rerank_units or 0 for record in rerank_records)
+        if known_rerank
+        else None,
     )
 
 
@@ -176,18 +204,30 @@ def build_services(
     index: IsolatedEvaluationIndex,
     generator: AnswerGenerator,
     support: StatementSupportEvaluator,
+    reranker: Reranker | None = None,
 ) -> tuple[RetrieveResearchService, GenerateValidatedAnswerService]:
     """Compose canonical services with the explicitly planned selector and model pair."""
 
     selection_profile = selection_profile_for_policy(
         retrieval_policy_for_version(plan.configuration.selector_config_version)
     )
+    limit = plan.reranking_limit
+    if (limit is None) != (reranker is None) or (
+        (retrieval_policy_for_version(plan.configuration.selector_config_version) == "rrf_rerank")
+        != (limit is not None)
+    ):
+        raise LiveBaselineLimitError("reranking resources do not match the evaluation plan")
     sessions = create_session_factory(engine)
     operations = create_provider_operation_unit_of_work_factory(sessions)
     executor = ExecuteProviderOperationService(
         reservation_service=ReserveProviderOperationService(
             unit_of_work_factory=operations,
             budget_policy=ProviderBudgetPolicy(monthly_limit_micro_usd=5_000_000),
+            reranking_quota_policy=(
+                RerankingRequestQuotaPolicy(monthly_request_limit=limit.maximum_requests)
+                if limit is not None
+                else None
+            ),
         ),
         finalization_service=FinalizeProviderOperationService(unit_of_work_factory=operations),
         tracer=NoopOperationTracer(),
@@ -207,6 +247,26 @@ def build_services(
                 candidate_limit=M1_LANE_CANDIDATE_LIMIT,
             ),
             selection_profile=selection_profile,
+            reranking=(
+                AccountedRerankingService(
+                    reranker=reranker,
+                    executor=executor,
+                    accounting=RerankingAccountingProfile(
+                        provider="pinecone",
+                        cost_policy=ProviderCostPolicy(
+                            input_micro_usd_per_million_units=0,
+                            output_micro_usd_per_million_units=0,
+                        ),
+                        maximum_usage=OperationUsage(
+                            input_units=limit.maximum_rerank_units_per_request,
+                            output_units=0,
+                        ),
+                    ),
+                    public_synthetic_content_approved=True,
+                )
+                if reranker is not None and limit is not None
+                else None
+            ),
             provider_operation_executor=executor,
             embedding_accounting=QueryEmbeddingAccountingProfile(
                 provider="openai",
@@ -317,6 +377,7 @@ def _reason(error: Exception) -> FailureReason:
         SearchProviderError
         | AnswerGenerationProviderError
         | StatementSupportProviderError
+        | ResearchProviderUnavailableError
         | LiveProviderCallError,
     ):
         return "provider"
@@ -346,6 +407,7 @@ def run_live_baseline(
     support: StatementSupportEvaluator,
     calls: LiveProviderCalls,
     local_output: LocalEvaluationOutput | None = None,
+    reranker: Reranker | None = None,
 ) -> LiveBaselineReport:
     """Run every reviewed case without authorizing credentials, resources, or cleanup itself."""
 
@@ -369,6 +431,8 @@ def run_live_baseline(
         raise LiveBaselineLimitError("the evaluation plan is inconsistent") from None
     if plan != approved_plan or calls.budget.plan != plan:
         raise LiveBaselineLimitError("the evaluation plan is inconsistent")
+    if (plan.reranking_limit is None) != (reranker is None):
+        raise LiveBaselineLimitError("reranking resources do not match the evaluation plan")
     manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
     if local_output is not None:
         require_local_terminal()
@@ -413,6 +477,7 @@ def run_live_baseline(
         index=index,
         generator=generator,
         support=support,
+        reranker=reranker,
     )
     observations: list[CaseObservation] = []
     failures: list[LiveCaseFailure] = []

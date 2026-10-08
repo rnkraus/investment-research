@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from time import perf_counter_ns
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -35,8 +36,15 @@ from investment_research.modules.search.contracts import (
     EmbeddingPurpose,
     EmbeddingRequest,
     EmbeddingResult,
+    RerankRequest,
+    RerankResponse,
 )
-from investment_research.modules.search.ports import EmbeddingProvider, SearchProviderError
+from investment_research.modules.search.ports import (
+    EmbeddingProvider,
+    Reranker,
+    SearchProviderError,
+)
+from investment_research.modules.search.reranking_contracts import require_bge_input_bounds
 from scripts.m1_5_live_diagnostics import ProviderFailureDiagnostic, provider_failure
 from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import (
@@ -69,6 +77,9 @@ class ProviderCallRecord(BaseModel):
     estimated_cost_micro_usd: int | None
     reserved_cost_micro_usd: int
     failure: ProviderFailureDiagnostic | None = None
+    rerank_units: int | None = None
+    reported_model: str | None = None
+    elapsed_ms: int | None = None
 
 
 class _ResultWithUsage(Protocol):
@@ -95,10 +106,17 @@ class LiveProviderCalls:
         call: Callable[[], Result],
     ) -> Result:
         reservation = self.budget.reserve(role, payload_utf8_bytes=payload_utf8_bytes)
+        started = perf_counter_ns()
         try:
             result = call()
         except BaseException as error:
-            self._record(reservation, "UNKNOWN", None, provider_failure(error, role=role))
+            self._record(
+                reservation,
+                "UNKNOWN",
+                None,
+                provider_failure(error, role=role),
+                elapsed_ms=(perf_counter_ns() - started) // 1_000_000,
+            )
             if isinstance(
                 error,
                 SearchProviderError | AnswerGenerationProviderError | StatementSupportProviderError,
@@ -113,9 +131,16 @@ class LiveProviderCalls:
                 "USAGE_REJECTED",
                 result.usage,
                 ProviderFailureDiagnostic(category="usage_limit", role=role),
+                elapsed_ms=(perf_counter_ns() - started) // 1_000_000,
             )
             raise LiveProviderCallError(role, "usage") from None
-        self._record(reservation, "REPORTED", result.usage)
+        self._record(
+            reservation,
+            "REPORTED",
+            result.usage,
+            reported_model=result.model if isinstance(result, RerankResponse) else None,
+            elapsed_ms=(perf_counter_ns() - started) // 1_000_000,
+        )
         return result
 
     def _record(
@@ -124,9 +149,15 @@ class LiveProviderCalls:
         state: Literal["REPORTED", "UNKNOWN", "USAGE_REJECTED"],
         usage: ProviderUsage | None,
         failure: ProviderFailureDiagnostic | None = None,
+        *,
+        reported_model: str | None = None,
+        elapsed_ms: int | None = None,
     ) -> None:
+        reranking = reservation.role is ProviderOperationKind.RERANKING
         cost: int | None = None
-        if usage is not None:
+        if usage is not None and reranking:
+            cost = 0
+        elif usage is not None:
             limit = next(
                 item for item in self.budget.plan.role_limits if item.role is reservation.role
             )
@@ -140,12 +171,34 @@ class LiveProviderCalls:
                 ordinal=reservation.ordinal,
                 role=reservation.role,
                 usage_state=state,
-                input_tokens=None if usage is None else usage.input_units,
-                output_tokens=None if usage is None else usage.output_units,
+                input_tokens=None if usage is None or reranking else usage.input_units,
+                output_tokens=None if usage is None or reranking else usage.output_units,
                 estimated_cost_micro_usd=cost,
                 reserved_cost_micro_usd=reservation.estimated_cost_micro_usd,
                 failure=failure,
+                rerank_units=usage.input_units if usage is not None and reranking else None,
+                reported_model=reported_model,
+                elapsed_ms=elapsed_ms,
             )
+        )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class BudgetedReranker:
+    """One explicit bounded attempt; errors consume a request and never trigger a fallback."""
+
+    delegate: Reranker
+    calls: LiveProviderCalls
+
+    def rerank(self, request: RerankRequest) -> RerankResponse:
+        require_bge_input_bounds(request)
+        limit = self.calls.budget.plan.reranking_limit
+        if limit is None or request.reranker_config_version != limit.configuration_version:
+            raise LiveBaselineLimitError("reranking does not match the evaluation plan")
+        return self.calls.invoke(
+            ProviderOperationKind.RERANKING,
+            payload_utf8_bytes=len(request.model_dump_json().encode("utf-8")),
+            call=lambda: self.delegate.rerank(request),
         )
 
 

@@ -9,7 +9,11 @@ from investment_research.modules.research.contracts import ResearchModel
 from scripts.m1_5_live_providers import LiveProviderCalls
 from scripts.m1_5_live_runner import LiveBaselineReport, run_live_baseline
 from scripts.m1_5_live_runtime import isolated_database, provider_resources
-from scripts.m1_5_live_settings import EvaluationConfigurationError, load_evaluation_settings
+from scripts.m1_5_live_settings import (
+    EvaluationConfigurationError,
+    load_evaluation_reranking_settings,
+    load_evaluation_settings,
+)
 from scripts.m1_5_local_output import LocalEvaluationOutput, require_local_terminal
 from scripts.plan_m1_5_live_baseline import (
     MAXIMUM_SPEND_MICRO_USD,
@@ -39,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--retrieval-policy",
-        choices=("m1", "rrf"),
+        choices=("m1", "rrf", "rrf_rerank"),
         default="m1",
         help="Select a frozen evaluation policy only; the application default remains M1.",
     )
@@ -61,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--confirm-public-synthetic", action="store_true")
     parser.add_argument("--confirm-pinecone-starter", action="store_true")
+    parser.add_argument(
+        "--confirm-reranking-allowance",
+        action="store_true",
+        help="Confirm that the Starter account has allowance for up to six BGE requests.",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--show-local-model-output",
@@ -98,6 +107,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     stage = "preflight"
+    if (
+        arguments.execute
+        and arguments.retrieval_policy == "rrf_rerank"
+        and not arguments.confirm_reranking_allowance
+    ):
+        print("Reranking execution requires --confirm-reranking-allowance.", file=sys.stderr)
+        return 2
     try:
         plan = build_plan(
             answer_model=ResearchModel(arguments.answer_model),
@@ -126,6 +142,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         with path.open("x", encoding="utf-8") as output:
             stage = "configuration"
             worker, api = load_evaluation_settings()
+            reranking_settings = (
+                load_evaluation_reranking_settings(
+                    monthly_request_limit=plan.reranking_limit.maximum_requests,
+                    starter_allowance_confirmed=arguments.confirm_reranking_allowance,
+                    public_synthetic_content_approved=arguments.confirm_public_synthetic,
+                )
+                if plan.reranking_limit is not None
+                else None
+            )
             calls = LiveProviderCalls(LiveBaselineBudget(plan))
             cleanup_steps: list[str] = []
             stage = "runtime"
@@ -133,7 +158,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 with isolated_database() as engine:
                     with provider_resources(
-                        worker, api, plan, calls, cleanup_steps, local_output=local_output
+                        worker,
+                        api,
+                        plan,
+                        calls,
+                        cleanup_steps,
+                        local_output=local_output,
+                        reranking_settings=reranking_settings,
                     ) as resources:
                         stage = "evaluation"
                         report = run_live_baseline(
@@ -146,6 +177,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             support=resources.support,
                             calls=calls,
                             local_output=local_output,
+                            reranker=resources.reranker,
                         )
                     stage = "database_cleanup"
             except Exception:
