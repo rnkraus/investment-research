@@ -12,6 +12,7 @@ from investment_research.modules.research.citable_unit_contracts import (
     CitableUnitCatalog,
     CitableUnitError,
     CitableUnitKey,
+    CitableUnitLimitDetails,
     CitableUnitLimitError,
     CitableUnitSource,
 )
@@ -71,9 +72,20 @@ def build_citable_unit_catalog(
     """Prepare units from already-qualified selected sources, not new authorization proof."""
 
     if len(sources) > M1_CONTEXT_CHUNK_LIMIT:
-        raise CitableUnitLimitError("source-unit preparation exceeds the source limit")
-    if sum(len(item.block.text) for item in sources) > M1_CONTEXT_CHARACTER_LIMIT:
-        raise CitableUnitLimitError("source-unit preparation exceeds the context character limit")
+        raise CitableUnitLimitError(
+            "source-unit preparation exceeds the source limit",
+            details=CitableUnitLimitDetails(
+                kind="source_count", observed=len(sources), limit=M1_CONTEXT_CHUNK_LIMIT
+            ),
+        )
+    characters = sum(len(item.block.text) for item in sources)
+    if characters > M1_CONTEXT_CHARACTER_LIMIT:
+        raise CitableUnitLimitError(
+            "source-unit preparation exceeds the context character limit",
+            details=CitableUnitLimitDetails(
+                kind="context_characters", observed=characters, limit=M1_CONTEXT_CHARACTER_LIMIT
+            ),
+        )
 
     retained: list[CitableUnitSource] = []
     units: list[CitableSourceUnit] = []
@@ -100,7 +112,12 @@ def build_citable_unit_catalog(
         retained.append(item)
         for start, end in _source_ranges(item.block.text):
             if len(units) == M1_5_CITABLE_UNIT_LIMIT:
-                raise CitableUnitLimitError("source-unit preparation exceeds the unit limit")
+                raise CitableUnitLimitError(
+                    "source-unit preparation exceeds the unit limit",
+                    details=CitableUnitLimitDetails(
+                        kind="unit_count", observed=len(units) + 1, limit=M1_5_CITABLE_UNIT_LIMIT
+                    ),
+                )
             key = CitableUnitKey(
                 workspace_id=context.workspace_id,
                 document_version_id=item.block.document_version_id,

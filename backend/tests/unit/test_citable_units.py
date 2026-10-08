@@ -18,6 +18,7 @@ from investment_research.modules.research.citable_unit_contracts import (
     CitableUnitCatalog,
     CitableUnitError,
     CitableUnitKey,
+    CitableUnitLimitDetails,
     CitableUnitLimitError,
     CitableUnitSource,
 )
@@ -232,8 +233,11 @@ def test_catalog_accepts_empty_context_and_exact_unit_limit() -> None:
 
 
 def test_catalog_overflow_does_not_return_a_partial_catalog() -> None:
-    with pytest.raises(CitableUnitLimitError, match="unit limit"):
+    with pytest.raises(CitableUnitLimitError, match="unit limit") as failure:
         make_catalog(make_source("A. " * (M1_5_CITABLE_UNIT_LIMIT + 1)))
+    assert failure.value.details == CitableUnitLimitDetails(
+        kind="unit_count", observed=257, limit=256
+    )
 
 
 def test_catalog_accepts_exact_source_and_character_limits() -> None:
@@ -247,10 +251,37 @@ def test_catalog_accepts_exact_source_and_character_limits() -> None:
 
 
 def test_catalog_rejects_source_and_character_overflow() -> None:
-    with pytest.raises(CitableUnitLimitError, match="source limit"):
+    with pytest.raises(CitableUnitLimitError, match="source limit") as failure:
         make_catalog(*(make_source("A.", ordinal=index + 1) for index in range(9)))
-    with pytest.raises(CitableUnitLimitError, match="character limit"):
+    assert failure.value.details == CitableUnitLimitDetails(
+        kind="source_count", observed=9, limit=8
+    )
+    with pytest.raises(CitableUnitLimitError, match="character limit") as failure:
         make_catalog(make_source("x" * (M1_CONTEXT_CHARACTER_LIMIT + 1)))
+    assert failure.value.details == CitableUnitLimitDetails(
+        kind="context_characters", observed=24_001, limit=24_000
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"kind": "private-source-marker"},
+        {"observed": "257"},
+        {"observed": True},
+        {"observed": 256},
+        {"observed": 255},
+        {"limit": 0},
+        {"limit": "256"},
+    ],
+)
+def test_limit_diagnostics_require_known_categories_and_exceeded_integer_bounds(
+    changes: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        CitableUnitLimitDetails.model_validate(
+            {"kind": "unit_count", "observed": 257, "limit": 256, **changes}
+        )
 
 
 def test_foreign_workspace_is_rejected_without_source_text_in_error() -> None:

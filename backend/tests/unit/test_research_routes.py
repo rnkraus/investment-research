@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from io import StringIO
 from pathlib import Path
 from threading import Event
 from typing import Any, cast
@@ -19,6 +20,7 @@ from investment_research.api.dependencies import (
     get_workspace_context,
 )
 from investment_research.api.routes.research import stream_research_events
+from investment_research.infrastructure.logging import configure_logging
 from investment_research.main import create_app
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.domain import (
@@ -32,6 +34,10 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     ResearchProviderUnavailableError,
+)
+from investment_research.modules.research.citable_unit_contracts import (
+    CitableUnitLimitDetails,
+    CitableUnitLimitError,
 )
 from investment_research.modules.research.contracts import (
     ResearchModel,
@@ -462,6 +468,57 @@ def test_research_route_streams_one_safe_provider_failure(
     assert events[1]["payload"]["retriable"] is retriable
     assert "answer.statement" not in response.text
     assert "answer.citation" not in response.text
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        CitableUnitLimitDetails(kind="source_count", observed=9, limit=8),
+        CitableUnitLimitDetails(kind="context_characters", observed=24_001, limit=24_000),
+        CitableUnitLimitDetails(kind="unit_count", observed=257, limit=256),
+        CitableUnitLimitDetails(kind="input_metadata", observed=16_001, limit=16_000),
+        None,
+    ],
+)
+def test_research_route_streams_safe_context_limit_and_logs_only_counters(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+    details: CitableUnitLimitDetails | None,
+) -> None:
+    client, service = research_client
+    service.error = CitableUnitLimitError("private-source-marker", details=details)
+    service.progress_stages = ("GENERATING_ANSWER",)
+    log_stream = StringIO()
+    configure_logging(process_name="api", level="INFO", stream=log_stream)
+
+    response = client.post("/api/v1/research-requests", json={"question": QUESTION})
+
+    events = parse_server_sent_events(response.text)
+    assert response.status_code == 200
+    assert [event["event_name"] for event in events] == ["research.progress", "research.failed"]
+    failure = events[-1]["payload"]
+    assert failure["research_request_id"] == str(REQUEST_ID)
+    assert failure["error"]["code"] == "RESEARCH_CONTEXT_LIMIT"
+    assert failure["error"]["message"] == (
+        "Retrieved sources exceed the current research limits. "
+        "Try a more focused question or select a single document."
+    )
+    assert failure["error"]["request_id"] is not None
+    assert failure["retriable"] is False
+    assert "answer.statement" not in response.text
+    assert "answer.citation" not in response.text
+    records = [json.loads(line) for line in log_stream.getvalue().splitlines()]
+    limits = [record for record in records if record["event"] == "research.context_limit.exceeded"]
+    assert len(limits) == 1
+    assert limits[0]["request_id"] == failure["error"]["request_id"]
+    if details is not None:
+        assert limits[0]["limit_kind"] == details.kind
+        assert limits[0]["observed_value"] == details.observed
+        assert limits[0]["limit_value"] == details.limit
+    else:
+        assert "limit_kind" not in limits[0]
+    for content in (response.text, log_stream.getvalue()):
+        assert "private-source-marker" not in content
+        assert QUESTION not in content
 
 
 def test_research_route_translates_database_failure_without_internal_details(

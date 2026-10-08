@@ -306,8 +306,12 @@ def test_full_context_direct_text_fits_the_unchanged_reservation(character: str)
 def test_json_escaping_overflow_fails_before_provider_call() -> None:
     generation_input = make_input(text='"\\' * 12_000)
     generator, client = make_generator(generation_input)
-    with pytest.raises(CitableUnitLimitError):
+    with pytest.raises(CitableUnitLimitError) as failure:
         generator.generate(generation_input)
+    details = failure.value.details
+    assert details is not None
+    assert details.kind == "input_metadata"
+    assert details.observed > details.limit
     assert not client.responses.calls
 
 

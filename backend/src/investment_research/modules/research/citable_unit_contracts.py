@@ -27,14 +27,32 @@ class CitableUnitError(ValueError):
     """A content-free catalog or reference failure; never authorizes evidence."""
 
 
-class CitableUnitLimitError(CitableUnitError):
-    """Catalog preparation exceeded an application-owned bound."""
-
-
 class ImmutableCitableUnitContract(BaseModel):
     """Reject extra fields and hide source inputs in validation-error rendering."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+
+class CitableUnitLimitDetails(ImmutableCitableUnitContract):
+    """Content-free counters; unit_count records the first rejected unit, not the total."""
+
+    kind: Literal["source_count", "context_characters", "unit_count", "input_metadata"]
+    observed: int = Field(gt=0, strict=True)
+    limit: int = Field(gt=0, strict=True)
+
+    @model_validator(mode="after")
+    def require_exceeded_limit(self) -> Self:
+        if self.observed <= self.limit:
+            raise ValueError("source-unit diagnostics must describe an exceeded limit")
+        return self
+
+
+class CitableUnitLimitError(CitableUnitError):
+    """Catalog preparation exceeded an application-owned bound without source disclosure."""
+
+    def __init__(self, message: str, *, details: CitableUnitLimitDetails | None = None) -> None:
+        super().__init__(message)
+        self.details = details
 
 
 class CitableUnitKey(ImmutableCitableUnitContract):
