@@ -138,8 +138,9 @@ INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1-5-citable-units \
   docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait api
 ```
 
-The live overlay forwards this non-secret selection only to the API. The model selects opaque
-source-unit IDs instead of copying quotes; the server resolves their exact original ranges and
+The live overlay forwards this non-secret selection only to the API. The model selects short,
+request-local source handles such as `u1` instead of copying quotes or long UUIDs. The server maps
+them to its unchanged internal IDs, resolves their exact original ranges, and
 still validates every claim. All four answer/support model pairs and the existing monthly budget
 remain available. Existing `SEARCHABLE` sources need no upload, migration, or reindexing merely
 because the research profile changes. Worker and parser behavior is unchanged.
