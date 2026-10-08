@@ -297,3 +297,57 @@ def test_provider_operation_table_enforces_workspace_relationships() -> None:
     assert ("research_requests.workspace_id", "research_requests.id") in targets
     assert ("processing_runs.workspace_id", "processing_runs.id") in targets
     assert {"workspace_id", "correlation_id", "trace_id"}.issubset(table.c.keys())
+
+
+def test_operation_count_is_scoped_kind_filtered_and_includes_every_state() -> None:
+    session = create_autospec(Session, instance=True)
+    session.scalar.return_value = 3
+    repository = SqlAlchemyProviderOperationRepository(session)
+
+    assert (
+        repository.count_operations(
+            make_context(),
+            operation=ProviderOperationKind.RERANKING,
+            started_at_from=STARTED_AT,
+            started_at_before=STARTED_AT + timedelta(days=1),
+        )
+        == 3
+    )
+    statement = session.scalar.call_args.args[0]
+    compiled = str(statement)
+    assert "count(provider_operations.id)" in compiled
+    assert "provider_operations.workspace_id" in compiled
+    assert "provider_operations.operation" in compiled
+    assert "provider_operations.started_at >=" in compiled
+    assert "provider_operations.started_at <" in compiled
+    assert "provider_operations.state" not in compiled
+    assert "provider_operations.provider" not in compiled
+    assert "provider_operations.configuration_version" not in compiled
+    assert statement.compile().params["workspace_id_1"] == WORKSPACE_ID
+    assert statement.compile().params["operation_1"] is ProviderOperationKind.RERANKING
+    session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("started_at_from", "started_at_before"),
+    [
+        (STARTED_AT.replace(tzinfo=None), STARTED_AT + timedelta(days=1)),
+        (STARTED_AT, (STARTED_AT + timedelta(days=1)).replace(tzinfo=None)),
+        (STARTED_AT, STARTED_AT),
+        (STARTED_AT, STARTED_AT - timedelta(days=1)),
+    ],
+)
+def test_operation_count_rejects_invalid_windows_before_querying(
+    started_at_from: datetime, started_at_before: datetime
+) -> None:
+    session = create_autospec(Session, instance=True)
+    repository = SqlAlchemyProviderOperationRepository(session)
+
+    with pytest.raises(ValueError):
+        repository.count_operations(
+            make_context(),
+            operation=ProviderOperationKind.RERANKING,
+            started_at_from=started_at_from,
+            started_at_before=started_at_before,
+        )
+    session.scalar.assert_not_called()

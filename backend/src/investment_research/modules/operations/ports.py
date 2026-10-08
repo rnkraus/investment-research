@@ -10,6 +10,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.domain import (
     ProviderCostSummary,
     ProviderOperation,
+    ProviderOperationKind,
 )
 
 type TraceAttributeValue = str | bool | int | float
@@ -131,6 +132,16 @@ class ProviderOperationRepository(Protocol):
         started_at_before: datetime,
     ) -> ProviderCostSummary:
         """Return actual terminal cost plus active reservations for a half-open window."""
+
+    def count_operations(
+        self,
+        context: WorkspaceContext,
+        *,
+        operation: ProviderOperationKind,
+        started_at_from: datetime,
+        started_at_before: datetime,
+    ) -> int:
+        """Count every reserved attempt of one kind in a scoped half-open UTC window."""
 
 
 class ProviderOperationUnitOfWork(Protocol):

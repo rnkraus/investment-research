@@ -377,6 +377,33 @@ class SqlAlchemyProviderOperationRepository:
             active_reserved_cost_micro_usd=int(active_reservations),
         )
 
+    def count_operations(
+        self,
+        context: WorkspaceContext,
+        *,
+        operation: ProviderOperationKind,
+        started_at_from: datetime,
+        started_at_before: datetime,
+    ) -> int:
+        """Count reservations in every lifecycle state, without reading another workspace."""
+
+        if started_at_from.tzinfo is None or started_at_before.tzinfo is None:
+            raise ValueError("operation-count boundaries must be timezone-aware")
+        window_start = started_at_from.astimezone(UTC)
+        window_end = started_at_before.astimezone(UTC)
+        if window_end <= window_start:
+            raise ValueError("operation-count window must have positive duration")
+
+        count = self._session.scalar(
+            select(func.count(ProviderOperationRow.id)).where(
+                ProviderOperationRow.workspace_id == context.workspace_id,
+                ProviderOperationRow.operation == operation,
+                ProviderOperationRow.started_at >= window_start,
+                ProviderOperationRow.started_at < window_end,
+            )
+        )
+        return int(count or 0)
+
     @staticmethod
     def _require_scope(context: WorkspaceContext, workspace_id: UUID) -> None:
         """Reject a cross-workspace write before accessing persistence state."""

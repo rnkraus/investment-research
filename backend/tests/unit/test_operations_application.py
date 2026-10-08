@@ -21,8 +21,10 @@ from investment_research.modules.operations.application import (
     ProviderOperationAttempt,
     ProviderOperationCompletion,
     ProviderOperationUnavailableError,
+    ProviderRequestQuotaUnavailableError,
     ProviderUsageCostExceededReservationError,
     ProviderUsageExceededReservationError,
+    RerankingRequestQuotaPolicy,
     ReserveProviderOperationService,
 )
 from investment_research.modules.operations.domain import (
@@ -289,6 +291,139 @@ def test_reservation_rejects_foreign_scope_before_opening_transaction() -> None:
         )
 
     assert unit_of_work.enter_count == 0
+
+
+@pytest.mark.parametrize("limit", [0, 1, 500])
+def test_reranking_quota_accepts_explicit_bounded_request_limits(limit: int) -> None:
+    assert RerankingRequestQuotaPolicy(limit).monthly_request_limit == limit
+
+
+@pytest.mark.parametrize("limit", [-1, 501, True, 1.5, "50"])
+def test_reranking_quota_rejects_invalid_or_unapproved_limits(limit: object) -> None:
+    with pytest.raises(ValueError, match="integer from 0 to 500"):
+        RerankingRequestQuotaPolicy(cast(int, limit))
+
+
+def make_reranking_reservation() -> ProviderOperation:
+    """Build a synthetic zero-priced reranking reservation, without a live price claim."""
+
+    return ProviderOperation.model_validate(
+        {
+            **make_started_operation(reserved_cost_micro_usd=0).model_dump(),
+            "operation": ProviderOperationKind.RERANKING,
+            "provider": "pinecone",
+            "model": "bge-reranker-v2-m3",
+            "configuration_version": "m1-5-pinecone-bge-none-v1",
+        }
+    )
+
+
+def test_reranking_requires_an_explicit_quota_before_opening_a_transaction() -> None:
+    unit_of_work = RecordingUnitOfWork()
+
+    with pytest.raises(ProviderRequestQuotaUnavailableError, match="not configured"):
+        make_reservation_service(unit_of_work).reserve(make_context(), make_reranking_reservation())
+    assert unit_of_work.enter_count == 0
+    unit_of_work.repository_mock.add.assert_not_called()
+
+
+def test_reranking_checks_cost_and_request_count_under_the_same_transaction_lock() -> None:
+    unit_of_work = RecordingUnitOfWork()
+    unit_of_work.repository_mock.summarize_cost.return_value = ProviderCostSummary(
+        actual_cost_micro_usd=0, active_reserved_cost_micro_usd=0
+    )
+    unit_of_work.repository_mock.count_operations.return_value = 1
+    service = replace(
+        make_reservation_service(unit_of_work),
+        reranking_quota_policy=RerankingRequestQuotaPolicy(2),
+    )
+    operation = make_reranking_reservation()
+    assert service.reserve(make_context(), operation) is operation
+    assert unit_of_work.enter_count == 1
+    assert unit_of_work.repository_mock.method_calls == [
+        call.acquire_budget_lock(make_context()),
+        call.summarize_cost(
+            make_context(),
+            started_at_from=datetime(2026, 9, 1, tzinfo=UTC),
+            started_at_before=datetime(2026, 10, 1, tzinfo=UTC),
+        ),
+        call.count_operations(
+            make_context(),
+            operation=ProviderOperationKind.RERANKING,
+            started_at_from=datetime(2026, 9, 1, tzinfo=UTC),
+            started_at_before=datetime(2026, 10, 1, tzinfo=UTC),
+        ),
+        call.add(make_context(), operation),
+    ]
+
+
+@pytest.mark.parametrize(("limit", "count"), [(0, 0), (1, 1), (1, 2)])
+def test_reranking_denies_disabled_or_exhausted_quota_before_provider_call(
+    limit: int, count: int
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    unit_of_work.repository_mock.summarize_cost.return_value = ProviderCostSummary(
+        actual_cost_micro_usd=0, active_reserved_cost_micro_usd=0
+    )
+    unit_of_work.repository_mock.count_operations.return_value = count
+    executor, _reservation, finalization, _tracer = make_execute_service()
+    executor = replace(
+        executor,
+        reservation_service=replace(
+            make_reservation_service(unit_of_work),
+            reranking_quota_policy=RerankingRequestQuotaPolicy(limit),
+        ),
+    )
+    attempt = replace(
+        make_query_embedding_attempt(maximum_input_units=1),
+        operation=ProviderOperationKind.RERANKING,
+        provider="pinecone",
+        model="bge-reranker-v2-m3",
+        configuration_version="m1-5-pinecone-bge-none-v1",
+        cost_policy=ProviderCostPolicy(0, 0),
+    )
+    provider_call = Mock(return_value=ProviderUsage(input_units=1, output_units=0))
+    with pytest.raises(ProviderRequestQuotaUnavailableError, match="exhausted"):
+        executor.execute(
+            make_context(),
+            attempt,
+            provider_call,
+            lambda usage: usage,
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+    provider_call.assert_not_called()
+    finalization.finalize.assert_not_called()
+    unit_of_work.repository_mock.add.assert_not_called()
+
+
+def test_reranking_quota_does_not_replace_the_combined_dollar_budget() -> None:
+    unit_of_work = RecordingUnitOfWork()
+    unit_of_work.repository_mock.summarize_cost.return_value = ProviderCostSummary(
+        actual_cost_micro_usd=100, active_reserved_cost_micro_usd=0
+    )
+    service = replace(
+        make_reservation_service(unit_of_work),
+        reranking_quota_policy=RerankingRequestQuotaPolicy(10),
+    )
+    operation = make_reranking_reservation().model_copy(update={"reserved_cost_micro_usd": 1})
+    with pytest.raises(ProviderBudgetExceededError, match="budget exceeded"):
+        service.reserve(make_context(), operation)
+    unit_of_work.repository_mock.count_operations.assert_not_called()
+    unit_of_work.repository_mock.add.assert_not_called()
+
+
+def test_disabled_reranking_quota_does_not_block_other_operation_kinds() -> None:
+    unit_of_work = RecordingUnitOfWork()
+    unit_of_work.repository_mock.summarize_cost.return_value = ProviderCostSummary(
+        actual_cost_micro_usd=0, active_reserved_cost_micro_usd=0
+    )
+    service = replace(
+        make_reservation_service(unit_of_work),
+        reranking_quota_policy=RerankingRequestQuotaPolicy(0),
+    )
+    operation = make_started_operation()
+    assert service.reserve(make_context(), operation) is operation
+    unit_of_work.repository_mock.count_operations.assert_not_called()
 
 
 def test_finalize_builds_terminal_record_from_canonical_identity() -> None:
