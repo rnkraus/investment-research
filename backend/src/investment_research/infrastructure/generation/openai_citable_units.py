@@ -21,6 +21,7 @@ from investment_research.modules.research.citable_unit_contracts import (
     CitableAnswerGenerationInput,
     CitableUnitCatalog,
     CitableUnitError,
+    CitableUnitLimitDetails,
     CitableUnitLimitError,
 )
 from investment_research.modules.research.citable_units import resolve_citable_unit_ids
@@ -220,7 +221,14 @@ class OpenAICitableUnitAnswerGenerator(OpenAIAnswerGenerator):
             + _STRICT_SCHEMA_OVERHEAD_UNITS
         )
         if overhead > OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS:
-            raise CitableUnitLimitError("source-unit metadata exceeds the input reservation")
+            raise CitableUnitLimitError(
+                "source-unit metadata exceeds the input reservation",
+                details=CitableUnitLimitDetails(
+                    kind="input_metadata",
+                    observed=overhead,
+                    limit=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+                ),
+            )
         return schema
 
     def preflight(self, generation_input: AnswerGenerationInput) -> None:

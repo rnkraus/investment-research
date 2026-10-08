@@ -62,6 +62,34 @@ function failedEvent(requestId = REQUEST_ID) {
   };
 }
 
+test("a context-limit failure stops progress and preserves the actionable website message", () => {
+  const message =
+    "Retrieved sources exceed the current research limits. Try a more focused question or select a single document.";
+  const session = applyResearchEvent(
+    beginResearchSession(),
+    progressEvent("SELECTING_PASSAGES"),
+  );
+  const failure = {
+    ...failedEvent(),
+    error: {
+      code: "RESEARCH_CONTEXT_LIMIT",
+      message,
+      request_id: REQUEST_ID,
+    },
+    retriable: false,
+  };
+  const result = applyResearchEvent(session, failure);
+
+  assert.equal(result.status, "FAILED");
+  assert.equal(result.stage, undefined);
+  assert.equal(result.message, message);
+  assert.deepEqual(result.statements, []);
+  assert.throws(
+    () => applyResearchEvent(result, progressEvent("GENERATING_ANSWER")),
+    ResearchSequenceError,
+  );
+});
+
 function progressEvent(stage, requestId = REQUEST_ID) {
   return {
     event: "research.progress",

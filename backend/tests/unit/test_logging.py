@@ -119,3 +119,34 @@ def test_logging_rejects_unsafe_process_and_logger_names() -> None:
 
     with pytest.raises(ValueError, match="logger name"):
         application_logger("")
+
+
+@pytest.mark.parametrize(
+    "kind", ["source_count", "context_characters", "unit_count", "input_metadata"]
+)
+def test_logging_preserves_only_content_free_limit_diagnostics(kind: str) -> None:
+    stream = StringIO()
+    configure_logging(process_name="api", level="INFO", stream=stream)
+    application_logger("api.routes.research").warning(
+        "research.context_limit.exceeded",
+        extra={"limit_kind": kind, "observed_value": 257, "limit_value": 256},
+    )
+    payload = read_log(stream)
+    assert payload["limit_kind"] == kind
+    assert payload["observed_value"] == 257
+    assert payload["limit_value"] == 256
+
+
+@pytest.mark.parametrize("value", [SECRET_MARKER, "257", True, -1, 0, 1.5, 2**63])
+def test_logging_omits_unsafe_limit_diagnostics(value: object) -> None:
+    stream = StringIO()
+    configure_logging(process_name="api", level="INFO", stream=stream)
+    application_logger("api.routes.research").warning(
+        "research.context_limit.exceeded",
+        extra={"limit_kind": SECRET_MARKER, "observed_value": value, "limit_value": value},
+    )
+    payload = read_log(stream)
+    assert "limit_kind" not in payload
+    assert "observed_value" not in payload
+    assert "limit_value" not in payload
+    assert SECRET_MARKER not in stream.getvalue()

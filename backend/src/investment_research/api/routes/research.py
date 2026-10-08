@@ -34,6 +34,7 @@ from investment_research.api.dependencies import (
 )
 from investment_research.infrastructure.logging import current_request_id
 from investment_research.modules.research.application import ResearchProviderUnavailableError
+from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
     ResearchModel,
     ResearchProgressStage,
@@ -181,6 +182,32 @@ async def stream_research_events(
                         request_id=http_request_id,
                     ),
                     retriable=error.retriable,
+                ),
+            )
+        except CitableUnitLimitError as error:
+            details = error.details
+            logger.warning(
+                "research.context_limit.exceeded",
+                extra={
+                    "exception_type": type(error).__name__,
+                    "request_id": http_request_id,
+                    "limit_kind": details.kind if details is not None else None,
+                    "observed_value": details.observed if details is not None else None,
+                    "limit_value": details.limit if details is not None else None,
+                },
+            )
+            terminal_events = (
+                ResearchFailedEvent(
+                    research_request_id=research_request_id or uuid4(),
+                    error=ErrorDetail(
+                        code=ErrorCode.RESEARCH_CONTEXT_LIMIT,
+                        message=(
+                            "Retrieved sources exceed the current research limits. "
+                            "Try a more focused question or select a single document."
+                        ),
+                        request_id=http_request_id,
+                    ),
+                    retriable=False,
                 ),
             )
         except Exception as error:

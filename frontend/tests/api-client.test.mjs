@@ -544,6 +544,33 @@ test("streamResearch accepts the safe provider-unavailable terminal event", asyn
   assert.deepEqual(events, [failure]);
 });
 
+test("streamResearch accepts a bounded context-limit failure without treating it as a provider outage", async () => {
+  const failure = {
+    event: "research.failed",
+    schema_version: "1.0",
+    research_request_id: RESEARCH_REQUEST_ID,
+    error: {
+      code: "RESEARCH_CONTEXT_LIMIT",
+      message:
+        "Retrieved sources exceed the current research limits. Try a more focused question or select a single document.",
+      request_id: RESEARCH_REQUEST_ID,
+    },
+    retriable: false,
+  };
+  const client = createApiClient(
+    async () =>
+      new Response(
+        `event: research.failed\ndata: ${JSON.stringify(failure)}\n\n`,
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      ),
+  );
+
+  assert.deepEqual(await collectResearch(client), [failure]);
+});
+
 test("unstructured research proxy failures explain the HTTP error without exposing the body", async () => {
   const client = createApiClient(
     async () =>

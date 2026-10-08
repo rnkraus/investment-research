@@ -332,6 +332,7 @@
           "PROCESSING_FAILED",
           "EVIDENCE_VALIDATION_FAILED",
           "PROVIDER_UNAVAILABLE",
+          "RESEARCH_CONTEXT_LIMIT",
           "INTERNAL_ERROR"
         ],
         "title": "ErrorCode",

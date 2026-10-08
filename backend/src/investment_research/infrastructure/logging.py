@@ -24,6 +24,9 @@ ALLOWED_EXTRA_FIELDS = (
     "status_code",
     "duration_ms",
     "exception_type",
+    "limit_kind",
+    "observed_value",
+    "limit_value",
 )
 
 _request_id: ContextVar[UUID | None] = ContextVar("request_id", default=None)
@@ -74,6 +77,15 @@ def _safe_extra_value(name: str, value: object) -> str | int | float | None:
         return value if isinstance(value, int) and 100 <= value <= 599 else None
     if name == "duration_ms":
         return round(float(value), 3) if isinstance(value, int | float) and value >= 0 else None
+    if name == "limit_kind":
+        return (
+            value
+            if isinstance(value, str)
+            and value in {"source_count", "context_characters", "unit_count", "input_metadata"}
+            else None
+        )
+    if name in {"observed_value", "limit_value"}:
+        return value if type(value) is int and 0 < value <= 2**63 - 1 else None
     if isinstance(value, str) and TEXT_FIELD_PATTERN.fullmatch(value):
         return value
     return None
