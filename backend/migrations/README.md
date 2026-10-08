@@ -69,6 +69,13 @@ artifact.
 - Test upgrade, drift detection, constraints, and rollback against PostgreSQL.
 - Never use `create_all()` as a migration shortcut.
 
+Autogeneration does not detect expression changes to CHECK constraints with unchanged names.
+Review and write those operations explicitly, then test their upgrade and downgrade behavior
+against PostgreSQL; a passing `alembic check` alone is insufficient for this case.
+See [Alembic's CHECK-constraint detection limits](https://alembic.sqlalchemy.org/en/latest/autogenerate.html#detecting-check-constraints).
+Revision `0009_m1_5_reranking_operations` uses this approach to admit research-owned reranking
+records. Downgrade refuses to discard that operation kind while its accounting records exist.
+
 The initial revision also installs PostgreSQL triggers that reject updates and deletes for
 `document_versions` and `original_artifacts`. Corrections create a new document version instead of
 rewriting preserved source history.
