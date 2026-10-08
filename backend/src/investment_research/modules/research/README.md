@@ -139,8 +139,8 @@ not. Abbreviations can create short units. This explicit heuristic is not a clai
 sentence recognition. Overflow is rejected rather than silently dropping evidence.
 
 Each unit has a canonical key identifying its workspace, immutable version, block, exact range,
-and policy. UUIDv5 derives a reproducible request-scoped handle from that key. Repeated wording at
-different offsets gets distinct handles; the same block found by both lanes is offered once with
+and policy. UUIDv5 derives a reproducible request-scoped internal ID from that key. Repeated wording
+at different offsets gets distinct IDs; the same block found by both lanes is offered once with
 the first candidate's provenance. Unknown future partial/multi-block mappings are not assumed to
 start at zero.
 
@@ -157,7 +157,11 @@ workspace context and catalog. `from_catalog` projects its retained sources into
 source shape. Validation requires identical request, workspace, ordered provenance, and text;
 it does not establish current canonical eligibility. The
 [`OpenAICitableUnitAnswerGenerator`](../../infrastructure/generation/README.md#standalone-m15-source-unit-id-adapter)
-revalidates this input, restricts model selection to current IDs, and calls the resolver.
+revalidates this input and assigns short model-facing handles (`u1`, `u2`, and so on) in catalog
+order. It restricts model selection to these handles, checks membership and duplicates, then maps
+them back to the current catalog's internal UUIDs and calls the resolver. Handles are temporary
+labels, not database keys or authorization proof; `u1` can refer to a different unit in a later
+request. Exact text, ranges, scope checks, and persisted evidence remain unchanged.
 
 These functions do not call providers, touch repositories, create `EvidenceSpan` records, or replace
 the existing support evaluation and final canonical recheck. Catalogs are temporary values, never

@@ -93,29 +93,34 @@ check owns any real-provider verification.
 validation, safe failure mapping, and explicitly injected local-output callbacks. Its prompt,
 schema, and evidence resolution are separate extension points; M1's exact-substring behavior and
 version identifiers remain unchanged. The evaluation runner can select this profile explicitly
-with `--answer-policy citable_units`; bootstrap and the website still use M1.
+with `--answer-policy citable_units`; the API and website retain M1 by default and can explicitly
+opt into the same adapter through the configured research profile.
 The [Step 2 contract](../../../../../docs/13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1)
 governs comparison and adoption.
 
 The adapter requires `CitableAnswerGenerationInput`, whose trusted workspace, request, ordered
 sources, and canonical catalog must agree. It revalidates that input before requesting generation.
-The v2 provider input pairs each offered ID directly with its exact unit text, in original source
-and range order. Character offsets remain server-side. `separator_before` on each unit and
+The v3 provider input pairs each offered short handle (`u1`, `u2`, and so on) directly with its
+exact unit text, in original source and range order. Character offsets remain server-side.
+`separator_before` on each unit and
 `trailing_separator` on each source preserve the original boundary whitespace; concatenating the
 separators and unit texts reproduces the complete block without a second full-text copy. Those
 separators are not citable units. This removes the need for the model to associate offsets with
 passages, but does not prove that its selected passage supports its claim. The strict provider
-schema defines the catalog's UUID strings once in a shared `SourceUnitId` enum. Each statement
-selects one or two IDs, never quote text, offsets, or candidate identifiers. Server-side membership
-and duplicate checks remain independent of schema compliance.
+schema defines the current request's short handles once in a shared `SourceUnitId` enum. Each
+statement selects one or two IDs, never quote text, offsets, or candidate identifiers. Server-side membership
+and duplicate checks remain independent of schema compliance. Handles are assigned in catalog
+order and mapped back to the existing request-scoped UUIDs before exact-range resolution. The same
+handle may mean a different unit in another request; no shared alias state or global lookup exists.
 
 ```mermaid
 flowchart LR
     INPUT[Scoped canonical catalog and question] --> PREFLIGHT[Validate scope and input reservation]
-    PREFLIGHT --> INPUT_V2[IDs paired with exact original unit text]
-    INPUT_V2 --> MODEL[One bounded Responses call]
+    PREFLIGHT --> INPUT_V3[Short handles paired with exact original unit text]
+    INPUT_V3 --> MODEL[One bounded Responses call]
     MODEL --> IDS[Statements with source-unit IDs]
-    IDS --> RESOLVE[Resolve exact catalog ranges and text]
+    IDS --> MAP[Map current-request handles to internal UUIDs]
+    MAP --> RESOLVE[Resolve exact catalog ranges and text]
     RESOLVE --> PROPOSAL[Existing unvalidated answer contract]
     PROPOSAL --> VALIDATE[Mandatory canonical and support validation]
 ```
@@ -129,17 +134,18 @@ or reverting to copied quotes. Research calls the free `preflight` before canoni
 reservation; the evaluation budget wrapper also preflights before its own reservation. An empty
 catalog is routed to the existing insufficient-result path with no generation or support call.
 
-`citable_answer_profile` identifies the selected Terra/Luna model with the v2 generator/input and
-v3 configuration/prompt. The canonical English unit policy and request-scoped identities remain
+`citable_answer_profile` identifies the selected Terra/Luna model with the v3 generator/input and
+v4 configuration/prompt. The canonical English unit policy and request-scoped identities remain
 v1; historical measurements are not rewritten or treated as results for the current prompt. The
-v3 prompt and statement schema description require independently understandable claims with
+prompt and statement schema description require independently understandable claims with
 supported subject, metric, period, and units where needed. Four unrelated synthetic examples show
 financial claims, unsupported inference, partial coverage, and conflicting reports; their facts
 cannot become evidence for a real request. A pronoun inside a self-contained statement is not
 rejected by a word blacklist. Missing evidence must use the existing insufficient path rather
 than an unrelated quote supporting an archive-wide absence claim. These are model instructions,
 not semantic guarantees; canonical and statement-support validation remain mandatory. Offline tests
-cover ID/text pairing, repeated wording, separate sources, Unicode, PDF line breaks, exact block
+cover short-handle/text pairing, per-request alias reuse, unknown and malformed handles, repeated
+wording, separate sources, Unicode, PDF line breaks, exact block
 reconstruction, unchanged context/reservation bounds, and escaped-input overflow before a call.
 Live quality still requires an explicitly authorized comparison.
 `create_openai_citable_unit_answer_generator` disables

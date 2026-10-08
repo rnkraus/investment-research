@@ -350,15 +350,20 @@ start_character, end_character, unit_policy_version)`. It is independent of lexi
 chunk rank, and wording elsewhere. Use this key for deterministic deduplication; do not create
 a database row or log source content for it.
 
-Derive the provider-visible `source_unit_id` as UUIDv5 with the research-request UUID as namespace
+Derive the internal `source_unit_id` as UUIDv5 with the research-request UUID as namespace
 and the canonical key serialized as a fixed-order compact JSON array, using lowercase UUID strings
 and integer offsets. This gives reproducible handles within one request and distinct handles across
-requests. The canonical range stays stable across unchanged inputs; the external handle is
+requests. The canonical range stays stable across unchanged inputs; the internal ID is
 request-scoped, not a permanent citation ID, secret, or authorization token. Resolve it only in the
 current server-owned catalog, never through a global lookup or by decoding model-supplied metadata.
 
 Present units in selected-source order and block-offset order, grouped under their source. The
-current **v2 provider input** pairs each `source_unit_id` directly with its unchanged unit `text`.
+current **v3 provider input** assigns short handles `u1` through `uN` in catalog order and pairs
+each handle, in the provider's `source_unit_id` field, directly with its unchanged unit `text`.
+Keep the alias-to-UUID mapping server-owned and local to the validated current request. Handle
+spelling may recur in another request, but no mapping is reused across requests. The adapter maps
+selected handles back to internal UUIDs before the existing exact-range resolver; the model never
+receives these UUIDs as unit references.
 Each entry's `separator_before` and its source's `trailing_separator` retain the original boundary
 whitespace. Concatenating those separators and texts in order reproduces the complete original
 block exactly. Do not additionally serialize the full block, send character offsets, duplicate
@@ -392,7 +397,7 @@ reported the v2 answer prompt and unchanged USD 0.80 cap. No paid provider call,
 or hosted-CI verification was performed for this revision. These results establish transport and
 validation correctness, not improved live answer or source-selection quality.
 
-**Standalone-claim prompt revision (2026-10-07):** The current prompt is
+**Standalone-claim prompt revision (2026-10-07):** This revision introduced prompt
 `m1-5-citable-units-en-answer-prompt-v3`; its model-specific generation configuration ends in
 `low-citable-units-en-v3`. Generator and input presentation remain v2, canonical units and IDs
 remain v1, and historical observations are not rewritten. The prompt and statement-field schema
@@ -426,8 +431,10 @@ live statement quality or source selection.
 The strict provider schema defines the current catalog IDs once as a shared enum and forbids extra
 fields. The adapter also checks catalog membership and duplicate IDs, independently of provider
 schema compliance. An empty catalog must not produce an empty enum or a paid generation call;
-use the existing no-evidence path. Unknown, cross-request, mixed-catalog, or duplicate references
-fail closed, with bounded content-free diagnostics.
+use the existing no-evidence path. Unknown, malformed, or duplicate handles fail closed, as do
+mismatches between the input and its request-scoped catalog. Reusing the spelling `u1` in a later
+request is valid only as a reference to that later request's own catalog. Internal UUID resolution
+retains its independent workspace/request checks, with bounded content-free diagnostics.
 
 **Resolution, validation, and compatibility**
 
@@ -918,6 +925,40 @@ gates. No Docker runtime, production build, browser, PostgreSQL suite, hosted CI
 test was run for this diagnostic block. The owner must rebuild API and web, repeat an affected
 question, and provide the safe category/counters before selecting a bounded-context correction.
 The source-opening/default-adoption gate remains pending.
+
+#### Short model-facing source handles (2026-10-08)
+
+A later owner-supplied diagnostic identified `input_metadata`, with 20,007 conservative accounting
+units against the unchanged 16,000-unit limit. Long UUIDs in the provider input and allowlisted
+schema contributed avoidable overhead; this is not a measurement of actual model tokens or proof
+that identifiers alone explain every overflow.
+
+The v3 transport uses short, ordered request-local handles rather than UUID strings. Generator
+`openai-responses-citable-units-v3`, prompt `m1-5-citable-units-en-answer-prompt-v4`, and each
+model-specific configuration ending in `low-citable-units-en-v4` record this change. The prompt's
+standalone-claim instructions remain in force. Canonical UUIDv5 identities, unit policy v1, source
+text, separators, exact range resolution, evidence validation, budgets, and all four preparation
+limits are unchanged. No migration, reindexing, silent passage dropping, or default adoption is
+introduced. Many tiny units or heavily escaped text can still exceed the same metadata ceiling.
+
+Offline regression coverage compares identical synthetic 120-unit payloads: the short-handle
+representation fits the existing ceiling while the UUID equivalent exceeds it. Further tests
+cover alias reuse across requests, malformed/unknown IDs, duplicate selection, and unchanged exact
+source resolution. Existing PostgreSQL API and evaluation tests now exercise the same transport;
+normal CI discovers them without a new workflow. This is a bounded transport correction, not a
+live retrieval-quality or source-opening acceptance result. Historical measurements above remain
+unchanged. The choice follows the official guidance to use [simple source IDs and server-owned
+locators](https://developers.openai.com/api/docs/guides/citation-formatting), within the existing
+structured-answer contract rather than adopting a new citation syntax.
+
+**Verification:** Focused checks passed 209 tests. The complete backend gate passed formatting,
+Ruff, Mypy, and all 1,675 unit tests. Isolated PostgreSQL verification passed the empty migration
+cycle, schema checks, and 157 integration tests; seven separate SeaweedFS tests were intentionally
+skipped, and the disposable test database and volume were removed. Deterministic OpenAPI export
+checking passed; frontend formatting, lint, typing, generated-contract checking, and all 47 tests
+passed. No paid-provider request, production build, browser check, or hosted-CI verification was
+performed for this revision. The owner's affected document/question must still be retested after
+rebuilding the opt-in API, and source-opening/default-adoption gates remain pending.
 
 ### Step 3 — Bounded reranking experiment
 
