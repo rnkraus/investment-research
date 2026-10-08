@@ -16,6 +16,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
     ProviderBudgetExceededError,
     ProviderUsageCostExceededReservationError,
+    ProviderUsageExceededReservationError,
 )
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
@@ -153,6 +154,11 @@ class FailingGenerationService:
             ),
             False,
             id="usage-exceeded-reservation",
+        ),
+        pytest.param(
+            ProviderUsageExceededReservationError("provider usage units exceeded their maximum"),
+            False,
+            id="unit-ceiling-exceeded",
         ),
     ],
 )

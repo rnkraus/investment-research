@@ -48,10 +48,11 @@ DurationMilliseconds = Annotated[int, Field(ge=0, le=9_223_372_036_854_775_807)]
 
 
 class ProviderOperationKind(StrEnum):
-    """Paid external operations attributable during M1."""
+    """External provider operations attributable during M1 and the M1.5 experiment."""
 
     DOCUMENT_EMBEDDING = "DOCUMENT_EMBEDDING"
     QUERY_EMBEDDING = "QUERY_EMBEDDING"
+    RERANKING = "RERANKING"
     ANSWER_GENERATION = "ANSWER_GENERATION"
     STATEMENT_SUPPORT = "STATEMENT_SUPPORT"
 
@@ -178,6 +179,7 @@ class ProviderOperation(BaseModel):
 
         research_operations = {
             ProviderOperationKind.QUERY_EMBEDDING,
+            ProviderOperationKind.RERANKING,
             ProviderOperationKind.ANSWER_GENERATION,
             ProviderOperationKind.STATEMENT_SUPPORT,
         }

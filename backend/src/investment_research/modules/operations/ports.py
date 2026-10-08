@@ -26,6 +26,7 @@ type OperationSpanName = Literal[
     "processing.parse",
     "research.generate",
     "research.retrieve",
+    "search.rerank",
 ]
 
 APPROVED_OPERATION_SPAN_NAMES: frozenset[OperationSpanName] = frozenset(
@@ -41,6 +42,7 @@ APPROVED_OPERATION_SPAN_NAMES: frozenset[OperationSpanName] = frozenset(
         "processing.parse",
         "research.generate",
         "research.retrieve",
+        "search.rerank",
     }
 )
 APPROVED_TRACE_ATTRIBUTE_NAMES = frozenset(

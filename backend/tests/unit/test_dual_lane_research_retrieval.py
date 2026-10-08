@@ -16,6 +16,7 @@ from investment_research.modules.operations.application import (
     ProviderBudgetExceededError,
     ProviderCostPolicy,
     ProviderUsageCostExceededReservationError,
+    ProviderUsageExceededReservationError,
 )
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.application import (
@@ -599,7 +600,16 @@ def test_budget_rejection_keeps_persisted_request_and_is_not_retriable() -> None
     unit_of_work.retrieval_mock.add_result.assert_not_called()
 
 
-def test_usage_above_reservation_is_not_retriable_and_stops_before_dense_search() -> None:
+@pytest.mark.parametrize(
+    "usage_error",
+    [
+        ProviderUsageCostExceededReservationError("provider usage cost exceeded its reservation"),
+        ProviderUsageExceededReservationError("provider usage units exceeded their maximum"),
+    ],
+)
+def test_usage_above_reservation_is_not_retriable_and_stops_before_dense_search(
+    usage_error: ProviderUsageExceededReservationError,
+) -> None:
     embedding_mock, dense_mock = make_provider_mocks()
     executor = make_provider_operation_executor()
 
@@ -611,9 +621,7 @@ def test_usage_above_reservation_is_not_retriable_and_stops_before_dense_search(
         _classify_error: object,
     ) -> object:
         provider_call()
-        raise ProviderUsageCostExceededReservationError(
-            "provider usage cost exceeded its reservation"
-        )
+        raise usage_error
 
     executor.execute.side_effect = fail_after_provider
     unit_of_work = RecordingUnitOfWork()
@@ -631,10 +639,7 @@ def test_usage_above_reservation_is_not_retriable_and_stops_before_dense_search(
         )
 
     assert captured.value.retriable is False
-    assert isinstance(
-        captured.value.__cause__,
-        ProviderUsageCostExceededReservationError,
-    )
+    assert captured.value.__cause__ is usage_error
     embedding_mock.embed.assert_called_once()
     dense_mock.retrieve.assert_not_called()
     unit_of_work.retrieval_mock.add_result.assert_not_called()

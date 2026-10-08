@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import cast
 from unittest.mock import Mock, call, create_autospec
@@ -21,6 +22,7 @@ from investment_research.modules.operations.application import (
     ProviderOperationCompletion,
     ProviderOperationUnavailableError,
     ProviderUsageCostExceededReservationError,
+    ProviderUsageExceededReservationError,
     ReserveProviderOperationService,
 )
 from investment_research.modules.operations.domain import (
@@ -515,6 +517,13 @@ def test_execute_provider_operation_reserves_calls_and_finalizes_success() -> No
             "evidence.evaluate_support",
             id="statement-support",
         ),
+        pytest.param(
+            ProviderOperationKind.RERANKING,
+            REQUEST_ID,
+            None,
+            "search.rerank",
+            id="reranking",
+        ),
     ],
 )
 def test_execute_provider_operation_derives_approved_span_name(
@@ -650,3 +659,121 @@ def test_execute_provider_operation_marks_usage_above_reservation_as_contract_fa
     assert completion.actual_cost_micro_usd == 1
     assert completion.safe_error_code is ProviderOperationErrorCode.CONTRACT
     assert tracer.span.error_types == ["contract"]
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [ProviderUsage(input_units=2, output_units=0), ProviderUsage(input_units=1, output_units=1)],
+)
+def test_zero_price_does_not_disable_per_attempt_unit_limits(usage: ProviderUsage) -> None:
+    service, _reservation, finalization, tracer = make_execute_service()
+    attempt = replace(
+        make_query_embedding_attempt(maximum_input_units=1),
+        operation=ProviderOperationKind.RERANKING,
+        provider="pinecone",
+        model="bge-reranker-v2-m3",
+        configuration_version="m1-5-pinecone-bge-none-v1",
+        cost_policy=ProviderCostPolicy(
+            input_micro_usd_per_million_units=0,
+            output_micro_usd_per_million_units=0,
+        ),
+    )
+
+    with pytest.raises(ProviderUsageExceededReservationError, match="declared maximum"):
+        service.execute(
+            make_context(),
+            attempt,
+            lambda: usage,
+            lambda returned: returned,
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+
+    completion = finalization.finalize.call_args.args[2]
+    assert completion.state is ProviderOperationState.FAILED
+    assert completion.actual_cost_micro_usd == 0
+    assert completion.input_units is None
+    assert completion.output_units is None
+    assert completion.safe_error_code is ProviderOperationErrorCode.CONTRACT
+    assert tracer.span.error_types == ["contract"]
+
+
+def test_unit_limits_are_checked_even_when_rounded_cost_fits() -> None:
+    service, _reservation, finalization, _tracer = make_execute_service()
+    usage = ProviderUsage(input_units=2, output_units=0)
+    attempt = make_query_embedding_attempt(maximum_input_units=1)
+    assert attempt.cost_policy.cost_for(attempt.maximum_usage) == attempt.cost_policy.cost_for(
+        usage
+    )
+
+    with pytest.raises(ProviderUsageExceededReservationError, match="declared maximum"):
+        service.execute(
+            make_context(),
+            attempt,
+            lambda: usage,
+            lambda returned: returned,
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+
+    assert finalization.finalize.call_args.args[2].safe_error_code is (
+        ProviderOperationErrorCode.CONTRACT
+    )
+
+
+def test_reranking_records_zero_cost_usage_after_an_accepted_reservation() -> None:
+    service, reservation, finalization, tracer = make_execute_service()
+    attempt = replace(
+        make_query_embedding_attempt(maximum_input_units=1),
+        operation=ProviderOperationKind.RERANKING,
+        provider="pinecone",
+        model="bge-reranker-v2-m3",
+        configuration_version="m1-5-pinecone-bge-none-v1",
+        cost_policy=ProviderCostPolicy(
+            input_micro_usd_per_million_units=0,
+            output_micro_usd_per_million_units=0,
+        ),
+    )
+    usage = ProviderUsage(input_units=1, output_units=0)
+    provider_call = Mock(return_value=usage)
+
+    assert (
+        service.execute(
+            make_context(),
+            attempt,
+            provider_call,
+            lambda returned: returned,
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+        is usage
+    )
+
+    reserved = reservation.reserve.call_args.args[1]
+    assert reserved.operation is ProviderOperationKind.RERANKING
+    assert reserved.reserved_cost_micro_usd == 0
+    completion = finalization.finalize.call_args.args[2]
+    assert completion.state is ProviderOperationState.SUCCEEDED
+    assert completion.input_units == 1
+    assert completion.output_units == 0
+    assert completion.actual_cost_micro_usd == 0
+    assert tracer.names == ["search.rerank"]
+    provider_call.assert_called_once_with()
+
+
+def test_reranking_budget_rejection_prevents_provider_call() -> None:
+    service, reservation, finalization, _tracer = make_execute_service()
+    reservation.reserve.side_effect = ProviderBudgetExceededError(
+        "monthly provider budget exceeded"
+    )
+    attempt = replace(make_query_embedding_attempt(), operation=ProviderOperationKind.RERANKING)
+    provider_call = Mock()
+
+    with pytest.raises(ProviderBudgetExceededError):
+        service.execute(
+            make_context(),
+            attempt,
+            provider_call,
+            lambda returned: cast(ProviderUsage, returned),
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+
+    provider_call.assert_not_called()
+    finalization.finalize.assert_not_called()

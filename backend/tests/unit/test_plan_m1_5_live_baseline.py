@@ -55,6 +55,14 @@ def test_rrf_plan_changes_only_the_selector_configuration() -> None:
     )
 
 
+def test_existing_live_plan_rejects_unapproved_reranking_before_reservation() -> None:
+    budget = live.LiveBaselineBudget(live.build_plan(retrieval_policy="rrf"))
+
+    with pytest.raises(live.LiveBaselineLimitError, match="not part of this plan"):
+        budget.reserve(ProviderOperationKind.RERANKING, payload_utf8_bytes=100)
+    assert budget.reserved_cost_micro_usd == 0
+
+
 @pytest.mark.parametrize("explanations", [False, True])
 @pytest.mark.parametrize("support_policy", ["attribution", "document_attribution"])
 def test_attribution_policy_is_explicit_versioned_and_does_not_raise_limits(

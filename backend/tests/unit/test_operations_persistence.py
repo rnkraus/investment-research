@@ -86,6 +86,23 @@ def test_row_round_trips_started_and_terminal_operations() -> None:
         assert ProviderOperationRow.from_domain(operation).to_domain() == operation
 
 
+def test_row_round_trips_research_owned_reranking_usage() -> None:
+    values = make_operation(ProviderOperationState.SUCCEEDED).model_dump()
+    values.update(
+        operation=ProviderOperationKind.RERANKING,
+        provider="pinecone",
+        model="bge-reranker-v2-m3",
+        configuration_version="m1-5-pinecone-bge-none-v1",
+        reserved_cost_micro_usd=0,
+        actual_cost_micro_usd=0,
+        input_units=1,
+        output_units=0,
+    )
+    operation = ProviderOperation.model_validate(values)
+
+    assert ProviderOperationRow.from_domain(operation).to_domain() == operation
+
+
 def test_repository_matches_application_owned_protocol() -> None:
     session = create_autospec(Session, instance=True)
 

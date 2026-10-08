@@ -11,7 +11,7 @@ from investment_research.modules.evidence.ports import (
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
     ProviderBudgetExceededError,
-    ProviderUsageCostExceededReservationError,
+    ProviderUsageExceededReservationError,
 )
 from investment_research.modules.research.answer_validation import (
     AnswerGenerationAccountingProfile as AnswerGenerationAccountingProfile,
@@ -93,7 +93,7 @@ class AnswerResearchRequestService:
             AnswerGenerationProviderError,
             StatementSupportProviderError,
             ProviderBudgetExceededError,
-            ProviderUsageCostExceededReservationError,
+            ProviderUsageExceededReservationError,
         ) as error:
             retriable = isinstance(
                 error,

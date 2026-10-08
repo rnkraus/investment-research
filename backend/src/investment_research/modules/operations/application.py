@@ -40,6 +40,8 @@ def _provider_operation_span_name(operation: ProviderOperationKind) -> Operation
             return "embedding.document"
         case ProviderOperationKind.QUERY_EMBEDDING:
             return "embedding.query"
+        case ProviderOperationKind.RERANKING:
+            return "search.rerank"
         case ProviderOperationKind.ANSWER_GENERATION:
             return "research.generate"
         case ProviderOperationKind.STATEMENT_SUPPORT:
@@ -55,7 +57,11 @@ class ProviderOperationUnavailableError(Exception):
     """Hide whether a provider operation is unknown or belongs to another workspace."""
 
 
-class ProviderUsageCostExceededReservationError(RuntimeError):
+class ProviderUsageExceededReservationError(RuntimeError):
+    """Reject provider usage above its declared per-attempt unit or cost ceilings."""
+
+
+class ProviderUsageCostExceededReservationError(ProviderUsageExceededReservationError):
     """Reject provider usage whose calculated cost exceeds its committed reservation."""
 
 
@@ -295,6 +301,13 @@ class ExecuteProviderOperationService:
                     raise ProviderUsageCostExceededReservationError(
                         "provider usage cost exceeded its reservation"
                     )
+                if (
+                    usage.input_units > attempt.maximum_usage.input_units
+                    or usage.output_units > attempt.maximum_usage.output_units
+                ):
+                    raise ProviderUsageExceededReservationError(
+                        "provider usage units exceeded their declared maximum"
+                    )
             except Exception as error:
                 error_code = self._safe_error_code(error, classify_error)
                 completion = ProviderOperationCompletion(
@@ -365,7 +378,7 @@ class ExecuteProviderOperationService:
     ) -> ProviderOperationErrorCode:
         """Classify one failure without ever persisting its text."""
 
-        if isinstance(error, ProviderUsageCostExceededReservationError):
+        if isinstance(error, ProviderUsageExceededReservationError):
             return ProviderOperationErrorCode.CONTRACT
         try:
             return classify_error(error)

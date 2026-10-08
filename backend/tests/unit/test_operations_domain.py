@@ -144,6 +144,12 @@ def test_operation_requires_exactly_one_canonical_owner(
             "research provider operation requires research_request_id",
         ),
         (
+            ProviderOperationKind.RERANKING,
+            None,
+            PROCESSING_RUN_ID,
+            "research provider operation requires research_request_id",
+        ),
+        (
             ProviderOperationKind.DOCUMENT_EMBEDDING,
             RESEARCH_REQUEST_ID,
             None,
@@ -224,3 +230,25 @@ def test_operation_state_allows_only_one_forward_finalization() -> None:
     assert ProviderOperationState.STARTED.can_transition_to(ProviderOperationState.FAILED)
     assert not ProviderOperationState.SUCCEEDED.can_transition_to(ProviderOperationState.FAILED)
     assert not ProviderOperationState.FAILED.can_transition_to(ProviderOperationState.SUCCEEDED)
+
+
+def test_reranking_operation_can_record_usage_without_a_dollar_charge() -> None:
+    operation = ProviderOperation.model_validate(
+        operation_values(
+            operation=ProviderOperationKind.RERANKING,
+            provider="pinecone",
+            model="bge-reranker-v2-m3",
+            configuration_version="m1-5-pinecone-bge-none-v1",
+            state=ProviderOperationState.SUCCEEDED,
+            reserved_cost_micro_usd=0,
+            actual_cost_micro_usd=0,
+            input_units=1,
+            output_units=0,
+            completed_at=STARTED_AT + timedelta(milliseconds=18),
+            duration_ms=18,
+        )
+    )
+
+    assert operation.research_request_id == RESEARCH_REQUEST_ID
+    assert operation.input_units == 1
+    assert operation.actual_cost_micro_usd == 0

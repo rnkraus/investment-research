@@ -64,6 +64,12 @@ APPROVED_CORPUS_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75
 MAXIMUM_SPEND_MICRO_USD = 800_000
 MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
+M1_LIVE_OPERATION_KINDS = (
+    ProviderOperationKind.DOCUMENT_EMBEDDING,
+    ProviderOperationKind.QUERY_EMBEDDING,
+    ProviderOperationKind.ANSWER_GENERATION,
+    ProviderOperationKind.STATEMENT_SUPPORT,
+)
 type LiveRetrievalPolicy = Literal["m1", "rrf"]
 type LiveAnswerPolicy = Literal["m1", "citable_units"]
 type LiveSupportPolicy = Literal["m1", "attribution", "document_attribution"]
@@ -203,7 +209,7 @@ def build_plan(
     if manifest.review_status != "reviewed":
         raise LiveBaselineLimitError("the corpus awaits owner review")
     limits: list[RoleLimit] = []
-    for role in ProviderOperationKind:
+    for role in M1_LIVE_OPERATION_KINDS:
         if role in {
             ProviderOperationKind.DOCUMENT_EMBEDDING,
             ProviderOperationKind.QUERY_EMBEDDING,
