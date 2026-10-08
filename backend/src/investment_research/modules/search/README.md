@@ -191,8 +191,9 @@ persists both lane contributions with their fusion ranks. Default API compositio
 `M1SelectionProfile`. The opt-in API `research_profile=m1-5-citable-units` supplies
 `RrfSelectionProfile` together with the source-ID generation and document-attribution support
 path described in the [Research guide](../research/README.md#opt-in-workflow-and-evaluation-integration).
-There is no browser-facing policy switch or OpenAPI change. Compose forwarding and manual runtime
-verification are pending; the M1.5 plan records the remaining adoption gate.
+There is no browser-facing policy switch or OpenAPI change. The live Compose overlay forwards the
+API-owned selection; manual runtime verification remains pending. The M1.5 plan records the
+remaining adoption gate.
 Canonical revalidation and statement-support checks are still required before any selected text
 can become citation evidence. A same-corpus comparison against M1 must precede any default-policy
 decision. Offline service tests and `test_rrf_retrieval_postgresql.py` exercise the opt-in path,

@@ -855,10 +855,69 @@ all 153 PostgreSQL integration tests, and owned-resource cleanup; seven separate
 were expected skips. Frontend formatting, lint, type checking, contract checking, and all 45
 tests passed. No production build or full Docker application-runtime gate ran in this block.
 
-Compose does not forward `INVESTMENT_RESEARCH_RESEARCH_PROFILE` yet. The next runtime block must
-add and test that forwarding, then the owner must verify PDF/text citation opening on the local
+At completion of this backend block, Compose forwarding was still pending; the following runtime
+record supersedes that limitation. The owner must verify PDF/text citation opening on the local
 website before deciding the default. No paid-provider, browser, hosted-CI, default-adoption, or
-Step 2 acceptance result is inferred from this backend wiring.
+Step 2 acceptance result is inferred from backend wiring.
+
+#### Live Compose selection (2026-10-08)
+
+`compose.m1-live.yaml` now forwards `INVESTMENT_RESEARCH_RESEARCH_PROFILE` only to the API,
+using `m1` when the value is absent or empty. The base Compose and credential-free acceptance
+overlays remain unchanged; worker, parser, web, provider credentials, volumes, and indexes do not
+receive a new profile or policy. This is an explicit local opt-in, not default adoption.
+
+The [root run guide](../README.md#opt-in-m15-source-id-research) documents a shell-scoped API
+restart selecting `m1-5-citable-units` and a return to `m1`. The agent does not inspect or alter
+the owner's real environment or secret files. New research requests use the selected policy;
+existing searchable sources require no upload or reindexing simply to select it. Only approved
+public or synthetic content may be used, and normal paid-provider accounting still applies.
+
+Four configuration integration tests render actual base/live Compose with a clean environment,
+disabled `.env` loading, and disposable synthetic placeholders. They verify the default and both
+explicit profiles, API-only forwarding, retained file-backed role credentials, parser exclusion,
+and loopback web/API ports without a daemon, container startup, or live-provider request. The
+existing PostgreSQL CI test discovery includes this configuration test file.
+
+**Verification:** Focused formatting, lint, type checking, and all four Compose-render cases passed.
+The complete backend gate passed formatting of 312 Python files, lint, typing of 282 files, and
+all 1,644 unit tests. `git diff --check` passed. No full application-runtime, browser, production
+build, paid-provider, or complete PostgreSQL suite was rerun for this Compose-only forwarding block.
+
+**Owner gate still pending:** Run an answerable PDF and pasted-text question on the local website,
+open their citations, and verify the correct PDF page and exact text range. The agent must not use
+the owner's browser. Report model pair and success/failure without posting private document text
+or credentials. Only after this gate should the owner decide whether to make the profile default.
+No manual browser, paid-provider, hosted-CI, or Step 2 acceptance result is recorded by this block.
+
+#### Source-unit limit diagnostics (2026-10-08)
+
+Owner-run questions reached `CitableUnitLimitError`, previously mapped to a generic stream error.
+The supplied logs identified the exception class but not which bound was exceeded; no specific
+root cause is inferred from those historical records. The four checks now attach typed,
+content-free categories and observed/limit counters: source count, context code points, unit count,
+and conservative serialized-input metadata accounting. Catalog preparation stops at the first
+rejected unit, so a unit-count observation is a lower bound, not a full-catalog census. Metadata
+accounting is not actual provider token usage.
+
+The API emits `research.context_limit.exceeded` through the fail-closed JSON formatter and one
+`RESEARCH_CONTEXT_LIMIT` stream failure with a fixed narrowing/single-document suggestion. The
+frontend accepts the regenerated enum and shows that message using its existing terminal state.
+No source text, document identifiers, exception messages, credentials, or model output are added
+to these normal logs. Raw local diagnostics remain separately opt-in.
+
+The 8-source, 24,000-character, 256-unit, and existing input-reservation limits are unchanged;
+no passage truncation, silent unit dropping, automatic retry, policy-version change, or new paid
+call is introduced. Preparation still fails before paid answer generation; earlier query-provider
+operations may already have incurred cost. This block improves diagnosis, not overflow recovery.
+
+**Verification:** Targeted backend checks passed 162 tests. Full backend formatting, lint, typing,
+and all 1,667 unit tests passed; deterministic OpenAPI export checking passed. Frontend formatting,
+lint, typing, generated-contract checking, and all 47 tests passed. Existing CI already runs these
+gates. No Docker runtime, production build, browser, PostgreSQL suite, hosted CI, or paid-provider
+test was run for this diagnostic block. The owner must rebuild API and web, repeat an affected
+question, and provide the safe category/counters before selecting a bounded-context correction.
+The source-opening/default-adoption gate remains pending.
 
 ### Step 3 — Bounded reranking experiment
 

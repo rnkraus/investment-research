@@ -127,6 +127,54 @@ seed or reset commands below when deterministic synthetic workspaces are require
 `compose.yaml` remains the credential-free foundation for isolated tests; by itself it does not
 configure a working M1 indexing worker.
 
+### Opt-in M1.5 source-ID research
+
+M1 remains the default research policy. With the provider-backed local stack above already
+running, rebuild and restart only the API to test the opt-in RRF/source-unit/document-attribution
+path without editing `.env`:
+
+```shell
+INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1-5-citable-units \
+  docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait api
+```
+
+The live overlay forwards this non-secret selection only to the API. The model selects opaque
+source-unit IDs instead of copying quotes; the server resolves their exact original ranges and
+still validates every claim. All four answer/support model pairs and the existing monthly budget
+remain available. Existing `SEARCHABLE` sources need no upload, migration, or reindexing merely
+because the research profile changes. Worker and parser behavior is unchanged.
+
+Use the existing website to ask one answerable question about an approved public/synthetic PDF and
+one about pasted text. Open each citation: the PDF must open at the correct physical page and the
+text viewer must highlight the exact original range, including repeated text. Normal provider
+charges apply to these owner-run checks; selecting the profile does not start a paid model request.
+Raw diagnostics remain off unless the separate local-only override below is explicitly enabled.
+The source-opening check and a later default-policy decision remain pending in the
+[M1.5 plan](docs/13-m1-5-rag-quality-plan.md#live-compose-selection-2026-10-08).
+
+If source-unit preparation exceeds a bound, the website reports `RESEARCH_CONTEXT_LIMIT` with
+a fixed suggestion to narrow the question or select a single document. Inspect the content-free
+diagnostic without enabling raw model output:
+
+```shell
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml logs --since 15m --no-color api \
+  | grep '"event":"research.context_limit.exceeded"'
+```
+
+The event includes the HTTP request ID, `limit_kind`, `observed_value`, and `limit_value`, never
+source text or credentials. Kinds are `source_count`, `context_characters`, `unit_count`, and
+`input_metadata`. The unit counter records the first rejected unit, not the total possible units;
+metadata counters are conservative input-accounting units, not measured provider tokens. This
+diagnostic does not raise limits or silently discard evidence. Rebuild both API and web when
+updating to this error-contract version so the web client recognizes the new code.
+
+To return to the retained M1 policy without changing or deleting archive data:
+
+```shell
+INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1 \
+  docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --detach --wait api
+```
+
 The API writes one structured JSON completion or failure event per HTTP request at the configured
 `INVESTMENT_RESEARCH_LOG_LEVEL`. It generates the correlation identifier on the server and returns
 it in the `x-request-id` response header and safe JSON error envelope. Request bodies, query strings,
