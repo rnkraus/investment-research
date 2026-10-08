@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import datetime
+from math import isfinite
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -38,6 +39,7 @@ from investment_research.modules.search.fusion_contracts import (
     RrfLaneContribution,
     reciprocal_rank_score,
 )
+from investment_research.modules.search.reranking_contracts import RRF_RERANK_SELECTOR_VERSION
 
 
 class RetrievalRunRow(Base):
@@ -327,8 +329,8 @@ class SqlAlchemyRetrievalRepository:
             raise SearchRelationshipError("selection ranks must be contiguous")
         if run.context_chunk_limit is not None and len(selection_ranks) > run.context_chunk_limit:
             raise SearchRelationshipError("selected candidate count exceeds the context limit")
-        if run.selector_config_version == RRF_CONFIG_VERSION:
-            self._require_rrf_ranks(run, candidates)
+        if run.selector_config_version in {RRF_CONFIG_VERSION, RRF_RERANK_SELECTOR_VERSION}:
+            self._require_rrf_based_ranks(run, candidates)
 
         self._session.add(RetrievalRunRow.from_domain(run))
         self._session.flush()
@@ -337,8 +339,10 @@ class SqlAlchemyRetrievalRepository:
         )
 
     @staticmethod
-    def _require_rrf_ranks(run: RetrievalRun, candidates: Sequence[RetrievalCandidate]) -> None:
-        """Reconstruct fixed-policy ranks from every original lane contribution."""
+    def _require_rrf_based_ranks(
+        run: RetrievalRun, candidates: Sequence[RetrievalCandidate]
+    ) -> None:
+        """Reconstruct fusion and final ordering without trusting client/model ranks."""
 
         if (
             run.mode is not RetrievalMode.DUAL_LANE
@@ -368,12 +372,34 @@ class SqlAlchemyRetrievalRepository:
         expected = {chunk_id: rank for rank, chunk_id in enumerate(ranked_ids, start=1)}
         if any(candidate.fused_rank != expected[candidate.chunk_id] for candidate in candidates):
             raise SearchRelationshipError("RRF fusion ranks do not match the original lane ranks")
+        context_order = expected
+        if run.selector_config_version == RRF_RERANK_SELECTOR_VERSION:
+            scores: dict[UUID, float] = {}
+            for candidate in candidates:
+                score = candidate.reranker_score
+                if score is None or not isfinite(score):
+                    raise SearchRelationshipError(
+                        "reranked candidates require a finite score for every lane record"
+                    )
+                if candidate.chunk_id in scores and scores[candidate.chunk_id] != score:
+                    raise SearchRelationshipError(
+                        "shared chunks must retain the same reranking score"
+                    )
+                scores[candidate.chunk_id] = score
+            reranked_ids = sorted(
+                scores, key=lambda chunk_id: (-scores[chunk_id], expected[chunk_id])
+            )
+            context_order = {chunk_id: rank for rank, chunk_id in enumerate(reranked_ids, start=1)}
         selected = sorted(
             (candidate for candidate in candidates if candidate.selection_rank is not None),
             key=lambda candidate: candidate.selection_rank or 0,
         )
-        ranks = [expected[candidate.chunk_id] for candidate in selected]
+        ranks = [context_order[candidate.chunk_id] for candidate in selected]
         if ranks != sorted(ranks):
+            if run.selector_config_version == RRF_RERANK_SELECTOR_VERSION:
+                raise SearchRelationshipError(
+                    "reranked selection must preserve score order and original RRF ties"
+                )
             raise SearchRelationshipError("RRF selection must preserve fusion order")
 
     def get_run_by_id(
