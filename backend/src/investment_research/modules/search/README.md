@@ -114,6 +114,13 @@ inputs and 32,000 total Unicode code points, and every returned vector must cont
 finite values. `EmbeddingResult` keeps those ordered vectors together with content-free
 provider-reported `ProviderUsage`; the deterministic adapter reports zero external usage.
 
+`RerankResponse` similarly keeps a complete, uniquely ranked candidate list together with the
+returned model, reranker configuration version, and provider usage. The standalone Pinecone
+M1.5 adapter reports reranking units as input units and zero output units, not token usage.
+It exists behind the port but runtime selection, canonical accounting, and adoption are still
+pending; the existing M1 and opt-in RRF paths are unchanged. Provider correlation must also prove
+that the response contains exactly the requested candidate set.
+
 ```mermaid
 flowchart LR
     CHUNKS[Ordered active canonical chunks] --> BATCH[Bounded document batches]
@@ -134,7 +141,7 @@ flowchart LR
     FILTERS --> QUALIFY
     QUALIFY --> ELIGIBLE[Qualified canonical dense hits]
     ELIGIBLE --> SELECT[M1 deterministic selector]
-    ELIGIBLE -. future M4 .-> RERANK[Reranker]
+    ELIGIBLE -. M1.5 experiment wiring pending .-> RERANK[Reranker]
 ```
 
 The deterministic M1 vector identity hashes the trusted workspace ID, canonical chunk ID, and

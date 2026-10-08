@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 2 comparisons recorded; Step 3 provider boundary approved; implementation/adoption pending
+**Status:** Active — Step 2 comparisons recorded; Step 3 adapter implemented; runtime integration/adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1011,8 +1011,33 @@ Complete one coherent block at a time:
    policy. Gate: reviewed quality, latency, usage/cost, failure, and source-opening evidence; record
    adoption, rejection, or an inconclusive result without changing historical runs.
 
-This revision records the provider decision and security boundary only. The reranker is not yet
-implemented or enabled, and no live quality or latency claim follows from this approval.
+#### Adapter boundary implemented (2026-10-08)
+
+Block 2 adds `infrastructure/search/pinecone_reranking.py` and an application-owned
+`RerankResponse` carrying the complete ranking, model/configuration version, and provider usage.
+It reuses the locked Pinecone 10.0.0 async inference transport behind the synchronous port,
+without adding or upgrading dependencies. SDK retries are disabled; a cancellable overall
+deadline is at most 20 seconds and no overlapping call is accepted on one adapter.
+
+The owner supplied the hosted BGE model descriptor: `max_sequence_length=1024`,
+`max_batch_size=100`, and `truncate` accepts `END` or `NONE`, with `NONE` as default. The frozen
+application configuration `m1-5-pinecone-bge-none-v1` explicitly sends `NONE` and bounds inputs at
+40 candidates, 1,000 query code points, 8,000 code points per passage, and 80,000 total input code
+points. Character bounds are not token guarantees; rejected hosted-model inputs fail without
+shortening text, dropping candidates, batching, or retrying. A different windowing policy requires
+a separate version and comparison.
+
+The adapter sends no canonical identifiers or unrelated metadata. It disables document echo,
+requires every returned input position exactly once, rejects unexpected models and malformed
+scores/usage, and uses original input order for score ties. Reranking units remain distinct from
+OpenAI tokens and price estimates. The offline SDK-transport tests require no live credentials.
+
+Block 2 local gate: backend format/lint and strict Mypy passed; all 1,729 unit tests passed.
+This checks the adapter boundary, not live model compatibility, quality, or the full Step 3 gate.
+
+Blocks 3–5 remain open: no API/evaluator wiring, quota or canonical accounting integration,
+default change, hosted CI confirmation, live reranking result, or quality/latency improvement is
+claimed here. The earlier source-opening/default-adoption gates remain open as well.
 
 ### Step 4 — Quality hardening and portfolio evidence
 
