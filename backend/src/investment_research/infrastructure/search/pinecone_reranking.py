@@ -31,15 +31,24 @@ from investment_research.modules.search.ports import (
     SearchProviderContractError,
     SearchProviderTransientError,
 )
+from investment_research.modules.search.reranking_contracts import (
+    BGE_RERANK_CANDIDATE_LIMIT,
+    BGE_RERANK_CONFIG_VERSION,
+    BGE_RERANK_MODEL,
+    BGE_RERANK_PASSAGE_CHARACTER_LIMIT,
+    BGE_RERANK_QUERY_CHARACTER_LIMIT,
+    BGE_RERANK_TOTAL_CHARACTER_LIMIT,
+    require_bge_input_bounds,
+)
 
-PINECONE_RERANK_MODEL = "bge-reranker-v2-m3"
-PINECONE_RERANK_CONFIG_VERSION = "m1-5-pinecone-bge-none-v1"
+PINECONE_RERANK_MODEL = BGE_RERANK_MODEL
+PINECONE_RERANK_CONFIG_VERSION = BGE_RERANK_CONFIG_VERSION
+PINECONE_RERANK_CANDIDATE_LIMIT = BGE_RERANK_CANDIDATE_LIMIT
+PINECONE_RERANK_QUERY_CHARACTER_LIMIT = BGE_RERANK_QUERY_CHARACTER_LIMIT
+PINECONE_RERANK_PASSAGE_CHARACTER_LIMIT = BGE_RERANK_PASSAGE_CHARACTER_LIMIT
+PINECONE_RERANK_TOTAL_CHARACTER_LIMIT = BGE_RERANK_TOTAL_CHARACTER_LIMIT
 PINECONE_RERANK_HOST = "https://api.pinecone.io"
 PINECONE_RERANK_TIMEOUT_SECONDS = 20.0
-PINECONE_RERANK_CANDIDATE_LIMIT = 40
-PINECONE_RERANK_QUERY_CHARACTER_LIMIT = 1_000
-PINECONE_RERANK_PASSAGE_CHARACTER_LIMIT = 8_000
-PINECONE_RERANK_TOTAL_CHARACTER_LIMIT = 80_000
 
 _TRANSIENT_ERRORS = (
     TimeoutError,
@@ -138,17 +147,12 @@ class PineconeReranker:
     def _validate_request(request: RerankRequest) -> None:
         if request.reranker_config_version != PINECONE_RERANK_CONFIG_VERSION:
             raise SearchProviderConfigurationError("unsupported reranking configuration version")
-        if (
-            len(request.candidates) > PINECONE_RERANK_CANDIDATE_LIMIT
-            or len(request.normalized_query) > PINECONE_RERANK_QUERY_CHARACTER_LIMIT
-            or any(
-                len(candidate.text) > PINECONE_RERANK_PASSAGE_CHARACTER_LIMIT
-                for candidate in request.candidates
-            )
-            or len(request.normalized_query) + sum(len(item.text) for item in request.candidates)
-            > PINECONE_RERANK_TOTAL_CHARACTER_LIMIT
-        ):
-            raise SearchProviderContractError("reranking input exceeds the configured limits")
+        try:
+            require_bge_input_bounds(request)
+        except ValueError:
+            raise SearchProviderContractError(
+                "reranking input exceeds the configured limits"
+            ) from None
 
     async def _rerank_once(self, request: RerankRequest) -> RerankResponse:
         deadline = monotonic() + self.operation_timeout_seconds
