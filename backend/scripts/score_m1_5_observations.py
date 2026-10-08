@@ -31,6 +31,8 @@ class ProviderUsage(_FrozenModel):
     input_tokens: int | None = Field(ge=0)
     output_tokens: int | None = Field(ge=0)
     estimated_cost_micro_usd: int | None = Field(ge=0)
+    # Historical reports did not measure reranking; absence must not invent a measurement.
+    rerank_units: int | None = Field(default=None, ge=0)
 
 
 class SupportAssessment(_FrozenModel):

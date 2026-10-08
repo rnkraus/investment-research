@@ -52,6 +52,12 @@ from investment_research.modules.search.fusion_contracts import (
     RRF_CONFIG_VERSION,
     RrfSelectionProfile,
 )
+from investment_research.modules.search.reranking_contracts import (
+    BGE_RERANK_CONFIG_VERSION,
+    BGE_RERANK_MODEL,
+    RRF_RERANK_SELECTOR_VERSION,
+    RrfRerankingProfile,
+)
 from scripts.score_m1_5_observations import RunConfiguration
 from scripts.verify_m1_5_corpus import (
     DEFAULT_MANIFEST,
@@ -70,7 +76,7 @@ M1_LIVE_OPERATION_KINDS = (
     ProviderOperationKind.ANSWER_GENERATION,
     ProviderOperationKind.STATEMENT_SUPPORT,
 )
-type LiveRetrievalPolicy = Literal["m1", "rrf"]
+type LiveRetrievalPolicy = Literal["m1", "rrf", "rrf_rerank"]
 type LiveAnswerPolicy = Literal["m1", "citable_units"]
 type LiveSupportPolicy = Literal["m1", "attribution", "document_attribution"]
 
@@ -107,13 +113,15 @@ def answer_policy_for_prompt_version(version: str) -> LiveAnswerPolicy:
 
 def selection_profile_for_policy(
     policy: LiveRetrievalPolicy,
-) -> M1SelectionProfile | RrfSelectionProfile:
-    """Allow only the two frozen experimental profiles, without changing runtime defaults."""
+) -> M1SelectionProfile | RrfSelectionProfile | RrfRerankingProfile:
+    """Allow frozen experimental profiles without changing runtime defaults."""
 
     if policy == "m1":
         return M1SelectionProfile()
     if policy == "rrf":
         return RrfSelectionProfile()
+    if policy == "rrf_rerank":
+        return RrfRerankingProfile()
     raise LiveBaselineLimitError("the evaluation retrieval policy is not approved")
 
 
@@ -145,6 +153,8 @@ def retrieval_policy_for_version(version: str) -> LiveRetrievalPolicy:
         return "m1"
     if version == RRF_CONFIG_VERSION:
         return "rrf"
+    if version == RRF_RERANK_SELECTOR_VERSION:
+        return "rrf_rerank"
     raise LiveBaselineLimitError("the evaluation selector version is not approved")
 
 
@@ -161,6 +171,16 @@ class RoleLimit(_FrozenModel):
     output_micro_usd_per_million_tokens: int = Field(ge=0)
 
 
+class RerankingLimit(_FrozenModel):
+    """One bounded inference request per case, not a token or account-wide quota."""
+
+    model: Literal["bge-reranker-v2-m3"] = BGE_RERANK_MODEL
+    configuration_version: Literal["m1-5-pinecone-bge-none-v1"] = BGE_RERANK_CONFIG_VERSION
+    billing_policy: Literal["pinecone-starter-bge-included-v1"] = "pinecone-starter-bge-included-v1"
+    maximum_requests: Literal[6] = 6
+    maximum_rerank_units_per_request: Literal[1] = 1
+
+
 class LiveBaselinePlan(_FrozenModel):
     schema_version: Literal[1] = 1
     policy_version: Literal["m1.5-live-budget-v1"] = "m1.5-live-budget-v1"
@@ -174,6 +194,7 @@ class LiveBaselinePlan(_FrozenModel):
     maximum_document_vectors: int = MAXIMUM_DOCUMENT_VECTORS
     maximum_input_units_per_request: int = MAXIMUM_INPUT_UNITS_PER_REQUEST
     role_limits: tuple[RoleLimit, ...]
+    reranking_limit: RerankingLimit | None = None
     price_basis: Literal["repository_versioned_estimates"] = "repository_versioned_estimates"
     pinecone_billing: Literal["starter_only_not_in_openai_estimate"] = (
         "starter_only_not_in_openai_estimate"
@@ -270,6 +291,7 @@ def build_plan(
         ),
         maximum_spend_micro_usd=maximum_spend_micro_usd,
         role_limits=tuple(limits),
+        reranking_limit=RerankingLimit() if retrieval_policy == "rrf_rerank" else None,
     )
 
 
@@ -302,6 +324,8 @@ class LiveBaselineBudget:
             raise LiveBaselineLimitError("the invocation stopped after a usage contract failure")
         if type(payload_utf8_bytes) is not int or payload_utf8_bytes <= 0:
             raise LiveBaselineLimitError("request payload size must be a positive integer")
+        if role is ProviderOperationKind.RERANKING:
+            return self._reserve_reranking(payload_utf8_bytes)
         limit = next((item for item in self.plan.role_limits if item.role is role), None)
         if limit is None:
             raise LiveBaselineLimitError("the provider role is not part of this plan")
@@ -327,6 +351,28 @@ class LiveBaselineBudget:
         self._reservations.append(reservation)
         return reservation
 
+    def _reserve_reranking(self, payload_utf8_bytes: int) -> RequestReservation:
+        limit = self.plan.reranking_limit
+        if limit is None:
+            raise LiveBaselineLimitError("the provider role is not part of this plan")
+        if (
+            payload_utf8_bytes > self.plan.maximum_input_units_per_request
+            or sum(item.role is ProviderOperationKind.RERANKING for item in self._reservations)
+            >= limit.maximum_requests
+        ):
+            raise LiveBaselineLimitError("the evaluation reranking limit is exceeded")
+        # Zero monetary reservation applies only to the explicitly confirmed Starter policy.
+        # The retained request/unit reservation remains bounded even after a failed call.
+        reservation = RequestReservation(
+            ordinal=len(self._reservations),
+            role=ProviderOperationKind.RERANKING,
+            input_units=limit.maximum_rerank_units_per_request,
+            output_units=0,
+            estimated_cost_micro_usd=0,
+        )
+        self._reservations.append(reservation)
+        return reservation
+
     def verify_usage(self, reservation: RequestReservation, usage: ProviderUsage) -> None:
         """Stop on unknown reservations or usage above the pre-call accounting bound."""
 
@@ -335,6 +381,7 @@ class LiveBaselineBudget:
             or self._reservations[reservation.ordinal] is not reservation
             or usage.input_units > reservation.input_units
             or usage.output_units > reservation.output_units
+            or (reservation.role is ProviderOperationKind.RERANKING and usage.input_units < 1)
         ):
             self._halted = True
             raise LiveBaselineLimitError("provider usage does not fit the request reservation")
@@ -359,7 +406,7 @@ def _budget_argument(value: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--retrieval-policy", choices=("m1", "rrf"), default="m1")
+    parser.add_argument("--retrieval-policy", choices=("m1", "rrf", "rrf_rerank"), default="m1")
     parser.add_argument("--answer-policy", choices=("m1", "citable_units"), default="m1")
     parser.add_argument(
         "--support-policy", choices=("m1", "attribution", "document_attribution"), default="m1"

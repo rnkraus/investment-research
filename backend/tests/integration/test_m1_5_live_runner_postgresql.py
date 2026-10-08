@@ -22,7 +22,8 @@ from investment_research.modules.evidence.contracts import (
 )
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.operations.domain import ProviderOperationKind, ProviderUsage
+from investment_research.modules.operations.persistence import ProviderOperationRow
 from investment_research.modules.research.citable_unit_contracts import CitableAnswerGenerationInput
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -33,12 +34,15 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedStatement,
 )
 from investment_research.modules.research.domain import CoverageStatus
+from investment_research.modules.search.contracts import RerankRequest, RerankResponse, RerankResult
 from investment_research.modules.search.persistence import RetrievalCandidateRow, RetrievalRunRow
 from investment_research.modules.search.ports import SearchProviderTransientError
+from investment_research.modules.search.reranking_contracts import BGE_RERANK_MODEL
 from scripts.m1_5_live_index import IsolatedEvaluationIndex
 from scripts.m1_5_live_providers import (
     BudgetedAnswerGenerator,
     BudgetedEmbeddingProvider,
+    BudgetedReranker,
     BudgetedSupportEvaluator,
     LiveProviderCalls,
 )
@@ -67,6 +71,30 @@ class ImmediateIndex(DeterministicSqliteDenseIndex):
 
     def wait_until_visible(self) -> None:
         pass
+
+
+class ScriptedReranker:
+    """Reverse eligible input to exercise returned ordering, not real model quality."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls = 0
+        self.fail = fail
+
+    def rerank(self, request: RerankRequest) -> RerankResponse:
+        self.calls += 1
+        if self.fail:
+            raise SearchProviderTransientError("synthetic reranking unavailable")
+        return RerankResponse(
+            results=tuple(
+                RerankResult(
+                    retrieval_candidate_id=item.retrieval_candidate_id, rank=rank, score=1.0 / rank
+                )
+                for rank, item in enumerate(reversed(request.candidates), 1)
+            ),
+            usage=ProviderUsage(input_units=1, output_units=0),
+            model=BGE_RERANK_MODEL,
+            reranker_config_version=request.reranker_config_version,
+        )
 
 
 class ScriptedGenerator:
@@ -221,7 +249,7 @@ class ReviewedContextualSupportEvaluator(ReviewedUnitSupportEvaluator):
         )
 
 
-@pytest.mark.parametrize("retrieval_policy", ["m1", "rrf"])
+@pytest.mark.parametrize("retrieval_policy", ["m1", "rrf", "rrf_rerank"])
 @pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
 def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     integration_database_engine: Engine,
@@ -244,15 +272,21 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
         if support_policy != "m1"
         else ReviewedUnitSupportEvaluator(manifest)
     )
+    index = ImmediateIndex(tmp_path / "citable.sqlite")
     report = run_live_baseline(
         integration_database_engine,
         plan,
-        index=cast(IsolatedEvaluationIndex, ImmediateIndex(tmp_path / "citable.sqlite")),
+        index=cast(IsolatedEvaluationIndex, index),
         document_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
         query_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
         generator=BudgetedAnswerGenerator(generator, calls),
         support=BudgetedSupportEvaluator(support, calls),
         calls=calls,
+        reranker=(
+            BudgetedReranker(ScriptedReranker(), calls)
+            if retrieval_policy == "rrf_rerank"
+            else None
+        ),
     )
     assert not report.failures
     assert report.summary.coverage_match_count == 6
@@ -270,6 +304,96 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     assert report.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
     assert all(record.usage_state == "REPORTED" for record in report.provider_calls)
     assert len(support.calls) == 5  # One paid-path call per answer, none on final database replay.
+    rerank_records = [
+        item for item in calls.records if item.role is ProviderOperationKind.RERANKING
+    ]
+    assert len(rerank_records) == (6 if retrieval_policy == "rrf_rerank" else 0)
+    assert report.total_usage.rerank_units == len(rerank_records)
+    if retrieval_policy == "rrf_rerank":
+        with create_session_factory(integration_database_engine)() as session:
+            operations = tuple(
+                session.scalars(
+                    select(ProviderOperationRow).where(
+                        ProviderOperationRow.operation == ProviderOperationKind.RERANKING,
+                        ProviderOperationRow.workspace_id == index.context.workspace_id,
+                    )
+                )
+            )
+            assert len(operations) == 6
+            assert all(
+                item.input_units == 1 and item.actual_cost_micro_usd == 0 for item in operations
+            )
+            selected = tuple(
+                session.scalars(
+                    select(RetrievalCandidateRow).where(
+                        RetrievalCandidateRow.workspace_id == index.context.workspace_id,
+                        RetrievalCandidateRow.selection_rank.is_not(None),
+                    )
+                )
+            )
+            for run_id in {item.retrieval_run_id for item in selected}:
+                rows = sorted(
+                    (item for item in selected if item.retrieval_run_id == run_id),
+                    key=lambda item: item.selection_rank or 0,
+                )
+                scores = [item.reranker_score for item in rows]
+                assert all(score is not None for score in scores)
+                assert scores == sorted(scores, key=lambda score: score or 0, reverse=True)
+
+
+def test_reranker_failure_is_recorded_without_generation_or_fallback(
+    integration_database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    plan = build_plan(
+        retrieval_policy="rrf_rerank",
+        answer_policy="citable_units",
+        answer_model=ResearchModel.LUNA,
+        support_model=ResearchModel.LUNA,
+    )
+    calls = LiveProviderCalls(LiveBaselineBudget(plan))
+    delegate = ScriptedReranker(fail=True)
+    generator = ScriptedCitableGenerator()
+    manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+    index = ImmediateIndex(tmp_path / "failure.sqlite")
+    report = run_live_baseline(
+        integration_database_engine,
+        plan,
+        index=cast(IsolatedEvaluationIndex, index),
+        document_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
+        query_embedding=BudgetedEmbeddingProvider(embedding_provider(), calls),
+        generator=BudgetedAnswerGenerator(generator, calls),
+        support=BudgetedSupportEvaluator(ReviewedUnitSupportEvaluator(manifest), calls),
+        reranker=BudgetedReranker(delegate, calls),
+        calls=calls,
+    )
+    assert delegate.calls == len(report.failures) == 6
+    assert generator.count == 0
+    assert all(
+        item.provider_failure is not None
+        and item.provider_failure.role is ProviderOperationKind.RERANKING
+        for item in report.failures
+    )
+    assert report.total_usage.rerank_units is None
+    assert report.total_usage.input_tokens is not None
+    with create_session_factory(integration_database_engine)() as session:
+        attempts = tuple(
+            session.scalars(
+                select(ProviderOperationRow).where(
+                    ProviderOperationRow.operation == ProviderOperationKind.RERANKING,
+                    ProviderOperationRow.workspace_id == index.context.workspace_id,
+                )
+            )
+        )
+        assert len(attempts) == 6
+        assert all(item.state.value == "FAILED" and item.input_units is None for item in attempts)
+        assert not tuple(
+            session.scalars(
+                select(RetrievalCandidateRow).where(
+                    RetrievalCandidateRow.workspace_id == index.context.workspace_id,
+                )
+            )
+        )
 
 
 @pytest.mark.parametrize(
