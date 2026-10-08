@@ -12,7 +12,7 @@ from investment_research.modules.search.contracts import (
     EmbeddingRequest,
     EmbeddingResult,
     RerankRequest,
-    RerankResult,
+    RerankResponse,
 )
 from investment_research.modules.search.ports import SearchProviderUnavailableError
 
@@ -70,7 +70,7 @@ class UnavailableDenseRetriever:
 class UnavailableReranker:
     """Reject reranking until an approved provider is configured."""
 
-    def rerank(self, request: RerankRequest) -> Sequence[RerankResult]:
+    def rerank(self, request: RerankRequest) -> RerankResponse:
         """Fail explicitly without contacting a reranking provider."""
 
         del request

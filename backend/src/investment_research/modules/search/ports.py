@@ -18,7 +18,7 @@ from investment_research.modules.search.contracts import (
     LexicalSearchQuery,
     QualifiedDenseHit,
     RerankRequest,
-    RerankResult,
+    RerankResponse,
 )
 from investment_research.modules.search.domain import RetrievalCandidate, RetrievalRun
 
@@ -106,8 +106,8 @@ class DenseCandidateQualifier(Protocol):
 class Reranker(Protocol):
     """Reorder a bounded canonical candidate set without creating evidence."""
 
-    def rerank(self, request: RerankRequest) -> Sequence[RerankResult]:
-        """Return one uniquely ranked finite score for every candidate."""
+    def rerank(self, request: RerankRequest) -> RerankResponse:
+        """Return every candidate with a finite unique rank, model, version, and usage."""
 
 
 class RetrievalRepository(Protocol):

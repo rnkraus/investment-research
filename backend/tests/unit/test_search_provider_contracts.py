@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_BATCH_LIMIT,
     M1_EMBEDDING_CHARACTER_LIMIT,
@@ -21,6 +22,7 @@ from investment_research.modules.search.contracts import (
     EmbeddingVector,
     RerankCandidate,
     RerankRequest,
+    RerankResponse,
     RerankResult,
 )
 from investment_research.modules.search.domain import RetrievalFilters
@@ -187,3 +189,21 @@ def test_rerank_contracts_require_unique_candidates_and_finite_scores() -> None:
             rank=1,
             score=float("inf"),
         )
+
+
+def test_rerank_response_preserves_usage_and_rejects_ambiguous_ranks() -> None:
+    first = RerankResult(retrieval_candidate_id=CANDIDATE_ID, rank=1, score=0.8)
+    second = RerankResult(retrieval_candidate_id=CHUNK_ID, rank=2, score=0.5)
+    response = RerankResponse(
+        results=(first, second),
+        usage=ProviderUsage(input_units=1, output_units=0),
+        model="test-reranker",
+        reranker_config_version="rerank-v1",
+    )
+
+    assert response.usage.input_units == 1
+    assert response.results == (first, second)
+    with pytest.raises(ValidationError, match="candidate IDs must be unique"):
+        RerankResponse.model_validate({**response.model_dump(), "results": (first, first)})
+    with pytest.raises(ValidationError, match="contiguous and ordered"):
+        RerankResponse.model_validate({**response.model_dump(), "results": (second, first)})
