@@ -28,6 +28,7 @@ from investment_research.modules.research.contracts import (
 from investment_research.modules.research.domain import ResearchRequest, TemporalMode
 from investment_research.modules.research.errors import ResearchProviderUnavailableError
 from investment_research.modules.research.ports import ResearchRetrievalUnitOfWorkFactory
+from investment_research.modules.research.reranking import AccountedRerankingService
 from investment_research.modules.search.application import (
     EmbeddingResponseContractError,
     build_lexical_search_query,
@@ -68,6 +69,11 @@ from investment_research.modules.search.ports import (
     SearchProviderError,
     SearchProviderTransientError,
 )
+from investment_research.modules.search.reranking import prepare_rrf_reranking
+from investment_research.modules.search.reranking_contracts import (
+    RrfRerankingProfile,
+    RrfRerankingSelectionResult,
+)
 from investment_research.modules.search.selection import select_m1_context
 
 type Clock = Callable[[], datetime]
@@ -92,17 +98,20 @@ class M1QueryRetrievalDependencies:
     embedding_provider: EmbeddingProvider
     dense_retriever: DenseRetriever
     dense_profile: DenseRetrievalProfile
-    selection_profile: M1SelectionProfile | RrfSelectionProfile
+    selection_profile: M1SelectionProfile | RrfSelectionProfile | RrfRerankingProfile
     provider_operation_executor: ExecuteProviderOperationService
     embedding_accounting: QueryEmbeddingAccountingProfile
     retry_delay_seconds: float = M1_PROVIDER_RETRY_DELAY_SECONDS
     sleeper: Sleeper = sleep
+    reranking: AccountedRerankingService | None = None
 
     def __post_init__(self) -> None:
         """Keep injected retry timing inside the frozen M1 policy."""
 
         if not 0 <= self.retry_delay_seconds <= M1_PROVIDER_RETRY_DELAY_SECONDS:
             raise ValueError("query provider retry delay must be between 0 and 0.25 seconds")
+        if isinstance(self.selection_profile, RrfRerankingProfile) != (self.reranking is not None):
+            raise ValueError("reranking policy and accounted service must be configured together")
 
 
 def build_effective_retrieval_filters(
@@ -139,7 +148,9 @@ class RetrieveResearchService:
     ) -> None:
         if (
             m1_query_retrieval is not None
-            and isinstance(m1_query_retrieval.selection_profile, RrfSelectionProfile)
+            and isinstance(
+                m1_query_retrieval.selection_profile, (RrfSelectionProfile, RrfRerankingProfile)
+            )
             and max(
                 search_profile.candidate_limit,
                 m1_query_retrieval.dense_profile.candidate_limit,
@@ -366,16 +377,72 @@ class RetrieveResearchService:
             dense_index_config_version=dense_query.dense_index_config_version,
         )
 
+        reranked: RrfRerankingSelectionResult | None = None
+        lexical_snapshot: tuple[LexicalSearchHit, ...] = ()
+        dense_snapshot: tuple[QualifiedDenseHit, ...] = ()
+        if isinstance(dependencies.selection_profile, RrfRerankingProfile):
+            with self._unit_of_work_factory() as unit_of_work:
+                lexical_snapshot = tuple(unit_of_work.lexical_search.search(context, query))
+                dense_snapshot = tuple(
+                    unit_of_work.dense_qualifier.qualify(context, qualification_request)
+                )
+            if progress is not None:
+                progress(request.id, "SELECTING_PASSAGES")
+            try:
+                prepared = prepare_rrf_reranking(
+                    normalized_query=query.normalized_query,
+                    lexical_hits=lexical_snapshot,
+                    dense_hits=dense_snapshot,
+                    profile=dependencies.selection_profile,
+                )
+            except SearchProviderContractError as error:
+                raise ResearchProviderUnavailableError(request.id, retriable=False) from error
+            if dependencies.reranking is None:
+                raise RuntimeError("accounted reranking service is required")
+            # The detached snapshot and provider operation never retain this read transaction.
+            reranked = dependencies.reranking.select(context, request.id, prepared)
+
         with self._unit_of_work_factory() as unit_of_work:
             lexical_hits = tuple(unit_of_work.lexical_search.search(context, query))
             dense_hits = tuple(unit_of_work.dense_qualifier.qualify(context, qualification_request))
-            if progress is not None:
-                progress(request.id, "SELECTING_PASSAGES")
-            selected_candidates, fused_ranks = self._select_context(
-                lexical_hits=lexical_hits,
-                dense_hits=dense_hits,
-                profile=dependencies.selection_profile,
-            )
+            reranker_scores: dict[UUID, float] = {}
+            if reranked is not None:
+                # Reject any changed lane membership, order, provenance, text, or score.
+                # Do not rerank again, substitute new sources, or reuse stale evidence.
+                if lexical_hits != lexical_snapshot or dense_hits != dense_snapshot:
+                    changed_sources_error = SearchProviderContractError(
+                        "canonical retrieval changed during reranking"
+                    )
+                    raise ResearchProviderUnavailableError(
+                        request.id, retriable=False
+                    ) from changed_sources_error
+                selected_candidates = tuple(
+                    SelectedRetrievalCandidate(
+                        **item.candidate.hit.model_dump(),
+                        origin=item.candidate.contributions[0].origin,
+                        rank=item.candidate.contributions[0].rank,
+                        selection_rank=item.selection_rank,
+                    )
+                    for item in reranked.candidates
+                )
+                fused_ranks = {
+                    item.hit.chunk_id: item.fused_rank
+                    for item in reranked.prepared.fused_candidates
+                }
+                if reranked.response is not None:
+                    reranker_scores = {
+                        item.retrieval_candidate_id: item.score
+                        for item in reranked.response.results
+                    }
+            else:
+                if progress is not None:
+                    progress(request.id, "SELECTING_PASSAGES")
+                profile = dependencies.selection_profile
+                if isinstance(profile, RrfRerankingProfile):
+                    raise RuntimeError("reranking selection was not prepared")
+                selected_candidates, fused_ranks = self._select_context(
+                    lexical_hits=lexical_hits, dense_hits=dense_hits, profile=profile
+                )
             completed_at = self._aware_utc_now()
             run = RetrievalRun(
                 id=retrieval_run_id,
@@ -403,6 +470,7 @@ class RetrieveResearchService:
                 dense_hits=dense_hits,
                 selected_candidates=selected_candidates,
                 fused_ranks=fused_ranks,
+                reranker_scores=reranker_scores,
             )
             unit_of_work.retrieval.add_result(context, run, candidates)
             sources = tuple(
@@ -464,6 +532,7 @@ class RetrieveResearchService:
         dense_hits: tuple[QualifiedDenseHit, ...],
         selected_candidates: tuple[SelectedRetrievalCandidate, ...],
         fused_ranks: dict[UUID, int],
+        reranker_scores: dict[UUID, float] | None = None,
     ) -> tuple[
         tuple[RetrievalCandidate, ...],
         dict[tuple[RetrievalOrigin, int], RetrievalCandidate],
@@ -495,6 +564,7 @@ class RetrieveResearchService:
                     raw_score=hit.raw_score,
                     selection_rank=selection_rank_by_lane.get((origin, rank)),
                     fused_rank=fused_ranks.get(hit.chunk_id),
+                    reranker_score=(reranker_scores or {}).get(hit.chunk_id),
                     created_at=run.completed_at,
                 )
                 candidates.append(candidate)
