@@ -30,6 +30,7 @@ from investment_research.modules.search.persistence import (
     SqlAlchemyRetrievalRepository,
 )
 from investment_research.modules.search.ports import RetrievalRepository
+from investment_research.modules.search.reranking_contracts import RRF_RERANK_SELECTOR_VERSION
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -150,6 +151,153 @@ def make_rrf_candidates() -> tuple[RetrievalCandidate, ...]:
             fused_rank=1,
         ),
     )
+
+
+def make_reranked_candidates() -> tuple[RetrievalCandidate, ...]:
+    """Promote the first lexical chunk without changing the original fusion ranks."""
+
+    first, second, dense = make_rrf_candidates()
+    return (
+        first.model_copy(update={"selection_rank": 1, "reranker_score": 0.9}),
+        second.model_copy(update={"selection_rank": 2, "reranker_score": 0.2}),
+        dense.model_copy(update={"reranker_score": 0.2}),
+    )
+
+
+def test_repository_accepts_reranking_order_and_round_trips_all_scores() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION}
+    )
+    candidates = make_reranked_candidates()
+
+    SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, candidates)
+
+    staged = tuple(row.to_domain() for row in session.add_all.call_args.args[0])
+    assert staged == candidates
+    assert [item.fused_rank for item in staged] == [2, 1, 1]
+    assert [item.reranker_score for item in staged] == [0.9, 0.2, 0.2]
+    session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("score", [None, inf, -inf, nan])
+@pytest.mark.parametrize("candidate_index", [0, 2])
+def test_repository_rejects_missing_or_invalid_reranking_scores_before_staging(
+    score: float | None, candidate_index: int
+) -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION}
+    )
+    candidates = list(make_reranked_candidates())
+    candidates[candidate_index] = candidates[candidate_index].model_copy(
+        update={"reranker_score": score}
+    )
+
+    with pytest.raises(SearchRelationshipError, match="finite score for every lane"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, candidates)
+    session.add.assert_not_called()
+    session.flush.assert_not_called()
+    session.add_all.assert_not_called()
+
+
+def test_repository_rejects_disagreeing_scores_for_a_shared_chunk() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION}
+    )
+    first, second, dense = make_reranked_candidates()
+    with pytest.raises(SearchRelationshipError, match="same reranking score"):
+        SqlAlchemyRetrievalRepository(session).add_result(
+            make_context(), run, (first, second, dense.model_copy(update={"reranker_score": 0.3}))
+        )
+    session.add.assert_not_called()
+
+
+@pytest.mark.parametrize("tied", [False, True])
+def test_repository_rejects_selection_against_score_or_fusion_tie_order(tied: bool) -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION}
+    )
+    first, second, dense = make_reranked_candidates()
+    candidates = (
+        (first.model_copy(update={"reranker_score": 0.2}), second, dense)
+        if tied
+        else (
+            first.model_copy(update={"selection_rank": 2}),
+            second.model_copy(update={"selection_rank": 1}),
+            dense,
+        )
+    )
+    with pytest.raises(SearchRelationshipError, match="score order and original RRF ties"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, candidates)
+    session.add.assert_not_called()
+
+
+def test_repository_accepts_equal_scores_in_original_fusion_order() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION}
+    )
+    candidates = tuple(
+        item.model_copy(update={"reranker_score": -0.25}) for item in make_rrf_candidates()
+    )
+    SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, candidates)
+    session.add.assert_called_once()
+
+
+def test_repository_accepts_empty_and_budget_filtered_reranking_results() -> None:
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION}
+    )
+    first, second, dense = make_reranked_candidates()
+    for candidates in (
+        (),
+        (
+            first.model_copy(update={"selection_rank": None}),
+            second.model_copy(update={"selection_rank": 1}),
+            dense,
+        ),
+    ):
+        session = create_autospec(Session, instance=True)
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, candidates)
+        session.add.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"lexical_candidate_limit": 21}, {"dense_candidate_limit": 21}],
+)
+def test_repository_rejects_unbounded_reranking_runs(changes: dict[str, object]) -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION, **changes}
+    )
+    with pytest.raises(SearchRelationshipError, match="bounded dual-lane"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, ())
+    session.add.assert_not_called()
+
+
+def test_repository_rejects_reranking_on_a_lexical_only_run() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_run().model_copy(update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION})
+    with pytest.raises(SearchRelationshipError, match="bounded dual-lane"):
+        SqlAlchemyRetrievalRepository(session).add_result(make_context(), run, ())
+    session.add.assert_not_called()
+
+
+def test_repository_rejects_invented_fusion_rank_even_with_valid_reranking_scores() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_dual_lane_run().model_copy(
+        update={"selector_config_version": RRF_RERANK_SELECTOR_VERSION}
+    )
+    first, second, dense = make_reranked_candidates()
+    with pytest.raises(SearchRelationshipError, match="fusion ranks do not match"):
+        SqlAlchemyRetrievalRepository(session).add_result(
+            make_context(), run, (first.model_copy(update={"fused_rank": 1}), second, dense)
+        )
+    session.add.assert_not_called()
 
 
 def test_repository_accepts_reconstructable_rrf_ranks_and_round_trips_fields() -> None:
