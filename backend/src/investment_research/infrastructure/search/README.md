@@ -12,6 +12,7 @@ query must read physical data owned by several business modules.
 | `deterministic_index.py` | Shares a content-free SQLite vector index across isolated acceptance-test processes.     |
 | `openai.py`              | Creates bounded, correlated embeddings through one retry-free OpenAI SDK call.          |
 | `pinecone.py`            | Writes, verifies, and queries bounded vectors through retry-free Pinecone gRPC clients. |
+| `pinecone_reranking.py`  | Implements the opt-in M1.5 inference boundary; runtime wiring and adoption remain pending. |
 | `postgresql.py`          | Implements `LexicalSearch` as one bounded, eligibility-first PostgreSQL query.          |
 | `unavailable.py`         | Rejects embedding, dense-retrieval, and reranking calls before their assigned steps.    |
 
@@ -26,7 +27,9 @@ flowchart LR
     PG --> DB[(PostgreSQL)]
 
     M1[M1 indexing and retrieval paths] --> PROVIDER_PORTS[Embedding and dense ports]
-    FUTURE[Later M4 path] --> RERANK[Reranking port]
+    EXPERIMENT[M1.5 experiment<br/>runtime wiring pending] -.-> RERANK[Reranking port]
+    BGE[PineconeReranker] -. implements .-> RERANK
+    BGE --> INFERENCE[Pinecone standalone inference]
     DETERMINISTIC[DeterministicEmbeddingProvider] -. implements .-> PROVIDER_PORTS
     TESTINDEX[DeterministicSqliteDenseIndex] -. implements .-> PROVIDER_PORTS
     OPENAI[OpenAIEmbeddingProvider] -. implements .-> PROVIDER_PORTS
@@ -121,6 +124,45 @@ current PostgreSQL state before a candidate can enter context.
 
 The reader uses the same TLS, 20-second timeout, zero-SDK-retry, and safe error-classification policy
 as the writer, but receives a separate query-role credential at process composition time.
+
+## Pinecone reranking experiment
+
+`PineconeReranker` implements the application-owned `Reranker` port for the approved
+[ADR-0018](../../../../../docs/adr/0018-pinecone-reranking-experiment.md) experiment. It is not
+wired into normal API composition or the evaluator yet. Canonical eligibility, deduplication,
+public/synthetic-data approval, and pre-call budget reservation remain caller responsibilities;
+this adapter cannot authorize evidence or infer whether arbitrary text is public.
+
+The version `m1-5-pinecone-bge-none-v1` permits at most 40 candidates, 1,000 query code points,
+8,000 code points per passage, and 80,000 total query-plus-passage code points. These are local
+payload bounds, not token estimates. The owner-provided Pinecone model descriptor on 2026-10-08
+reports `max_sequence_length=1024`, `max_batch_size=100`, and `truncate` values `END` and `NONE`,
+with `NONE` as default. The adapter explicitly sends `NONE`; it never shortens a passage, splits
+the batch, drops a candidate, or retries a rejected over-token input.
+
+Only the query, ordered text list, model, and fixed options go to `https://api.pinecone.io/rerank`.
+Canonical candidate IDs remain local. Document echo is disabled and `top_n` equals the input
+count. Every returned input position must occur exactly once; unexpected models, echoed text,
+non-finite scores, and malformed usage fail closed. Sorting uses descending scores and original
+input order for ties. Callers must supply RRF order for that tie-breaker to preserve it.
+
+The synchronous port runs the existing SDK's async inference client inside a per-call event loop.
+It must be invoked from synchronous application execution, not an active event loop. The fixed TLS
+factory disables SDK retries, uses a one-connection pool, and closes each client after the call.
+An `asyncio.timeout` bounds the operation at 20 seconds or less; a final deadline check rejects
+late decoding success. Overlapping calls on the same adapter fail immediately. Unsafe SDK
+debug-cURL and additional-header environment overrides are rejected rather than logging source
+text or accepting injected headers. Exceptions expose fixed categories, not raw provider bodies.
+
+`RerankResponse` contains the complete ranking, returned model, configuration version, and
+`ProviderUsage(input_units=rerank_units, output_units=0)`. These units are Pinecone reranking units,
+not OpenAI tokens or a dollar charge. Canonical accounting, quota/spend policy, runtime wiring,
+and live quality/latency comparison belong to the subsequent work blocks. No dependency was added.
+
+`tests/unit/test_pinecone_reranking.py` replaces only HTTP I/O with offline responses while retaining
+the locked SDK's serialization, parsing, and retry transport. It exercises request privacy, result
+mapping, ties, usage, malformed responses, input bounds, safe failures, cancellation, client
+closure, and zero retries. No credentials or paid provider are needed.
 
 ## Deterministic embedding behavior
 
