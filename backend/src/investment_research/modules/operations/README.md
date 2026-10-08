@@ -1,7 +1,7 @@
 # Operations
 
 This module owns the provider-neutral boundaries for canonical provider-operation accounting and
-optional operational tracing. PostgreSQL records each paid provider operation and its bounded
+optional operational tracing. PostgreSQL records each accounted provider operation and its bounded
 usage; traces add diagnostic context but never replace that canonical record.
 
 ## Contents
@@ -62,3 +62,16 @@ reserve-call-finalize path. The operations service derives each approved provide
 the typed operation kind, so callers cannot introduce arbitrary or misspelled names. Every
 application-owned retry creates a separate canonical operation. Unknown failure usage
 conservatively consumes the full reservation.
+
+M1.5 additionally prepares research-owned `RERANKING` records and the `search.rerank` span.
+For this operation, input units are provider-reported reranking units, not OpenAI tokens; output
+units are zero. Zero-priced operations still retain their usage in the canonical ledger.
+Every result must stay within both declared input/output-unit ceilings and its cost reservation.
+Unit ceilings are enforced independently of price, including zero rates and rounded costs.
+Exceeding either ceiling is a non-retriable contract failure and conservatively consumes the
+reservation without recording untrustworthy usage.
+
+Migration `0009_m1_5_reranking_operations` extends the named operation and ownership checks.
+It preserves historical accounting records; downgrade refuses to remove the operation kind while
+reranking records exist. Runtime reranking wiring, a live pricing policy, and quota enforcement
+remain separate implementation work. The existing monthly workspace budget is unchanged.

@@ -426,6 +426,11 @@ ProviderOperation
 Exactly one of `research_request_id` or `processing_run_id` is required. `operation` is one of
 `DOCUMENT_EMBEDDING`, `QUERY_EMBEDDING`, `ANSWER_GENERATION`, or `STATEMENT_SUPPORT`.
 
+The additive M1.5 accounting extension introduces research-owned `RERANKING` through migration
+`0009_m1_5_reranking_operations`. Its input units are provider-reported reranking units and its
+output units are zero. These units are not interchangeable with embedding or generation tokens.
+This ledger extension does not activate runtime reranking or define its live pricing/quota policy.
+
 Before a paid call, the application commits `STARTED` with the maximum reserved cost allowed by the
 bounded request. Budget checks include completed actual cost plus active reservations. After the
 call it records provider-reported units where available, application-estimated cost, duration, and
@@ -435,6 +440,11 @@ The local M1 runtime hard-caps all paid provider operations together at `5,000,0
 workspace and UTC month. A deployment may configure a smaller value but not a larger one. If a
 failed attempt reports no trustworthy usage, its full reservation becomes actual cost so timeouts
 or malformed responses cannot silently release potentially spent budget.
+
+Provider-reported input and output units must each remain within the attempt's declared maximum,
+independently of the calculated cost. Zero pricing and integer cost rounding cannot bypass these
+ceilings. Excess units or cost cause a non-retriable contract failure; untrustworthy usage is not
+persisted, and the full reserved cost is retained conservatively.
 
 Costs are integer micro-US dollars, never binary floating point. Pricing inputs are versioned and
 time-stamped. Provider usage records contain no request body, response body, prompt, question,
@@ -465,6 +475,9 @@ research.generate
 evidence.evaluate_support
 evidence.validate
 ```
+
+The additive M1.5 accounting extension also approves `search.rerank` for `RERANKING` operations.
+It follows the same content-free attribute and failure rules; runtime wiring remains pending.
 
 Approved attributes are safe identifiers, configuration versions, provider/model names, operation
 kind, lifecycle state, bounded counts, duration, outcome, and safe error category. Questions,

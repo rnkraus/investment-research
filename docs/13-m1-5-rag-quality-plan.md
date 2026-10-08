@@ -1035,9 +1035,37 @@ OpenAI tokens and price estimates. The offline SDK-transport tests require no li
 Block 2 local gate: backend format/lint and strict Mypy passed; all 1,729 unit tests passed.
 This checks the adapter boundary, not live model compatibility, quality, or the full Step 3 gate.
 
-Blocks 3–5 remain open: no API/evaluator wiring, quota or canonical accounting integration,
-default change, hosted CI confirmation, live reranking result, or quality/latency improvement is
-claimed here. The earlier source-opening/default-adoption gates remain open as well.
+#### Accounting foundation — Block 3A (2026-10-08)
+
+Block 3 is split into reviewable sub-blocks. Block 3A prepares research-owned `RERANKING`
+operations, canonical persistence, and the approved `search.rerank` trace name. Provider-reported
+reranking units occupy `input_units`; `output_units` is zero. Input/output-unit ceilings are now
+checked independently of price, including zero rates and integer cost rounding. The existing
+cost-overrun exception remains compatible; research callers safely handle either ceiling breach
+without retrying or continuing to the next provider. Unknown failure usage retains the full cost
+reservation. The USD 5 monthly workspace budget and evaluator spend ceiling are unchanged.
+
+Revision `0009_m1_5_reranking_operations` explicitly updates the two existing CHECK expressions
+without changing historical records. Its PostgreSQL regression covers historical-row preservation,
+research ownership, workspace isolation, and zero-priced usage. Empty/new-kind-free databases can
+downgrade; databases with reranking records reject downgrade atomically rather than deleting or
+relabeling accounting history. Synthetic zero-rate tests do not freeze a live pricing policy.
+
+The readiness probe now requires revision `0009_m1_5_reranking_operations`. The existing live
+evaluation explicitly retains only its four approved M1 operation kinds; it rejects reranking
+before reservation rather than accidentally applying statement-support token pricing.
+
+Block 3A local gate passed: backend format/lint, strict Mypy across 285 source files, all 1,742
+unit tests, and the isolated PostgreSQL migration/seed/drift cycle with 158 integration tests.
+Seven SeaweedFS tests were correctly skipped because their separate verification stack was not
+active. The dedicated migration regression passed, and only disposable PostgreSQL resources were
+removed. No frontend/build, complete runtime, hosted-CI, or paid-provider verification was run.
+
+Block 3B remains open: live price/quota policy, opt-in API/evaluator configuration, RRF-plus-rerank
+selection, canonical ranking persistence, and actual reserve-call-finalize wiring. Blocks 4–5 and
+the complete Step 3 gate remain open. No default change, hosted CI confirmation, live reranking
+result, or quality/latency improvement is claimed. Earlier source-opening/default-adoption gates
+remain open as well.
 
 ### Step 4 — Quality hardening and portfolio evidence
 
