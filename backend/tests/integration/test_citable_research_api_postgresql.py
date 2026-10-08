@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -67,11 +67,13 @@ class SelectingGenerator:
         self.requests.append(request)
         matches = [unit for unit in request.catalog.units if unit.text == QUOTE]
         assert len(matches) == 2
-        selected_id = uuid4() if self.unknown_id else matches[-1].source_unit_id
+        selected_id = (
+            "u999" if self.unknown_id else f"u{request.catalog.units.index(matches[-1]) + 1}"
+        )
         payload: dict[str, object] = {
             "coverage_status": "COMPLETE",
             "rendered_text": QUOTE,
-            "statements": [{"text": QUOTE, "source_unit_ids": [str(selected_id)]}],
+            "statements": [{"text": QUOTE, "source_unit_ids": [selected_id]}],
             "missing_information": None,
         }
         client = RecordingClient(RecordingResponses(payload=payload))

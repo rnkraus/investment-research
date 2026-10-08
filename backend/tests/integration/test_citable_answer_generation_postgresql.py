@@ -156,7 +156,12 @@ def make_service(
             "coverage_status": "COMPLETE",
             "rendered_text": statement,
             "statements": [
-                {"text": statement, "source_unit_ids": [str(unit.source_unit_id) for unit in units]}
+                {
+                    "text": statement,
+                    "source_unit_ids": [
+                        f"u{request.catalog.units.index(unit) + 1}" for unit in units
+                    ],
+                }
             ],
             "missing_information": None,
         },

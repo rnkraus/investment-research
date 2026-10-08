@@ -19,6 +19,7 @@ import investment_research.infrastructure.generation.openai_citable_units as ada
 from investment_research.infrastructure.generation.openai import (
     M1_ANSWER_GENERATOR_VERSION,
     M1_ANSWER_PROMPT_VERSION,
+    OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     OPENAI_ANSWER_MODEL,
     OpenAIAnswerProviderConfigurationError,
     OpenAIAnswerProviderContractError,
@@ -94,19 +95,19 @@ def make_input(
 def make_payload(
     generation_input: CitableAnswerGenerationInput,
     *,
-    ids: tuple[UUID, ...] | None = None,
+    ids: tuple[str, ...] | None = None,
     coverage: CoverageStatus = CoverageStatus.COMPLETE,
     missing: str | None = None,
 ) -> dict[str, object]:
     """Return only the new provider fields, not quotes or character positions."""
 
-    selected = ids if ids is not None else (generation_input.catalog.units[-1].source_unit_id,)
+    selected = ids if ids is not None else (f"u{len(generation_input.catalog.units)}",)
     return {
         "coverage_status": coverage.value,
         "rendered_text": STATEMENT,
         "statements": []
         if coverage is CoverageStatus.INSUFFICIENT
-        else [{"text": STATEMENT, "source_unit_ids": [str(identifier) for identifier in selected]}],
+        else [{"text": STATEMENT, "source_unit_ids": list(selected)}],
         "missing_information": missing,
     }
 
@@ -212,7 +213,7 @@ def test_repeated_wording_resolves_the_selected_occurrence_and_usage() -> None:
 
 def test_two_adjacent_units_remain_separate_exact_unicode_ranges() -> None:
     generation_input = make_input(text="Café 😀 is ready. Next archi-\ntecture stays unchanged.")
-    ids = tuple(unit.source_unit_id for unit in generation_input.catalog.units)
+    ids = tuple(f"u{ordinal}" for ordinal, _ in enumerate(generation_input.catalog.units, 1))
     generator, _ = make_generator(generation_input, payload=make_payload(generation_input, ids=ids))
     references = generator.generate(generation_input).answer.statements[0].evidence
     assert len(references) == 2
@@ -248,7 +249,7 @@ def test_payload_preserves_context_once_and_omits_canonical_identifiers() -> Non
         set(unit) == {"source_unit_id", "text", "separator_before"} for unit in source["units"]
     )
     assert [unit["source_unit_id"] for unit in source["units"]] == [
-        str(unit.source_unit_id) for unit in generation_input.catalog.units
+        f"u{ordinal}" for ordinal, _ in enumerate(generation_input.catalog.units, 1)
     ]
     assert [unit["text"] for unit in source["units"]] == [
         unit.text for unit in generation_input.catalog.units
@@ -262,6 +263,9 @@ def test_payload_preserves_context_once_and_omits_canonical_identifiers() -> Non
         "end_character",
     ):
         assert forbidden not in serialized
+    assert all(
+        str(unit.source_unit_id) not in serialized for unit in generation_input.catalog.units
+    )
 
 
 @pytest.mark.parametrize(
@@ -281,8 +285,10 @@ def test_direct_unit_text_retains_every_original_character_without_duplication(t
     source = json.loads(cast(str, client.responses.calls[0]["input"]))["sources"][0]
     offered = source["units"]
     assert len(offered) == len(generation_input.catalog.units)
-    for entry, unit in zip(offered, generation_input.catalog.units, strict=True):
-        assert entry["source_unit_id"] == str(unit.source_unit_id)
+    for ordinal, (entry, unit) in enumerate(
+        zip(offered, generation_input.catalog.units, strict=True), 1
+    ):
+        assert entry["source_unit_id"] == f"u{ordinal}"
         assert entry["text"] == text[unit.key.start_character : unit.key.end_character]
         assert not entry["separator_before"].strip()
     assert not source["trailing_separator"].strip()
@@ -313,6 +319,61 @@ def test_json_escaping_overflow_fails_before_provider_call() -> None:
     assert details.kind == "input_metadata"
     assert details.observed > details.limit
     assert not client.responses.calls
+
+
+def test_short_handles_fit_a_catalog_whose_uuid_transport_exceeds_the_reservation() -> None:
+    generation_input = make_input(text=" ".join(f"Sentence {index:03}." for index in range(120)))
+    generator, client = make_generator(generation_input)
+    serialized = generator._serialize_input(generation_input)
+    schema = adapter.citable_answer_schema(generation_input.catalog).model_json_schema()
+    uuid_data = json.loads(serialized)
+    for entry, unit in zip(
+        uuid_data["sources"][0]["units"], generation_input.catalog.units, strict=True
+    ):
+        entry["source_unit_id"] = str(unit.source_unit_id)
+    uuid_schema = json.loads(json.dumps(schema))
+    uuid_schema["$defs"]["SourceUnitId"]["enum"] = [
+        str(unit.source_unit_id) for unit in generation_input.catalog.units
+    ]
+    uuid_serialized = json.dumps(
+        uuid_data, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )
+    fixed_overhead = (
+        len(generator.instructions.encode("utf-8"))
+        + 1024
+        - len(generation_input.question.encode("utf-8"))
+        - sum(len(source.text.encode("utf-8")) for source in generation_input.sources)
+    )
+    short_overhead = (
+        fixed_overhead + len(serialized.encode("utf-8")) + len(json.dumps(schema).encode("utf-8"))
+    )
+    uuid_overhead = (
+        fixed_overhead
+        + len(uuid_serialized.encode("utf-8"))
+        + len(json.dumps(uuid_schema).encode("utf-8"))
+    )
+    assert short_overhead <= OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS < uuid_overhead
+    assert uuid_overhead - short_overhead > 7_000
+    generator.generate(generation_input)
+    assert len(client.responses.calls) == 1
+    assert (
+        generator.generate(generation_input).answer.statements[0].evidence[0].exact_text
+        == "Sentence 119."
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid", ["u0", "u01", "U1", " u1", "u1 ", "u1000", str(UUID(int=99)), 1]
+)
+def test_malformed_or_legacy_uuid_handles_are_not_accepted(invalid: object) -> None:
+    generation_input = make_input()
+    payload = make_payload(generation_input)
+    statement = cast(list[dict[str, object]], payload["statements"])[0]
+    statement["source_unit_ids"] = [invalid]
+    generator, _ = make_generator(generation_input, payload=payload)
+    with pytest.raises(OpenAIAnswerProviderContractError) as failure:
+        generator.generate(generation_input)
+    assert failure.value.detail == "provider_schema_validation"
 
 
 def test_request_instructions_cover_independent_claims_and_evidence_gaps() -> None:
@@ -358,7 +419,7 @@ def test_strict_sdk_schema_has_one_shared_catalog_enum_and_required_fields() -> 
     generation_input = make_input(text="A. " * 256)
     schema = to_strict_json_schema(adapter.citable_answer_schema(generation_input.catalog))
     definitions = schema["$defs"]
-    ids = [str(unit.source_unit_id) for unit in generation_input.catalog.units]
+    ids = [f"u{ordinal}" for ordinal, _ in enumerate(generation_input.catalog.units, 1)]
     assert definitions["SourceUnitId"] == {"type": "string", "enum": ids}
     assert len(ids) == 256
     assert sum(map(len, ids)) < 15_000
@@ -369,23 +430,24 @@ def test_strict_sdk_schema_has_one_shared_catalog_enum_and_required_fields() -> 
     assert set(schema["required"]) == set(schema["properties"])
     for value in (schema, definitions["_CitableStatement"]):
         assert value["additionalProperties"] is False
-    assert json.dumps(schema).count(ids[0]) == 1
+    assert json.dumps(schema).count(f'"{ids[0]}"') == 1
+    assert all(
+        str(unit.source_unit_id) not in json.dumps(schema)
+        for unit in generation_input.catalog.units
+    )
     raw_schema = adapter.citable_answer_schema(generation_input.catalog).model_json_schema()
     assert (
         len(json.dumps(schema).encode("utf-8")) <= len(json.dumps(raw_schema).encode("utf-8")) + 512
     )
 
 
-@pytest.mark.parametrize("bad_ids", ["unknown", "cross_request", "duplicate", "mixed"])
+@pytest.mark.parametrize("bad_ids", ["unknown", "duplicate", "mixed"])
 def test_invalid_selected_handles_fail_independently_of_provider_enum(bad_ids: str) -> None:
     generation_input = make_input()
-    valid = generation_input.catalog.units[0].source_unit_id
-    foreign = make_input(request_id=UUID(int=99)).catalog.units[0].source_unit_id
     choices = {
-        "unknown": (UUID(int=100),),
-        "cross_request": (foreign,),
-        "duplicate": (valid, valid),
-        "mixed": (valid, foreign),
+        "unknown": ("u999",),
+        "duplicate": ("u1", "u1"),
+        "mixed": ("u1", "u999"),
     }
     generator, client = make_generator(
         generation_input, payload=make_payload(generation_input, ids=choices[bad_ids])
@@ -418,7 +480,9 @@ def test_model_cannot_return_quote_offsets_or_candidate_ids(field_name: str, val
 @pytest.mark.parametrize("count", [0, 3])
 def test_model_must_select_one_or_two_units(count: int) -> None:
     generation_input = make_input(text="A. B. C.")
-    ids = tuple(unit.source_unit_id for unit in generation_input.catalog.units)[:count]
+    ids = tuple(f"u{ordinal}" for ordinal, _ in enumerate(generation_input.catalog.units, 1))[
+        :count
+    ]
     generator, _ = make_generator(generation_input, payload=make_payload(generation_input, ids=ids))
     with pytest.raises(OpenAIAnswerProviderContractError):
         generator.generate(generation_input)
@@ -565,7 +629,7 @@ def test_local_failure_output_requires_explicit_callback(
 ) -> None:
     generation_input = make_input()
     outputs: list[str] = []
-    payload = make_payload(generation_input, ids=(UUID(int=99),))
+    payload = make_payload(generation_input, ids=("u999",))
     if invalid_schema:
         payload["unexpected"] = "UNVALIDATED_CONTENT"
     generator, client = make_generator(
@@ -605,9 +669,9 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.generator_version != M1_ANSWER_GENERATOR_VERSION
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
-    assert profile.generator_version == "openai-responses-citable-units-v2"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v3"
-    assert "citable-units-en-v3" in profile.generation_config_version
+    assert profile.generator_version == "openai-responses-citable-units-v3"
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v4"
+    assert "citable-units-en-v4" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v1"
 
 
@@ -714,22 +778,23 @@ def test_tampered_catalog_is_revalidated_before_calling_provider() -> None:
     assert not client.responses.calls
 
 
-def test_each_request_gets_a_fresh_schema_without_shared_catalog_state() -> None:
+def test_reused_aliases_resolve_only_against_each_current_request_catalog() -> None:
     first = make_input()
-    second = make_input(request_id=UUID(int=500))
+    second = make_input(request_id=UUID(int=500), text="Different text. A new source.")
     generator, client = make_generator(first)
-    generator.generate(first)
+    first_result = generator.generate(first)
     client.responses.payload = make_payload(second)
-    generator.generate(second)
+    second_result = generator.generate(second)
     schemas = [
         cast(type[BaseModel], call["text_format"]).model_json_schema()
         for call in client.responses.calls
     ]
     first_ids = schemas[0]["$defs"]["SourceUnitId"]["enum"]
     second_ids = schemas[1]["$defs"]["SourceUnitId"]["enum"]
-    assert first_ids == [str(unit.source_unit_id) for unit in first.catalog.units]
-    assert second_ids == [str(unit.source_unit_id) for unit in second.catalog.units]
-    assert set(first_ids).isdisjoint(second_ids)
+    assert first_ids == second_ids == ["u1", "u2"]
+    assert first_result.answer.statements[0].evidence[0].exact_text == STATEMENT
+    assert second_result.answer.statements[0].evidence[0].exact_text == "A new source."
+    assert first.catalog.units[-1].source_unit_id != second.catalog.units[-1].source_unit_id
 
 
 def test_two_different_source_units_keep_their_own_provenance_and_context() -> None:
@@ -767,7 +832,7 @@ def test_two_different_source_units_keep_their_own_provenance_and_context() -> N
     generation_input = CitableAnswerGenerationInput.from_catalog(
         context=CONTEXT, question="What does each source say?", catalog=catalog
     )
-    ids = (catalog.units[0].source_unit_id, catalog.units[-1].source_unit_id)
+    ids = ("u1", f"u{len(catalog.units)}")
     generator, client = make_generator(
         generation_input, payload=make_payload(generation_input, ids=ids)
     )
@@ -785,5 +850,5 @@ def test_two_different_source_units_keep_their_own_provenance_and_context() -> N
     ] == [SOURCE_TEXT, text]
     assert [len(source["units"]) for source in data["sources"]] == [2, 1]
     assert [unit["source_unit_id"] for source in data["sources"] for unit in source["units"]] == [
-        str(unit.source_unit_id) for unit in catalog.units
+        f"u{ordinal}" for ordinal, _ in enumerate(catalog.units, 1)
     ]

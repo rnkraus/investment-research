@@ -161,7 +161,9 @@ class ScriptedCitableGenerator(ScriptedGenerator):
             statements.append(
                 {
                     "text": statement.text,
-                    "source_unit_ids": [str(unit.source_unit_id) for unit in selected],
+                    "source_unit_ids": [
+                        f"u{request.catalog.units.index(unit) + 1}" for unit in selected
+                    ],
                 }
             )
         generator, _ = make_generator(
@@ -263,7 +265,7 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     assert report.summary.exact_citation_valid_count == 5
     assert (
         report.admission_plan.configuration.answer_prompt_version
-        == "m1-5-citable-units-en-answer-prompt-v3"
+        == "m1-5-citable-units-en-answer-prompt-v4"
     )
     assert report.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
     assert all(record.usage_state == "REPORTED" for record in report.provider_calls)
