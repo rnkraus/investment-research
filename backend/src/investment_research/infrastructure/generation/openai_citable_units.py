@@ -37,7 +37,7 @@ from investment_research.modules.research.contracts import (
 from investment_research.modules.research.domain import CoverageStatus, StatementText
 
 M1_5_CITABLE_ANSWER_GENERATOR_VERSION = "openai-responses-citable-units-v3"
-M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v4"
+M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v5"
 # Leave room inside the existing reservation for request framing, without raising its ceiling.
 _REQUEST_FRAMING_OVERHEAD_UNITS = 512
 _STRICT_SCHEMA_OVERHEAD_UNITS = 512
@@ -191,11 +191,11 @@ def citable_answer_schema(catalog: CitableUnitCatalog) -> type[_CitableAnswer]:
 
 
 def citable_answer_profile(model: ResearchModel) -> AnswerGenerationProfile:
-    """Version short transport handles separately from unchanged v1 source-unit identities."""
+    """Identify the unchanged v3 transport and prompt wording with the v2 unit boundaries."""
 
     return AnswerGenerationProfile(
         generator_version=M1_5_CITABLE_ANSWER_GENERATOR_VERSION,
-        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v4",
+        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v5",
         prompt_version=M1_5_CITABLE_ANSWER_PROMPT_VERSION,
     )
 

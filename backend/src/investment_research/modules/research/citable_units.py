@@ -2,8 +2,10 @@
 
 import re
 from collections.abc import Iterator
+from itertools import chain
 from uuid import UUID
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.research.citable_unit_contracts import (
     M1_5_CITABLE_UNIT_CHARACTER_LIMIT,
@@ -27,6 +29,8 @@ from investment_research.modules.search.contracts import (
 
 # This versioned heuristic preserves PDF wrapping; it is not a linguistic sentence parser.
 _UNIT_BOUNDARY = re.compile(r"[.?!]+[\"'\u201d\u2019)\]}]*(?=\s|$)|\n[ \t]*\n")
+_PDF_HEADING_CHARACTER_LIMIT = 80
+_PDF_HEADING_WORD_LIMIT = 8
 
 
 def _bounded_visible_ranges(text: str, start: int, end: int) -> Iterator[tuple[int, int]]:
@@ -52,15 +56,40 @@ def _bounded_visible_ranges(text: str, start: int, end: int) -> Iterator[tuple[i
         start = split
 
 
-def _source_ranges(text: str) -> Iterator[tuple[int, int]]:
+def _pdf_heading_end(text: str, start: int, end: int) -> int | None:
+    """Recognize only a short uppercase first line followed by capitalized mixed-case prose."""
+
+    while start < end and text[start].isspace():
+        start += 1
+    line_end = text.find("\n", start, end)
+    if line_end == -1:
+        return None
+    heading = text[start:line_end].strip()
+    following = text[line_end + 1 : end].lstrip()
+    if (
+        not heading.isupper()
+        or len(heading) > _PDF_HEADING_CHARACTER_LIMIT
+        or len(heading.split()) > _PDF_HEADING_WORD_LIMIT
+        or heading.endswith(("-", "\u2013", "\u2014", ",", ";"))
+        or not following
+        or not following[0].isupper()
+        or not any(character.islower() for character in following)
+    ):
+        return None
+    return line_end
+
+
+def _source_ranges(text: str, *, pdf: bool) -> Iterator[tuple[int, int]]:
     """Keep punctuation/closing characters and trim separators by moving offsets only."""
 
     start = 0
-    for boundary in _UNIT_BOUNDARY.finditer(text):
-        end = boundary.end()
+    for end in chain((boundary.end() for boundary in _UNIT_BOUNDARY.finditer(text)), (len(text),)):
+        heading_end = _pdf_heading_end(text, start, end) if pdf else None
+        if heading_end is not None:
+            yield from _bounded_visible_ranges(text, start, heading_end)
+            start = heading_end + 1
         yield from _bounded_visible_ranges(text, start, end)
         start = end
-    yield from _bounded_visible_ranges(text, start, len(text))
 
 
 def build_citable_unit_catalog(
@@ -110,7 +139,9 @@ def build_citable_unit_catalog(
             continue
         by_block[item.block.id] = item
         retained.append(item)
-        for start, end in _source_ranges(item.block.text):
+        for start, end in _source_ranges(
+            item.block.text, pdf=item.block.source_locator_kind is SourceLocatorKind.PDF_PAGE
+        ):
             if len(units) == M1_5_CITABLE_UNIT_LIMIT:
                 raise CitableUnitLimitError(
                     "source-unit preparation exceeds the unit limit",
