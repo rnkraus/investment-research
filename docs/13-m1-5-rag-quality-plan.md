@@ -1530,6 +1530,48 @@ credential-free closeout RRF/source-unit/document-attribution preflight passed. 
 frontend build, complete M0/M1 runtime, hosted CI, or live-provider quality check was executed
 in this block. These results prove deterministic wiring, not measured model quality.
 
+#### Budget-question correction — Block 5 (2026-10-09)
+
+Owner-supplied local output from the twelve-case RRF/source-unit/document-attribution Luna/Luna
+run identified three distinct issues, not three fabricated answers. The main rollout-constraint
+statement passed support evaluation, but an additional statement assigned the general supplier
+lead-time expectation specifically to high-voltage transformers without selecting sufficient
+evidence for that relationship; the application rejected the proposal. The conflicting-report
+answer correctly used CONFLICTING and passed both support decisions, but genuine title/date
+citations outside the frozen factual targets failed the strict citation metric. The combined
+revenue/budget answer used PARTIAL because the operations note does not state that its budget
+applies to FY2026. Version 1 expected COMPLETE despite that unsupported fiscal-period premise.
+Publication time, fixture naming, and fiscal applicability must not be conflated.
+
+**Bounded correction:** prepare
+[`evaluation-closeout-v2.json`](../fixtures/m1_5/evaluation-closeout-v2.json) as a separate
+pending-owner-review catalog. Remove only the FY2026 qualification from the combined budget
+question and give that changed question a new ID, preserving its COMPLETE reference, both
+required evidence groups, and every other case, target, scope, and original. The
+[review guide](../fixtures/m1_5/closeout-review.md) records exact wording and the source-based
+reason. This repairs the evaluation premise, not the model response. It does not establish a
+retrieval or model-quality gain and is not a held-out question.
+
+The six-case baseline, approved closeout v1, admission digest, old reports, and recorded scores
+remain unchanged. `--corpus closeout` still selects v1. Do not activate v2 or claim owner approval
+before explicit semantic review. Runtime validation, citation scoring, answer/support prompts,
+provider budgets, defaults, frontend, and CI workflows are unchanged. Separate follow-up blocks
+may address answer focus and distinguish factual-target precision from genuine attribution
+citations; do not silently relax exact canonical or statement-support checks to obtain a pass.
+
+**Block gate:** validate all v2 originals and source ranges offline; test byte-level preservation
+of v1, exact preservation of all unchanged v2 fields, and rejection of reviewed-mode use for the
+pending draft. Then pause for owner review before admission or any paid run. Structural tests
+cannot prove semantic expectations, independent support quality, or M1.5 acceptance.
+
+**Executed verification:** targeted Ruff format and lint checks passed; Mypy passed across
+`src`, `scripts`, and the modified test file (148 source files). All 17 corpus unit tests passed,
+including pending-v2 review rejection and frozen-v1 digest preservation. The standalone v2
+structure check passed with three documents, seven passages, twelve cases, and
+`pending_owner_review`. Initial sandbox attempts could not access the uv cache; the checks then
+ran with explicit approval. No full backend suite, PostgreSQL, frontend/build, browser, hosted CI,
+or paid-provider verification was executed for this catalog-only block.
+
 ## 4. Handoff and stop rule
 
 Stop M1.5 when its reviewed correctness gates pass and the chosen retrieval/citation approach has

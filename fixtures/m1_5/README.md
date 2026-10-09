@@ -16,7 +16,7 @@ scope, and evidence references. It does **not** run retrieval, call a model, cal
 scores, or decide whether the expected answer is factually appropriate. The optional
 `--require-reviewed` flag enforces the owner's review decision recorded in the catalog.
 
-## Reviewed final closeout catalog
+## Reviewed version-1 closeout catalog
 
 [`evaluation-closeout-v1.json`](./evaluation-closeout-v1.json) is a separate reviewed twelve-case catalog,
 not a replacement for the reviewed six-case baseline. It preserves the original six cases and
@@ -46,6 +46,27 @@ support limits are 96, and an explicitly selected reranking run requires confirm
 for up to twelve BGE requests. Inputs and per-call bounds remain unchanged. Historical six-case
 scores must not be rewritten or compared as twelve-case measurements; compare policies on the same
 catalog ID/digest. The existing scorer accepts this catalog through its `--manifest` option.
+
+### Pending version-2 correction
+
+[`evaluation-closeout-v2.json`](./evaluation-closeout-v2.json) is a separate pending-owner-review
+draft, not the live `closeout` profile. It removes the unsupported FY2026 budget period from the
+combined revenue/budget question and assigns that changed question a new ID. Originals, source
+targets, expected facts, and all other cases remain unchanged. The
+[review guide](./closeout-review.md#version-2-budget-question-correction--pending-review) records
+the exact before/after wording and approval boundary. A July 2026 publication date alone does not
+establish a budget's fiscal period.
+
+Check the draft offline from `backend/`:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_corpus \
+  --manifest ../fixtures/m1_5/evaluation-closeout-v2.json
+```
+
+`--require-reviewed` must fail until the owner accepts version 2. Historical version-1 files and
+scores remain unchanged; do not use the new wording to relabel earlier responses. Citation scoring
+and runtime evidence validation are unchanged in this correction.
 
 ## Opt-in support attribution experiment
 
