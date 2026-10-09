@@ -254,7 +254,7 @@ class ReviewedContextualSupportEvaluator(ReviewedUnitSupportEvaluator):
 
 @pytest.mark.parametrize("retrieval_policy", ["m1", "rrf", "rrf_rerank"])
 @pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
-@pytest.mark.parametrize("corpus_profile", ["baseline", "closeout"])
+@pytest.mark.parametrize("corpus_profile", ["baseline", "closeout", "closeout-v2"])
 def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     integration_database_engine: Engine,
     tmp_path: Path,

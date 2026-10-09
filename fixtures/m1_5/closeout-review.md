@@ -1,8 +1,8 @@
 # M1.5 closeout question review
 
-**Status:** Version 1 was owner reviewed and accepted on 2026-10-09. The separate version-2
-budget-question correction below awaits owner review. Neither status is live answer-quality or
-M1.5 acceptance.
+**Status:** Versions 1 and 2 were owner reviewed and accepted on 2026-10-09. The owner approved
+the version-2 budget-question correction after seeing its exact wording and unchanged COMPLETE
+expectation. Neither catalog approval is live answer-quality or M1.5 acceptance.
 
 The machine-readable source of truth is
 [`evaluation-closeout-v1.json`](./evaluation-closeout-v1.json), catalog ID
@@ -11,14 +11,14 @@ all six cases and six targets from the reviewed [`evaluation.json`](./evaluation
 One additional exact target covers the supplier lead-time expectation in the capacity update.
 The historical six-case reports and their scores remain unchanged.
 
-## Version-2 budget-question correction — pending review
+## Version-2 budget-question correction — reviewed
 
 [`evaluation-closeout-v2.json`](./evaluation-closeout-v2.json), catalog ID
 `m1.5-rag-quality-closeout-v2`, preserves all originals, seven source targets, scopes, expected
 answers, coverage labels, and the first eleven cases from version 1. Only the final question and
 its ID change, besides the catalog ID and pending review status:
 
-| Field | Frozen version 1 | Proposed version 2 |
+| Field | Frozen version 1 | Reviewed version 2 |
 | --- | --- | --- |
 | Question ID | `question:fy2025-revenue-and-fy2026-pilot-budget` | `question:fy2025-revenue-and-european-pilot-budget` |
 | Question | What were Northstar's FY2025 revenue and year-over-year growth, and what is its FY2026 European pilot budget? | What were Northstar's FY2025 revenue and year-over-year growth, and what is its European pilot budget? |
@@ -31,20 +31,22 @@ answers version 1 with PARTIAL and declines to assign that period is not necessa
 Version 2 removes the unsupported premise while retaining a fully answerable two-document probe;
 it does not retrospectively turn any version-1 PARTIAL response into a version-2 success.
 
-The owner must review this exact wording and unchanged evidence expectations before activation.
-The live runner still maps `--corpus closeout` to reviewed version 1; version 2 is not admitted
-for paid runs. Do not overwrite historical reports, recompute their recorded scores, or compare
+The owner accepted this exact wording and unchanged evidence expectations. The live runner maps
+`--corpus closeout` to reviewed version 1 and `--corpus closeout-v2` to reviewed version 2, pinned
+at SHA-256 `659b3f0704cca5465c00e547cc1a423b7bf1b05504c8e89401633ce48c15162e`.
+Paid runs still require the existing explicit execution confirmations and bounded budget.
+Do not overwrite historical reports, recompute their recorded scores, or compare
 the changed question as an unchanged paired experiment. These are developer-informed probes,
 not held-out quality evidence.
 
-Check the pending draft's schema and original-source integrity from `backend/`:
+Check the reviewed version's schema and original-source integrity from `backend/`:
 
 ```bash
 uv run --locked python -m scripts.verify_m1_5_corpus \
-  --manifest ../fixtures/m1_5/evaluation-closeout-v2.json
+  --manifest ../fixtures/m1_5/evaluation-closeout-v2.json --require-reviewed
 ```
 
-Adding `--require-reviewed` must currently fail. Counts remain twelve cases: seven COMPLETE,
+The CLI must still reject any unreviewed catalog copy. Counts remain twelve cases: seven COMPLETE,
 two PARTIAL, one CONFLICTING, and two INSUFFICIENT. Scoring, runtime validation, prompts,
 budgets, and the frozen version-1 expectations below are unchanged.
 

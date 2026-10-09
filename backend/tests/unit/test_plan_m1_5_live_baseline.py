@@ -63,17 +63,36 @@ def test_closeout_selection_pins_twelve_cases_without_raising_spend_or_input_lim
     }
 
 
+def test_corrected_closeout_pins_new_question_without_changing_other_plan_fields() -> None:
+    previous = live.build_plan(corpus_profile="closeout")
+    corrected = live.build_plan(corpus_profile="closeout-v2")
+
+    assert corrected.corpus_id == "m1.5-rag-quality-closeout-v2"
+    assert corrected.corpus_sha256 == live.APPROVED_CLOSEOUT_V2_SHA256
+    assert corrected.case_ids[:-1] == previous.case_ids[:-1]
+    assert corrected.case_ids[-1] == "question:fy2025-revenue-and-european-pilot-budget"
+    assert corrected.model_dump(
+        exclude={"corpus_profile", "corpus_id", "corpus_sha256", "case_ids"}
+    ) == previous.model_dump(exclude={"corpus_profile", "corpus_id", "corpus_sha256", "case_ids"})
+
+
+@pytest.mark.parametrize(
+    "corpus_profile,digest_name",
+    [("closeout", "APPROVED_CLOSEOUT_SHA256"), ("closeout-v2", "APPROVED_CLOSEOUT_V2_SHA256")],
+)
 def test_closeout_changed_digest_is_rejected_before_parsing(
     monkeypatch: pytest.MonkeyPatch,
+    corpus_profile: live.LiveCorpusProfile,
+    digest_name: str,
 ) -> None:
-    monkeypatch.setattr(live, "APPROVED_CLOSEOUT_SHA256", "0" * 64)
+    monkeypatch.setattr(live, digest_name, "0" * 64)
 
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("changed catalog must not be parsed")
 
     monkeypatch.setattr(live, "validate_corpus", forbidden)
     with pytest.raises(live.LiveBaselineLimitError, match="not approved"):
-        live.build_plan(corpus_profile="closeout")
+        live.build_plan(corpus_profile=corpus_profile)
 
 
 def test_unknown_corpus_cannot_select_an_arbitrary_path() -> None:
@@ -81,8 +100,11 @@ def test_unknown_corpus_cannot_select_an_arbitrary_path() -> None:
         live.build_plan(corpus_profile="../other.json")  # type: ignore[arg-type]
 
 
-def test_closeout_budget_stops_calls_without_silently_raising_the_cap() -> None:
-    budget = live.LiveBaselineBudget(live.build_plan(corpus_profile="closeout"))
+@pytest.mark.parametrize("corpus_profile", ["closeout", "closeout-v2"])
+def test_closeout_budget_stops_calls_without_silently_raising_the_cap(
+    corpus_profile: live.LiveCorpusProfile,
+) -> None:
+    budget = live.LiveBaselineBudget(live.build_plan(corpus_profile=corpus_profile))
     successful = 0
     while True:
         try:
@@ -97,7 +119,9 @@ def test_closeout_budget_stops_calls_without_silently_raising_the_cap() -> None:
     assert len(budget._reservations) == successful
 
 
-@pytest.mark.parametrize("corpus_profile,count", [("baseline", 6), ("closeout", 12)])
+@pytest.mark.parametrize(
+    "corpus_profile,count", [("baseline", 6), ("closeout", 12), ("closeout-v2", 12)]
+)
 def test_reranking_allowance_matches_the_selected_case_count(
     corpus_profile: live.LiveCorpusProfile, count: int
 ) -> None:
@@ -254,20 +278,23 @@ def test_preflight_cli_uses_no_network_or_environment_loader(
     assert "api_key" not in output
 
 
+@pytest.mark.parametrize("corpus_profile", ["closeout", "closeout-v2"])
 def test_closeout_preflight_is_credential_free(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    corpus_profile: live.LiveCorpusProfile,
 ) -> None:
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("preflight cannot access network or environment files")
 
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(dotenv, "dotenv_values", forbidden)
-    monkeypatch.setattr("sys.argv", ["plan", "--corpus", "closeout"])
+    monkeypatch.setattr("sys.argv", ["plan", "--corpus", corpus_profile])
 
     assert live.main() == 0
     output = capsys.readouterr().out
     data = json.loads(output)
-    assert data["corpus_profile"] == "closeout"
+    assert data["corpus_profile"] == corpus_profile
     assert len(data["case_ids"]) == 12
     assert "expected_answer" not in output
     assert "exact_text" not in output

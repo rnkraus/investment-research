@@ -82,7 +82,7 @@ def test_corrected_closeout_changes_only_the_unsubstantiated_budget_period() -> 
 
     assert hashlib.sha256(CLOSEOUT_MANIFEST.read_bytes()).hexdigest() == FROZEN_CLOSEOUT_V1_SHA256
     assert corrected.id == "m1.5-rag-quality-closeout-v2"
-    assert corrected.review_status == "pending_owner_review"
+    assert corrected.review_status == "reviewed"
     assert corrected.source_manifest == previous.source_manifest
     assert corrected.documents == previous.documents
     assert corrected.passages == previous.passages
@@ -97,13 +97,38 @@ def test_corrected_closeout_changes_only_the_unsubstantiated_budget_period() -> 
     assert corrected == previous.model_copy(
         update={
             "id": corrected.id,
-            "review_status": "pending_owner_review",
+            "review_status": "reviewed",
             "cases": corrected.cases,
         }
     )
 
 
 def test_corrected_closeout_cli_rejects_use_before_owner_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    unreviewed = changed_manifest(
+        tmp_path,
+        lambda data: data.update(review_status="pending_owner_review"),
+        source=CORRECTED_CLOSEOUT_MANIFEST,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_m1_5_corpus",
+            "--manifest",
+            str(unreviewed),
+            "--require-reviewed",
+        ],
+    )
+
+    assert main() == 1
+    output = capsys.readouterr()
+    assert "awaits owner review" in output.err
+    assert output.out == ""
+
+
+def test_corrected_closeout_cli_accepts_the_reviewed_catalog(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
@@ -117,10 +142,10 @@ def test_corrected_closeout_cli_rejects_use_before_owner_review(
         ],
     )
 
-    assert main() == 1
-    output = capsys.readouterr()
-    assert "awaits owner review" in output.err
-    assert output.out == ""
+    assert main() == 0
+    output = capsys.readouterr().out
+    assert "3 documents, 7 passages, 12 cases" in output
+    assert "review_status=reviewed" in output
 
 
 def test_new_lead_time_target_does_not_relabel_the_old_rollout_case() -> None:

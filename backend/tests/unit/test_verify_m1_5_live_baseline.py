@@ -106,13 +106,19 @@ def test_default_command_is_free_and_content_free(capsys: pytest.CaptureFixture[
     assert MARKER not in output
 
 
+@pytest.mark.parametrize(
+    "corpus_profile,corpus_id",
+    [("closeout", "m1.5-rag-quality-closeout-v1"), ("closeout-v2", "m1.5-rag-quality-closeout-v2")],
+)
 def test_closeout_command_selects_twelve_cases_without_runtime_access(
     capsys: pytest.CaptureFixture[str],
+    corpus_profile: LiveCorpusProfile,
+    corpus_id: str,
 ) -> None:
-    assert cli.main(["--corpus", "closeout", "--retrieval-policy", "rrf"]) == 0
+    assert cli.main(["--corpus", corpus_profile, "--retrieval-policy", "rrf"]) == 0
     plan = json.loads(capsys.readouterr().out)
-    assert plan["corpus_profile"] == "closeout"
-    assert plan["corpus_id"] == "m1.5-rag-quality-closeout-v1"
+    assert plan["corpus_profile"] == corpus_profile
+    assert plan["corpus_id"] == corpus_id
     assert len(plan["case_ids"]) == 12
     assert plan["maximum_spend_micro_usd"] == 800_000
 
@@ -161,7 +167,7 @@ def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> No
 @pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
 @pytest.mark.parametrize("show_output", [False, True])
 @pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
-@pytest.mark.parametrize("corpus_profile", ["baseline", "closeout"])
+@pytest.mark.parametrize("corpus_profile", ["baseline", "closeout", "closeout-v2"])
 def test_runner_accepts_matching_inspection_plan_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch,
     answer_policy: LiveAnswerPolicy,
@@ -206,7 +212,8 @@ def test_runner_accepts_matching_inspection_plan_before_runtime_access(
 
 
 @pytest.mark.parametrize(
-    "mismatch", ["inspection", "budget", "prompt", "vector_limit", "corpus", "case_ids"]
+    "mismatch",
+    ["inspection", "budget", "prompt", "vector_limit", "corpus", "corpus_v2", "case_ids"],
 )
 def test_runner_rejects_inconsistent_plans_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch, mismatch: str
@@ -233,8 +240,10 @@ def test_runner_rejects_inconsistent_plans_before_runtime_access(
             update={"maximum_document_vectors": plan.maximum_document_vectors + 1}
         )
         budget_plan = plan
-    elif mismatch == "corpus":
-        plan = plan.model_copy(update={"corpus_profile": "closeout"})
+    elif mismatch in {"corpus", "corpus_v2"}:
+        plan = plan.model_copy(
+            update={"corpus_profile": "closeout-v2" if mismatch == "corpus_v2" else "closeout"}
+        )
         budget_plan = plan
     elif mismatch == "case_ids":
         plan = plan.model_copy(update={"case_ids": plan.case_ids[:-1]})
