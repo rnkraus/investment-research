@@ -134,10 +134,13 @@ or reverting to copied quotes. Research calls the free `preflight` before canoni
 reservation; the evaluation budget wrapper also preflights before its own reservation. An empty
 catalog is routed to the existing insufficient-result path with no generation or support call.
 
-`citable_answer_profile` identifies the selected Terra/Luna model with the v3 generator/input and
-v4 configuration/prompt. The canonical English unit policy and request-scoped identities remain
-v1; historical measurements are not rewritten or treated as results for the current prompt. The
-prompt and statement schema description require independently understandable claims with
+`citable_answer_profile` identifies the selected Terra/Luna model with the unchanged v3
+generator/input and v5 configuration/prompt identifiers for source-unit policy v2. The prompt
+wording is unchanged from v4; the new identifier records the changed PDF selection boundaries in
+evaluation plans as well as model-specific generation records. Historical v1-unit/v4-prompt
+measurements are not rewritten or treated as results for this profile. See the
+[precision amendment](../../../../../docs/13-m1-5-rag-quality-plan.md#pdf-citation-precision-amendment--block-1-2026-10-09).
+The prompt and statement schema description require independently understandable claims with
 supported subject, metric, period, and units where needed. Four unrelated synthetic examples show
 financial claims, unsupported inference, partial coverage, and conflicting reports; their facts
 cannot become evidence for a real request. A pronoun inside a self-contained statement is not
