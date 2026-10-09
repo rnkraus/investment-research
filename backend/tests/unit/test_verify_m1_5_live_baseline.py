@@ -150,7 +150,7 @@ def test_citable_preflight_is_explicit_free_and_keeps_budget(
     assert cli.main(["--answer-policy", "citable_units", "--retrieval-policy", "rrf"]) == 0
     plan = json.loads(capsys.readouterr().out)
     assert (
-        plan["configuration"]["answer_prompt_version"] == "m1-5-citable-units-en-answer-prompt-v5"
+        plan["configuration"]["answer_prompt_version"] == "m1-5-citable-units-en-answer-prompt-v6"
     )
     assert plan["configuration"]["selector_config_version"] == "m1-5-rrf-k60-v1"
     assert plan["maximum_spend_micro_usd"] == 800_000

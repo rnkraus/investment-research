@@ -77,6 +77,21 @@ The same USD 0.80 cap and all execution confirmations remain mandatory. Historic
 files and scores remain unchanged; do not use the new wording to relabel earlier responses.
 Citation scoring and runtime evidence validation are unchanged in this correction.
 
+## Current source-unit answer prompt
+
+New `--answer-policy citable_units` plans use `m1-5-citable-units-en-answer-prompt-v6` and the
+model-specific `m1-5-<model>-low-citable-units-en-v6` generation configuration. The prompt asks for
+only the question's material requested parts, without adjacent unsolicited facts or forecasts,
+while retaining necessary uncertainty, time scope, and conflict. Select title/date units only when
+needed for subject, report, or temporal attribution; they cannot replace factual evidence.
+
+Transport remains `openai-responses-citable-units-v3`; source-unit boundaries remain
+`m1-5-citable-units-en-v2`. Models, two-unit/eight-statement limits, canonical resolution, support
+checks, scoring, and reservation ceilings are unchanged. Do not execute an old v5 plan as if it
+were v6: generate a new preflight plan and a fresh output filename for a separately authorized
+comparison. Historical reports retain their original prompt versions. Scripted tests establish
+instruction delivery and version wiring, not better live-model behavior or independent support.
+
 ## Opt-in support attribution experiment
 
 The live evaluator defaults to `--support-policy m1` (exact quotes only). To compare the bounded
