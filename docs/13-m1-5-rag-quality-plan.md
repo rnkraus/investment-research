@@ -1404,6 +1404,53 @@ No production build, browser/source-opening check, complete M0/M1 runtime gate, 
 provider call was executed for this block. These results establish deterministic precision and
 compatibility, not live answer-quality acceptance.
 
+#### Owner-run live precision check — Block 2 (2026-10-09)
+
+The owner ran the six frozen public-synthetic cases with RRF, `citable_units`,
+`document_attribution`, and Terra for both roles. The agent inspected the supplied interactive
+transcript and ignored report `outputs/m1_5/rrf-units-v2-terra-terra-v1.json` without rewriting
+them or making provider calls. The report records answer prompt v5 and
+`m1-5-local-document-attribution-support-reason-v1`; local inspection enabled short support
+reasons. Reranking was not enabled and the USD 0.80 admission ceiling was unchanged.
+
+| Recorded measurement | Result |
+| --- | ---: |
+| Operational failures | 0/6 |
+| Reviewed evidence in selected context | 5/5 answerable cases |
+| Expected coverage status | 6/6 |
+| Reviewed citation match, including uncited abstention | 5/6 |
+| Exact canonical citations valid | 5/5 checked cases |
+| Independent support assessments | 0 |
+| Median per-question elapsed time | 4,250 ms |
+| Maximum per-question elapsed time | 8,621 ms |
+| Estimated total provider cost, including preparation | USD 0.052333 |
+| Retained maximum-cost reservations | USD 0.733692 |
+| Cleanup | Verified |
+
+**Revenue correction confirmed:** Both revenue statements selected short handle `u4`. The
+transcript shows the resolved quote as the exact reviewed revenue sentence, without its preceding
+PDF heading, and separate first-block document attribution context. Both application support
+decisions accepted the statements; both citation links map to the reviewed revenue anchor.
+This is a demonstrated correction of the specific precision issue, not universal PDF-layout
+recognition or an independent review of model quality.
+
+**Remaining citation-score mismatch:** The rollout-constraint answer correctly cites the reviewed
+transformer-shortage sentence, then adds a separately quoted expectation about supplier lead times
+in the first half of 2027. That quote is exact canonical text and the application support evaluator
+accepted it, but it is outside the frozen case's reviewed target passages. Its empty target mapping
+makes the unchanged strict citation metric fail this case. The mismatch is neither the old PDF
+heading issue nor evidence of fabricated quote text; answer focus and target-catalog completeness
+remain separate quality concerns. Do not add a target retrospectively, grant overlap credit, or
+silently suppress this result to obtain 6/6.
+
+The aggregate citation score remains 5/6, but the failing case changed from revenue to the added
+rollout detail. This single run does not establish an overall quality improvement or a latency/cost
+effect: generated content varies, and local support reasons use a different support prompt from
+runs without that option. Usage-based estimates are not invoices and reservations are not spend.
+The existing independent support review, manual original-source opening, full-runtime/build,
+hosted CI, and final model-policy evaluation gates remain open. No default-policy adoption or
+additional paid comparison is approved by this record.
+
 ## 4. Handoff and stop rule
 
 Stop M1.5 when its reviewed correctness gates pass and the chosen retrieval/citation approach has
