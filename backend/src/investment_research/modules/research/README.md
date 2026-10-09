@@ -174,9 +174,10 @@ eligibility or authorization.
 
 `build_citable_unit_catalog` requires the trusted `WorkspaceContext`, research-request UUID, and
 those pairs. It preserves the existing 8-source/24,000-code-point budget, splits unchanged block
-text under the English v1 heuristic, and retains at most 256 units of at most 800 code points each.
+text under the English v2 heuristic, and retains at most 256 units of at most 800 code points each.
 Sentence-ending punctuation and blank paragraphs create boundaries; a single PDF line break does
-not. Abbreviations can create short units. This explicit heuristic is not a claim of perfect
+not, except for the bounded uppercase-heading rule described below. Abbreviations can create
+short units. This explicit heuristic is not a claim of perfect
 sentence recognition. Overflow is rejected rather than silently dropping evidence.
 
 Each unit has a canonical key identifying its workspace, immutable version, block, exact range,
@@ -250,9 +251,16 @@ The live Compose overlay forwards this non-secret profile only to the API; the
 [local run guide](../../../../../README.md#opt-in-m15-source-id-research) gives the opt-in and
 rollback commands. Manual PDF/text source-opening verification remains pending; this wiring
 does not record default adoption or quality acceptance.
-Quality scoring remains unchanged: a wider exact unit can fail the reviewed passage-containment
-metric even though canonical validation passes. The current deterministic corpus preserves this
-penalty for its revenue case; integration success is not quality acceptance.
+The current source-unit policy is `m1-5-citable-units-en-v2`. It keeps the sentence/paragraph
+boundaries and all original characters, but separates a short uppercase PDF heading at the start
+of a range from capitalized mixed-case prose on the next line. Ordinary wrapped sentences and
+pasted-text boundaries remain unchanged. The exact heuristic and its limits are specified in the
+[precision amendment](../../../../../docs/13-m1-5-rag-quality-plan.md#pdf-citation-precision-amendment--block-1-2026-10-09).
+This changes only temporary selection ranges, not canonical blocks, chunks, or historical evidence.
+Quality scoring remains unchanged: a wider exact unit can still fail reviewed containment even
+though canonical validation passes. The deterministic revenue regression now selects the exact
+reviewed sentence without its heading. Historical v1 live results keep their precision penalty;
+integration success is not live quality acceptance.
 
 ## Answer-generation boundary
 

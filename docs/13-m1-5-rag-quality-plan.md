@@ -299,6 +299,10 @@ fuzzy match or whole-chunk citation is accepted as a workaround.
 
 #### Step 2 contract — Citable units v1
 
+The following boundary definition records the original v1 contract and its historical runs.
+Current preparation uses the [v2 precision amendment](#pdf-citation-precision-amendment--block-1-2026-10-09);
+the original-text, identity, authorization, and bound requirements below remain binding.
+
 **Design recorded:** 2026-10-07. The preparation/resolution, ID adapter, and opt-in Research and
 evaluation integration are implemented. Initial live comparisons are recorded below; normal
 runtime adoption and remaining review gates are open. This is not a default-policy change or
@@ -1353,6 +1357,52 @@ remains M6, not an M1.5 deliverable.
 eligibility, citation, abstention, or provider-failure regression remains; results and limitations
 are reproducible and accurately described. This is a local RAG quality proof, not an M2 reliability
 gate or the full M4 release gate.
+
+#### PDF citation precision amendment — Block 1 (2026-10-09)
+
+**Scope:** address the demonstrated heading-inclusive PDF unit without changing parsing, stored
+blocks, chunks, embeddings, retrieval/reranking, model selection, frozen corpus anchors, scoring,
+or historical answers. Preparation now uses `m1-5-citable-units-en-v2`; canonical range keys and
+request-scoped UUIDv5 handles include that version. No migration or reprocessing is required.
+
+Keep the v1 punctuation/blank-line splitting and 800-code-point cap. For `PDF_PAGE` only, inspect
+the first visible line of each resulting range. Separate it at its line feed when all conditions
+hold: the trimmed line is uppercase, at most 80 code points and eight whitespace-separated words,
+does not end in a hyphen, en dash, em dash, comma, or semicolon, and the remaining range starts
+with an uppercase character and contains lowercase prose. Keep the heading as a selectable unit;
+never remove it or rewrite following text. Ordinary wrapped prose and `TEXT_PASSAGE` boundaries
+remain unchanged. The 8-source, 24,000-character, 256-unit, metadata, and two-units-per-statement
+bounds remain unchanged; added units can still cause a safe preflight limit failure.
+
+This is a conservative versioned heuristic, not PDF-layout or linguistic heading recognition.
+Mixed-case headings, stacked headings, tables, and ambiguous uppercase prose are not reliably
+classified. Do not generalize the synthetic precision improvement to arbitrary PDFs or conceal
+remaining granularity errors. Any broader segmentation policy needs its own regression cases and
+explicit measurement.
+
+The adapter retains `openai-responses-citable-units-v3` transport and unchanged prompt wording.
+New configuration identifiers end in `low-citable-units-en-v5`; the recorded prompt identifier is
+`m1-5-citable-units-en-answer-prompt-v5` so evaluation plans distinguish the changed unit contract
+from historical v1-unit/v4-prompt runs. M1 exact-substring generation and normal runtime defaults
+remain unchanged. The opt-in M1.5 source-ID profile and evaluation use the new policy.
+
+The deterministic full-corpus PostgreSQL regression must resolve the revenue sentence without
+its preceding heading and satisfy the unchanged containment score for all six cases across the
+existing selector/support-policy combinations. Independent support review, owner-run original
+source opening, live comparison under the new version, hosted CI, and full-runtime compatibility
+remain separate gates. Historical ignored reports are not rewritten and their 5/6 citation score
+remains valid for the recorded configuration. This block authorizes no paid provider run or
+default-policy adoption.
+
+**Executed verification:** complete backend formatting, Ruff, Mypy (293 source files), and
+1,904 unit tests passed. The disposable PostgreSQL gate passed 181 integration tests with seven
+expected SeaweedFS-only skips, including all nine selector/support-policy combinations of the
+full-corpus citable runner at 6/6 reviewed citation matches. Empty migration round-trip, metadata
+checks, and test-environment cleanup passed. The unchanged OpenAPI snapshot and corpus validator
+passed; frontend formatting, lint, type checking, generated-contract checks, and 47 tests passed.
+No production build, browser/source-opening check, complete M0/M1 runtime gate, hosted CI, or paid
+provider call was executed for this block. These results establish deterministic precision and
+compatibility, not live answer-quality acceptance.
 
 ## 4. Handoff and stop rule
 
