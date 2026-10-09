@@ -19,7 +19,9 @@ from scripts.verify_m1_5_corpus import (
 )
 
 CLOSEOUT_MANIFEST = REPOSITORY_ROOT / "fixtures/m1_5/evaluation-closeout-v1.json"
+CORRECTED_CLOSEOUT_MANIFEST = REPOSITORY_ROOT / "fixtures/m1_5/evaluation-closeout-v2.json"
 FROZEN_BASELINE_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75a96a41d5f9"
+FROZEN_CLOSEOUT_V1_SHA256 = "2f74cf37d52e534b40d0408eca41c72fd1474f4bac2b4d8a1c988817d187217a"
 
 
 def changed_manifest(
@@ -72,6 +74,53 @@ def test_closeout_catalog_preserves_the_frozen_six_case_baseline() -> None:
     assert closeout.documents == baseline.documents
     assert closeout.passages[:6] == baseline.passages
     assert closeout.cases[:6] == baseline.cases
+
+
+def test_corrected_closeout_changes_only_the_unsubstantiated_budget_period() -> None:
+    previous = validate_corpus(CLOSEOUT_MANIFEST, REPOSITORY_ROOT)
+    corrected = validate_corpus(CORRECTED_CLOSEOUT_MANIFEST, REPOSITORY_ROOT)
+
+    assert hashlib.sha256(CLOSEOUT_MANIFEST.read_bytes()).hexdigest() == FROZEN_CLOSEOUT_V1_SHA256
+    assert corrected.id == "m1.5-rag-quality-closeout-v2"
+    assert corrected.review_status == "pending_owner_review"
+    assert corrected.source_manifest == previous.source_manifest
+    assert corrected.documents == previous.documents
+    assert corrected.passages == previous.passages
+    assert corrected.cases[:-1] == previous.cases[:-1]
+    question = (
+        "What were Northstar's FY2025 revenue and year-over-year growth, "
+        "and what is its European pilot budget?"
+    )
+    assert corrected.cases[-1] == previous.cases[-1].model_copy(
+        update={"id": "question:fy2025-revenue-and-european-pilot-budget", "question": question}
+    )
+    assert corrected == previous.model_copy(
+        update={
+            "id": corrected.id,
+            "review_status": "pending_owner_review",
+            "cases": corrected.cases,
+        }
+    )
+
+
+def test_corrected_closeout_cli_rejects_use_before_owner_review(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_m1_5_corpus",
+            "--manifest",
+            str(CORRECTED_CLOSEOUT_MANIFEST),
+            "--require-reviewed",
+        ],
+    )
+
+    assert main() == 1
+    output = capsys.readouterr()
+    assert "awaits owner review" in output.err
+    assert output.out == ""
 
 
 def test_new_lead_time_target_does_not_relabel_the_old_rollout_case() -> None:
