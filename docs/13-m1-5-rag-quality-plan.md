@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 closeout v2 measured and qualitatively reviewed; owner acceptance, final runtime gates, and default adoption pending
+**Status:** Active — Step 4 closeout v2 source review owner accepted; final runtime gates, profile adoption, and milestone acceptance pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1721,8 +1721,13 @@ this single run. Costs are repository-price estimates, exclude Pinecone billing,
 provider invoices. No extra paid call, default adoption, validation change, or M1.5 acceptance
 is authorized by this record.
 
-**Remaining closeout decisions and checks:** obtain owner review of the documented findings;
-decide explicitly which evaluated profile, if any, should be adopted, with prior comparisons and
+**Owner review decision (2026-10-09):** The owner explicitly accepted the documented qualitative
+source review and its unchanged strict 10/12 citation score. This is approval of these findings,
+not an independent human statement-level assessment, automatic default adoption, or full M1.5
+acceptance. The historical report and its pending structured review fields remain unchanged.
+
+**Remaining closeout decisions and checks:** decide explicitly which evaluated profile, if any,
+should be adopted, with prior comparisons and
 limitations retained; verify the chosen current revision with the complete M1 runtime and the
 owner-run original-source opening journey; obtain its frontend production build and required
 hosted-CI results; and publish the concise architecture, evaluation, before/after examples, safe
@@ -1736,6 +1741,14 @@ source-review/cross-link inspection, and `git diff --check` passed. Only these t
 files changed. No backend/frontend test rerun or paid-provider call was needed to record the
 already inspected results. Current-revision runtime, browser/source-opening, production build,
 and hosted-CI verification were not executed in this documentation-only block.
+
+**Compatibility follow-up (2026-10-09):** On the same implementation revision, `pnpm format`,
+`pnpm lint`, `pnpm typecheck`, and `pnpm test` passed, including the generated TypeScript-contract
+check and all 47 frontend tests. No source code, dependency, generated contract, or application
+configuration changed. The complete M1 verifier invokes visible Chromium, so the agent did not
+run it under the owner's browser restriction. The owner must run that isolated, credential-free
+runtime/source-opening gate and the frontend production build; final hosted checks remain pending.
+This frontend compatibility result does not replace those gates or demonstrate live-model quality.
 
 ## 4. Handoff and stop rule
 
