@@ -146,9 +146,15 @@ denominators; retain the recorded corpus ID and digest in every comparison.
 **Review boundary:** The owner executed the live test and supplied its local diagnostic output.
 Codex separately compared the ten published answers (14 statements) and two abstentions with the
 reviewed version-2 expectations and all three originals, including all four PDF pages. This is
-a qualitative developer-agent review outside the application's support evaluator, not owner
-acceptance, a human review, a held-out benchmark, or a structured independent-model evaluation.
+a qualitative developer-agent review outside the application's support evaluator, not an
+independent human review, a held-out benchmark, or a structured independent-model evaluation.
 The supplied evaluator reasons were not treated as proof of statement support.
+
+**Owner decision (2026-10-09):** The owner explicitly accepted these documented source-review
+findings, including the unchanged 10/12 strict citation score. This accepts the qualitative
+review, not the whole milestone, a default-policy change, or a claim that an independent human
+assessment was performed for each statement. The saved report's pending structured review fields
+remain unchanged; this separately recorded approval is not retroactive machine scoring.
 
 The ignored local report is `closeout-v2-luna-luna-prompt-v6-20261009-042912.json` under
 `outputs/m1_5/`, SHA-256
@@ -200,7 +206,7 @@ provider invoices. Cleanup was VERIFIED and execution failures were 0/12.
 
 This single developer-informed synthetic run does not establish general reliability or isolate
 the effect of the new prompt. The changed version-2 budget question is not an unchanged paired
-comparison with version 1. Owner review of these findings, current-revision runtime/source-opening
+comparison with version 1. Current-revision runtime/source-opening
 and hosted checks, an explicit profile-adoption decision, and portfolio limitations remain
 separate closeout gates. No report, score, catalog, application default, or acceptance flag is
 changed by recording this review.
