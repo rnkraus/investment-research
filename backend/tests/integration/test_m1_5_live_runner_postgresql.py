@@ -290,16 +290,14 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     )
     assert not report.failures
     assert report.summary.coverage_match_count == 6
-    # The first PDF unit includes the preceding heading. It is exact and supported,
-    # but exceeds the reviewed revenue passage. Keep the strict v2 quality penalty.
-    assert report.summary.citation_match_count == 5
-    assert tuple(case.case_id for case in report.summary.cases if not case.citation_match) == (
-        "question:fy2025-revenue",
-    )
+    # Unit policy v2 separates the uppercase PDF heading. The unchanged containment
+    # metric must now accept the exact reviewed revenue sentence, not a wider range.
+    assert report.summary.citation_match_count == 6
+    assert all(case.citation_match for case in report.summary.cases)
     assert report.summary.exact_citation_valid_count == 5
     assert (
         report.admission_plan.configuration.answer_prompt_version
-        == "m1-5-citable-units-en-answer-prompt-v4"
+        == "m1-5-citable-units-en-answer-prompt-v5"
     )
     assert report.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
     assert all(record.usage_state == "REPORTED" for record in report.provider_calls)

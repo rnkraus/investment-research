@@ -121,6 +121,96 @@ def test_ranges_preserve_every_visible_character(text: str, expected: tuple[str,
         assert unit.key.structure_block_id == source.block.id
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("OPERATING RESULTS\nRevenue increased.", ("OPERATING RESULTS", "Revenue increased.")),
+        (
+            "Previous sentence.\n\tCAFÉ 😀 RESULTS \t\nRevenue was €12 million.",
+            ("Previous sentence.", "CAFÉ 😀 RESULTS", "Revenue was €12 million."),
+        ),
+        (
+            "OPERATING RESULTS\nRevenue increased across\nseveral regions. Next.",
+            ("OPERATING RESULTS", "Revenue increased across\nseveral regions.", "Next."),
+        ),
+        ("PDF text wraps\ninside a sentence.", ("PDF text wraps\ninside a sentence.",)),
+        ("An archi-\ntecture remains unchanged.", ("An archi-\ntecture remains unchanged.",)),
+        ("THE ARCHI-\nTecture remains unchanged.", ("THE ARCHI-\nTecture remains unchanged.",)),
+        (
+            "AN UPPERCASE LINE\ncontinues the sentence.",
+            ("AN UPPERCASE LINE\ncontinues the sentence.",),
+        ),
+        ("OPERATING RESULTS\nALL UPPERCASE TEXT.", ("OPERATING RESULTS\nALL UPPERCASE TEXT.",)),
+        ("Operating results\nRevenue increased.", ("Operating results\nRevenue increased.",)),
+        ("RESULTS\n123 million", ("RESULTS\n123 million",)),
+        (
+            "ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE\nRevenue increased.",
+            ("ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE\nRevenue increased.",),
+        ),
+        ("X" * 81 + "\nRevenue increased.", ("X" * 81 + "\nRevenue increased.",)),
+        ("OPERATING RESULTS", ("OPERATING RESULTS",)),
+    ],
+)
+def test_pdf_heading_policy_preserves_exact_ranges_and_wrapped_prose(
+    text: str, expected: tuple[str, ...]
+) -> None:
+    source = make_source(text, pdf=True)
+    catalog = make_catalog(source)
+
+    assert tuple(unit.text for unit in catalog.units) == expected
+    previous_end = 0
+    for unit in catalog.units:
+        assert not text[previous_end : unit.key.start_character].strip()
+        assert unit.text == text[unit.key.start_character : unit.key.end_character]
+        previous_end = unit.key.end_character
+    assert not text[previous_end:].strip()
+    assert catalog.sources == (source,)
+
+
+def test_pdf_heading_split_keeps_sentence_resolution_and_two_unit_support() -> None:
+    text = "OPERATING RESULTS\nRevenue increased. Costs declined."
+    catalog = make_catalog(make_source(text, pdf=True))
+    references = resolve_citable_unit_ids(
+        context=CONTEXT,
+        research_request_id=REQUEST_ID,
+        catalog=catalog,
+        source_unit_ids=tuple(unit.source_unit_id for unit in catalog.units[1:]),
+    )
+
+    assert tuple(reference.exact_text for reference in references) == (
+        "Revenue increased.",
+        "Costs declined.",
+    )
+    assert references[0].start_character == text.index("Revenue")
+    assert references[1].end_character == len(text)
+
+
+def test_heading_heuristic_does_not_change_pasted_text_boundaries() -> None:
+    text = "OPERATING RESULTS\nRevenue increased."
+    catalog = make_catalog(make_source(text))
+
+    assert tuple(unit.text for unit in catalog.units) == (text,)
+
+
+def test_heading_splits_still_fail_closed_at_the_existing_unit_limit() -> None:
+    text = "RESULTS\nRevenue increased.\n" * (M1_5_CITABLE_UNIT_LIMIT // 2 + 1)
+
+    with pytest.raises(CitableUnitLimitError) as failure:
+        make_catalog(make_source(text, pdf=True))
+    assert failure.value.details == CitableUnitLimitDetails(
+        kind="unit_count", observed=257, limit=256
+    )
+
+
+def test_unit_policy_v2_does_not_accept_a_stale_v1_catalog() -> None:
+    payload = make_catalog(make_source("Evidence.")).model_dump(mode="json")
+    assert payload["unit_policy_version"] == "m1-5-citable-units-en-v2"
+    payload["unit_policy_version"] = "m1-5-citable-units-en-v1"
+
+    with pytest.raises(ValidationError):
+        CitableUnitCatalog.model_validate(payload)
+
+
 def test_repeated_text_selects_the_exact_occurrence_without_string_search() -> None:
     text = "The pilot budget is $3.5 million. The pilot budget is $3.5 million."
     catalog = make_catalog(make_source(text))
