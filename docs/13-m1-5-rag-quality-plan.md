@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 3 paired live reranking comparison recorded; independent review and default adoption pending
+**Status:** Active — Step 4 citation precision measured; final question catalog awaits owner review; acceptance and default adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1450,6 +1450,41 @@ runs without that option. Usage-based estimates are not invoices and reservation
 The existing independent support review, manual original-source opening, full-runtime/build,
 hosted CI, and final model-policy evaluation gates remain open. No default-policy adoption or
 additional paid comparison is approved by this record.
+
+#### Final question catalog — Block 3 (2026-10-09)
+
+Prepare [`evaluation-closeout-v1.json`](../fixtures/m1_5/evaluation-closeout-v1.json) as a
+separate pending-owner-review catalog before further provider measurements. Preserve the frozen
+six-case `evaluation.json`, its six targets, originals, and historical scores. The new version
+retains those cases and adds six focused probes using the same approved originals: an explicitly
+constraint-only answer, timing with uncertainty, two PARTIAL answers, a fact present only in an
+excluded document, and an answer requiring both PDF and text evidence. Add one exact original
+target for the supplier lead-time expectation, only for the new timing question; do not relabel
+the old rollout case's additional citation as a success.
+
+The draft contains three documents, seven target passages, and twelve cases: seven COMPLETE,
+two PARTIAL, one CONFLICTING, and two INSUFFICIENT. Its
+[review guide](../fixtures/m1_5/closeout-review.md) explains the expected facts, absent facts,
+document scopes, uncertainty, and strict citation-target rules. These developer-informed cases
+improve coverage of known risks; they are not a held-out or representative real-corpus benchmark.
+Keep broader discovery evaluation in M3 and do not claim a quality improvement from catalog size.
+
+**Block gate:** the existing offline validator checks every original digest/range and case scope;
+unit tests preserve the original baseline and reject reviewed-mode acceptance of this pending
+draft. The owner must then accept the semantic expectations before the new digest is pinned or
+any paid evaluation uses them. The existing live runner remains on the reviewed six-case catalog;
+no paid execution, budget increase, model-policy adoption, or frontend change occurs here.
+Activation and recalculated twelve-case reservation bounds are a subsequent bounded work block.
+Independent support review, owner-run source opening, complete runtime/build, and hosted CI remain
+separate closeout gates, not outcomes of structural catalog validation.
+
+**Executed verification:** Ruff formatting and lint passed for the modified test file. Mypy
+passed with `src`, `scripts`, and that test file explicitly included (148 source files); an initial
+test-file-only invocation could not resolve the existing application imports. The corpus/scorer
+unit subset passed 40 tests, including rejection of `--require-reviewed` for the pending draft.
+Both catalog structure checks passed: the frozen baseline remains reviewed with six cases, while
+the new draft has twelve cases and remains pending. No frontend/build, Docker, hosted CI, browser,
+or paid-provider checks were executed in this fixture-and-test-only block.
 
 ## 4. Handoff and stop rule
 
