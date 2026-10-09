@@ -85,6 +85,9 @@ class CaseScore(_FrozenModel):
     support_passed: bool | None
     failed_safely: bool | None
     elapsed_ms: int
+    # Absent historical measurements remain unknown, not zero or successful.
+    required_evidence_present: bool | None = None
+    extra_citation_count: int | None = Field(default=None, ge=0)
 
 
 class ScoreSummary(_FrozenModel):
@@ -114,6 +117,11 @@ class ScoreSummary(_FrozenModel):
     provider_output_tokens: int | None
     estimated_cost_micro_usd: int | None
     cases: tuple[CaseScore, ...]
+    diagnostics_version: Literal["m1.5-citation-diagnostics-v1"] | None = None
+    required_evidence_present_count: int | None = Field(default=None, ge=0)
+    required_evidence_case_count: int | None = Field(default=None, ge=0)
+    extra_citation_count: int | None = Field(default=None, ge=0)
+    conflict_coverage_match_count: int | None = Field(default=None, ge=0)
 
 
 def _groups_present(groups: tuple[tuple[str, ...], ...], observed: set[str]) -> bool:
@@ -235,6 +243,21 @@ def score_observations(
                 ),
                 failed_safely=observation.failed_safely,
                 elapsed_ms=observation.elapsed_ms,
+                required_evidence_present=(
+                    None
+                    if observations.schema_version == 1 or case.expected_coverage == "INSUFFICIENT"
+                    else observation.terminal_status == "COMPLETED"
+                    and observation.exact_citations_valid is True
+                    and _groups_present(case.evidence_groups, cited)
+                ),
+                extra_citation_count=(
+                    None
+                    if observation.citation_passage_ids is None
+                    else sum(
+                        not any(passage_id in expected_passages for passage_id in ids)
+                        for ids in observation.citation_passage_ids
+                    )
+                ),
             )
         )
     usages = [case.provider_usage for case in observations.cases if case.provider_usage is not None]
@@ -290,6 +313,33 @@ def score_observations(
             else None
         ),
         cases=tuple(scores),
+        diagnostics_version=(
+            "m1.5-citation-diagnostics-v1" if observations.schema_version == 2 else None
+        ),
+        required_evidence_present_count=(
+            sum(score.required_evidence_present is True for score in scores)
+            if observations.schema_version == 2
+            else None
+        ),
+        required_evidence_case_count=(
+            sum(score.required_evidence_present is not None for score in scores)
+            if observations.schema_version == 2
+            else None
+        ),
+        extra_citation_count=(
+            sum(score.extra_citation_count or 0 for score in scores)
+            if observations.schema_version == 2
+            else None
+        ),
+        conflict_coverage_match_count=(
+            sum(
+                score.coverage_match
+                for score in scores
+                if cases_by_id[score.case_id].expected_coverage == "CONFLICTING"
+            )
+            if observations.schema_version == 2
+            else None
+        ),
     )
 
 

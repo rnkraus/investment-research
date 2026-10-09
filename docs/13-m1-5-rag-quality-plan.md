@@ -1605,6 +1605,45 @@ USD 0.80 cap. No frontend/build, complete M0/M1 runtime, browser, hosted CI, or 
 verification was executed in this activation block. These results prove deterministic wiring,
 not live answer quality or milestone acceptance.
 
+#### Citation mismatch diagnostics — Block 7 (2026-10-09)
+
+The observed conflict answer had both factual targets and genuine title/date citations, but the
+existing strict precision score cannot distinguish that result from missing required evidence.
+Preserve `m1.5-observation-score-v2` and every strict metric; add separately versioned descriptive
+diagnostics to new summaries of version-2 observations instead of granting automatic metadata
+credit or changing frozen target labels.
+
+`m1.5-citation-diagnostics-v1` records required evidence presence for completed answerable cases
+with exact canonical citation validity, an answerable-case denominator including failures, extra
+citation links outside the question's expected targets, and conflict coverage matches independent
+of strict citation matching. Count each statement-to-evidence link, including repeated links.
+INSUFFICIENT cases are excluded only from the evidence-presence denominator; their existing
+uncited-abstention requirement remains unchanged. Missing required groups, invalid exact quotes,
+and failed answers do not pass evidence presence. The corpus guide defines the fields.
+
+An extra citation is not automatically a metadata citation, an unsupported statement, or a
+fabricated quote. Empty target mappings cannot establish those classifications. Correct CONFLICTING
+coverage alone does not prove both sides have evidence; required evidence presence alone does not
+prove statement support or correct answer coverage. Independent support assessments remain
+explicit and are never inferred from these counts. Historical summaries and version-1 observations
+retain `null` diagnostics when per-link measurements are unavailable; saved reports are not rewritten.
+
+**Scope and gate:** change only the offline scorer, its unit regressions, the existing canonical
+runner integration assertions, and affected documentation. Keep frozen catalogs, mapping rules,
+answer/support prompts, provider budgets, runtime validation, frontend, and defaults unchanged.
+Tests must separate correct conflict coverage with extras from strict precision failure, reject
+credit for missing/invalid evidence and safe failures, preserve repeated-citation behavior, and
+read historical summaries without inventing measurements. Existing CI discovery runs these tests;
+no workflow change is needed. More focused generation is a subsequent independently versioned
+prompt block, not implemented here. No paid run or milestone acceptance follows from diagnostics.
+
+**Executed verification:** complete backend formatting, Ruff, and Mypy (293 source files) passed;
+all 1,959 unit tests passed. The disposable PostgreSQL gate passed 199 integration tests with
+seven expected SeaweedFS-only skips, including diagnostics/readback checks for all 27 scripted
+catalog/selector/support-policy combinations. Empty migration round-trip, metadata checks,
+and isolated test-database/volume cleanup passed. No paid-provider call, historical report rewrite,
+frontend/build, browser, full M0/M1 runtime, or hosted CI check was executed for this block.
+
 ## 4. Handoff and stop rule
 
 Stop M1.5 when its reviewed correctness gates pass and the chosen retrieval/citation approach has

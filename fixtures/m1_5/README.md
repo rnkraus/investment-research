@@ -183,6 +183,33 @@ per-citation information cannot be reconstructed from aggregate IDs. Do not upgr
 or compare v1 and v2 citation-match counts as though the metric were unchanged; use v2 for both
 sides of a future policy comparison. The corpus and expected evidence labels remain unchanged.
 
+### Additive citation diagnostics
+
+New summaries of version-2 observations additionally record
+`diagnostics_version: m1.5-citation-diagnostics-v1`. The strict v2 scoring rules above and all
+historical reports remain unchanged. These diagnostics explain a mismatch; they do not replace
+the acceptance metrics or automatically excuse extra citations.
+
+| Field | Meaning |
+| --- | --- |
+| Per-case `required_evidence_present` | An answerable case completed, all required evidence groups are cited, and its recorded exact-citation validity is true. Extra citations do not hide present required evidence. |
+| `required_evidence_present_count` / `required_evidence_case_count` | Count and denominator for that evidence-presence check; scoped INSUFFICIENT cases are excluded, but failed answerable cases remain in the denominator. |
+| Per-case and total `extra_citation_count` | Citation links with no mapping to any expected evidence target for that question, including unmatched quotes and known but unexpected targets. Counts are not fabricated-quote or metadata classifications. |
+| `conflict_coverage_match_count` | Completed conflict cases whose coverage status is CONFLICTING, independently of strict citation precision. This does not establish that both sides are cited or independently supported. |
+
+For example, a conflict answer with both required factual quotes and two genuine header/date
+citations can show required evidence present, two extra citations, and correct conflict coverage,
+while its strict `citation_match` remains false. The same counts could occur with irrelevant
+extra operational quotes; human review must distinguish them. The scorer cannot classify raw
+metadata from empty target mappings and must not claim it did. Statement support and independent
+support assessment remain separate.
+
+Missing diagnostic fields in historical summaries deserialize to `null`, never invented zeroes
+or passes. Version-1 observations also retain unknown diagnostics because they lack per-link
+mappings. Only new scoring outputs include these fields; do not overwrite saved reports or
+retroactively present diagnostics as originally measured. Runtime validation, catalogs, prompts,
+provider calls, and budgets are unchanged.
+
 `backend/scripts/map_m1_5_passages.py` maps selected canonical chunks and validated original-source
 citation ranges to reviewed passage IDs. It requires matching document identity, source locator,
 position, and exact original text. A selected chunk may contain both repeated budget occurrences,

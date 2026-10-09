@@ -307,6 +307,11 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     assert report.summary.citation_match_count == case_count
     assert all(case.citation_match for case in report.summary.cases)
     assert report.summary.exact_citation_valid_count == answerable_count
+    assert report.summary.diagnostics_version == "m1.5-citation-diagnostics-v1"
+    assert report.summary.required_evidence_present_count == answerable_count
+    assert report.summary.required_evidence_case_count == answerable_count
+    assert report.summary.extra_citation_count == 0
+    assert report.summary.conflict_coverage_match_count == report.summary.conflict_match_count
     assert (
         report.admission_plan.configuration.answer_prompt_version
         == "m1-5-citable-units-en-answer-prompt-v5"
