@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 citation precision measured; final question catalog awaits owner review; acceptance and default adoption pending
+**Status:** Active — Step 4 final question catalog reviewed and selectable; live quality, acceptance, and default adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1485,6 +1485,50 @@ unit subset passed 40 tests, including rejection of `--require-reviewed` for the
 Both catalog structure checks passed: the frozen baseline remains reviewed with six cases, while
 the new draft has twelve cases and remains pending. No frontend/build, Docker, hosted CI, browser,
 or paid-provider checks were executed in this fixture-and-test-only block.
+
+#### Reviewed catalog activation — Block 4 (2026-10-09)
+
+The owner explicitly reviewed and accepted the twelve cases and expectations. Change only the
+new catalog's status to `reviewed` and pin its resulting SHA-256
+`2f74cf37d52e534b40d0408eca41c72fd1474f4bac2b4d8a1c988817d187217a` in the preflight admission
+code. The historical six-case baseline and result files remain unchanged.
+
+The preflight and live command accept `--corpus baseline|closeout`, defaulting to `baseline`.
+The admission plan records the corpus profile, ID, digest, and every case ID. The runner rebuilds
+the approved plan before accessing resources, then loads and scores the selected catalog. Unknown
+profiles, modified catalog bytes, unreviewed catalogs, altered case lists, and inconsistent budgets
+are rejected. Existing observation scoring remains unchanged and can use the new catalog through
+its `--manifest` option; six- and twelve-case aggregates are not interchangeable.
+
+The closeout request ceilings are 64 document embedding calls, 12 query embedding calls,
+12 answer calls, and 96 single-statement support calls. Optional reranking allows at most one
+request per case (12), still requiring explicit Starter allowance confirmation before execution.
+The same USD 0.80 per-invocation reservation cap, input envelope, output limits, no-retry policy,
+model choices, and monthly provider protections remain binding. The larger question set may
+exhaust retained reservations before completion, particularly with Terra. Do not silently raise
+the ceiling or treat estimated actual usage as released reservation capacity.
+
+The existing PostgreSQL runner regression now exercises both catalogs across the nine
+selector/support-policy combinations, with scripted generation and support decisions and the
+real canonical persistence/readback path. This checks integration and expected state shapes,
+including PARTIAL and scoped INSUFFICIENT; it does not measure model quality. Existing CI discovery
+runs these tests without live credentials. No artificial frontend or workflow changes are needed.
+The reproduction commands are in the [corpus guide](../fixtures/m1_5/README.md).
+
+This block authorizes implementation and offline verification, not agent-run paid calls. Owner-run
+live results, independent support assessment, original-source opening, build/runtime compatibility,
+and hosted CI remain separate closeout evidence. Catalog approval alone does not accept M1.5 or
+change the normal application defaults.
+
+**Executed verification:** Complete backend formatting, Ruff, and Mypy (293 source files) passed;
+1,933 unit tests passed. The disposable PostgreSQL gate passed 190 integration tests with seven
+expected SeaweedFS-only skips. Both catalogs passed all nine scripted citable-runner
+selector/support-policy combinations; the closeout profile matched 12/12 coverage and citation
+expectations, including ten answerable cases, without paid providers. Migration round-trip,
+metadata checks, and isolated database/volume cleanup passed. Both reviewed-corpus checks and the
+credential-free closeout RRF/source-unit/document-attribution preflight passed. No browser,
+frontend build, complete M0/M1 runtime, hosted CI, or live-provider quality check was executed
+in this block. These results prove deterministic wiring, not measured model quality.
 
 ## 4. Handoff and stop rule
 
