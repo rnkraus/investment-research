@@ -25,10 +25,12 @@ FROZEN_BASELINE_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75
 def changed_manifest(
     tmp_path: Path,
     change: Callable[[dict[str, Any]], None],
+    *,
+    source: Path = DEFAULT_MANIFEST,
 ) -> Path:
     """Write one altered catalog while keeping the immutable fixture files unchanged."""
 
-    data: dict[str, Any] = json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))
+    data: dict[str, Any] = json.loads(source.read_text(encoding="utf-8"))
     change(data)
     path = tmp_path / "evaluation.json"
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -45,11 +47,11 @@ def test_catalog_matches_its_frozen_original_sources() -> None:
     assert len(manifest.cases) == 6
 
 
-def test_closeout_catalog_matches_originals_and_awaits_owner_review() -> None:
+def test_closeout_catalog_matches_originals_and_records_owner_review() -> None:
     manifest = validate_corpus(CLOSEOUT_MANIFEST, REPOSITORY_ROOT)
 
     assert manifest.id == "m1.5-rag-quality-closeout-v1"
-    assert manifest.review_status == "pending_owner_review"
+    assert manifest.review_status == "reviewed"
     assert len(manifest.documents) == 3
     assert len(manifest.passages) == 7
     assert len(manifest.cases) == 12
@@ -103,7 +105,7 @@ def test_closeout_document_scope_does_not_grant_out_of_scope_budget_evidence() -
     assert case.evidence_groups == ()
 
 
-def test_closeout_cli_checks_structure_without_claiming_review(
+def test_closeout_cli_checks_the_owner_reviewed_catalog(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(sys, "argv", ["verify_m1_5_corpus", "--manifest", str(CLOSEOUT_MANIFEST)])
@@ -111,16 +113,23 @@ def test_closeout_cli_checks_structure_without_claiming_review(
     assert main() == 0
     output = capsys.readouterr()
     assert "3 documents, 7 passages, 12 cases" in output.out
-    assert "review_status=pending_owner_review" in output.out
+    assert "review_status=reviewed" in output.out
 
 
 def test_closeout_cli_rejects_unreviewed_acceptance(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    unreviewed = changed_manifest(
+        tmp_path,
+        lambda data: data.update(review_status="pending_owner_review"),
+        source=CLOSEOUT_MANIFEST,
+    )
     monkeypatch.setattr(
         sys,
         "argv",
-        ["verify_m1_5_corpus", "--manifest", str(CLOSEOUT_MANIFEST), "--require-reviewed"],
+        ["verify_m1_5_corpus", "--manifest", str(unreviewed), "--require-reviewed"],
     )
 
     assert main() == 1
