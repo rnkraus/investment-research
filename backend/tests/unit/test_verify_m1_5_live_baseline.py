@@ -37,6 +37,7 @@ from scripts.plan_m1_5_live_baseline import (
     LiveBaselineBudget,
     LiveBaselineLimitError,
     LiveBaselinePlan,
+    LiveCorpusProfile,
     LiveSupportPolicy,
     build_plan,
 )
@@ -105,6 +106,23 @@ def test_default_command_is_free_and_content_free(capsys: pytest.CaptureFixture[
     assert MARKER not in output
 
 
+def test_closeout_command_selects_twelve_cases_without_runtime_access(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["--corpus", "closeout", "--retrieval-policy", "rrf"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["corpus_profile"] == "closeout"
+    assert plan["corpus_id"] == "m1.5-rag-quality-closeout-v1"
+    assert len(plan["case_ids"]) == 12
+    assert plan["maximum_spend_micro_usd"] == 800_000
+
+
+def test_unknown_corpus_is_rejected_before_runtime_access() -> None:
+    with pytest.raises(SystemExit) as caught:
+        cli.main(["--corpus", "../other.json"])
+    assert caught.value.code == 2
+
+
 def test_rrf_preflight_records_the_selected_policy_without_runtime_access(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -143,11 +161,13 @@ def test_command_rejects_budget_above_approved_cap_before_runtime_access() -> No
 @pytest.mark.parametrize("answer_policy", ["m1", "citable_units"])
 @pytest.mark.parametrize("show_output", [False, True])
 @pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
+@pytest.mark.parametrize("corpus_profile", ["baseline", "closeout"])
 def test_runner_accepts_matching_inspection_plan_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch,
     answer_policy: LiveAnswerPolicy,
     show_output: bool,
     support_policy: LiveSupportPolicy,
+    corpus_profile: LiveCorpusProfile,
 ) -> None:
     class PlanAcceptedError(Exception):
         """Stop after real runner admission, before fixtures or resources are accessed."""
@@ -165,6 +185,7 @@ def test_runner_accepts_matching_inspection_plan_before_runtime_access(
             answer_model="synthetic-answer", support_model="synthetic-support"
         )
     plan = build_plan(
+        corpus_profile=corpus_profile,
         retrieval_policy="rrf",
         answer_policy=answer_policy,
         support_explanations=show_output,
@@ -184,7 +205,9 @@ def test_runner_accepts_matching_inspection_plan_before_runtime_access(
         )
 
 
-@pytest.mark.parametrize("mismatch", ["inspection", "budget", "prompt", "vector_limit"])
+@pytest.mark.parametrize(
+    "mismatch", ["inspection", "budget", "prompt", "vector_limit", "corpus", "case_ids"]
+)
 def test_runner_rejects_inconsistent_plans_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch, mismatch: str
 ) -> None:
@@ -209,6 +232,12 @@ def test_runner_rejects_inconsistent_plans_before_runtime_access(
         plan = plan.model_copy(
             update={"maximum_document_vectors": plan.maximum_document_vectors + 1}
         )
+        budget_plan = plan
+    elif mismatch == "corpus":
+        plan = plan.model_copy(update={"corpus_profile": "closeout"})
+        budget_plan = plan
+    elif mismatch == "case_ids":
+        plan = plan.model_copy(update={"case_ids": plan.case_ids[:-1]})
         budget_plan = plan
     with pytest.raises(LiveBaselineLimitError, match="plan is inconsistent"):
         runner.run_live_baseline(

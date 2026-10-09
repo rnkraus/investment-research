@@ -91,6 +91,7 @@ from scripts.plan_m1_5_live_baseline import (
     answer_policy_for_prompt_version,
     answer_profile_for_policy,
     build_plan,
+    manifest_path_for_corpus,
     retrieval_policy_for_version,
     selection_profile_for_policy,
     support_policy_for_prompt_version,
@@ -102,7 +103,7 @@ from scripts.score_m1_5_observations import (
     ScoreSummary,
     score_observations,
 )
-from scripts.verify_m1_5_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, validate_corpus
+from scripts.verify_m1_5_corpus import REPOSITORY_ROOT, validate_corpus
 from tests.integration.factories import FIXTURE_TIME, ResearchSource
 from tests.integration.m1_5 import index_sources, persist_sources, source_for_catalog_document
 
@@ -413,6 +414,7 @@ def run_live_baseline(
 
     try:
         approved_plan = build_plan(
+            corpus_profile=plan.corpus_profile,
             answer_model=ResearchModel(plan.configuration.answer_model),
             support_model=ResearchModel(plan.configuration.support_model),
             maximum_spend_micro_usd=plan.maximum_spend_micro_usd,
@@ -433,7 +435,7 @@ def run_live_baseline(
         raise LiveBaselineLimitError("the evaluation plan is inconsistent")
     if (plan.reranking_limit is None) != (reranker is None):
         raise LiveBaselineLimitError("reranking resources do not match the evaluation plan")
-    manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+    manifest = validate_corpus(manifest_path_for_corpus(plan.corpus_profile), REPOSITORY_ROOT)
     if local_output is not None:
         require_local_terminal()
     context = index.context
