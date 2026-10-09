@@ -70,6 +70,8 @@ from scripts.verify_m1_5_corpus import (
 APPROVED_CORPUS_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75a96a41d5f9"
 APPROVED_CLOSEOUT_SHA256 = "2f74cf37d52e534b40d0408eca41c72fd1474f4bac2b4d8a1c988817d187217a"
 CLOSEOUT_MANIFEST = REPOSITORY_ROOT / "fixtures/m1_5/evaluation-closeout-v1.json"
+APPROVED_CLOSEOUT_V2_SHA256 = "659b3f0704cca5465c00e547cc1a423b7bf1b05504c8e89401633ce48c15162e"
+CLOSEOUT_V2_MANIFEST = REPOSITORY_ROOT / "fixtures/m1_5/evaluation-closeout-v2.json"
 MAXIMUM_SPEND_MICRO_USD = 800_000
 MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
@@ -82,7 +84,7 @@ M1_LIVE_OPERATION_KINDS = (
 type LiveRetrievalPolicy = Literal["m1", "rrf", "rrf_rerank"]
 type LiveAnswerPolicy = Literal["m1", "citable_units"]
 type LiveSupportPolicy = Literal["m1", "attribution", "document_attribution"]
-type LiveCorpusProfile = Literal["baseline", "closeout"]
+type LiveCorpusProfile = Literal["baseline", "closeout", "closeout-v2"]
 
 
 class LiveBaselineLimitError(ValueError):
@@ -96,6 +98,8 @@ def manifest_path_for_corpus(profile: LiveCorpusProfile) -> Path:
         return DEFAULT_MANIFEST
     if profile == "closeout":
         return CLOSEOUT_MANIFEST
+    if profile == "closeout-v2":
+        return CLOSEOUT_V2_MANIFEST
     raise LiveBaselineLimitError("the evaluation corpus profile is not approved")
 
 
@@ -238,9 +242,11 @@ def build_plan(
         raise LiveBaselineLimitError("the invocation budget must be positive and at most USD 0.80")
     try:
         manifest_path = manifest_path_for_corpus(corpus_profile)
-        approved_digest = (
-            APPROVED_CORPUS_SHA256 if corpus_profile == "baseline" else APPROVED_CLOSEOUT_SHA256
-        )
+        approved_digest = {
+            "baseline": APPROVED_CORPUS_SHA256,
+            "closeout": APPROVED_CLOSEOUT_SHA256,
+            "closeout-v2": APPROVED_CLOSEOUT_V2_SHA256,
+        }[corpus_profile]
         digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
         if digest != approved_digest:
             raise LiveBaselineLimitError("the corpus version is not approved for this live plan")
@@ -431,7 +437,9 @@ def _budget_argument(value: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--corpus", choices=("baseline", "closeout"), default="baseline")
+    parser.add_argument(
+        "--corpus", choices=("baseline", "closeout", "closeout-v2"), default="baseline"
+    )
     parser.add_argument("--retrieval-policy", choices=("m1", "rrf", "rrf_rerank"), default="m1")
     parser.add_argument("--answer-policy", choices=("m1", "citable_units"), default="m1")
     parser.add_argument(

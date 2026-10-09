@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 final question catalog reviewed and selectable; live quality, acceptance, and default adoption pending
+**Status:** Active — Step 4 corrected closeout v2 reviewed and selectable; live quality, acceptance, and default adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1571,6 +1571,39 @@ structure check passed with three documents, seven passages, twelve cases, and
 `pending_owner_review`. Initial sandbox attempts could not access the uv cache; the checks then
 ran with explicit approval. No full backend suite, PostgreSQL, frontend/build, browser, hosted CI,
 or paid-provider verification was executed for this catalog-only block.
+
+#### Reviewed version-2 activation — Block 6 (2026-10-09)
+
+The owner approved the corrected question and its unchanged COMPLETE expectation after the
+explicit before/after review. Mark closeout v2 as reviewed and pin SHA-256
+`659b3f0704cca5465c00e547cc1a423b7bf1b05504c8e89401633ce48c15162e` in evaluation admission.
+Add `--corpus closeout-v2` to both preflight entry points; retain the baseline default and the
+existing `closeout` mapping to frozen v1. Plans and reports identify the selected catalog, digest,
+and changed question ID, so historical commands do not silently change meaning.
+
+V2 keeps the same twelve-case role bounds, optional twelve-request reranking allowance, USD 0.80
+reservation cap, source-unit/support prompts, input/output limits, and runtime validation. The
+runner already resolves the admitted catalog centrally; no new execution implementation or
+scoring change is needed. Extend its deterministic PostgreSQL test matrix to three catalogs
+across the existing nine selector/support-policy combinations. Existing CI test discovery
+includes these cases; no workflow or frontend change is required.
+
+**Block gate:** unit checks cover reviewed-v2 admission, rejection of an unreviewed copy,
+changed digests, inconsistent catalog plans, retained limits, and credential-free preflight.
+The disposable PostgreSQL gate verifies actual canonical persistence and citation readback
+with scripted adapters. Owner-run live quality, independent support review, source opening,
+complete runtime/build checks, and hosted CI remain separate gates. Do not reinterpret v1
+answers as answers to the revised question or claim a quality improvement from catalog repair.
+
+**Executed verification:** complete backend formatting and Ruff checks passed; Mypy passed
+across 293 source files and all 1,955 unit tests passed. The disposable PostgreSQL gate passed
+199 integration tests with seven expected SeaweedFS-only skips, including all 27 scripted
+catalog/selector/support-policy combinations. Empty migration round-trip, metadata checks, and
+isolated test-database/volume cleanup passed. Reviewed-v2 corpus validation and credential-free
+RRF/source-unit/document-attribution preflight passed with the pinned digest and unchanged
+USD 0.80 cap. No frontend/build, complete M0/M1 runtime, browser, hosted CI, or paid-provider
+verification was executed in this activation block. These results prove deterministic wiring,
+not live answer quality or milestone acceptance.
 
 ## 4. Handoff and stop rule
 

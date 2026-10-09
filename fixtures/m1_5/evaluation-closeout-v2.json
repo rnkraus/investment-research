@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "m1.5-rag-quality-closeout-v2",
-  "review_status": "pending_owner_review",
+  "review_status": "reviewed",
   "language": "en",
   "data_classification": "public_synthetic",
   "external_provider_use": "explicit_opt_in_only",

@@ -43,9 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--corpus",
-        choices=("baseline", "closeout"),
+        choices=("baseline", "closeout", "closeout-v2"),
         default="baseline",
-        help="Select the reviewed six-case baseline or twelve-case closeout catalog.",
+        help="Select the reviewed six-case baseline, closeout v1, or corrected closeout v2.",
     )
     parser.add_argument(
         "--retrieval-policy",
