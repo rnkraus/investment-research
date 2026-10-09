@@ -206,7 +206,9 @@ provider invoices. Cleanup was VERIFIED and execution failures were 0/12.
 
 This single developer-informed synthetic run does not establish general reliability or isolate
 the effect of the new prompt. The changed version-2 budget question is not an unchanged paired
-comparison with version 1. Current-revision runtime/source-opening
-and hosted checks, an explicit profile-adoption decision, and portfolio limitations remain
-separate closeout gates. No report, score, catalog, application default, or acceptance flag is
-changed by recording this review.
+comparison with version 1. The owner subsequently confirmed successful complete M1
+runtime/source-opening verification and the frontend production build on 2026-10-09 after commit
+`f2ef304`. These are owner-reported credential-free compatibility checks, not agent-executed or
+additional live-model measurements. Hosted checks, an explicit profile-adoption decision, and
+portfolio limitations remain separate closeout gates. No report, score, catalog, application
+default, or acceptance flag is changed by recording this review and confirmation.

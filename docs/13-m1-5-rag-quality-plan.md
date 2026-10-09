@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 closeout v2 source review owner accepted; final runtime gates, profile adoption, and milestone acceptance pending
+**Status:** Active — Step 4 source review accepted and local compatibility owner confirmed; profile adoption, hosted CI, and milestone acceptance pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1727,10 +1727,10 @@ not an independent human statement-level assessment, automatic default adoption,
 acceptance. The historical report and its pending structured review fields remain unchanged.
 
 **Remaining closeout decisions and checks:** decide explicitly which evaluated profile, if any,
-should be adopted, with prior comparisons and
-limitations retained; verify the chosen current revision with the complete M1 runtime and the
-owner-run original-source opening journey; obtain its frontend production build and required
-hosted-CI results; and publish the concise architecture, evaluation, before/after examples, safe
+should be adopted, with prior comparisons and limitations retained; retain the owner-confirmed
+M1 runtime/source-opening and build results below, without treating them as a live-profile
+adoption test; obtain required hosted-CI results; and publish the concise architecture,
+evaluation, before/after examples, safe
 demo, and limitations required by Step 4. Treat absent confirmations as pending, not failed.
 Additional live-model or normal-support comparisons require separate authorization, not an
 automatic rerun to chase perfect scores. None of these final gates is satisfied merely by the
@@ -1746,9 +1746,20 @@ and hosted-CI verification were not executed in this documentation-only block.
 `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed, including the generated TypeScript-contract
 check and all 47 frontend tests. No source code, dependency, generated contract, or application
 configuration changed. The complete M1 verifier invokes visible Chromium, so the agent did not
-run it under the owner's browser restriction. The owner must run that isolated, credential-free
-runtime/source-opening gate and the frontend production build; final hosted checks remain pending.
+run it under the owner's browser restriction. The owner subsequently confirmed that isolated,
+credential-free runtime/source-opening gate and the frontend production build as described below;
+final hosted checks remain pending.
 This frontend compatibility result does not replace those gates or demonstrate live-model quality.
+
+**Owner-run completion checks (2026-10-09):** After commit `f2ef304`, the owner explicitly
+confirmed successful `uv run --locked python -m scripts.verify_m1_runtime` and `pnpm build`.
+The complete M1 script includes the PDF/text same-origin journey, visible Chromium source opening,
+original integrity, sensitive-log checks, and isolated cleanup. These are owner-reported successes;
+the agent neither reran the script/build nor inspected the browser or execution logs. This closes
+the reported local compatibility/build checks for that implementation revision, not the final
+profile-adoption or milestone gate. Credential-free M1 adapters do not establish normal live
+support-prompt quality or the current v6 Terra profile's quality. No additional paid call or
+historical report change follows from this confirmation; hosted CI remains unconfirmed.
 
 ## 4. Handoff and stop rule
 
