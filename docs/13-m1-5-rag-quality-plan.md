@@ -1644,6 +1644,45 @@ catalog/selector/support-policy combinations. Empty migration round-trip, metada
 and isolated test-database/volume cleanup passed. No paid-provider call, historical report rewrite,
 frontend/build, browser, full M0/M1 runtime, or hosted CI check was executed for this block.
 
+#### Focused source-unit answer prompt — Block 8 (2026-10-09)
+
+The rollout answer included a requested constraint and an unsolicited supplier forecast whose
+specific attribution was unsupported. Apply a narrow prompt hypothesis rather than relaxing
+statement support or changing the reviewed question. New source-unit plans use
+`m1-5-citable-units-en-answer-prompt-v6` and model-specific
+`m1-5-<model>-low-citable-units-en-v6` generation configuration.
+
+The prompt limits statements and rendered text to the question's material requested parts,
+omits unrequested adjacent facts, forecasts, and explanations, and retains necessary uncertainty,
+time scope, and conflict. It requests only needed units; title/date units remain allowed for
+necessary subject/report/time attribution, never as substitutes for factual evidence. Do not
+ban attribution citations, require one statement for every question, or encode fixture answers.
+This wording follows the direct, specific goals in
+[OpenAI reasoning guidance](https://developers.openai.com/api/docs/guides/reasoning-best-practices).
+Its effectiveness remains an evaluation question, not a guarantee of model compliance.
+
+Keep the v3 ID transport, v2 unit boundaries, existing models/reasoning, request/token limits,
+USD 0.80 reservation ceiling, strict schema/canonical/support checks, catalogs, scoring, and
+application defaults unchanged. No SDK, dependency, schema, workflow, frontend, or support-prompt
+change is required. Existing CI discovery covers the updated tests. Historical reports are not
+rewritten and old v5 plans are not silently admitted as v6; generate a new plan for a new run.
+
+**Block gate:** verify delivery of the focus and attribution rules for both answer models,
+unchanged coverage/support instructions, profiles and preflight recording, rejection of stale
+prompt plans, and the existing metadata-size boundary. Complete deterministic backend checks
+and canonical PostgreSQL runner verification before pausing. These gates cannot prove a live
+quality improvement. A separately authorized owner-run comparison on reviewed closeout v2,
+independent support review, full runtime/build, and hosted checks remain separate requirements.
+
+**Executed verification:** targeted unit checks passed all 254 cases after shortening the new
+wording to preserve the existing metadata-size regression and correcting the Luna test response's
+model identity. Complete backend formatting, Ruff, and Mypy (293 source files) passed; all 1,961
+unit tests passed. The disposable PostgreSQL gate passed 199 integration tests with seven expected
+SeaweedFS-only skips, including all 27 scripted catalog/selector/support-policy combinations.
+Empty migration round-trip, metadata checks, and isolated test-database/volume cleanup passed.
+No paid-provider call, historical report rewrite, frontend/build, browser, full M0/M1 runtime,
+or hosted CI check was executed for this block. M1.5 quality acceptance remains open.
+
 ## 4. Handoff and stop rule
 
 Stop M1.5 when its reviewed correctness gates pass and the chosen retrieval/citation approach has
