@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 2 comparisons recorded; Step 3 opt-in evaluator wired; live verification/adoption pending
+**Status:** Active — Step 3 paired live reranking comparison recorded; independent review and default adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1276,6 +1276,66 @@ production build, browser, paid provider, or hosted CI was run. The agent did no
 complete M1 command and confirm the required hosted checks before Block 4's full gate can close.
 Live reranking compatibility, paired quality/latency/usage measurements, source-opening review,
 and default adoption remain pending under Block 5.
+
+#### Initial paired live reranking comparison — Block 5 (2026-10-09)
+
+The owner reported all requested compatibility/hosted checks green and ran two opt-in comparisons.
+This is owner-reported hosted verification, not an agent-inspected CI or browser result. The
+agent inspected the resulting ignored local reports without rewriting them:
+`outputs/m1_5/rrf-rerank-terra-terra-v2.json` and
+`outputs/m1_5/rrf-terra-terra-comparison-v1.json`.
+
+Both runs used corpus `m1.5-rag-quality-v1` with SHA-256
+`ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75a96a41d5f9`, Terra for answer/support,
+`citable_units`, `document_attribution`, and `m1.5-observation-score-v2`. The recorded model,
+prompt, embedding, and index configurations match except for the selector. The USD 0.80 ceiling
+and confirmed included-Starter reranking policy remained unchanged.
+
+| Recorded measurement | RRF | RRF plus BGE |
+| --- | ---: | ---: |
+| Selector | `m1-5-rrf-k60-v1` | `m1-5-rrf-k60-bge-none-v1` |
+| Operational failures | 0/6 | 0/6 |
+| Reviewed evidence available in selected context | 5/5 answerable cases | 5/5 answerable cases |
+| Expected coverage status | 6/6 | 6/6 |
+| Reviewed citation match, including uncited abstention | 5/6 | 5/6 |
+| Exact canonical citations valid | 5/5 checked cases | 5/5 checked cases |
+| Independent support assessments | 0 | 0 |
+| Median per-question elapsed time | 3,237.5 ms | 5,101.5 ms |
+| Maximum per-question elapsed time | 7,235 ms | 9,574 ms |
+| Estimated total provider cost, including preparation | USD 0.047785 | USD 0.049307 |
+| Retained maximum-cost reservations | USD 0.687304 | USD 0.687088 |
+| Reported rerank units | 0 | 6 |
+| Cleanup | Verified | Verified |
+
+All six BGE responses reported `bge-reranker-v2-m3` and one rerank unit. Per-call elapsed time
+was 338–611 ms. Do not attribute the entire end-to-end difference to reranking: provider/model
+latency and generated output vary, and one small paired run does not establish a latency baseline.
+Estimated cost is computed from reported usage and application prices, not an invoice; retained
+reservations are conservative admission amounts, not money spent. The BGE monetary estimate is
+zero only under the explicitly confirmed included-Starter policy.
+
+Matched reviewed citation IDs and coverage outcomes were the same. Selected reviewed-passage sets
+were the same in five cases; the unanswerable dividend case selected different context but both
+runs correctly abstained. These catalog sets do not preserve raw candidate ordering and cannot
+prove that reranking left the entire ranked list unchanged.
+
+**Revenue precision finding:** Both revenue answers completed with two exact canonical citation
+links, but each link mapped to an empty reviewed-passage tuple. The expected revenue passage was
+present in both selected contexts. The unchanged mapper requires each citation to lie wholly
+inside the reviewed anchor; the scorer intentionally penalizes wider or unmatched citations.
+The earlier deterministic PDF/source-unit finding already demonstrates a heading-inclusive unit
+outside that narrow anchor. This is consistent with the live observation, but these reports retain
+neither raw quotes nor citation offsets, so the exact cause of each live mismatch cannot be
+reconstructed from them. Do not declare a scorer defect, expand the anchor, grant overlap credit,
+or rewrite these reports to erase the precision penalty. Independent answer-support and exact
+source-opening review remain separate gates.
+
+The unchanged corpus validator and all 34 passage-mapping/observation-scoring unit tests passed
+during this review. No new provider request, runtime/build, browser, or application change was
+performed. The outcome is **technically verified but quality-inconclusive**: the six-case pair
+shows no measured quality advantage and does not justify changing normal application defaults.
+Retain opt-in reranking, defer broader evaluation to the final M1.5 quality block, and keep
+independent support review, citation precision/source opening, and the full Step 3 gate open.
 
 ### Step 4 — Quality hardening and portfolio evidence
 
