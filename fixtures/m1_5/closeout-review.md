@@ -4,9 +4,11 @@
 the version-2 budget-question correction after seeing its exact wording and unchanged COMPLETE
 expectation. Neither catalog approval is live answer-quality or M1.5 acceptance.
 
-The machine-readable source of truth is
+The machine-readable expectations are in frozen
 [`evaluation-closeout-v1.json`](./evaluation-closeout-v1.json), catalog ID
-`m1.5-rag-quality-closeout-v1`. It reuses the same three fictional CC0 originals and preserves
+`m1.5-rag-quality-closeout-v1`, and separately reviewed
+[`evaluation-closeout-v2.json`](./evaluation-closeout-v2.json), catalog ID
+`m1.5-rag-quality-closeout-v2`. Both reuse the same three fictional CC0 originals; v1 preserves
 all six cases and six targets from the reviewed [`evaluation.json`](./evaluation.json).
 One additional exact target covers the supplier lead-time expectation in the capacity update.
 The historical six-case reports and their scores remain unchanged.
@@ -16,7 +18,7 @@ The historical six-case reports and their scores remain unchanged.
 [`evaluation-closeout-v2.json`](./evaluation-closeout-v2.json), catalog ID
 `m1.5-rag-quality-closeout-v2`, preserves all originals, seven source targets, scopes, expected
 answers, coverage labels, and the first eleven cases from version 1. Only the final question and
-its ID change, besides the catalog ID and pending review status:
+its ID change, besides catalog identity and review metadata:
 
 | Field | Frozen version 1 | Reviewed version 2 |
 | --- | --- | --- |
@@ -138,3 +140,67 @@ uv run --locked python -m scripts.verify_m1_5_live_baseline \
 Passing these checks proves original-source integrity and bounded admission, not live retrieval
 quality, independent support, or milestone acceptance. Six- and twelve-case scores have different
 denominators; retain the recorded corpus ID and digest in every comparison.
+
+## Prompt-v6 live observation and qualitative source review — 2026-10-09
+
+**Review boundary:** The owner executed the live test and supplied its local diagnostic output.
+Codex separately compared the ten published answers (14 statements) and two abstentions with the
+reviewed version-2 expectations and all three originals, including all four PDF pages. This is
+a qualitative developer-agent review outside the application's support evaluator, not owner
+acceptance, a human review, a held-out benchmark, or a structured independent-model evaluation.
+The supplied evaluator reasons were not treated as proof of statement support.
+
+The ignored local report is `closeout-v2-luna-luna-prompt-v6-20261009-042912.json` under
+`outputs/m1_5/`, SHA-256
+`f43a0a5ad3b67d224b2a2d18c2b00662da788b569c1ab9d4311d82707415d88a`.
+Keep it unchanged; it is not committed and its structured independent-support fields remain
+pending. Publicly shareable findings are recorded here without prompts, raw model bodies,
+provider credentials, private hosts, or machine-specific attachment paths.
+
+The run used reviewed closeout v2 (digest recorded above), `m1-5-rrf-k60-v1`, Luna/Luna,
+`m1-5-citable-units-en-answer-prompt-v6`, and the diagnostic support profile
+`m1-5-local-document-attribution-support-reason-v1`. Reranking was disabled. Asking the support
+model for reasons changes its prompt/schema; do not present this as a measurement of the normal
+Boolean-only support profile.
+
+| Case suffix | Published statements | Source-based assessment |
+| --- | --- | --- |
+| `fy2025-revenue` | 2 | PDF page 2 supports USD 184.2 million, USD 151.0 million, both fiscal years, and 22.0% growth. |
+| `fy2026-rollout-constraint` | 1 | Capacity update supports transformer shortage; no unsolicited forecast is published. |
+| `fy2026-dividend` | 0 | No scoped original establishes a declared FY2026 dividend; uncited abstention is appropriate. |
+| `fy2026-conflicting-constraint` | 2 | The two July 22 reports support separately attributed, incompatible constraints; neither is chosen as the winner. |
+| `fy2026-european-pilot-budget` | 1 | Operations note supports EUR 12 million without assigning a fiscal period. |
+| `fy2026-battery-cabinet-window` | 1 | Operations note supports an expected shift into Q2 2027, not a guaranteed date. |
+| `fy2026-focused-constraint` | 1 | Only the capacity update's primary constraint is returned, as requested. |
+| `fy2026-supplier-lead-time-uncertainty` | 2 | Both the first-half-2027 expectation and schedule uncertainty are preserved. |
+| `fy2025-revenue-and-fy2026-dividend` | 1 | PARTIAL returns supported revenue/growth without inventing a dividend. |
+| `fy2026-pilot-budget-and-battery-supplier` | 1 | PARTIAL returns the budget without inventing a named supplier. |
+| `fy2026-pilot-budget-outside-scope` | 0 | Capacity update alone lacks the budget; the excluded operations note is not used. |
+| `fy2025-revenue-and-european-pilot-budget` | 2 | Both originals support their respective facts; currencies stay separate and no FY2026 budget applicability is inferred. |
+
+No unsupported material claim was identified in the 14 published statements. Unvalidated
+`rendered_text` is not the published answer: review the `validated_result` assembled from accepted
+statements. In the partial supplier case, additional model-authored missing-information prose
+was absent from that published answer; PARTIAL retains the existing fixed UI notice.
+
+**Citation distinction:** Preserve strict target matching at 10/12. The conflict case has two
+additional genuine title/date citations; the combined revenue/budget case has one additional
+genuine PDF attribution citation. All required factual targets are present in both cases. These
+extras are not fabricated evidence or substitutes for factual support, but remain outside the
+frozen strict targets. Their exact validity comes from the report's canonical checks; this
+qualitative reading does not independently verify database UUID/offset mapping, which repeated
+budget occurrence was stored, or source-viewer opening.
+
+Measured coverage is 12/12, required factual evidence presence is 10/10 answerable cases, exact
+citation validity is 10/10 checked answers, and uncited abstention is 2/2. Median question latency
+is 4,895 ms and maximum latency is 10,411 ms. Estimated question-phase cost is USD 0.010788;
+including preparation it is USD 0.010813. Reserved USD 0.138298 is a conservative reservation,
+not an actual charge. Estimates use repository prices, exclude Pinecone billing, and are not
+provider invoices. Cleanup was VERIFIED and execution failures were 0/12.
+
+This single developer-informed synthetic run does not establish general reliability or isolate
+the effect of the new prompt. The changed version-2 budget question is not an unchanged paired
+comparison with version 1. Owner review of these findings, current-revision runtime/source-opening
+and hosted checks, an explicit profile-adoption decision, and portfolio limitations remain
+separate closeout gates. No report, score, catalog, application default, or acceptance flag is
+changed by recording this review.

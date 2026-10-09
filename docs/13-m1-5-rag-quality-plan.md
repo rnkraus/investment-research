@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 corrected closeout v2 reviewed and selectable; live quality, acceptance, and default adoption pending
+**Status:** Active — Step 4 closeout v2 measured and qualitatively reviewed; owner acceptance, final runtime gates, and default adoption pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1682,6 +1682,60 @@ SeaweedFS-only skips, including all 27 scripted catalog/selector/support-policy 
 Empty migration round-trip, metadata checks, and isolated test-database/volume cleanup passed.
 No paid-provider call, historical report rewrite, frontend/build, browser, full M0/M1 runtime,
 or hosted CI check was executed for this block. M1.5 quality acceptance remains open.
+
+#### Prompt-v6 live observation and source review — Block 9 (2026-10-09)
+
+The owner-run twelve-case closeout-v2 RRF/source-unit Luna/Luna test completed without execution
+failures and with VERIFIED cleanup. The local report's SHA-256 is
+`f43a0a5ad3b67d224b2a2d18c2b00662da788b569c1ab9d4311d82707415d88a`.
+The [case-by-case source review](../fixtures/m1_5/closeout-review.md#prompt-v6-live-observation-and-qualitative-source-review--2026-10-09)
+records its identity, configuration, statements, evidence distinctions, and limitations. Keep
+the ignored report unchanged; do not copy local raw diagnostic output into shared documentation.
+
+| Measurement | Recorded result |
+| --- | --- |
+| Execution failures | 0/12 |
+| Expected coverage | 12/12 |
+| Required factual evidence | 10/10 answerable cases |
+| Exact citation validity | 10/10 checked answers |
+| Correct uncited abstention | 2/2 |
+| Strict citation target matching | 10/12, unchanged scoring rule |
+| Additional genuine attribution citations | 3 links across 2 answers |
+| Median / maximum question latency | 4,895 ms / 10,411 ms |
+| Estimated question / total cost | USD 0.010788 / USD 0.010813 |
+| Retained maximum reservation | USD 0.138298, not actual spend |
+
+Codex separately checked all 14 published statements and the two abstentions against the
+reviewed expectations and originals; no unsupported material claim was identified. The rollout
+answer contains no unsolicited forecast. Conflict attribution and the combined revenue/budget
+answer include genuine metadata quotes outside the frozen factual targets; preserve the strict
+penalties instead of relabeling targets or replacing them with the favorable descriptive
+diagnostics. The review is qualitative and developer-informed, not human acceptance or a
+structured independent-model assessment. Historical report support-assessment counts remain
+zero and `independent_support_review` remains pending.
+
+The run uses answer prompt v6 and the local support-reason profile, with no reranker. It does not
+measure the normal Boolean-only support prompt or establish the current v6 Terra profile's live
+quality. The corrected catalog and stochastic models prevent a causal before/after claim from
+this single run. Costs are repository-price estimates, exclude Pinecone billing, and are not
+provider invoices. No extra paid call, default adoption, validation change, or M1.5 acceptance
+is authorized by this record.
+
+**Remaining closeout decisions and checks:** obtain owner review of the documented findings;
+decide explicitly which evaluated profile, if any, should be adopted, with prior comparisons and
+limitations retained; verify the chosen current revision with the complete M1 runtime and the
+owner-run original-source opening journey; obtain its frontend production build and required
+hosted-CI results; and publish the concise architecture, evaluation, before/after examples, safe
+demo, and limitations required by Step 4. Treat absent confirmations as pending, not failed.
+Additional live-model or normal-support comparisons require separate authorization, not an
+automatic rerun to chase perfect scores. None of these final gates is satisfied merely by the
+twelve-case report or this documentation-only block.
+
+**Executed verification:** report-metric assertions, SHA-256 verification, the Git ignore check,
+source-review/cross-link inspection, and `git diff --check` passed. Only these two documentation
+files changed. No backend/frontend test rerun or paid-provider call was needed to record the
+already inspected results. Current-revision runtime, browser/source-opening, production build,
+and hosted-CI verification were not executed in this documentation-only block.
 
 ## 4. Handoff and stop rule
 
