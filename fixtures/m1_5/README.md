@@ -16,25 +16,36 @@ scope, and evidence references. It does **not** run retrieval, call a model, cal
 scores, or decide whether the expected answer is factually appropriate. The optional
 `--require-reviewed` flag enforces the owner's review decision recorded in the catalog.
 
-## Final closeout catalog draft
+## Reviewed final closeout catalog
 
-[`evaluation-closeout-v1.json`](./evaluation-closeout-v1.json) is a separate twelve-case draft,
+[`evaluation-closeout-v1.json`](./evaluation-closeout-v1.json) is a separate reviewed twelve-case catalog,
 not a replacement for the reviewed six-case baseline. It preserves the original six cases and
 adds focused answers, uncertainty, two PARTIAL cases, excluded-document abstention, and combined
 PDF/text evidence. The [owner review guide](./closeout-review.md) describes the expected behavior
-and review boundary. Its status remains `pending_owner_review`; normal runtime is unchanged and
-the live runner still pins the original catalog.
+and review boundary. The owner accepted it on 2026-10-09. Normal runtime is unchanged; the live
+runner defaults to the original six-case catalog and requires `--corpus closeout` for this version.
 
-Check the draft's structure and original ranges from `backend/`:
+Check its structure, review status, and original ranges from `backend/`:
 
 ```bash
 uv run --locked python -m scripts.verify_m1_5_corpus \
-  --manifest ../fixtures/m1_5/evaluation-closeout-v1.json
+  --manifest ../fixtures/m1_5/evaluation-closeout-v1.json --require-reviewed
 ```
 
-This does not call providers or establish answer quality. `--require-reviewed` must fail until
-owner approval is recorded. Activating this catalog and recalculating paid-run bounds are separate
-work; historical six-case scores must not be rewritten or compared as twelve-case measurements.
+Preview the selected twelve-case plan without credentials or provider calls:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --corpus closeout --retrieval-policy rrf --answer-policy citable_units \
+  --support-policy document_attribution
+```
+
+These checks do not establish answer quality or authorize execution. The USD 0.80 reservation
+ceiling remains unchanged and may stop a twelve-case run early. Query/answer limits are twelve,
+support limits are 96, and an explicitly selected reranking run requires confirmation of allowance
+for up to twelve BGE requests. Inputs and per-call bounds remain unchanged. Historical six-case
+scores must not be rewritten or compared as twelve-case measurements; compare policies on the same
+catalog ID/digest. The existing scorer accepts this catalog through its `--manifest` option.
 
 ## Opt-in support attribution experiment
 

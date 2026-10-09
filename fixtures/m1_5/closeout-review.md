@@ -1,6 +1,7 @@
 # M1.5 closeout question review
 
-**Status:** Pending owner review. No live run or M1.5 acceptance is recorded by this document.
+**Status:** Owner reviewed and accepted the twelve questions and expectations on 2026-10-09.
+This is catalog approval, not live answer-quality or M1.5 acceptance.
 
 The machine-readable source of truth is
 [`evaluation-closeout-v1.json`](./evaluation-closeout-v1.json), catalog ID
@@ -61,24 +62,39 @@ targets fails its strict citation metric without automatically being a fabricate
 ## Review and execution boundary
 
 1. Compare each expected fact, missing fact, scope, and source range with the original documents.
-2. Approve or correct the expectations before any paid run of this catalog. Keep
-   `pending_owner_review` until the owner explicitly accepts them.
-3. After approval, record the reviewed catalog digest and update the bounded evaluation tooling
-   in a separate work block. Recalculate request/reservation limits for twelve questions rather
-   than assuming that the six-case USD 0.80 limit will admit them all.
+2. The owner explicitly accepted the expectations before any paid run of this catalog. Its
+   recorded status is now `reviewed`. Later expectation changes need another reviewed version;
+   do not alter targets to make an already measured response pass.
+3. The preflight and live runner pin this reviewed catalog's digest and accept `--corpus closeout`.
+   Request limits follow the twelve cases, but the USD 0.80 reservation ceiling is unchanged.
+   It may stop a twelve-case run before completion; approval of the catalog is not permission
+   to raise the cost ceiling. Retained reservations are conservative maximums, not actual spend.
 4. Compare policies on this same reviewed version and record independent statement-support
    assessments separately from the application's model decisions.
 
-The current live runner still pins `evaluation.json`; it does **not** execute this draft. No new
-provider command, paid budget, default-policy adoption, frontend change, or CI workflow is approved
-by creating it. Existing unit-test discovery verifies the structural draft checks without credentials.
+The live runner defaults to the six-case `evaluation.json`. Selecting `--corpus closeout` explicitly
+uses all twelve cases. Execution still requires `--execute`, the public-synthetic and Starter
+confirmations, and a fresh ignored output filename; local raw-output inspection remains optional.
+Reranking additionally requires allowance confirmation for up to twelve requests. No agent-run
+provider execution, budget increase, default-policy adoption, frontend change, or new CI workflow
+is approved by catalog review. Existing unit and PostgreSQL CI discovery verifies both profiles
+with deterministic adapters.
 
 Offline structure check from `backend/`:
 
 ```bash
 uv run --locked python -m scripts.verify_m1_5_corpus \
-  --manifest ../fixtures/m1_5/evaluation-closeout-v1.json
+  --manifest ../fixtures/m1_5/evaluation-closeout-v1.json --require-reviewed
 ```
 
-Adding `--require-reviewed` must reject this pending draft. Passing the structure check proves
-original-source integrity, not live retrieval quality, independent support, or milestone acceptance.
+Credential-free execution preflight from `backend/`:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_live_baseline \
+  --corpus closeout --retrieval-policy rrf --answer-policy citable_units \
+  --support-policy document_attribution
+```
+
+Passing these checks proves original-source integrity and bounded admission, not live retrieval
+quality, independent support, or milestone acceptance. Six- and twelve-case scores have different
+denominators; retain the recorded corpus ID and digest in every comparison.
