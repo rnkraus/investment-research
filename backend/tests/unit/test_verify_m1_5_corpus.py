@@ -1,6 +1,9 @@
 """Regression tests for the versioned offline M1.5 evaluation catalog."""
 
+import hashlib
 import json
+import sys
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -11,8 +14,12 @@ from scripts.verify_m1_5_corpus import (
     DEFAULT_MANIFEST,
     REPOSITORY_ROOT,
     CorpusValidationError,
+    main,
     validate_corpus,
 )
+
+CLOSEOUT_MANIFEST = REPOSITORY_ROOT / "fixtures/m1_5/evaluation-closeout-v1.json"
+FROZEN_BASELINE_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75a96a41d5f9"
 
 
 def changed_manifest(
@@ -36,6 +43,90 @@ def test_catalog_matches_its_frozen_original_sources() -> None:
     assert len(manifest.documents) == 3
     assert len(manifest.passages) == 6
     assert len(manifest.cases) == 6
+
+
+def test_closeout_catalog_matches_originals_and_awaits_owner_review() -> None:
+    manifest = validate_corpus(CLOSEOUT_MANIFEST, REPOSITORY_ROOT)
+
+    assert manifest.id == "m1.5-rag-quality-closeout-v1"
+    assert manifest.review_status == "pending_owner_review"
+    assert len(manifest.documents) == 3
+    assert len(manifest.passages) == 7
+    assert len(manifest.cases) == 12
+    assert Counter(case.expected_coverage for case in manifest.cases) == {
+        "COMPLETE": 7,
+        "PARTIAL": 2,
+        "CONFLICTING": 1,
+        "INSUFFICIENT": 2,
+    }
+
+
+def test_closeout_catalog_preserves_the_frozen_six_case_baseline() -> None:
+    baseline = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+    closeout = validate_corpus(CLOSEOUT_MANIFEST, REPOSITORY_ROOT)
+
+    assert hashlib.sha256(DEFAULT_MANIFEST.read_bytes()).hexdigest() == FROZEN_BASELINE_SHA256
+    assert closeout.source_manifest == baseline.source_manifest
+    assert closeout.documents == baseline.documents
+    assert closeout.passages[:6] == baseline.passages
+    assert closeout.cases[:6] == baseline.cases
+
+
+def test_new_lead_time_target_does_not_relabel_the_old_rollout_case() -> None:
+    manifest = validate_corpus(CLOSEOUT_MANIFEST, REPOSITORY_ROOT)
+    cases = {case.id: case for case in manifest.cases}
+    target = "passage:fy2026-supplier-lead-time-expectation"
+
+    assert cases["question:fy2026-supplier-lead-time-uncertainty"].evidence_groups == ((target,),)
+    assert cases["question:fy2026-rollout-constraint"].evidence_groups == (
+        ("passage:fy2026-transformer-constraint",),
+    )
+    assert cases["question:fy2026-focused-constraint"].evidence_groups == (
+        ("passage:fy2026-transformer-constraint",),
+    )
+
+
+def test_closeout_document_scope_does_not_grant_out_of_scope_budget_evidence() -> None:
+    manifest = validate_corpus(CLOSEOUT_MANIFEST, REPOSITORY_ROOT)
+    case = next(
+        case for case in manifest.cases if case.id == "question:fy2026-pilot-budget-outside-scope"
+    )
+    budget_document = next(
+        passage.document_id
+        for passage in manifest.passages
+        if passage.id == "passage:fy2026-european-pilot-budget-first"
+    )
+
+    assert budget_document not in case.scope_document_ids
+    assert case.expected_coverage == "INSUFFICIENT"
+    assert case.expected_answer is None
+    assert case.evidence_groups == ()
+
+
+def test_closeout_cli_checks_structure_without_claiming_review(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["verify_m1_5_corpus", "--manifest", str(CLOSEOUT_MANIFEST)])
+
+    assert main() == 0
+    output = capsys.readouterr()
+    assert "3 documents, 7 passages, 12 cases" in output.out
+    assert "review_status=pending_owner_review" in output.out
+
+
+def test_closeout_cli_rejects_unreviewed_acceptance(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["verify_m1_5_corpus", "--manifest", str(CLOSEOUT_MANIFEST), "--require-reviewed"],
+    )
+
+    assert main() == 1
+    output = capsys.readouterr()
+    assert "awaits owner review" in output.err
+    assert output.out == ""
 
 
 def test_catalog_rejects_changed_fixture_digest(tmp_path: Path) -> None:
