@@ -5,6 +5,7 @@ import hashlib
 import sys
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,6 +68,8 @@ from scripts.verify_m1_5_corpus import (
 )
 
 APPROVED_CORPUS_SHA256 = "ee526a2b708161e0c017b287529a62820978093e479fc78f2cea75a96a41d5f9"
+APPROVED_CLOSEOUT_SHA256 = "2f74cf37d52e534b40d0408eca41c72fd1474f4bac2b4d8a1c988817d187217a"
+CLOSEOUT_MANIFEST = REPOSITORY_ROOT / "fixtures/m1_5/evaluation-closeout-v1.json"
 MAXIMUM_SPEND_MICRO_USD = 800_000
 MAXIMUM_DOCUMENT_VECTORS = 64
 MAXIMUM_INPUT_UNITS_PER_REQUEST = 128_000
@@ -79,10 +82,21 @@ M1_LIVE_OPERATION_KINDS = (
 type LiveRetrievalPolicy = Literal["m1", "rrf", "rrf_rerank"]
 type LiveAnswerPolicy = Literal["m1", "citable_units"]
 type LiveSupportPolicy = Literal["m1", "attribution", "document_attribution"]
+type LiveCorpusProfile = Literal["baseline", "closeout"]
 
 
 class LiveBaselineLimitError(ValueError):
     """Reject a plan or request without including provider or corpus content."""
+
+
+def manifest_path_for_corpus(profile: LiveCorpusProfile) -> Path:
+    """Resolve only repository-owned approved catalogs, never an arbitrary input path."""
+
+    if profile == "baseline":
+        return DEFAULT_MANIFEST
+    if profile == "closeout":
+        return CLOSEOUT_MANIFEST
+    raise LiveBaselineLimitError("the evaluation corpus profile is not approved")
 
 
 def answer_profile_for_policy(
@@ -177,7 +191,7 @@ class RerankingLimit(_FrozenModel):
     model: Literal["bge-reranker-v2-m3"] = BGE_RERANK_MODEL
     configuration_version: Literal["m1-5-pinecone-bge-none-v1"] = BGE_RERANK_CONFIG_VERSION
     billing_policy: Literal["pinecone-starter-bge-included-v1"] = "pinecone-starter-bge-included-v1"
-    maximum_requests: Literal[6] = 6
+    maximum_requests: int = Field(default=6, gt=0, le=12)
     maximum_rerank_units_per_request: Literal[1] = 1
 
 
@@ -185,6 +199,7 @@ class LiveBaselinePlan(_FrozenModel):
     schema_version: Literal[1] = 1
     policy_version: Literal["m1.5-live-budget-v1"] = "m1.5-live-budget-v1"
     execution_mode: Literal["preflight_only"] = "preflight_only"
+    corpus_profile: LiveCorpusProfile = "baseline"
     corpus_id: str
     corpus_sha256: str
     document_count: int
@@ -210,6 +225,7 @@ def build_plan(
     answer_policy: LiveAnswerPolicy = "m1",
     support_explanations: bool = False,
     support_policy: LiveSupportPolicy = "m1",
+    corpus_profile: LiveCorpusProfile = "baseline",
 ) -> LiveBaselinePlan:
     """Validate only the frozen approved fixtures; never load runtime settings or keys."""
 
@@ -221,10 +237,14 @@ def build_plan(
     ):
         raise LiveBaselineLimitError("the invocation budget must be positive and at most USD 0.80")
     try:
-        digest = hashlib.sha256(DEFAULT_MANIFEST.read_bytes()).hexdigest()
-        if digest != APPROVED_CORPUS_SHA256:
+        manifest_path = manifest_path_for_corpus(corpus_profile)
+        approved_digest = (
+            APPROVED_CORPUS_SHA256 if corpus_profile == "baseline" else APPROVED_CLOSEOUT_SHA256
+        )
+        digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        if digest != approved_digest:
             raise LiveBaselineLimitError("the corpus version is not approved for this live plan")
-        manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+        manifest = validate_corpus(manifest_path, REPOSITORY_ROOT)
     except OSError:
         raise LiveBaselineLimitError("the approved corpus is unavailable") from None
     if manifest.review_status != "reviewed":
@@ -269,6 +289,7 @@ def build_plan(
             )
         )
     return LiveBaselinePlan(
+        corpus_profile=corpus_profile,
         corpus_id=manifest.id,
         corpus_sha256=digest,
         document_count=len(manifest.documents),
@@ -291,7 +312,11 @@ def build_plan(
         ),
         maximum_spend_micro_usd=maximum_spend_micro_usd,
         role_limits=tuple(limits),
-        reranking_limit=RerankingLimit() if retrieval_policy == "rrf_rerank" else None,
+        reranking_limit=(
+            RerankingLimit(maximum_requests=len(manifest.cases))
+            if retrieval_policy == "rrf_rerank"
+            else None
+        ),
     )
 
 
@@ -406,6 +431,7 @@ def _budget_argument(value: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--corpus", choices=("baseline", "closeout"), default="baseline")
     parser.add_argument("--retrieval-policy", choices=("m1", "rrf", "rrf_rerank"), default="m1")
     parser.add_argument("--answer-policy", choices=("m1", "citable_units"), default="m1")
     parser.add_argument(
@@ -427,6 +453,7 @@ def main() -> int:
     arguments = parser.parse_args()
     try:
         plan = build_plan(
+            corpus_profile=arguments.corpus,
             answer_model=arguments.answer_model,
             support_model=arguments.support_model,
             maximum_spend_micro_usd=arguments.max_spend_usd,

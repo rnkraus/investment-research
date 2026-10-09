@@ -27,6 +27,7 @@ def test_plan_freezes_the_six_reviewed_cases_and_existing_m1_policy() -> None:
     plan = live.build_plan()
 
     assert plan.execution_mode == "preflight_only"
+    assert plan.corpus_profile == "baseline"
     assert plan.corpus_sha256 == live.APPROVED_CORPUS_SHA256
     assert plan.document_count == 3
     assert len(plan.case_ids) == len(set(plan.case_ids)) == 6
@@ -39,6 +40,77 @@ def test_plan_freezes_the_six_reviewed_cases_and_existing_m1_policy() -> None:
         ProviderOperationKind.ANSWER_GENERATION: 6,
         ProviderOperationKind.STATEMENT_SUPPORT: 48,
     }
+
+
+def test_closeout_selection_pins_twelve_cases_without_raising_spend_or_input_limits() -> None:
+    baseline = live.build_plan()
+    closeout = live.build_plan(corpus_profile="closeout")
+
+    assert closeout.corpus_profile == "closeout"
+    assert closeout.corpus_id == "m1.5-rag-quality-closeout-v1"
+    assert closeout.corpus_sha256 == live.APPROVED_CLOSEOUT_SHA256
+    assert len(closeout.case_ids) == len(set(closeout.case_ids)) == 12
+    assert closeout.case_ids[:6] == baseline.case_ids
+    assert closeout.maximum_spend_micro_usd == baseline.maximum_spend_micro_usd == 800_000
+    assert closeout.maximum_document_vectors == baseline.maximum_document_vectors == 64
+    assert closeout.maximum_input_units_per_request == baseline.maximum_input_units_per_request
+    assert closeout.configuration == baseline.configuration
+    assert {limit.role: limit.maximum_requests for limit in closeout.role_limits} == {
+        ProviderOperationKind.DOCUMENT_EMBEDDING: 64,
+        ProviderOperationKind.QUERY_EMBEDDING: 12,
+        ProviderOperationKind.ANSWER_GENERATION: 12,
+        ProviderOperationKind.STATEMENT_SUPPORT: 96,
+    }
+
+
+def test_closeout_changed_digest_is_rejected_before_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(live, "APPROVED_CLOSEOUT_SHA256", "0" * 64)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("changed catalog must not be parsed")
+
+    monkeypatch.setattr(live, "validate_corpus", forbidden)
+    with pytest.raises(live.LiveBaselineLimitError, match="not approved"):
+        live.build_plan(corpus_profile="closeout")
+
+
+def test_unknown_corpus_cannot_select_an_arbitrary_path() -> None:
+    with pytest.raises(live.LiveBaselineLimitError, match="corpus profile"):
+        live.build_plan(corpus_profile="../other.json")  # type: ignore[arg-type]
+
+
+def test_closeout_budget_stops_calls_without_silently_raising_the_cap() -> None:
+    budget = live.LiveBaselineBudget(live.build_plan(corpus_profile="closeout"))
+    successful = 0
+    while True:
+        try:
+            budget.reserve(ProviderOperationKind.ANSWER_GENERATION, payload_utf8_bytes=100_000)
+        except live.LiveBaselineLimitError as error:
+            assert "budget is exhausted" in str(error)
+            break
+        successful += 1
+
+    assert 0 < successful < 12
+    assert budget.reserved_cost_micro_usd <= 800_000
+    assert len(budget._reservations) == successful
+
+
+@pytest.mark.parametrize("corpus_profile,count", [("baseline", 6), ("closeout", 12)])
+def test_reranking_allowance_matches_the_selected_case_count(
+    corpus_profile: live.LiveCorpusProfile, count: int
+) -> None:
+    plan = live.build_plan(corpus_profile=corpus_profile, retrieval_policy="rrf_rerank")
+    assert plan.reranking_limit is not None
+    assert plan.reranking_limit.maximum_requests == count
+    budget = live.LiveBaselineBudget(plan)
+    for _ in range(count):
+        budget.reserve(ProviderOperationKind.RERANKING, payload_utf8_bytes=10)
+
+    with pytest.raises(live.LiveBaselineLimitError, match="reranking limit"):
+        budget.reserve(ProviderOperationKind.RERANKING, payload_utf8_bytes=10)
+    assert budget.reserved_cost_micro_usd == 0
 
 
 def test_rrf_plan_changes_only_the_selector_configuration() -> None:
@@ -180,6 +252,25 @@ def test_preflight_cli_uses_no_network_or_environment_loader(
     assert "exact_text" not in output
     assert "expected_answer" not in output
     assert "api_key" not in output
+
+
+def test_closeout_preflight_is_credential_free(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("preflight cannot access network or environment files")
+
+    monkeypatch.setattr(socket.socket, "connect", forbidden)
+    monkeypatch.setattr(dotenv, "dotenv_values", forbidden)
+    monkeypatch.setattr("sys.argv", ["plan", "--corpus", "closeout"])
+
+    assert live.main() == 0
+    output = capsys.readouterr().out
+    data = json.loads(output)
+    assert data["corpus_profile"] == "closeout"
+    assert len(data["case_ids"]) == 12
+    assert "expected_answer" not in output
+    assert "exact_text" not in output
 
 
 def test_changed_catalog_digest_fails_before_corpus_parsing(

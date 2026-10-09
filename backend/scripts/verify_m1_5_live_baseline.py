@@ -42,6 +42,12 @@ def output_path(raw: Path) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--corpus",
+        choices=("baseline", "closeout"),
+        default="baseline",
+        help="Select the reviewed six-case baseline or twelve-case closeout catalog.",
+    )
+    parser.add_argument(
         "--retrieval-policy",
         choices=("m1", "rrf", "rrf_rerank"),
         default="m1",
@@ -68,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--confirm-reranking-allowance",
         action="store_true",
-        help="Confirm that the Starter account has allowance for up to six BGE requests.",
+        help="Confirm Starter allowance for one BGE request per selected catalog case (6 or 12).",
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
@@ -116,6 +122,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         plan = build_plan(
+            corpus_profile=arguments.corpus,
             answer_model=ResearchModel(arguments.answer_model),
             support_model=ResearchModel(arguments.support_model),
             maximum_spend_micro_usd=arguments.max_spend_usd,

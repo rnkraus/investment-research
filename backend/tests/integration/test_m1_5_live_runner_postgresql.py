@@ -50,9 +50,11 @@ from scripts.m1_5_live_runner import run_live_baseline
 from scripts.m1_5_local_output import LocalEvaluationOutput
 from scripts.plan_m1_5_live_baseline import (
     LiveBaselineBudget,
+    LiveCorpusProfile,
     LiveRetrievalPolicy,
     LiveSupportPolicy,
     build_plan,
+    manifest_path_for_corpus,
 )
 from scripts.verify_m1_5_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, validate_corpus
 from tests.integration.m1_5 import embedding_provider
@@ -107,8 +109,9 @@ class ScriptedGenerator:
         altered_quote: bool = False,
         contract_failure: bool = False,
         repeat_first_statement: bool = False,
+        manifest_path: Path = DEFAULT_MANIFEST,
     ) -> None:
-        self.manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
+        self.manifest = validate_corpus(manifest_path, REPOSITORY_ROOT)
         self.fail_first = fail_first
         self.altered_quote = altered_quote
         self.contract_failure = contract_failure
@@ -251,13 +254,16 @@ class ReviewedContextualSupportEvaluator(ReviewedUnitSupportEvaluator):
 
 @pytest.mark.parametrize("retrieval_policy", ["m1", "rrf", "rrf_rerank"])
 @pytest.mark.parametrize("support_policy", ["m1", "attribution", "document_attribution"])
+@pytest.mark.parametrize("corpus_profile", ["baseline", "closeout"])
 def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     integration_database_engine: Engine,
     tmp_path: Path,
     retrieval_policy: LiveRetrievalPolicy,
     support_policy: LiveSupportPolicy,
+    corpus_profile: LiveCorpusProfile,
 ) -> None:
     plan = build_plan(
+        corpus_profile=corpus_profile,
         answer_policy="citable_units",
         retrieval_policy=retrieval_policy,
         answer_model=ResearchModel.LUNA,
@@ -265,8 +271,9 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
         support_policy=support_policy,
     )
     calls = LiveProviderCalls(LiveBaselineBudget(plan))
-    manifest = validate_corpus(DEFAULT_MANIFEST, REPOSITORY_ROOT)
-    generator = ScriptedCitableGenerator()
+    manifest_path = manifest_path_for_corpus(corpus_profile)
+    manifest = validate_corpus(manifest_path, REPOSITORY_ROOT)
+    generator = ScriptedCitableGenerator(manifest_path=manifest_path)
     support = (
         ReviewedContextualSupportEvaluator(manifest)
         if support_policy != "m1"
@@ -289,23 +296,29 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
         ),
     )
     assert not report.failures
-    assert report.summary.coverage_match_count == 6
+    case_count = len(manifest.cases)
+    answerable_count = sum(case.expected_coverage != "INSUFFICIENT" for case in manifest.cases)
+    assert report.summary.case_count == case_count
+    assert report.summary.corpus_id == plan.corpus_id
+    assert report.summary.corpus_sha256 == plan.corpus_sha256
+    assert report.summary.coverage_match_count == case_count
     # Unit policy v2 separates the uppercase PDF heading. The unchanged containment
     # metric must now accept the exact reviewed revenue sentence, not a wider range.
-    assert report.summary.citation_match_count == 6
+    assert report.summary.citation_match_count == case_count
     assert all(case.citation_match for case in report.summary.cases)
-    assert report.summary.exact_citation_valid_count == 5
+    assert report.summary.exact_citation_valid_count == answerable_count
     assert (
         report.admission_plan.configuration.answer_prompt_version
         == "m1-5-citable-units-en-answer-prompt-v5"
     )
     assert report.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
     assert all(record.usage_state == "REPORTED" for record in report.provider_calls)
-    assert len(support.calls) == 5  # One paid-path call per answer, none on final database replay.
+    # One scripted support call per answer, none on final database replay or abstention.
+    assert len(support.calls) == answerable_count
     rerank_records = [
         item for item in calls.records if item.role is ProviderOperationKind.RERANKING
     ]
-    assert len(rerank_records) == (6 if retrieval_policy == "rrf_rerank" else 0)
+    assert len(rerank_records) == (case_count if retrieval_policy == "rrf_rerank" else 0)
     assert report.total_usage.rerank_units == len(rerank_records)
     if retrieval_policy == "rrf_rerank":
         with create_session_factory(integration_database_engine)() as session:
@@ -317,7 +330,7 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
                     )
                 )
             )
-            assert len(operations) == 6
+            assert len(operations) == case_count
             assert all(
                 item.input_units == 1 and item.actual_cost_micro_usd == 0 for item in operations
             )
