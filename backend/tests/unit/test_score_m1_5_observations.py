@@ -189,6 +189,11 @@ def test_v2_controlled_observations_record_the_new_policy_and_preserve_abstentio
     assert summary.scoring_version == "m1.5-observation-score-v2"
     assert summary.coverage_match_count == summary.citation_match_count == 6
     assert summary.abstention_match_count == summary.conflict_match_count == 1
+    assert summary.diagnostics_version == "m1.5-citation-diagnostics-v1"
+    assert summary.required_evidence_present_count == summary.required_evidence_case_count == 5
+    assert summary.extra_citation_count == 0
+    assert summary.conflict_coverage_match_count == 1
+    assert summary.cases[2].required_evidence_present is None
 
 
 @pytest.mark.parametrize("unmatched", [False, True])
@@ -214,6 +219,8 @@ def test_v2_multiple_citations_require_every_citation_to_match_expected_evidence
 
     assert summary.cases[0].citation_match is (exact_valid and not unmatched)
     assert summary.citation_match_count == (6 if exact_valid and not unmatched else 5)
+    assert summary.cases[0].required_evidence_present is exact_valid
+    assert summary.cases[0].extra_citation_count == int(unmatched)
 
 
 def test_v2_extra_known_but_unexpected_passage_is_not_credited() -> None:
@@ -237,6 +244,97 @@ def test_v2_extra_known_but_unexpected_passage_is_not_credited() -> None:
 
     assert summary.cases[3].citation_match is False
     assert summary.exact_citation_valid_count == 5
+    assert summary.cases[3].required_evidence_present is True
+    assert summary.cases[3].extra_citation_count == summary.extra_citation_count == 1
+    assert summary.conflict_match_count == 0
+    assert summary.conflict_coverage_match_count == 1
+
+
+def test_v2_unmatched_quotes_do_not_hide_present_evidence_or_gain_support_credit() -> None:
+    observations = make_v2_observations()
+    conflict = observations.cases[3]
+    assert conflict.citation_passage_ids is not None
+    changed = conflict.model_copy(
+        update={
+            "citation_count": 4,
+            "citation_passage_ids": (*conflict.citation_passage_ids, (), ()),
+        }
+    )
+    summary = score_controlled_observations(
+        observations.model_copy(
+            update={"cases": (*observations.cases[:3], changed, *observations.cases[4:])}
+        )
+    )
+
+    assert summary.scoring_version == "m1.5-observation-score-v2"
+    assert summary.cases[3].citation_match is False
+    assert summary.cases[3].required_evidence_present is True
+    assert summary.required_evidence_present_count == 5
+    assert summary.cases[3].extra_citation_count == summary.extra_citation_count == 2
+    assert summary.conflict_coverage_match_count == 1
+    assert summary.conflict_match_count == 0
+    assert summary.support_assessed_count == 0
+    assert summary.cases[3].support_passed is None
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_v2_missing_evidence_or_safe_failure_cannot_pass_evidence_diagnostics(failed: bool) -> None:
+    observations = make_v2_observations()
+    conflict = observations.cases[3]
+    changed = conflict.model_copy(
+        update={
+            "cited_passage_ids": () if failed else conflict.cited_passage_ids[:1],
+            "citation_count": 0 if failed else 1,
+            "citation_passage_ids": () if failed else ((conflict.cited_passage_ids[0],),),
+            "terminal_status": "FAILED" if failed else "COMPLETED",
+            "coverage_status": None if failed else "CONFLICTING",
+            "exact_citations_valid": None if failed else True,
+            "failed_safely": True if failed else None,
+        }
+    )
+    summary = score_controlled_observations(
+        observations.model_copy(
+            update={"cases": (*observations.cases[:3], changed, *observations.cases[4:])}
+        )
+    )
+
+    assert summary.cases[3].required_evidence_present is False
+    assert summary.required_evidence_present_count == 4
+    assert summary.required_evidence_case_count == 5
+    assert summary.conflict_coverage_match_count == (0 if failed else 1)
+    assert summary.conflict_match_count == 0
+
+
+def test_legacy_and_historical_summaries_do_not_invent_diagnostics() -> None:
+    legacy = score_controlled_observations(make_complete_observations())
+    assert legacy.diagnostics_version is None
+    assert legacy.required_evidence_present_count is None
+    assert legacy.required_evidence_case_count is None
+    assert legacy.extra_citation_count is None
+    assert legacy.conflict_coverage_match_count is None
+    assert all(case.required_evidence_present is None for case in legacy.cases)
+    assert all(case.extra_citation_count is None for case in legacy.cases)
+
+    historical = score_controlled_observations(make_v2_observations()).model_dump()
+    for field in (
+        "diagnostics_version",
+        "required_evidence_present_count",
+        "required_evidence_case_count",
+        "extra_citation_count",
+        "conflict_coverage_match_count",
+    ):
+        historical.pop(field)
+    for case in historical["cases"]:
+        case.pop("required_evidence_present")
+        case.pop("extra_citation_count")
+
+    parsed = ScoreSummary.model_validate(historical)
+    assert parsed.scoring_version == "m1.5-observation-score-v2"
+    assert parsed.diagnostics_version is None
+    assert parsed.required_evidence_present_count is None
+    assert parsed.extra_citation_count is None
+    assert parsed.conflict_coverage_match_count is None
+    assert all(case.required_evidence_present is None for case in parsed.cases)
 
 
 @pytest.mark.parametrize(
