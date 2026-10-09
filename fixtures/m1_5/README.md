@@ -16,6 +16,26 @@ scope, and evidence references. It does **not** run retrieval, call a model, cal
 scores, or decide whether the expected answer is factually appropriate. The optional
 `--require-reviewed` flag enforces the owner's review decision recorded in the catalog.
 
+## Final closeout catalog draft
+
+[`evaluation-closeout-v1.json`](./evaluation-closeout-v1.json) is a separate twelve-case draft,
+not a replacement for the reviewed six-case baseline. It preserves the original six cases and
+adds focused answers, uncertainty, two PARTIAL cases, excluded-document abstention, and combined
+PDF/text evidence. The [owner review guide](./closeout-review.md) describes the expected behavior
+and review boundary. Its status remains `pending_owner_review`; normal runtime is unchanged and
+the live runner still pins the original catalog.
+
+Check the draft's structure and original ranges from `backend/`:
+
+```bash
+uv run --locked python -m scripts.verify_m1_5_corpus \
+  --manifest ../fixtures/m1_5/evaluation-closeout-v1.json
+```
+
+This does not call providers or establish answer quality. `--require-reviewed` must fail until
+owner approval is recorded. Activating this catalog and recalculating paid-run bounds are separate
+work; historical six-case scores must not be rewritten or compared as twelve-case measurements.
+
 ## Opt-in support attribution experiment
 
 The live evaluator defaults to `--support-policy m1` (exact quotes only). To compare the bounded
