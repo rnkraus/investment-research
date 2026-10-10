@@ -15,6 +15,15 @@ This is still a local development system, not a production deployment, trading s
 investment-advice application. The narrow M1 acceptance evidence and limits are recorded in the
 [M1 implementation plan](docs/10-m1-implementation-plan.md).
 
+## M1.5 portfolio evidence
+
+The [M1.5 portfolio guide](docs/14-m1-5-portfolio.md) explains the implemented local RAG flow,
+source-ID selection, optional ranking experiments, recorded quality/latency/cost results, and a
+safe owner-run demo. It distinguishes the successful twelve-case diagnostic run from normal
+website support behavior and preserves the strict 10/12 citation score. M1 remains the default;
+M1.5 is explicitly selectable as described below. This guide is not final milestone acceptance
+or a production-readiness claim.
+
 ## Prerequisites
 
 - Node.js 24

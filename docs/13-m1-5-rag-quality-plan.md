@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 source review accepted and local compatibility owner confirmed; profile adoption, hosted CI, and milestone acceptance pending
+**Status:** Active — Step 4 source review accepted, local compatibility owner confirmed, and portfolio documented; profile disposition, hosted CI, and milestone acceptance pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1760,6 +1760,34 @@ the reported local compatibility/build checks for that implementation revision, 
 profile-adoption or milestone gate. Credential-free M1 adapters do not establish normal live
 support-prompt quality or the current v6 Terra profile's quality. No additional paid call or
 historical report change follows from this confirmation; hosted CI remains unconfirmed.
+
+#### Portfolio evidence and normal-support demo — Block 10 (2026-10-10)
+
+The [portfolio guide](./14-m1-5-portfolio.md) now provides the implemented local architecture,
+code entry points, M1/source-ID differences, recorded quality/latency/cost measurements,
+concrete failure/improvement examples, a synthetic-only owner-run demo, and explicit limitations.
+The root README links it. System design and ADR-0018 no longer describe the already implemented
+reranking experiment as awaiting implementation; the small comparison remains quality-inconclusive
+and reranking stays opt-in.
+
+The owner clarified that the website should use the available M1.5 profile without support
+diagnostic reasons. That combination already exists: explicit `m1-5-citable-units` selects
+RRF/source-unit/document-attribution research, with ordinary Boolean-only support decisions.
+No new default was requested or changed by this documentation block. M1 remains the default
+and comparison path; the guide keeps profile selection explicit when restarting Compose.
+No frontend, provider, schema, dependency, model, budget, or application code changes are made.
+
+Preserve the distinction between the recorded Luna/Luna prompt-v6 support-reason observation
+and the normal website support prompt. The guide reports zero execution failures, 12/12 coverage,
+10/12 strict citation matching, estimated cost rather than reservations as spend, and the
+accepted qualitative source review without claiming representative accuracy or independent
+human statement-level assessment. Historical reports, catalogs, pending structured review
+fields, and scoring remain unchanged. Reading the guide or previewing its plan authorizes no
+new paid execution, browser use, default adoption, or public deployment.
+
+Final profile disposition, confirmation of required hosted checks, live-profile source-opening
+verification, and explicit milestone acceptance remain separate decisions. Owner-reported M1
+runtime/build compatibility does not silently satisfy the live M1.5 profile gate.
 
 ## 4. Handoff and stop rule
 

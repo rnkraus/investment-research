@@ -1,6 +1,6 @@
 # ADR-0018 — Bounded Pinecone cross-encoder reranking experiment
 
-**Status:** Accepted for the M1.5 experiment; implementation and default adoption pending
+**Status:** Accepted experiment; implemented and evaluated; not adopted as a runtime default
 
 **Date:** 2026-10-08
 
@@ -108,7 +108,12 @@ that justifies additional latency, usage, and failures; a negative or inconclusi
 
 The experiment adds one external question/text boundary and a provider availability/quota
 dependency, but no canonical store, local inference runtime, migration, or RAG framework.
-This documentation records approval only; no adapter or live result is claimed here.
+The original decision approved implementation only. The adapter and bounded evaluation runner
+are now implemented. The subsequent six-case RRF/no-rerank versus RRF/BGE comparison recorded
+zero execution failures and verified cleanup for both runs, but no measured quality benefit
+justifying default adoption. Protocol, scoring limits, and the separate approval of those live
+runs are recorded in [M1.5 Step 3](../13-m1-5-rag-quality-plan.md#step-3--bounded-reranking-experiment).
+Reranking remains opt-in; this status update approves no new paid execution or runtime change.
 
 Before integration, deterministic tests must prove eligibility, input bounds, timeout/retry
 behavior, complete result correlation, finite scores, safe errors, budget/usage handling, and
