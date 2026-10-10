@@ -11,6 +11,7 @@ PostgreSQL, or parse document content.
 | `copy.ts`               | Centralizes English feature text and defaults for later localization.                |
 | `document-workflow.tsx` | Captures one PDF or pasted-text original and polls its background-processing status. |
 | `processing-state.ts`   | Defines polling completion and fail-closed research admission.                       |
+| `publication-date.ts`   | Formats the user's local calendar day for the editable publication-date default.     |
 | `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.                |
 | `research-workflow.tsx` | Loads model choices, asks a bounded question, and opens exact source evidence.       |
 | `source-anchor.ts`      | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
@@ -44,6 +45,12 @@ until the run reaches `SEARCHABLE` or `FAILED`. Both `LEXICAL_READY` and `INDEXI
 M1 states and therefore continue polling without offering the new document as a research filter.
 The worker invokes the isolated parser runner through protocol v2 while the historical protocol-v1
 PDF path remains a backend regression contract.
+
+The publication-date input defaults to the user's current local calendar day after browser
+hydration, rather than a frozen fixture or build date. An explicit edit, including clearing the
+optional field, takes precedence over the default. PDF and pasted-text imports use the same value;
+the existing UTC-midnight transport convention remains unchanged. This is an editable convenience,
+not an inferred publication date or a change to an already stored source.
 
 All network access goes through `src/lib/api/client.ts`. Raw exceptions are not rendered. The
 component displays only safe API messages or a generic local failure message, and active requests
