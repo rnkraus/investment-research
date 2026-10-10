@@ -107,5 +107,5 @@ named disposable Docker environment, migrates and seeds it, runs this integratio
 migration drift and the downgrade/upgrade cycle, and removes its container and volume even after a
 failed check.
 
-Run commands are documented in the repository [`README.md`](../../README.md#verify-changes). Database
+Run commands are documented in the [development guide](../../docs/development.md#verify-changes). Database
 tests must prove both same-workspace access and cross-workspace non-disclosure.

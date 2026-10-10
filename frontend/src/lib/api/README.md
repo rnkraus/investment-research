@@ -25,7 +25,7 @@ flowchart LR
 
 Files under `generated/` must never be edited manually. Backend tests verify that `openapi.json` matches the application; the frontend contract check verifies that `schema.d.ts` matches `openapi.json`. Together they make contract drift fail automated checks.
 
-Generation and verification commands are documented in the repository [`README.md`](../../../../README.md#update-api-contracts). API payload types must be imported from the generated schema rather than redefined by hand.
+Generation and verification commands are documented in the [development guide](../../../../docs/development.md#update-api-contracts). API payload types must be imported from the generated schema rather than redefined by hand.
 
 ## Request path
 

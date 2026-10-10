@@ -881,7 +881,7 @@ using `m1` when the value is absent or empty. The base Compose and credential-fr
 overlays remain unchanged; worker, parser, web, provider credentials, volumes, and indexes do not
 receive a new profile or policy. This is an explicit local opt-in, not default adoption.
 
-The [root run guide](../README.md#opt-in-m15-source-id-research) documents a shell-scoped API
+The [development guide](./development.md#opt-in-m15-source-id-research) documents a shell-scoped API
 restart selecting `m1-5-citable-units` and a return to `m1`. The agent does not inspect or alter
 the owner's real environment or secret files. New research requests use the selected policy;
 existing searchable sources require no upload or reindexing simply to select it. Only approved
@@ -1788,6 +1788,24 @@ new paid execution, browser use, default adoption, or public deployment.
 Final profile disposition, confirmation of required hosted checks, live-profile source-opening
 verification, and explicit milestone acceptance remain separate decisions. Owner-reported M1
 runtime/build compatibility does not silently satisfy the live M1.5 profile gate.
+
+#### Recruiter-facing repository entry point — Block 11 (2026-10-11)
+
+The root [README](../README.md) now introduces the product, implemented RAG workflow, engineering
+decisions, technology roles, measured evaluation evidence, and local demo for technical reviewers.
+Detailed installation, operations, diagnostics, verification, and maintenance instructions move
+to the [development guide](./development.md); inbound section links are updated with that move.
+The [portfolio guide](./14-m1-5-portfolio.md) remains the detailed evidence and implementation map.
+
+This documentation-only change preserves commands, runtime defaults, evaluation scores, and the
+distinction between implemented capabilities and pending milestone acceptance. It introduces no
+new browser execution, live-provider call, public deployment, or quality claim.
+
+**Executed verification:** all 117 local links and anchors across the nine affected Markdown
+files passed inspection; 30 shell examples passed syntax-only checks, and every shell example
+from the previous root README was preserved unchanged in the development guide. Code fences and
+`git diff --check` passed. Application tests, builds, browsers, and providers were not run for
+this documentation-only change.
 
 ## 4. Handoff and stop rule
 

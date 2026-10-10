@@ -131,7 +131,7 @@ are not provider invoices; maximum reservations must not be presented as token c
 ## 4. Safe owner-run local demonstration
 
 Use only the approved synthetic originals listed in the [review guide](../fixtures/m1_5/closeout-review.md#documents-and-scope).
-Prerequisites and owner-managed credentials are in the [root run guide](../README.md#install).
+Prerequisites and owner-managed credentials are in the [development guide](./development.md#install).
 Use a local workspace containing only approved demo material. Do not clear an existing archive,
 inspect secrets, or enable raw diagnostics to prepare a recording. Normal provider charges apply.
 
