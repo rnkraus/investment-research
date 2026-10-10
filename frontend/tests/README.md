@@ -8,6 +8,7 @@ This directory contains deterministic tests for frontend-owned behavior and the 
 | --------------------------- | ------------------------------------------------------------------------------------------------- |
 | `api-client.test.mjs`       | Verifies multipart, safe errors, runtime contracts, SSE framing, and local API paths.             |
 | `processing-state.test.mjs` | Verifies polling completion and fail-closed research admission.                                   |
+| `publication-date.test.mjs` | Verifies local calendar formatting, leap days, and timezone boundaries for the upload default.    |
 | `product.test.mjs`          | Verifies product identity, fixture boundaries, and automatic-processing copy.                     |
 | `research-session.test.mjs` | Verifies stream order, cited completion, insufficient evidence, safe failure, and source binding. |
 | `pnpm contracts:check`      | Verifies that generated TypeScript declarations match the committed OpenAPI snapshot.             |
@@ -18,10 +19,12 @@ flowchart LR
     CONTRACT --> DISCOVERY[Node test discovery]
     DISCOVERY --> API[API client tests]
     DISCOVERY --> PROCESSING[Processing-state tests]
+    DISCOVERY --> DATE[Publication-date tests]
     DISCOVERY --> PRODUCT[Product test]
     DISCOVERY --> RESEARCH[Research-session tests]
     API --> RESULT[Pass or fail]
     PROCESSING --> RESULT
+    DATE --> RESULT
     PRODUCT --> RESULT
     RESEARCH --> RESULT
 ```

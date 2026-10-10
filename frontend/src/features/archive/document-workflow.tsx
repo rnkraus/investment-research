@@ -7,6 +7,7 @@ import {
   useId,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -22,10 +23,20 @@ import {
   canResearchProcessingRun,
   shouldPollProcessing,
 } from "./processing-state";
+import { getLocalPublicationDate } from "./publication-date";
 import { ResearchWorkflow } from "./research-workflow";
 
 const PROCESSING_POLL_INTERVAL_MS = 2_000;
 type SourceInputMode = "pdf" | "text";
+
+// Read the browser clock after hydration; the static server page has no user timezone.
+function subscribeToLocalDate(): () => void {
+  return () => {};
+}
+
+function getServerPublicationDate(): string {
+  return "";
+}
 
 function processingMessage(result: ProcessingRunResult): string {
   switch (result.state) {
@@ -79,7 +90,13 @@ export function DocumentWorkflow() {
   const [file, setFile] = useState<File>();
   const [text, setText] = useState("");
   const [title, setTitle] = useState<string>(fixtureDefaults.title);
-  const [publicationDate, setPublicationDate] = useState("2026-02-19");
+  const today = useSyncExternalStore(
+    subscribeToLocalDate,
+    getLocalPublicationDate,
+    getServerPublicationDate,
+  );
+  const [selectedPublicationDate, setPublicationDate] = useState<string>();
+  const publicationDate = selectedPublicationDate ?? today;
   const [accepted, setAccepted] = useState<DocumentAccepted>();
   const [processing, setProcessing] = useState<ProcessingRunResult>();
   const [isUploading, setIsUploading] = useState(false);
