@@ -248,7 +248,7 @@ the unchanged monthly budget executor and retain model-specific pricing and conf
 The M1 profile remains available and is still the default. No public request field or browser
 policy switch is added; the source viewer still receives canonical evidence-span identities.
 The live Compose overlay forwards this non-secret profile only to the API; the
-[local run guide](../../../../../README.md#opt-in-m15-source-id-research) gives the opt-in and
+[local run guide](../../../../../docs/development.md#opt-in-m15-source-id-research) gives the opt-in and
 rollback commands. Manual PDF/text source-opening verification remains pending; this wiring
 does not record default adoption or quality acceptance.
 The current source-unit policy is `m1-5-citable-units-en-v2`. It keeps the sentence/paragraph

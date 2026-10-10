@@ -567,7 +567,7 @@ preparation or its input-metadata preflight exceeds an application-owned bound. 
 research limits. Try a more focused question or select a single document." It emits no answer
 statements or citations and never returns the exception message or counters to the browser.
 The server records the content-free `research.context_limit.exceeded` event with the HTTP request
-ID and validated category/counters; see the [runtime guide](../README.md#opt-in-m15-source-id-research).
+ID and validated category/counters; see the [runtime guide](./development.md#opt-in-m15-source-id-research).
 This is not insufficient evidence or a provider outage. The SSE envelope and schema version stay
 unchanged; strict clients must regenerate the enum and update their runtime allowlist together
 with the API. The retained M1 generation/evidence contract remains unchanged.

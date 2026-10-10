@@ -67,7 +67,7 @@ flowchart LR
 
 The script uses test settings, produces stable sorted JSON, and writes to `frontend/src/lib/api/generated/openapi.json` by default. Its `--check` mode does not rewrite the snapshot; it fails when the committed file is missing or stale.
 
-Generated artifacts must not be edited manually. The complete command sequence is documented in the repository [`README.md`](../../README.md#update-api-contracts).
+Generated artifacts must not be edited manually. The complete command sequence is documented in the [development guide](../../docs/development.md#update-api-contracts).
 
 ## Seed flow
 
@@ -89,7 +89,7 @@ The Python module accepts validated host PostgreSQL configuration for isolated t
 Compose workflow instead runs it through the short-lived `seed` image target and `tools` profile.
 That container joins only the private backend network, receives only the PostgreSQL secret, and
 starts only after the one-shot migration has reached `head`. The verified commands are documented
-in the repository [`README.md`](../../README.md#seed-or-reset-local-data).
+in the [development guide](../../docs/development.md#seed-or-reset-local-data).
 
 ## Safe local reset
 
@@ -334,7 +334,7 @@ flowchart LR
 ```
 
 Run the complete M1 gate from `backend/` after installing the repository-pinned Playwright Chromium
-build as documented in the root README:
+build as documented in the [development guide](../../docs/development.md#verify-changes):
 
 ```shell
 uv run --locked python -m scripts.verify_m1_runtime
