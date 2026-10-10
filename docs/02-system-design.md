@@ -189,9 +189,12 @@ The diagram describes the target flow, not the current default selector. M1.5 ha
 opt-in experiment with Pinecone Inference's `bge-reranker-v2-m3` after canonical qualification and
 RRF, before bounded context selection. [ADR-0018](./adr/0018-pinecone-reranking-experiment.md)
 governs its additional question/passage-text boundary; it does not permit raw text in vector
-metadata or private-data processing. Implementation and measured adoption remain pending in
-[M1.5 Step 3](./13-m1-5-rag-quality-plan.md#step-3--bounded-reranking-experiment). The no-rerank
-path and server-side source/support validation remain intact.
+metadata or private-data processing. The adapter and bounded evaluation path are implemented;
+the recorded six-case comparison did not establish a quality benefit, so reranking remains
+experimental rather than a runtime default. See
+[M1.5 Step 3](./13-m1-5-rag-quality-plan.md#step-3--bounded-reranking-experiment) for its measurements
+and the [portfolio guide](./14-m1-5-portfolio.md) for the implemented no-rerank source-ID flow.
+The no-rerank path and server-side source/support validation remain intact.
 
 ### Answer contract
 
