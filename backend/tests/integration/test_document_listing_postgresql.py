@@ -1,18 +1,23 @@
 """PostgreSQL proof of current-document catalog isolation and keyset pagination."""
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from pathlib import Path
+from uuid import UUID, uuid4
 
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, update
 from sqlalchemy.orm import Session
 
+from investment_research.api.dependencies import get_workspace_context
 from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
 )
 from investment_research.infrastructure.database.unit_of_work import (
     create_document_read_unit_of_work_factory,
+    create_processing_read_unit_of_work_factory,
 )
+from investment_research.main import create_app
 from investment_research.modules.documents.contracts import DocumentListQuery
 from investment_research.modules.documents.domain import (
     Document,
@@ -30,6 +35,13 @@ from investment_research.modules.documents.persistence import (
 )
 from investment_research.modules.identity.domain import Workspace, WorkspaceContext, WorkspaceType
 from investment_research.modules.identity.persistence import SqlAlchemyWorkspaceRepository
+from investment_research.modules.processing.application import (
+    GetProcessingRunService,
+    create_captured_processing_run,
+)
+from investment_research.modules.processing.contracts import ProcessingStatusQuery
+from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
+from investment_research.settings import ApiSettings
 
 CREATED_AT = datetime(2026, 10, 11, 12, tzinfo=UTC)
 
@@ -222,3 +234,163 @@ def test_document_list_returns_only_the_current_version_with_an_original(
     assert page.items[0].published_at == version.published_at
     assert page.items[0].created_at == document.created_at
     assert page.items[0].captured_at == version.captured_at
+
+
+def test_latest_status_batch_is_scoped_bounded_and_deterministic(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    with transactional_session(session_factory) as session:
+        owner = add_workspace(session)
+        foreign = add_workspace(session)
+        document = add_document(session, owner)
+        missing_status = add_document(session, owner)
+        foreign_document = add_document(session, foreign)
+        session.flush()
+        repository = SqlAlchemyProcessingRepository(session)
+        ordered_ids = sorted(uuid4() for _ in range(3))
+        older_run = create_captured_processing_run(
+            context=owner,
+            document_version_id=document.current_version_id,
+            processing_run_id=ordered_ids[-1],
+            created_at=CREATED_AT - timedelta(days=1),
+        )
+        repository.add_run(owner, older_run)
+        tied_ids = ordered_ids[:2]
+        for identifier in tied_ids:
+            repository.add_run(
+                owner,
+                create_captured_processing_run(
+                    context=owner,
+                    document_version_id=document.current_version_id,
+                    processing_run_id=identifier,
+                    created_at=CREATED_AT,
+                ),
+            )
+        repository.add_run(
+            foreign,
+            create_captured_processing_run(
+                context=foreign,
+                document_version_id=foreign_document.current_version_id,
+                processing_run_id=uuid4(),
+                created_at=CREATED_AT + timedelta(days=1),
+            ),
+        )
+
+    service = GetProcessingRunService(
+        unit_of_work_factory=create_processing_read_unit_of_work_factory(session_factory)
+    )
+    result = service.get_latest_for_versions(
+        owner,
+        ProcessingStatusQuery(
+            document_version_ids=(
+                document.current_version_id,
+                missing_status.current_version_id,
+                foreign_document.current_version_id,
+                UUID(int=0),
+            )
+        ),
+    )
+
+    assert len(result) == 1
+    assert result[0].id == tied_ids[-1]
+    assert result[0].workspace_id == owner.workspace_id
+    assert result[0].document_version_id == document.current_version_id
+
+
+def test_document_catalog_api_paginates_statuses_and_hides_foreign_sources(
+    integration_database_engine: Engine,
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    with transactional_session(session_factory) as session:
+        owner = add_workspace(session)
+        foreign = add_workspace(session)
+        empty = add_workspace(session)
+        failed_document = add_document(session, owner, title="Failed synthetic PDF")
+        pending_document = add_document(
+            session,
+            owner,
+            title="Synthetic text without processing status",
+            created_at=CREATED_AT + timedelta(days=1),
+            media_type=OriginalMediaType.PLAIN_TEXT,
+        )
+        foreign_document = add_document(session, foreign, title="Foreign synthetic PDF")
+        session.flush()
+        repository = SqlAlchemyProcessingRepository(session)
+        captured = create_captured_processing_run(
+            context=owner,
+            document_version_id=failed_document.current_version_id,
+            processing_run_id=uuid4(),
+            created_at=CREATED_AT,
+        )
+        lease_id = uuid4()
+        failed = captured.claim_for_processing(
+            lease_id=lease_id,
+            claimed_at=CREATED_AT + timedelta(seconds=1),
+            lease_expires_at=CREATED_AT + timedelta(minutes=1),
+            maximum_attempts=3,
+        ).mark_failed(
+            lease_id=lease_id,
+            completed_at=CREATED_AT + timedelta(seconds=2),
+            error_summary="Document parsing failed safely",
+        )
+        repository.add_run(owner, failed)
+        repository.add_run(
+            foreign,
+            create_captured_processing_run(
+                context=foreign,
+                document_version_id=foreign_document.current_version_id,
+                processing_run_id=uuid4(),
+                created_at=CREATED_AT,
+            ),
+        )
+
+    application = create_app(
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: owner
+    with TestClient(application) as client:
+        first = client.get("/api/v1/documents", params={"page_size": "1"})
+        assert first.status_code == 200
+        cursor = first.json()["next_cursor"]
+        assert cursor is not None
+        second = client.get(
+            "/api/v1/documents",
+            params={
+                "page_size": "1",
+                "after_created_at": cursor["created_at"],
+                "after_document_id": cursor["document_id"],
+            },
+        )
+        application.dependency_overrides[get_workspace_context] = lambda: foreign
+        foreign_response = client.get("/api/v1/documents")
+        application.dependency_overrides[get_workspace_context] = lambda: empty
+        empty_response = client.get("/api/v1/documents")
+
+    assert first.json()["items"][0]["document_id"] == str(pending_document.id)
+    assert first.json()["items"][0]["media_type"] == "text/plain"
+    assert first.json()["items"][0]["processing"] is None
+    assert second.status_code == 200
+    entry = second.json()["items"][0]
+    assert entry["document_id"] == str(failed_document.id)
+    assert entry["processing"]["processing_run_id"] == str(failed.id)
+    assert entry["processing"]["state"] == "FAILED"
+    assert entry["processing"]["error_summary"] == "Document parsing failed safely"
+    assert entry["original_url"] == (
+        f"/api/v1/documents/{failed_document.id}"
+        f"/versions/{failed_document.current_version_id}/original"
+    )
+    assert second.json()["next_cursor"] is None
+    assert str(foreign_document.id) not in first.text + second.text
+    assert foreign_response.status_code == 200
+    assert [entry["document_id"] for entry in foreign_response.json()["items"]] == [
+        str(foreign_document.id)
+    ]
+    assert empty_response.status_code == 200
+    assert empty_response.json() == {"items": [], "next_cursor": None}
+    for response in (first, second, foreign_response, empty_response):
+        assert response.headers["cache-control"] == "private, no-store"
+        for private_field in ("workspace_id", "storage_key", "checksum_sha256", "parser_version"):
+            assert private_field not in response.text

@@ -9,6 +9,7 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.documents.listing import ListDocumentsService
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import GetProcessingRunService
@@ -52,6 +53,18 @@ def get_open_original_service(
 OpenOriginalServiceDependency = Annotated[
     OpenOriginalService,
     Depends(get_open_original_service),
+]
+
+
+def get_list_documents_service(container: ContainerDependency) -> ListDocumentsService:
+    """Return the application-owned service for bounded current-document metadata."""
+
+    return container.list_documents_service
+
+
+ListDocumentsServiceDependency = Annotated[
+    ListDocumentsService,
+    Depends(get_list_documents_service),
 ]
 
 

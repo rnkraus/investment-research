@@ -11,7 +11,11 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        readonly get?: never;
+        /**
+         * List Documents
+         * @description Compose current metadata and latest status through scoped application services.
+         */
+        readonly get: operations["list_documents_api_v1_documents_get"];
         readonly put?: never;
         /**
          * Capture Document
@@ -362,6 +366,74 @@ export interface components {
             readonly state: "CAPTURED";
         };
         /**
+         * DocumentCatalogEntry
+         * @description Current metadata with a safe status snapshot and authorized original route.
+         */
+        readonly DocumentCatalogEntry: {
+            /** Available At */
+            readonly available_at?: string | null;
+            /** Byte Size */
+            readonly byte_size: number;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            readonly captured_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+            /**
+             * Document Version Id
+             * Format: uuid
+             */
+            readonly document_version_id: string;
+            /**
+             * Language
+             * @default en
+             */
+            readonly language: string;
+            readonly media_type: components["schemas"]["OriginalMediaType"];
+            /** Original Url */
+            readonly original_url: string;
+            readonly processing: components["schemas"]["ProcessingRunResult"] | null;
+            /** Published At */
+            readonly published_at?: string | null;
+            /** Title */
+            readonly title: string;
+        };
+        /**
+         * DocumentCatalogPage
+         * @description One bounded archive page; statuses are snapshots, not retrieval authorization.
+         */
+        readonly DocumentCatalogPage: {
+            /** Items */
+            readonly items: readonly components["schemas"]["DocumentCatalogEntry"][];
+            readonly next_cursor?: components["schemas"]["DocumentListCursor"] | null;
+        };
+        /**
+         * DocumentListCursor
+         * @description Exclusive position in descending document creation-time and UUID order.
+         */
+        readonly DocumentListCursor: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+        };
+        /**
          * DocumentMetadataInput
          * @description Validated metadata fields submitted alongside an uploaded document.
          */
@@ -491,6 +563,12 @@ export interface components {
             /** Version */
             readonly version: string;
         };
+        /**
+         * OriginalMediaType
+         * @description Original media types accepted by the archive capture boundary.
+         * @enum {string}
+         */
+        readonly OriginalMediaType: "application/pdf" | "text/plain";
         /**
          * PastedTextDocumentInput
          * @description Bounded JSON body for one immutable English pasted-text original.
@@ -661,6 +739,48 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    readonly list_documents_api_v1_documents_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page_size?: number;
+                readonly after_created_at?: string | null;
+                readonly after_document_id?: string | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentCatalogPage"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly capture_document_api_v1_documents_post: {
         readonly parameters: {
             readonly query?: never;

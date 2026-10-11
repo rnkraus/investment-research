@@ -13,7 +13,11 @@ from pydantic import (
     model_validator,
 )
 
-from investment_research.modules.documents.contracts import MAX_PASTED_TEXT_CHARACTERS
+from investment_research.modules.documents.contracts import (
+    MAX_PASTED_TEXT_CHARACTERS,
+    DocumentListCursor,
+    DocumentListEntry,
+)
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import ResearchModel, ResearchProgressStage
 from investment_research.modules.research.domain import TemporalMode
@@ -97,6 +101,36 @@ class ProcessingRunResult(StrictContract):
     document_version_id: UUID
     state: ProcessingState
     error_summary: SafeMessage | None = None
+
+
+class DocumentCatalogQuery(StrictContract):
+    """Public pagination parameters; workspace scope is never client supplied."""
+
+    page_size: int = Field(default=20, ge=1, le=100)
+    after_created_at: AwareDatetime | None = None
+    after_document_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def require_complete_cursor(self) -> Self:
+        """A continuation position needs both its timestamp and tie-breaking UUID."""
+
+        if (self.after_created_at is None) != (self.after_document_id is None):
+            raise ValueError("both continuation fields must be supplied together")
+        return self
+
+
+class DocumentCatalogEntry(DocumentListEntry):
+    """Current metadata with a safe status snapshot and authorized original route."""
+
+    processing: ProcessingRunResult | None
+    original_url: str
+
+
+class DocumentCatalogPage(StrictContract):
+    """One bounded archive page; statuses are snapshots, not retrieval authorization."""
+
+    items: tuple[DocumentCatalogEntry, ...] = Field(max_length=100)
+    next_cursor: DocumentListCursor | None = None
 
 
 class ResearchRequestContext(StrictContract):
