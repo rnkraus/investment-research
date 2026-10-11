@@ -1,5 +1,6 @@
 """Bounded, workspace-neutral input and content-free permanent-deletion receipts."""
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
@@ -75,3 +76,11 @@ class DocumentDeletionReceipt(BaseModel):
         if self.completed_at is not None and self.completed_at < self.requested_at:
             raise ValueError("deletion completion must not precede the request")
         return self
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentDeletionSubmission:
+    """Committed receipt snapshots and failures of this publication attempt only."""
+
+    receipts: tuple[DocumentDeletionReceipt, ...]
+    dispatch_pending_document_ids: tuple[UUID, ...]
