@@ -129,6 +129,10 @@ the latest processing snapshot. Unknown dates remain unknown; displayed dates us
 The default scope submits `document_ids: []` to search eligible current sources in the server-derived
 workspace. Checkboxes select 1–100 `SEARCHABLE` documents, automatically enabling selected scope;
 pending, missing, and failed statuses cannot be selected. Loading more preserves selection.
+The document rows and pagination can be hidden and shown without changing selection or making
+another request. Scope controls and the selected count remain visible. Clicking a document title
+toggles its checkbox. Clear selection removes all chosen documents while preserving focused scope,
+so submission stays blocked until documents are selected again or all-source scope is chosen.
 Refreshing clears selection but preserves selected scope, visibly disabling submission until the
 user selects again or explicitly chooses all sources. List errors also block selected-scope
 submission, never silently widening a question. Selection controls are disabled during research.

@@ -32,6 +32,8 @@ export function ArchiveResearch({
   readonly refreshKey: string;
 }) {
   const scopeName = useId();
+  const documentListId = useId();
+  const [isListVisible, setIsListVisible] = useState(true);
   const [documents, setDocuments] = useState<readonly DocumentCatalogEntry[]>(
     [],
   );
@@ -146,14 +148,27 @@ export function ArchiveResearch({
               {archiveCopy.catalog.description}
             </p>
           </div>
-          <button
-            type="button"
-            disabled={isLoading || isResearching}
-            onClick={() => setRefreshCount((current) => current + 1)}
-            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
-          >
-            {archiveCopy.catalog.refresh}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              aria-expanded={isListVisible}
+              aria-controls={documentListId}
+              onClick={() => setIsListVisible((current) => !current)}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700"
+            >
+              {isListVisible
+                ? archiveCopy.catalog.hideDocuments
+                : archiveCopy.catalog.showDocuments}
+            </button>
+            <button
+              type="button"
+              disabled={isLoading || isResearching}
+              onClick={() => setRefreshCount((current) => current + 1)}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
+            >
+              {archiveCopy.catalog.refresh}
+            </button>
+          </div>
         </div>
 
         <fieldset disabled={isResearching} className="mt-6">
@@ -190,97 +205,130 @@ export function ArchiveResearch({
           <p className="mt-2 text-xs text-slate-500">
             {archiveCopy.catalog.selectionHint}
           </p>
+          <button
+            type="button"
+            disabled={selection.documents.length === 0}
+            onClick={() => {
+              setSelection(resetDocumentSelection);
+              setSelectionWasReset(false);
+            }}
+            className="mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
+          >
+            {archiveCopy.catalog.clearSelection}
+          </button>
 
-          <ul className="mt-5 divide-y divide-slate-200">
-            {documents.map((document) => {
-              const selected = selection.documents.some(
-                (item) => item.document_id === document.document_id,
-              );
-              const selectable = document.processing?.state === "SEARCHABLE";
-              const label = `${archiveCopy.catalog.selectDocument}: ${document.title}`;
-              return (
-                <li
-                  key={document.document_id}
-                  className="flex items-start gap-3 py-4"
-                >
-                  <input
-                    type="checkbox"
-                    aria-label={label}
-                    checked={selected && selection.scope === "SELECTED"}
-                    disabled={
-                      isLoading ||
-                      !selectable ||
-                      (!selected &&
-                        selection.documents.length >= DOCUMENT_SELECTION_LIMIT)
-                    }
-                    onChange={() => {
-                      setSelection((current) =>
-                        toggleDocumentSelection(current, document),
-                      );
-                      setSelectionWasReset(false);
-                    }}
-                    className="mt-1 size-4 shrink-0 accent-teal-700"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold break-words text-slate-900">
-                      {document.title}
-                    </h3>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {document.media_type === "application/pdf"
-                        ? "PDF"
-                        : "Text"}{" "}
-                      · {document.language} ·{" "}
-                      {document.byte_size.toLocaleString("en-US")} bytes
-                    </p>
-                    <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-                      {(
-                        [
-                          [
-                            archiveCopy.catalog.published,
-                            document.published_at,
-                          ],
-                          [archiveCopy.catalog.captured, document.captured_at],
-                          [
-                            archiveCopy.catalog.available,
-                            document.available_at,
-                          ],
-                        ] as const
-                      ).map(([name, value]) => (
-                        <div key={name} className="flex gap-1">
-                          <dt>{name}:</dt>
-                          <dd>{displayDate(value)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <p
-                      className={`mt-2 text-xs font-semibold ${selectable ? "text-emerald-700" : "text-slate-600"}`}
-                    >
-                      {document.processing === null
-                        ? archiveCopy.catalog.notProcessed
-                        : archiveCopy.catalog.statuses[
-                            document.processing.state
-                          ]}
-                    </p>
-                    {document.processing?.state === "FAILED" &&
-                    document.processing.error_summary ? (
-                      <p className="mt-1 text-xs text-rose-700">
-                        {document.processing.error_summary}
-                      </p>
-                    ) : null}
-                  </div>
-                  <a
-                    href={`/documents/${document.document_id}/versions/${document.document_version_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 text-sm font-semibold text-teal-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-teal-700"
-                    aria-label={`${archiveCopy.catalog.openOriginal}: ${document.title}`}
+          <div id={documentListId} hidden={!isListVisible}>
+            <ul className="mt-5 divide-y divide-slate-200">
+              {documents.map((document) => {
+                const selected = selection.documents.some(
+                  (item) => item.document_id === document.document_id,
+                );
+                const selectable = document.processing?.state === "SEARCHABLE";
+                const label = `${archiveCopy.catalog.selectDocument}: ${document.title}`;
+                return (
+                  <li
+                    key={document.document_id}
+                    className="flex items-start gap-3 py-4"
                   >
-                    {archiveCopy.catalog.openOriginal}
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
+                    <input
+                      type="checkbox"
+                      id={`${documentListId}-${document.document_id}`}
+                      aria-label={label}
+                      checked={selected && selection.scope === "SELECTED"}
+                      disabled={
+                        isLoading ||
+                        !selectable ||
+                        (!selected &&
+                          selection.documents.length >=
+                            DOCUMENT_SELECTION_LIMIT)
+                      }
+                      onChange={() => {
+                        setSelection((current) =>
+                          toggleDocumentSelection(current, document),
+                        );
+                        setSelectionWasReset(false);
+                      }}
+                      className="mt-1 size-4 shrink-0 accent-teal-700"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold break-words text-slate-900">
+                        <label
+                          htmlFor={`${documentListId}-${document.document_id}`}
+                          className={selectable ? "cursor-pointer" : undefined}
+                        >
+                          {document.title}
+                        </label>
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        {document.media_type === "application/pdf"
+                          ? "PDF"
+                          : "Text"}{" "}
+                        · {document.language} ·{" "}
+                        {document.byte_size.toLocaleString("en-US")} bytes
+                      </p>
+                      <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                        {(
+                          [
+                            [
+                              archiveCopy.catalog.published,
+                              document.published_at,
+                            ],
+                            [
+                              archiveCopy.catalog.captured,
+                              document.captured_at,
+                            ],
+                            [
+                              archiveCopy.catalog.available,
+                              document.available_at,
+                            ],
+                          ] as const
+                        ).map(([name, value]) => (
+                          <div key={name} className="flex gap-1">
+                            <dt>{name}:</dt>
+                            <dd>{displayDate(value)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      <p
+                        className={`mt-2 text-xs font-semibold ${selectable ? "text-emerald-700" : "text-slate-600"}`}
+                      >
+                        {document.processing === null
+                          ? archiveCopy.catalog.notProcessed
+                          : archiveCopy.catalog.statuses[
+                              document.processing.state
+                            ]}
+                      </p>
+                      {document.processing?.state === "FAILED" &&
+                      document.processing.error_summary ? (
+                        <p className="mt-1 text-xs text-rose-700">
+                          {document.processing.error_summary}
+                        </p>
+                      ) : null}
+                    </div>
+                    <a
+                      href={`/documents/${document.document_id}/versions/${document.document_version_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-sm font-semibold text-teal-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-teal-700"
+                      aria-label={`${archiveCopy.catalog.openOriginal}: ${document.title}`}
+                    >
+                      {archiveCopy.catalog.openOriginal}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+            {cursor != null ? (
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={() => void loadMore()}
+                className="mt-4 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
+              >
+                {archiveCopy.catalog.loadMore}
+              </button>
+            ) : null}
+          </div>
         </fieldset>
 
         <div aria-live="polite" className="mt-3 text-sm text-slate-600">
@@ -310,16 +358,6 @@ export function ArchiveResearch({
             <p className="mt-2">{archiveCopy.catalog.selectionLimit}</p>
           ) : null}
         </div>
-        {cursor != null ? (
-          <button
-            type="button"
-            disabled={isLoading || isResearching}
-            onClick={() => void loadMore()}
-            className="mt-4 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
-          >
-            {archiveCopy.catalog.loadMore}
-          </button>
-        ) : null}
       </section>
       <ResearchWorkflow
         documentIds={researchDocumentIds}

@@ -265,6 +265,28 @@ test("multiple selected sources preserve their exact IDs independently of the vi
   );
 });
 
+test("clearing several selected documents keeps focused scope and does not mutate the previous selection", () => {
+  const thirdId = "20000000-0000-4000-8000-000000000003";
+  const selected = [DOCUMENT_ID, RUN_ID, thirdId].reduce(
+    (current, document_id) =>
+      toggleDocumentSelection(current, entry({ document_id })),
+    EMPTY_DOCUMENT_SELECTION,
+  );
+  assert.deepEqual(getResearchDocumentIds(selected), [
+    DOCUMENT_ID,
+    RUN_ID,
+    thirdId,
+  ]);
+  const cleared = resetDocumentSelection(selected);
+  assert.deepEqual(cleared, { scope: "SELECTED", documents: [] });
+  assert.equal(getResearchDocumentIds(cleared), undefined);
+  assert.equal(selected.documents.length, 3);
+  assert.deepEqual(
+    resetDocumentSelection(EMPTY_DOCUMENT_SELECTION),
+    EMPTY_DOCUMENT_SELECTION,
+  );
+});
+
 test("missing, pending, and failed processing cannot be selected", () => {
   for (const state of [
     null,

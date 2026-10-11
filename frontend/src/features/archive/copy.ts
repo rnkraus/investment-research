@@ -57,6 +57,9 @@ export const archiveCopy = {
       "Open any saved original, or select searchable documents to focus your next question.",
     loading: "Loading saved documents…",
     refresh: "Refresh documents",
+    hideDocuments: "Hide documents",
+    showDocuments: "Show documents",
+    clearSelection: "Clear selection",
     loadMore: "Load more documents",
     empty:
       "No documents saved yet. Import a PDF or paste text below to get started.",
@@ -71,7 +74,7 @@ export const archiveCopy = {
       "The document list was refreshed. Select your documents again before asking a focused question.",
     selectionLimit: "You can select up to 100 documents per question.",
     selectionHint:
-      "Only documents marked Searchable can be selected. Loading more preserves your selection; refreshing clears it. Dates are shown in UTC.",
+      "Select one or more Searchable documents using the checkboxes. Hiding the list or loading more keeps your selection; refreshing clears it. Dates are shown in UTC.",
     unknownDate: "Unknown",
     published: "Published",
     captured: "Captured",
