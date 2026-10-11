@@ -19,12 +19,9 @@ import {
 } from "@/lib/api/client";
 
 import { archiveCopy, fixtureDefaults } from "./copy";
-import {
-  canResearchProcessingRun,
-  shouldPollProcessing,
-} from "./processing-state";
+import { ArchiveResearch } from "./archive-research";
+import { shouldPollProcessing } from "./processing-state";
 import { getLocalPublicationDate } from "./publication-date";
-import { ResearchWorkflow } from "./research-workflow";
 
 const PROCESSING_POLL_INTERVAL_MS = 2_000;
 type SourceInputMode = "pdf" | "text";
@@ -237,13 +234,8 @@ export function DocumentWorkflow() {
       className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr]"
     >
       <div className="lg:col-span-2">
-        <ResearchWorkflow
-          documentId={
-            accepted !== undefined &&
-            canResearchProcessingRun(processing?.state)
-              ? accepted.document_id
-              : undefined
-          }
+        <ArchiveResearch
+          refreshKey={`${accepted?.document_id ?? ""}:${processing?.state ?? ""}`}
         />
       </div>
       <form
