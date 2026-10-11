@@ -115,6 +115,10 @@ The current-document catalog adds `unit/test_document_listing.py` and
 creation-time/UUID cursors, trusted workspace filtering, current-version/original joins, missing
 publication times, metadata field allowlists, and read-session cleanup. The PostgreSQL cases also
 insert a newer document between pages to prove that keyset traversal does not duplicate or skip the
-existing ordered sources. These tests exercise the application and persistence contracts; HTTP and
-browser selection are not implemented by this first catalog block. The existing verification scripts
-and PostgreSQL CI suite discover the tests without a new provider or workflow dependency.
+existing ordered sources. `unit/test_document_listing_routes.py` additionally checks the HTTP
+catalog, strict pagination inputs, safe failure mapping, status composition, and original links.
+The PostgreSQL catalog tests exercise the real container and API, latest-run selection including
+equal-time ties, missing status, and foreign-version non-disclosure. Browser selection remains a
+subsequent block. The existing verification scripts and PostgreSQL CI suite discover the tests
+without a new provider or workflow dependency; the OpenAPI and generated-TypeScript drift checks
+verify the matching public contract.

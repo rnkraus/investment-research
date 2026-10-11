@@ -111,6 +111,43 @@ Normalization produces one internal `PreparedOriginal` containing media type, sa
 normalized byte stream, byte size, SHA-256 checksum, and capture metadata. The common persistence
 service receives only this prepared form.
 
+### 3.3 Saved-document catalog follow-up
+
+The owner-approved local usability follow-up adds `GET /api/v1/documents`; it is a read-only subset
+of M3, not acceptance of the broader archive or lifecycle milestone. Existing capture and original
+routes remain unchanged. The website catalog controls are a subsequent implementation block.
+
+Query parameters:
+
+| Parameter | Contract |
+| --- | --- |
+| `page_size` | Integer 1–100; default 20 |
+| `after_created_at` | Optional timezone-aware timestamp from `next_cursor.created_at` |
+| `after_document_id` | Optional UUID from `next_cursor.document_id` |
+
+Supply both continuation fields together or neither. The cursor is an exclusive descending
+`Document.created_at`/UUID position, not authorization or a multi-request snapshot. Unknown query
+parameters are rejected, including `workspace_id`. Newer imports appear when the first page is
+refreshed rather than shifting an existing traversal.
+
+`DocumentCatalogPage` returns `items` and nullable `next_cursor`. Each item contains document and
+current-version IDs, title, language, media type, byte size, creation and capture timestamps,
+nullable publication and availability timestamps, nullable `processing: ProcessingRunResult`, and
+an `original_url` pointing to the existing authorized API route. No workspace IDs, object keys,
+checksums, raw source text, or provider configuration are returned. Unknown source dates stay null.
+
+Metadata reads require an active document, its current version, and original metadata in the
+server-derived workspace. Processing is loaded in one bounded batch for those current version IDs
+only. The latest run is chosen by creation time descending, then UUID descending; no matching run
+means null, not `SEARCHABLE`. Safe persisted failure summaries reuse the existing processing-status
+contract. Status and document reads use separate short sessions and may change after response;
+research and original access must revalidate canonical eligibility rather than trust a list row.
+
+Success returns `200` with `Cache-Control: private, no-store`; invalid input returns the existing
+safe `422` envelope, and database failures return a safe `500` without a partial catalog. This
+operation performs no writes, storage-byte reads, provider calls, or schema changes. Existing CI
+unit, PostgreSQL, OpenAPI-drift, and generated-TypeScript checks cover the new contract.
+
 ## 4. Parser, blocks, and chunks
 
 ### 4.1 Parser protocol
