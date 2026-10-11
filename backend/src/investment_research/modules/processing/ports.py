@@ -14,6 +14,7 @@ from investment_research.modules.processing.contracts import (
     ParserLimits,
     ParserMediaType,
     ProcessingJobV1,
+    ProcessingStatusQuery,
 )
 from investment_research.modules.processing.domain import (
     Chunk,
@@ -138,11 +139,29 @@ class ProcessingUnitOfWork(Protocol):
         """Return the repository used for one processing state change."""
 
 
+class ProcessingStatusRepository(Protocol):
+    """Read-only snapshots without processing claims, locks, or write operations."""
+
+    def get_run_by_id(
+        self,
+        context: WorkspaceContext,
+        processing_run_id: UUID,
+    ) -> ProcessingRun | None:
+        """Return a scoped run without disclosing inaccessible identifiers."""
+
+    def list_latest_runs_for_versions(
+        self,
+        context: WorkspaceContext,
+        query: ProcessingStatusQuery,
+    ) -> tuple[ProcessingRun, ...]:
+        """Return at most one latest run per requested version in the trusted workspace."""
+
+
 class ProcessingReadUnitOfWork(Protocol):
     """Processing repository scoped to one non-writing status lookup."""
 
     @property
-    def processing(self) -> ProcessingRepository:
+    def processing(self) -> ProcessingStatusRepository:
         """Return the repository used to resolve a visible processing run."""
 
 

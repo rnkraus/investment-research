@@ -29,6 +29,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from investment_research.infrastructure.database.base import Base
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.contracts import ProcessingStatusQuery
 from investment_research.modules.processing.domain import (
     M0_DISABLED_DENSE_INDEX_CONFIG_VERSION,
     M0_DISABLED_EMBEDDING_CONFIG_VERSION,
@@ -473,6 +474,49 @@ class SqlAlchemyProcessingRepository:
             )
         )
         return None if row is None else row.to_domain()
+
+    def list_latest_runs_for_versions(
+        self,
+        context: WorkspaceContext,
+        query: ProcessingStatusQuery,
+    ) -> tuple[ProcessingRun, ...]:
+        """Rank scoped runs once and return the latest snapshot for each requested version."""
+
+        if not query.document_version_ids:
+            return ()
+        ranked_runs = (
+            select(
+                ProcessingRunRow.id,
+                ProcessingRunRow.workspace_id,
+                func.row_number()
+                .over(
+                    partition_by=ProcessingRunRow.document_version_id,
+                    order_by=(ProcessingRunRow.created_at.desc(), ProcessingRunRow.id.desc()),
+                )
+                .label("position"),
+            )
+            .where(
+                ProcessingRunRow.workspace_id == context.workspace_id,
+                ProcessingRunRow.document_version_id.in_(query.document_version_ids),
+            )
+            .subquery("ranked_processing_runs")
+        )
+        statement = (
+            select(ProcessingRunRow)
+            .join(
+                ranked_runs,
+                and_(
+                    ProcessingRunRow.workspace_id == ranked_runs.c.workspace_id,
+                    ProcessingRunRow.id == ranked_runs.c.id,
+                ),
+            )
+            .where(
+                ProcessingRunRow.workspace_id == context.workspace_id,
+                ranked_runs.c.position == 1,
+            )
+            .order_by(ProcessingRunRow.document_version_id)
+        )
+        return tuple(row.to_domain() for row in self._session.scalars(statement))
 
     def get_run_by_id_for_update(
         self,

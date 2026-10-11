@@ -8,17 +8,25 @@ from unittest.mock import create_autospec
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
+from sqlalchemy import Select
+from sqlalchemy.orm import Session
 
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import (
     GetProcessingRunService,
     ProcessingRunUnavailableError,
 )
+from investment_research.modules.processing.contracts import ProcessingStatusQuery
 from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
+from investment_research.modules.processing.persistence import (
+    ProcessingRunRow,
+    SqlAlchemyProcessingRepository,
+)
 from investment_research.modules.processing.ports import (
     ProcessingReadUnitOfWork,
     ProcessingReadUnitOfWorkFactory,
-    ProcessingRepository,
+    ProcessingStatusRepository,
 )
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
@@ -32,8 +40,8 @@ class RecordingProcessingReadUnitOfWork:
     """Expose one mocked processing repository through the read contract."""
 
     def __init__(self) -> None:
-        self.repository_mock = create_autospec(ProcessingRepository, instance=True)
-        self.processing = cast(ProcessingRepository, self.repository_mock)
+        self.repository_mock = create_autospec(ProcessingStatusRepository, instance=True)
+        self.processing = cast(ProcessingStatusRepository, self.repository_mock)
         self.enter_count = 0
         self.exit_count = 0
 
@@ -105,3 +113,97 @@ def test_get_processing_run_hides_every_unavailable_identifier() -> None:
         make_service(unit_of_work).get(make_context(), PROCESSING_RUN_ID)
 
     assert unit_of_work.enter_count == unit_of_work.exit_count == 1
+
+
+def test_processing_status_batch_is_bounded_and_rejects_client_workspace() -> None:
+    assert (
+        len(
+            ProcessingStatusQuery(
+                document_version_ids=(DOCUMENT_VERSION_ID,) * 100
+            ).document_version_ids
+        )
+        == 100
+    )
+    with pytest.raises(ValidationError):
+        ProcessingStatusQuery(document_version_ids=(DOCUMENT_VERSION_ID,) * 101)
+    with pytest.raises(ValidationError):
+        ProcessingStatusQuery.model_validate(
+            {"document_version_ids": [], "workspace_id": str(WORKSPACE_ID)}
+        )
+
+
+def test_latest_processing_status_uses_one_batch_and_closes_read_session() -> None:
+    unit_of_work = RecordingProcessingReadUnitOfWork()
+    query = ProcessingStatusQuery(document_version_ids=(DOCUMENT_VERSION_ID,))
+    run = make_run()
+    unit_of_work.repository_mock.list_latest_runs_for_versions.return_value = (run,)
+
+    result = make_service(unit_of_work).get_latest_for_versions(make_context(), query)
+
+    assert result == (run,)
+    assert unit_of_work.enter_count == unit_of_work.exit_count == 1
+    unit_of_work.repository_mock.list_latest_runs_for_versions.assert_called_once_with(
+        make_context(), query
+    )
+    unit_of_work.repository_mock.get_run_by_id.assert_not_called()
+
+
+def test_latest_processing_status_closes_read_session_on_database_failure() -> None:
+    unit_of_work = RecordingProcessingReadUnitOfWork()
+    unit_of_work.repository_mock.list_latest_runs_for_versions.side_effect = RuntimeError(
+        "synthetic read failure"
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic read failure"):
+        make_service(unit_of_work).get_latest_for_versions(
+            make_context(), ProcessingStatusQuery(document_version_ids=(DOCUMENT_VERSION_ID,))
+        )
+
+    assert unit_of_work.enter_count == unit_of_work.exit_count == 1
+
+
+def test_empty_processing_status_batch_never_opens_a_session() -> None:
+    unit_of_work = RecordingProcessingReadUnitOfWork()
+
+    assert (
+        make_service(unit_of_work).get_latest_for_versions(
+            make_context(), ProcessingStatusQuery(document_version_ids=())
+        )
+        == ()
+    )
+    assert unit_of_work.enter_count == unit_of_work.exit_count == 0
+
+
+def test_processing_status_repository_ranks_scoped_versions_in_one_query() -> None:
+    session = create_autospec(Session, instance=True)
+    run = make_run()
+    session.scalars.return_value = [ProcessingRunRow.from_domain(run)]
+    query = ProcessingStatusQuery(document_version_ids=(DOCUMENT_VERSION_ID,))
+
+    result = SqlAlchemyProcessingRepository(session).list_latest_runs_for_versions(
+        make_context(), query
+    )
+
+    assert result == (run,)
+    session.scalars.assert_called_once()
+    statement = cast(Select[tuple[ProcessingRunRow]], session.scalars.call_args.args[0])
+    compiled = statement.compile()
+    sql = str(compiled)
+    assert "row_number() OVER (PARTITION BY processing_runs.document_version_id" in sql
+    assert "ORDER BY processing_runs.created_at DESC, processing_runs.id DESC" in sql
+    assert "processing_runs.document_version_id IN" in sql
+    assert "ranked_processing_runs.position =" in sql
+    assert list(compiled.params.values()).count(WORKSPACE_ID) == 2
+    session.commit.assert_not_called()
+
+
+def test_empty_processing_status_repository_batch_does_not_query() -> None:
+    session = create_autospec(Session, instance=True)
+
+    assert (
+        SqlAlchemyProcessingRepository(session).list_latest_runs_for_versions(
+            make_context(), ProcessingStatusQuery(document_version_ids=())
+        )
+        == ()
+    )
+    session.scalars.assert_not_called()

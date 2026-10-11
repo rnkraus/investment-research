@@ -214,7 +214,7 @@ flowchart LR
     API[Status route<br/>run ID only] --> CONTEXT[Server-owned WorkspaceContext]
     CONTEXT --> SERVICE[GetProcessingRunService]
     SERVICE --> READ[ProcessingReadUnitOfWork]
-    READ --> REPOSITORY[ProcessingRepository.get_run_by_id]
+    READ --> REPOSITORY[ProcessingStatusRepository.get_run_by_id]
     REPOSITORY -->|visible| RUN[ProcessingRun snapshot]
     REPOSITORY -->|unknown or foreign| MISSING[Same unavailable result]
 ```
@@ -222,6 +222,22 @@ flowchart LR
 The API maps a visible snapshot to `ProcessingRunResult`, which contains no workspace identifier or
 processing configuration. `error_summary` is present only for `FAILED` and was sanitized by the
 processing service before persistence.
+
+For the saved-document catalog, `get_latest_for_versions` accepts a `ProcessingStatusQuery` with
+at most 100 version IDs supplied by the scoped document-list result. It opens one short read
+session and asks `list_latest_runs_for_versions` for a single batch. An empty batch opens no
+session. The repository filters by workspace before ranking each version's runs by `created_at`
+descending and UUID descending, then returns only the first run per version. Missing, foreign,
+and unknown versions produce no entry; no state is invented for them.
+
+`ProcessingReadUnitOfWork` exposes the narrow `ProcessingStatusRepository` port rather than the
+write-capable processing repository. Both ports use the same SQLAlchemy implementation, but status
+callers have no application-level claim, locking, or update methods available.
+
+This is a latest-run status snapshot, not a claim that the version is eligible for retrieval.
+The catalog and status reads use separate short sessions, so they are not an atomic cross-module
+snapshot. Opening an original and researching a document still apply their own canonical checks.
+No processing transitions, locks, parser work, provider requests, or schema changes occur here.
 
 ## Isolated parser adapter
 
