@@ -166,8 +166,9 @@ ACTIVE → PURGE_PENDING → physical content removal
 - A content-free deletion receipt outlives the document; detached cost accounting still counts toward budgets.
 - [ADR-0019](./adr/0019-permanent-local-document-deletion.md) defines the retention matrix and gates.
   Backend admission, exact scoped cleanup, and atomic dependency purge are implemented. Database
-  guards prevent source writes after exclusion; endpoint, worker dispatch, and website activation
-  remain pending.
+  guards prevent source writes after exclusion. Versioned ID-only jobs execute cleanup through the
+  worker with trusted workspace checks and bounded retries. The endpoint, live Pinecone deletion
+  verification, and website activation remain pending.
 
 ### Processing readiness
 

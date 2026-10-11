@@ -274,8 +274,9 @@ completed deletion; do not offer restore or claim cross-store completion before 
 exists; repeated purge has the same content-free terminal result and does not reset cost accounting.
 
 **Local follow-up status:** Admission/purge services, exact-key/vector adapters, detached accounting,
-and migration `0011_document_purge_guards` are implemented. Endpoint, task dispatch, website
-activation, and isolated live-store cleanup verification remain pending. This does not complete
+migration `0011_document_purge_guards`, and bounded Celery purge delivery are implemented. The
+isolated queue-recovery gate verifies PostgreSQL and unversioned SeaweedFS cleanup. Endpoint,
+website activation, and live Pinecone deletion verification remain pending. This does not complete
 M2's durable outbox or periodic reconciliation work.
 
 ## 6. Final M2 acceptance and review

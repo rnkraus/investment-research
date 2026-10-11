@@ -84,12 +84,28 @@ reattaching it or resetting the budget.
 
 The S3 adapter targets the current unversioned local SeaweedFS store; versioned cloud object
 history requires a separately reviewed purge policy. Backend integration tests use disposable
-synthetic PostgreSQL and local storage, and adapter tests use provider doubles. They do not prove
-live Pinecone or SeaweedFS cleanup. Task registration, dispatch, the HTTP endpoint, and website
-activation remain pending; this is not yet a usable deletion feature.
+synthetic PostgreSQL and local storage, and adapter tests use provider doubles. The worker now
+registers a versioned ID-only purge task on the existing queue, checks the trusted workspace, and
+reuses its process-local storage/vector clients. Pending errors receive four scheduled retries
+with backoff and jitter; attempts have 300/330-second soft/hard limits. Worker-loss redelivery is
+separate. Exhausted cleanup remains canonically pending, not completed or restored. This does
+not implement M2's durable outbox or periodic reconciliation.
+
+The isolated queue-recovery verifier publishes deletion jobs after recovering its synthetic source
+and confirms a completed receipt and absent canonical source rows. The service confirms exact
+original-object absence in live unversioned SeaweedFS before completion. Live Pinecone deletion,
+the HTTP endpoint, and website activation remain pending; this is not yet a user-facing feature.
 
 Backend-block verification (2026-10-12): `scripts.verify_backend` passed formatting, lint, typing,
 and 2,039 unit tests. `scripts.verify_postgres` passed the empty migration cycle, schema checks,
 and 215 integration tests; seven SeaweedFS tests were skipped because their separate verifier was
 not active. Frontend format, lint, typecheck, contract checks, and 61 tests passed. No browser,
 production build, live provider deletion, or normal archive purge was performed for this block.
+
+Worker-block verification (2026-10-12): `scripts.verify_backend` passed formatting, lint, typing,
+and 2,064 unit tests. The isolated `scripts.verify_queue_recovery` gate passed recovery and
+permanent PostgreSQL/SeaweedFS cleanup; it published the same purge job twice. Unit tests cover
+duplicate execution, retry exhaustion, invalid/foreign payloads, soft timeouts, client wiring,
+and deterministic-index exact-ID isolation. Frontend format, lint, typecheck, contract checks, and
+61 tests also passed. No browser or production build was run for this backend-only block. This
+gate does not exercise live Pinecone deletion or the user's normal archive.
