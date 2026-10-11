@@ -239,8 +239,11 @@ Later LangGraph workflows require separate approval criteria, tool allowlists, s
 - ID-only worker jobs enforce trusted workspace identity, bounded scheduled retries, and
   per-attempt time limits. Retry exhaustion leaves durable pending intent; it never implies
   completion or restoration. Durable outbox delivery and periodic reconciliation remain M2 work.
-- Endpoint and UI activation remain under implementation. This local policy does not approve public
-  or multi-user retention; review that policy separately before such deployment.
+- The API requires an explicit bounded ID batch and boolean permanent-deletion confirmation, then
+  commits exclusion before broker publication. Content-free status reads remain workspace-scoped
+  after physical removal. A broker failure does not restore content or claim cleanup completion;
+  resubmission retries pending publication. UI activation remains under implementation. This local
+  policy does not approve public or multi-user retention; review it before such deployment.
 
 ### Local runtime
 

@@ -177,9 +177,9 @@ and therefore fails existing document/original admission queries.
 
 | File | Responsibility |
 | --- | --- |
-| `deletion_contracts.py` | Explicit batch, content-free receipts, and ID-only versioned purge jobs. |
+| `deletion_contracts.py` | Explicit batch, content-free receipts/submission result, and ID-only versioned purge jobs. |
 | `deletion_ports.py` | Repository, unit-of-work, exact-store purgers, dispatcher, and job executor interfaces. |
-| `deletion.py` | Admission, retry-safe cleanup, and trusted-worker job execution; no provider calls inside a transaction. |
+| `deletion.py` | Admission, post-commit publication, status reads, retry-safe cleanup, and trusted-worker execution. |
 | `../../infrastructure/database/document_deletion.py` | Canonical target resolution and dependency-ordered PostgreSQL purge. |
 
 ```mermaid
@@ -217,6 +217,9 @@ and vector clients. See the [queue guide](../../infrastructure/queue/README.md#p
 for retries and time limits.
 
 The isolated queue-recovery verifier now publishes purge jobs and confirms completed canonical
-and unversioned SeaweedFS cleanup for its synthetic fixture. Live Pinecone deletion, HTTP access,
-and the active website button remain pending. Worker execution is implemented, but this is not yet
-a user-facing deletion feature.
+and unversioned SeaweedFS cleanup for its synthetic fixture. `SubmitDocumentDeletionService`
+commits admission before dispatch, skips completed receipts, and reports individual publication
+failures without restoring sources. `GetDocumentDeletionService` reads scoped receipts after
+physical removal. Both are exposed through the
+[permanent-deletion HTTP contract](../../../../../docs/11-m1-contracts.md#34-permanent-deletion-follow-up).
+Live Pinecone deletion verification and the active website button remain pending.

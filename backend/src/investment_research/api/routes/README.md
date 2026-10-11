@@ -9,6 +9,8 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 | `health.py`     | `GET /health`                                                        | Reports process liveness without dependency details or credentials.                 |
 | `health.py`     | `GET /ready`                                                         | Reports aggregate dependency readiness without identifying a failed dependency.     |
 | `documents.py`  | `POST /api/v1/documents`                                             | Captures one validated PDF and returns canonical identifiers with HTTP 202.         |
+| `document_deletions.py` | `POST /api/v1/documents/deletions` | Admits a confirmed explicit batch and publishes pending purge jobs after commit. |
+| `document_deletions.py` | `GET /api/v1/documents/{document_id}/deletion` | Returns a content-free deletion receipt, including after source removal. |
 | `documents.py`  | `GET /api/v1/documents/{document_id}/versions/{version_id}/original` | Streams one authorized and integrity-checked current PDF original.                  |
 | `processing.py` | `GET /api/v1/processing-runs/{processing_run_id}`                    | Returns one workspace-scoped run state with safe failure details.                   |
 | `research.py`   | `POST /api/v1/research-requests`                                     | Streams only validated statements, citation references, or a safe terminal outcome. |
@@ -27,6 +29,27 @@ flowchart TD
 ```
 
 Routes must not open another module's tables directly, choose infrastructure adapters, perform long-running parsing, or accept a client-provided workspace as authorization.
+
+## Permanent deletion
+
+```mermaid
+flowchart LR
+    REQUEST[Confirmed explicit document IDs] --> SUBMIT[SubmitDocumentDeletionService]
+    SUBMIT --> COMMIT[Commit entire batch exclusion and receipts]
+    COMMIT --> PUBLISH[Publish pending ID-only purge jobs]
+    PUBLISH --> ACCEPTED[202: receipt snapshots and failed publication IDs]
+    WORKER[Worker cleanup] --> RECEIPT[Canonical pending or completed receipt]
+    STATUS[GET deletion status] --> READ[GetDocumentDeletionService]
+    READ --> RECEIPT
+```
+
+The JSON body requires `confirm_permanent: true` and 1–100 unique IDs. Canonical admission is
+all-or-nothing; broker publication occurs afterward and can fail for individual jobs without
+restoring sources. Resubmit the same confirmed IDs to retry pending publication. `202` never
+implies cleanup completed. Status reads remain scoped after document removal, and unknown,
+unrequested, and foreign IDs share one unavailable response. Success disables private caching.
+The full contract and error behavior are in
+[M1 contracts](../../../../../docs/11-m1-contracts.md#34-permanent-deletion-follow-up).
 
 ```mermaid
 flowchart LR

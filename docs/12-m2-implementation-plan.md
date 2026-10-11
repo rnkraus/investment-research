@@ -275,8 +275,9 @@ exists; repeated purge has the same content-free terminal result and does not re
 
 **Local follow-up status:** Admission/purge services, exact-key/vector adapters, detached accounting,
 migration `0011_document_purge_guards`, and bounded Celery purge delivery are implemented. The
-isolated queue-recovery gate verifies PostgreSQL and unversioned SeaweedFS cleanup. Endpoint,
-website activation, and live Pinecone deletion verification remain pending. This does not complete
+isolated queue-recovery gate verifies PostgreSQL and unversioned SeaweedFS cleanup. Confirmed
+batch admission and scoped receipt reads are exposed through the HTTP API; website activation
+and live Pinecone deletion verification remain pending. This does not complete
 M2's durable outbox or periodic reconciliation work.
 
 ## 6. Final M2 acceptance and review
