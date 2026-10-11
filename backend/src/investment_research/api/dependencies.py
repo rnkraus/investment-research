@@ -9,6 +9,10 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.documents.deletion import (
+    GetDocumentDeletionService,
+    SubmitDocumentDeletionService,
+)
 from investment_research.modules.documents.listing import ListDocumentsService
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -65,6 +69,30 @@ def get_list_documents_service(container: ContainerDependency) -> ListDocumentsS
 ListDocumentsServiceDependency = Annotated[
     ListDocumentsService,
     Depends(get_list_documents_service),
+]
+
+
+def get_submit_document_deletion_service(
+    container: ContainerDependency,
+) -> SubmitDocumentDeletionService:
+    """Return canonical admission and post-commit purge publication."""
+
+    return container.submit_document_deletion_service
+
+
+SubmitDocumentDeletionServiceDependency = Annotated[
+    SubmitDocumentDeletionService, Depends(get_submit_document_deletion_service)
+]
+
+
+def get_document_deletion_service(container: ContainerDependency) -> GetDocumentDeletionService:
+    """Return scoped, content-free deletion status reads."""
+
+    return container.get_document_deletion_service
+
+
+GetDocumentDeletionServiceDependency = Annotated[
+    GetDocumentDeletionService, Depends(get_document_deletion_service)
 ]
 
 

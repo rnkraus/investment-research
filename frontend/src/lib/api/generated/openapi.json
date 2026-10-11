@@ -398,6 +398,118 @@
         "title": "DocumentCatalogPage",
         "type": "object"
       },
+      "DocumentDeletionInput": {
+        "additionalProperties": false,
+        "description": "Explicit confirmation of permanent source and dependent-answer deletion.",
+        "properties": {
+          "confirm_permanent": {
+            "const": true,
+            "description": "Permanently delete selected sources and their affected stored answers; no restore",
+            "title": "Confirm Permanent",
+            "type": "boolean"
+          },
+          "document_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Document Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "document_ids",
+          "confirm_permanent"
+        ],
+        "title": "DocumentDeletionInput",
+        "type": "object"
+      },
+      "DocumentDeletionResult": {
+        "additionalProperties": false,
+        "description": "Scoped content-free status, never a source or provider locator.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DocumentDeletionState"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "state",
+          "requested_at",
+          "completed_at",
+          "status_url"
+        ],
+        "title": "DocumentDeletionResult",
+        "type": "object"
+      },
+      "DocumentDeletionState": {
+        "description": "A pending purge is already irreversible; completion confirms store cleanup.",
+        "enum": [
+          "PENDING",
+          "COMPLETED"
+        ],
+        "title": "DocumentDeletionState",
+        "type": "string"
+      },
+      "DocumentDeletionsAccepted": {
+        "additionalProperties": false,
+        "description": "Committed snapshots; publication failures may be retried with the same explicit IDs.",
+        "properties": {
+          "dispatch_pending_document_ids": {
+            "description": "IDs whose publication failed in this attempt; not a durable worker status",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Dispatch Pending Document Ids",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentDeletionResult"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "dispatch_pending_document_ids"
+        ],
+        "title": "DocumentDeletionsAccepted",
+        "type": "object"
+      },
       "DocumentListCursor": {
         "additionalProperties": false,
         "description": "Exclusive position in descending document creation-time and UUID order.",
@@ -1227,6 +1339,78 @@
         ]
       }
     },
+    "/api/v1/documents/deletions": {
+      "post": {
+        "description": "Exclude the whole confirmed batch before best-effort post-commit publication.",
+        "operationId": "request_document_deletions_api_v1_documents_deletions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentDeletionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDeletionsAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Request Document Deletions",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/api/v1/documents/text": {
       "post": {
         "description": "Accept one bounded English text original and return its capture identifiers.",
@@ -1294,6 +1478,70 @@
           }
         },
         "summary": "Capture Pasted Text",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/deletion": {
+      "get": {
+        "description": "Return a receipt after removal without disclosing foreign or unknown targets.",
+        "operationId": "get_document_deletion_api_v1_documents__document_id__deletion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDeletionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Document Deletion",
         "tags": [
           "documents"
         ]

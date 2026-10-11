@@ -29,6 +29,8 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/ready",
         "/api/v1/documents",
         "/api/v1/documents/text",
+        "/api/v1/documents/deletions",
+        "/api/v1/documents/{document_id}/deletion",
         "/api/v1/documents/{document_id}/versions/{version_id}/original",
         "/api/v1/evidence-spans/{evidence_span_id}",
         "/api/v1/processing-runs/{processing_run_id}",
@@ -105,6 +107,36 @@ def test_document_catalog_exposes_bounded_pagination_without_workspace_input() -
             "$ref": "#/components/schemas/ErrorResponse"
         }
     assert "workspace_id" not in json.dumps(operation)
+
+
+def test_deletion_contract_requires_explicit_confirmation_and_exposes_no_content() -> None:
+    schema = create_app(ApiSettings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/documents/deletions"]["post"]
+    body = schema["components"]["schemas"]["DocumentDeletionInput"]
+    assert body["additionalProperties"] is False
+    assert set(body["required"]) == {"document_ids", "confirm_permanent"}
+    assert body["properties"]["confirm_permanent"]["const"] is True
+    assert body["properties"]["document_ids"]["minItems"] == 1
+    assert body["properties"]["document_ids"]["maxItems"] == 100
+    assert operation["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/DocumentDeletionsAccepted"
+    }
+    result = schema["components"]["schemas"]["DocumentDeletionResult"]
+    assert set(result["properties"]) == {
+        "document_id",
+        "state",
+        "requested_at",
+        "completed_at",
+        "status_url",
+    }
+    assert set(schema["components"]["schemas"]["DocumentDeletionState"]["enum"]) == {
+        "PENDING",
+        "COMPLETED",
+    }
+    for code in ("404", "409", "422", "500"):
+        assert operation["responses"][code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
 
 
 def test_text_capture_uses_strict_bounded_json_contract() -> None:
