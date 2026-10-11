@@ -35,7 +35,7 @@ from tests.integration.factories import FIXTURE_TIME, make_research_source, pers
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 PRE_DELETION_REVISION = "0009_m1_5_reranking_operations"
-DELETION_REVISION = "0010_permanent_document_deletion"
+DELETION_REVISION = "0011_document_purge_guards"
 
 
 def test_deletion_migration_preserves_sources_costs_and_irreversible_receipts(

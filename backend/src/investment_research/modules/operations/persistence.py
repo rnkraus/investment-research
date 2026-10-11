@@ -288,8 +288,14 @@ class SqlAlchemyProviderOperationRepository:
             return False
         if (
             row.correlation_id != operation.correlation_id
-            or row.research_request_id != operation.research_request_id
-            or row.processing_run_id != operation.processing_run_id
+            or (
+                not row.owner_deleted
+                and (
+                    row.owner_deleted != operation.owner_deleted
+                    or row.research_request_id != operation.research_request_id
+                    or row.processing_run_id != operation.processing_run_id
+                )
+            )
             or row.operation != operation.operation
             or row.provider != operation.provider
             or row.model != operation.model

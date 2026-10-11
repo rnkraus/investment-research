@@ -61,7 +61,7 @@ class DocumentRow(Base):
                 "document_versions.id",
             ],
             name="fk_documents_current_version",
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             use_alter=True,
             deferrable=True,
             initially="DEFERRED",

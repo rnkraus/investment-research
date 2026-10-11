@@ -32,7 +32,7 @@ from tests.integration.factories import (
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 PRE_RERANKING_REVISION = "0008_m1_provider_operations"
-CURRENT_REVISION = "0010_permanent_document_deletion"
+CURRENT_REVISION = "0011_document_purge_guards"
 
 
 def test_reranking_migration_preserves_history_and_enforces_owner_and_workspace(
