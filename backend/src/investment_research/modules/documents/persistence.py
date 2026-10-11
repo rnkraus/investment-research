@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     and_,
     func,
+    or_,
     select,
 )
 from sqlalchemy import Enum as SqlEnum
@@ -22,6 +23,12 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from investment_research.infrastructure.database.base import Base
+from investment_research.modules.documents.contracts import (
+    DocumentListCursor,
+    DocumentListEntry,
+    DocumentListPage,
+    DocumentListQuery,
+)
 from investment_research.modules.documents.domain import (
     Document,
     DocumentLifecycleState,
@@ -255,6 +262,73 @@ class SqlAlchemyDocumentRepository:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def list_current_documents(
+        self,
+        context: WorkspaceContext,
+        query: DocumentListQuery,
+    ) -> DocumentListPage:
+        """Read listing metadata through active current workspace relationships."""
+
+        statement = (
+            select(
+                DocumentRow.id.label("document_id"),
+                DocumentVersionRow.id.label("document_version_id"),
+                DocumentVersionRow.title,
+                DocumentVersionRow.language,
+                DocumentVersionRow.published_at,
+                DocumentVersionRow.available_at,
+                DocumentVersionRow.captured_at,
+                DocumentRow.created_at,
+                OriginalArtifactRow.media_type,
+                OriginalArtifactRow.byte_size,
+            )
+            .select_from(DocumentRow)
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == DocumentRow.workspace_id,
+                    DocumentVersionRow.document_id == DocumentRow.id,
+                    DocumentVersionRow.id == DocumentRow.current_version_id,
+                ),
+            )
+            .join(
+                OriginalArtifactRow,
+                and_(
+                    OriginalArtifactRow.workspace_id == DocumentVersionRow.workspace_id,
+                    OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
+                ),
+            )
+            .where(
+                DocumentRow.workspace_id == context.workspace_id,
+                DocumentVersionRow.workspace_id == context.workspace_id,
+                OriginalArtifactRow.workspace_id == context.workspace_id,
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+            )
+            .order_by(DocumentRow.created_at.desc(), DocumentRow.id.desc())
+            .limit(query.page_size + 1)
+        )
+        if query.after is not None:
+            statement = statement.where(
+                or_(
+                    DocumentRow.created_at < query.after.created_at,
+                    and_(
+                        DocumentRow.created_at == query.after.created_at,
+                        DocumentRow.id < query.after.document_id,
+                    ),
+                )
+            )
+
+        rows = self._session.execute(statement).mappings().all()
+        items = tuple(DocumentListEntry.model_validate(row) for row in rows[: query.page_size])
+        next_cursor = None
+        if len(rows) > query.page_size:
+            last = items[-1]
+            next_cursor = DocumentListCursor(
+                created_at=last.created_at,
+                document_id=last.document_id,
+            )
+        return DocumentListPage(items=items, next_cursor=next_cursor)
 
     def add_capture(
         self,

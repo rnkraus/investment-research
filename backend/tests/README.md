@@ -109,3 +109,12 @@ failed check.
 
 Run commands are documented in the [development guide](../../docs/development.md#verify-changes). Database
 tests must prove both same-workspace access and cross-workspace non-disclosure.
+
+The current-document catalog adds `unit/test_document_listing.py` and
+`integration/test_document_listing_postgresql.py`. They cover bounded metadata pages, exclusive
+creation-time/UUID cursors, trusted workspace filtering, current-version/original joins, missing
+publication times, metadata field allowlists, and read-session cleanup. The PostgreSQL cases also
+insert a newer document between pages to prove that keyset traversal does not duplicate or skip the
+existing ordered sources. These tests exercise the application and persistence contracts; HTTP and
+browser selection are not implemented by this first catalog block. The existing verification scripts
+and PostgreSQL CI suite discover the tests without a new provider or workflow dependency.

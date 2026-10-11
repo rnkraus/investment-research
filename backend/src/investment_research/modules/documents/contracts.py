@@ -1,4 +1,4 @@
-"""Typed application contracts for capturing archive documents."""
+"""Typed application contracts for capturing and listing archive documents."""
 
 from datetime import UTC, datetime
 from typing import Annotated, Literal
@@ -8,11 +8,16 @@ from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
+    Field,
     StringConstraints,
     field_validator,
 )
 
-from investment_research.modules.documents.domain import DocumentTitle, LanguageCode
+from investment_research.modules.documents.domain import (
+    DocumentTitle,
+    LanguageCode,
+    OriginalMediaType,
+)
 from investment_research.modules.processing.domain import ProcessingState
 
 OriginalFilename = Annotated[
@@ -77,3 +82,49 @@ class CaptureDocumentResult(ImmutableContract):
     original_artifact_id: UUID
     processing_run_id: UUID
     state: ProcessingState
+
+
+class DocumentListCursor(ImmutableContract):
+    """Exclusive position in descending document creation-time and UUID order."""
+
+    created_at: AwareDatetime
+    document_id: UUID
+
+    @field_validator("created_at")
+    @classmethod
+    def normalize_created_at(cls, value: datetime) -> datetime:
+        """Keep the continuation position timezone-aware and normalized to UTC."""
+
+        return value.astimezone(UTC)
+
+
+class DocumentListQuery(ImmutableContract):
+    """Bound one read page without accepting a client-controlled workspace."""
+
+    page_size: int = Field(default=20, ge=1, le=100, strict=True)
+    after: DocumentListCursor | None = None
+
+
+class DocumentListEntry(CaptureMetadata):
+    """Current original metadata safe for a workspace-owned archive listing."""
+
+    document_id: UUID
+    document_version_id: UUID
+    media_type: OriginalMediaType
+    byte_size: int = Field(gt=0)
+    created_at: AwareDatetime
+    captured_at: AwareDatetime
+
+    @field_validator("created_at", "captured_at")
+    @classmethod
+    def normalize_archive_times(cls, value: datetime) -> datetime:
+        """Preserve separate document-creation and version-capture timestamps."""
+
+        return value.astimezone(UTC)
+
+
+class DocumentListPage(ImmutableContract):
+    """A bounded metadata page and an optional exclusive continuation position."""
+
+    items: tuple[DocumentListEntry, ...] = Field(max_length=100)
+    next_cursor: DocumentListCursor | None = None
