@@ -156,7 +156,7 @@ test.describe("M1 visible browser journey", () => {
     await expect(sourcePage.locator("pre")).toHaveText(sourceText);
   });
 
-  test("saved-source selection is explicit, paginated, and cleared safely on refresh", async ({
+  test("saved-source selection survives hiding and pagination and clears safely", async ({
     page,
     context,
   }) => {
@@ -271,11 +271,78 @@ test.describe("M1 visible browser journey", () => {
         exact: true,
       }),
     ).toBeChecked();
+    await expect(
+      page.getByText("Selected documents: 2.", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Hide documents", exact: true })
+      .click();
+    const showDocuments = page.getByRole("button", {
+      name: "Show documents",
+      exact: true,
+    });
+    await expect(showDocuments).toHaveAttribute("aria-expanded", "false");
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      }),
+    ).toBeHidden();
+    await expect(
+      page.getByText("Selected documents: 2.", { exact: true }),
+    ).toBeVisible();
+    await expect(submit).toBeEnabled();
     await submit.click();
     await expect(
       page.getByRole("heading", { name: "Insufficient evidence" }),
     ).toBeVisible();
     expect(submittedIds).toEqual([first.document_id, second.document_id]);
+
+    await showDocuments.click();
+    await expect(
+      page.getByRole("button", { name: "Hide documents", exact: true }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 3",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await page
+      .getByRole("button", { name: "Clear selection", exact: true })
+      .click();
+    await expect(
+      page.getByRole("radio", { name: "Selected documents", exact: true }),
+    ).toBeChecked();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      }),
+    ).not.toBeChecked();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 3",
+        exact: true,
+      }),
+    ).not.toBeChecked();
+    await expect(submit).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Clear selection", exact: true }),
+    ).toBeDisabled();
+    await page.getByText("Catalog source 1", { exact: true }).click();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      }),
+    ).toBeChecked();
 
     const popupPromise = page.waitForEvent("popup");
     await page

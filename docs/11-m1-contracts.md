@@ -155,6 +155,9 @@ marked `SEARCHABLE`; an empty selected scope disables submission instead of beco
 request. Loading more preserves selection. Manual refresh, capture, and observed processing-state
 transitions reload the first page and clear selection without changing selected scope. A catalog
 failure blocks selected-scope submission, and selection controls are locked during research.
+Hiding or showing the document rows preserves selection and does not trigger a catalog request.
+Scope and selected count remain visible while the rows are hidden. Document titles toggle their
+checkboxes; Clear selection removes all selected IDs without widening focused scope to all sources.
 
 `/documents/{document_id}/versions/{document_version_id}` opens a complete original independently
 of a question. It uses the existing integrity-checking original endpoint, renders PDF bytes or
@@ -162,8 +165,9 @@ escaped plain text, and makes no citation/highlight claim. `/sources/{evidence_s
 its stricter evidence resolution and exact-location checks. List and original reads bypass browser
 caching. No additional backend operation, database table, dependency, or provider call is needed.
 Deterministic frontend tests cover the contract and selection rules; browser journey coverage is
-extended for reload, original opening, pagination, multi-selection, and refresh. Local production
-build and browser verification must be confirmed separately, not inferred from unit tests.
+extended for reload, original opening, pagination, multi-selection, hiding/showing, clearing, and
+refresh. Local production build and browser verification must be confirmed separately, not inferred
+from unit tests.
 
 ## 4. Parser, blocks, and chunks
 
