@@ -14,6 +14,7 @@ from investment_research.modules.processing.contracts import (
     ParsedDocument,
     ParserLimits,
     ProcessingJobV1,
+    ProcessingStatusQuery,
 )
 from investment_research.modules.processing.domain import (
     M0_DISABLED_DENSE_INDEX_CONFIG_VERSION,
@@ -154,6 +155,18 @@ class GetProcessingRunService:
         if run is None:
             raise ProcessingRunUnavailableError("processing run is unavailable")
         return run
+
+    def get_latest_for_versions(
+        self,
+        context: WorkspaceContext,
+        query: ProcessingStatusQuery,
+    ) -> tuple[ProcessingRun, ...]:
+        """Resolve one bounded status batch without keeping its read session open."""
+
+        if not query.document_version_ids:
+            return ()
+        with self.unit_of_work_factory() as unit_of_work:
+            return unit_of_work.processing.list_latest_runs_for_versions(context, query)
 
 
 @dataclass(frozen=True, slots=True)

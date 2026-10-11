@@ -47,6 +47,7 @@ from investment_research.modules.processing.ports import (
     ProcessingReadUnitOfWork,
     ProcessingReadUnitOfWorkFactory,
     ProcessingRepository,
+    ProcessingStatusRepository,
     ProcessingUnitOfWork,
     ProcessingUnitOfWorkFactory,
 )
@@ -104,7 +105,7 @@ class SqlAlchemyProcessingRepositories:
 class SqlAlchemyProcessingReadRepositories:
     """Processing repository bound to one short-lived read session."""
 
-    processing: ProcessingRepository
+    processing: ProcessingStatusRepository
 
 
 @dataclass(frozen=True, slots=True)

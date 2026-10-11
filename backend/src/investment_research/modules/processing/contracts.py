@@ -39,6 +39,12 @@ class ImmutableProcessingContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class ProcessingStatusQuery(ImmutableProcessingContract):
+    """Bound status reads for versions supplied by a trusted application caller."""
+
+    document_version_ids: tuple[UUID, ...] = Field(max_length=100)
+
+
 def processing_job_idempotency_key(
     workspace_id: UUID,
     processing_run_id: UUID,
