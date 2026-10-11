@@ -234,9 +234,13 @@ Later LangGraph workflows require separate approval criteria, tool allowlists, s
 - The backend purge service verifies external absence before atomic canonical removal. Database
   guards serialize source writes with deletion admission and reject writes after exclusion.
 - Exact-key S3 cleanup covers the unversioned local store, not historical versions in a future
-  versioned cloud bucket. Live adapter cleanup still needs its isolated runtime verification.
-- Endpoint, worker dispatch, and UI activation remain under implementation. This local policy does not
-  approve public or multi-user retention; review that policy separately before such deployment.
+  versioned cloud bucket. The isolated queue-recovery gate verifies live SeaweedFS cleanup; live
+  Pinecone deletion still requires its own scoped verification.
+- ID-only worker jobs enforce trusted workspace identity, bounded scheduled retries, and
+  per-attempt time limits. Retry exhaustion leaves durable pending intent; it never implies
+  completion or restoration. Durable outbox delivery and periodic reconciliation remain M2 work.
+- Endpoint and UI activation remain under implementation. This local policy does not approve public
+  or multi-user retention; review that policy separately before such deployment.
 
 ### Local runtime
 

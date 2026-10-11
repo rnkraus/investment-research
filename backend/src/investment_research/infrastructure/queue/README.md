@@ -1,16 +1,17 @@
 # Queue infrastructure
 
-This package adapts the application-owned processing contracts to Celery and the transient Redis
-broker. It does not own document-processing state or business rules. PostgreSQL remains the
-canonical source of `ProcessingRun` state and derived output.
+This package adapts the application-owned processing and permanent-deletion contracts to Celery
+and the transient Redis broker. It does not own business state or rules. PostgreSQL remains the
+canonical source of `ProcessingRun` state, derived output, and deletion receipts.
 
 ## Files
 
 | File | Responsibility |
 | --- | --- |
 | `__init__.py` | Declares the infrastructure package without import-time side effects. |
-| `celery.py` | Builds the broker-only Celery application and publishes `ProcessingJobV1`. |
+| `celery.py` | Builds the broker-only Celery application and publishes processing and purge jobs. |
 | `tasks.py` | Validates broker payloads, defers active redeliveries, and invokes the application-owned job executor. |
+| `deletion_tasks.py` | Validates purge payloads and invokes canonical cleanup with bounded retries and per-attempt time limits. |
 | `../../worker.py` | Composes the Celery entry point and owns lazy process-local worker resources. |
 
 ## Publication flow
@@ -75,3 +76,42 @@ a sanitized terminal failure instead of scheduling another attempt.
 The worker constructs database and storage resources lazily inside the worker child process and
 reuses them until that process shuts down. This avoids sharing connection pools or provider clients
 created before Celery forks its worker pool.
+
+## Permanent-deletion delivery
+
+```mermaid
+flowchart LR
+    ADMIT[Commit canonical exclusion and pending receipt] --> JOB[DocumentPurgeJobV1]
+    JOB --> DISPATCH[CeleryDocumentPurgeDispatcher]
+    DISPATCH --> QUEUE[Existing document-processing queue]
+    QUEUE --> TASK[Validate job and trusted workspace]
+    TASK --> PURGE[PurgeDocumentService]
+    PURGE --> EXTERNAL[Delete exact vectors and originals outside transactions]
+    EXTERNAL --> FINAL[Short transaction: remove dependencies and complete receipt]
+    EXTERNAL -->|failure| PENDING[Pending receipt remains]
+    PENDING --> RETRY[Bounded Celery retry]
+    RETRY --> TASK
+```
+
+`DocumentPurgeJobV1` contains only its fixed schema version, workspace/document UUIDs, and a
+deterministic idempotency key. It carries neither content nor storage/provider targets. The worker
+resolves its server-controlled identity and the service reads exact cleanup targets from canonical
+state. A completed receipt makes duplicate execution a no-op; neither the broker nor its task ID
+is the authority for completion.
+
+Only `DocumentPurgePendingError` schedules automatic retries: up to four after the initial
+delivery, with exponential backoff, jitter, and a 30-second cap. Each attempt has a 300-second soft
+limit and a 330-second hard limit, below the 420-second broker visibility timeout. A soft timeout
+becomes a safe pending-cleanup error. Malformed or unauthorized jobs are not retried. Worker-loss
+redelivery is separate from the scheduled-retry count. Exhaustion never restores the source or
+claims completion; PostgreSQL retains the pending receipt for a later explicit retry. Durable
+outbox publication and periodic reconciliation remain M2 work.
+
+Processing and purge reuse the same lazy process-local container and storage/vector clients.
+Task definitions are registered on their own Celery application rather than shared between app
+instances. The deterministic acceptance index supports the same exact-ID, workspace-scoped
+cleanup contract; M0 has no dense index to purge.
+
+`scripts.verify_queue_recovery` exercises the real worker against disposable PostgreSQL, Redis,
+and SeaweedFS, including permanent cleanup after the recovery probe. The HTTP deletion endpoint
+and website activation remain separate work blocks.

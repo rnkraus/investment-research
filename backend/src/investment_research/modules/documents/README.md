@@ -177,9 +177,9 @@ and therefore fails existing document/original admission queries.
 
 | File | Responsibility |
 | --- | --- |
-| `deletion_contracts.py` | Explicit batch and content-free pending/completed receipts. |
-| `deletion_ports.py` | Repository, unit-of-work, original purger, and exact-vector purger interfaces. |
-| `deletion.py` | Admission and retry-safe cleanup services; no provider calls inside a transaction. |
+| `deletion_contracts.py` | Explicit batch, content-free receipts, and ID-only versioned purge jobs. |
+| `deletion_ports.py` | Repository, unit-of-work, exact-store purgers, dispatcher, and job executor interfaces. |
+| `deletion.py` | Admission, retry-safe cleanup, and trusted-worker job execution; no provider calls inside a transaction. |
 | `../../infrastructure/database/document_deletion.py` | Canonical target resolution and dependency-ordered PostgreSQL purge. |
 
 ```mermaid
@@ -209,5 +209,14 @@ the provider budget. Downgrade refuses to erase irreversible intent or detached 
 Original and Pinecone adapters implement exact scoped deletion; local S3 cleanup assumes the
 unversioned SeaweedFS store. PostgreSQL tests cover repeat/failure behavior, mixed answers,
 workspace isolation, write locking, and retained accounting. Provider adapter tests use doubles.
-Worker dispatch, HTTP access, live cleanup verification, and the active website button remain
-pending. These services are not yet registered as an operational deletion feature.
+`DocumentPurgeJobV1` carries only workspace/document IDs, schema version, and a deterministic
+idempotency key. `ExecuteDocumentPurgeJobService` compares the job's workspace with the worker's
+server-controlled identity before calling `PurgeDocumentService`. Celery registration and the
+dispatcher live behind these application-owned contracts; the worker reuses its existing storage
+and vector clients. See the [queue guide](../../infrastructure/queue/README.md#permanent-deletion-delivery)
+for retries and time limits.
+
+The isolated queue-recovery verifier now publishes purge jobs and confirms completed canonical
+and unversioned SeaweedFS cleanup for its synthetic fixture. Live Pinecone deletion, HTTP access,
+and the active website button remain pending. Worker execution is implemented, but this is not yet
+a user-facing deletion feature.

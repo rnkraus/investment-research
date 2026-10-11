@@ -29,7 +29,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_parser_isolation.py`  | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`             | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`          | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
-| `verify_queue_recovery.py`    | Proves live Celery redelivery and lease-based recovery after worker loss.                |
+| `verify_queue_recovery.py`    | Proves live worker-loss recovery and scoped permanent cleanup of its synthetic source.  |
 | `verify_runtime_cleanup.py`   | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                |
 
 The M1.5 evaluation commands, fixture provenance, output schema, and opt-in boundaries are
@@ -257,10 +257,13 @@ flowchart LR
     KILL --> REDELIVER[Broker redelivery]
     REDELIVER --> RECLAIM[Reclaim after lease expiry]
     RECLAIM --> READY[Require one LEXICAL_READY output]
-    READY --> CLEANUP[Remove project and volumes]
+    READY --> ADMIT[Commit permanent exclusion and receipt]
+    ADMIT --> PURGE[Publish the same ID-only purge job twice]
+    PURGE --> VERIFY[Require completed receipt and absent canonical source rows]
+    VERIFY --> CLEANUP[Remove project and volumes]
 ```
 
-Run the live worker-loss gate from `backend/` with Docker running:
+Run the live worker-loss and deletion gate from `backend/` with Docker running:
 
 ```shell
 uv run --locked python -m scripts.verify_queue_recovery
@@ -274,8 +277,15 @@ leaving the Celery main process alive to reject and redeliver the unacknowledged
 is resumed after the deliberately shortened disposable lease expires.
 
 Success requires the redelivered task to reach `LEXICAL_READY` on its second canonical attempt with
-exactly one expected set of structure blocks, chunks, and chunk-set output. Cleanup removes the
-unique project and its volumes after both success and failure.
+exactly one expected set of structure blocks, chunks, and chunk-set output. The verifier then admits
+deletion of that explicit document and publishes its purge job twice through the real Redis broker.
+The worker must verify original-object absence in SeaweedFS before completing the receipt; the
+verifier additionally requires the canonical document, versions, original metadata, processing
+runs, structure blocks, chunk sets, and chunks to be absent. Unit tests separately prove duplicate
+execution is harmless. This M0 fixture has no dense vectors, so the command does not exercise live
+Pinecone deletion or mixed-document answer cleanup; the latter has PostgreSQL integration tests.
+Cleanup removes the unique project and its volumes after both success and failure. It never
+requests deletion of documents in the normal local archive.
 
 ## Complete M0 runtime verification
 

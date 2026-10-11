@@ -200,8 +200,10 @@ This follow-up does not complete M3 or change the M1.5 evaluation/default-adopti
 with explicit multi-document deletion, without restoration, including complete stored answers that
 used a selected source. [ADR-0019](./adr/0019-permanent-local-document-deletion.md) freezes the
 retention matrix, exact scoped cleanup, cost preservation, and activation gates. The schema, backend
-admission/purge services, store adapters, and database write guards are implemented. Endpoint,
-worker dispatch, live cleanup verification, and active frontend controls are not yet available.
+admission/purge services, store adapters, database write guards, and bounded worker dispatch are
+implemented. The isolated queue gate verifies PostgreSQL/SeaweedFS cleanup. The endpoint, live
+Pinecone deletion verification, and active frontend controls are not yet available. M2 still owns
+durable outbox delivery and periodic reconciliation.
 This approval overrides the earlier read-only follow-up's exclusion of deletion only for this
 bounded local feature; broader M2/M3 work and public deployment remain out of scope.
 
