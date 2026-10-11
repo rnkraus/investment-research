@@ -10,6 +10,7 @@ from uuid import UUID
 from investment_research.modules.documents.deletion_contracts import (
     DeleteDocumentsCommand,
     DocumentDeletionReceipt,
+    DocumentPurgeJobV1,
 )
 from investment_research.modules.documents.domain import StorageKey
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -28,6 +29,20 @@ class DocumentDeletionBusyError(ValueError):
 
 class DocumentPurgePendingError(RuntimeError):
     """Keep durable intent pending when external absence cannot yet be confirmed."""
+
+
+class DocumentPurgeDispatchError(RuntimeError):
+    """Keep committed deletion intent when the broker cannot accept its delivery."""
+
+
+class DocumentPurgeDispatcher(Protocol):
+    def dispatch(self, job: DocumentPurgeJobV1) -> None:
+        """Publish an ID-only job after canonical admission has committed."""
+
+
+class DocumentPurgeJobExecutor(Protocol):
+    def execute_purge(self, job: DocumentPurgeJobV1) -> DocumentDeletionReceipt:
+        """Resolve server-controlled workspace scope before invoking permanent cleanup."""
 
 
 @dataclass(frozen=True, slots=True)

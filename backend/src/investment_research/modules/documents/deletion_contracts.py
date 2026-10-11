@@ -1,12 +1,39 @@
 """Bounded, workspace-neutral input and content-free permanent-deletion receipts."""
 
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 DOCUMENT_DELETION_LIMIT = 100
+DOCUMENT_PURGE_JOB_SCHEMA_VERSION: Literal["document-purge-job.v1"] = "document-purge-job.v1"
+
+
+class DocumentPurgeJobV1(BaseModel):
+    """Identify a recorded pending purge, never carry cleanup targets or authorization."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    schema_version: Literal["document-purge-job.v1"] = DOCUMENT_PURGE_JOB_SCHEMA_VERSION
+    workspace_id: UUID
+    document_id: UUID
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+    @classmethod
+    def create(cls, *, workspace_id: UUID, document_id: UUID) -> Self:
+        return cls(
+            workspace_id=workspace_id,
+            document_id=document_id,
+            idempotency_key=f"{DOCUMENT_PURGE_JOB_SCHEMA_VERSION}:{workspace_id}:{document_id}",
+        )
+
+    @model_validator(mode="after")
+    def require_matching_identity(self) -> Self:
+        expected = f"{DOCUMENT_PURGE_JOB_SCHEMA_VERSION}:{self.workspace_id}:{self.document_id}"
+        if self.idempotency_key != expected:
+            raise ValueError("idempotency_key does not match the purge job identity")
+        return self
 
 
 class DocumentDeletionState(StrEnum):

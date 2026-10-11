@@ -14,6 +14,7 @@ from scripts import verify_queue_recovery
 
 RUN_UUID = UUID("12345678-1234-4000-8000-123456789abc")
 PROCESSING_RUN_ID = UUID("10000000-0000-4000-8000-000000000004")
+DOCUMENT_ID = UUID("10000000-0000-4000-8000-000000000001")
 TEST_CREDENTIAL = "synthetic-disposable-credential"
 
 
@@ -75,6 +76,10 @@ def prepare_deterministic_runtime(
         "verify_single_recovered_output",
         lambda *_: events.append("verify-output"),
     )
+    monkeypatch.setattr(verify_queue_recovery, "find_document_id", lambda *_: DOCUMENT_ID)
+    monkeypatch.setattr(
+        verify_queue_recovery, "wait_for_document_purge", lambda *_: events.append("verify-purge")
+    )
     return engine, states, events
 
 
@@ -115,10 +120,11 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Capture fixture and publish one real Celery job",
         "Kill the active Celery pool worker after its canonical claim",
         "Resume parser for the reclaimed delivery",
+        "Publish permanent deletion for the isolated synthetic document",
         "Remove isolated queue-recovery project and its volumes",
     ]
     assert states == [ProcessingState.PARSING, ProcessingState.LEXICAL_READY]
-    assert events == ["shorten-lease", "verify-output"]
+    assert events == ["shorten-lease", "verify-output", "verify-purge"]
     assert all(TEST_CREDENTIAL not in argument for _, command, _ in calls for argument in command)
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert str(verify_queue_recovery.COMPOSE_FILE) in calls[0][1]
@@ -126,6 +132,15 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     assert all("POSTGRES_PASSWORD" not in environment for _, _, environment in calls)
     assert secret_paths and all(not path.exists() for path in secret_paths)
     engine.dispose.assert_called_once_with()
+
+
+def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> None:
+    code = verify_queue_recovery.PURGE_PROBE_CODE
+    compile(code, "synthetic-purge-probe", "exec")
+    assert "load_api_settings(env_file=None)" in code
+    assert "DeleteDocumentsCommand(document_ids=(document_id,))" in code
+    assert code.index("service.request(") < code.index("dispatcher.dispatch(job)")
+    assert code.count("dispatcher.dispatch(job)") == 2
 
 
 def test_verification_resumes_parser_and_cleans_up_after_capture_failure(

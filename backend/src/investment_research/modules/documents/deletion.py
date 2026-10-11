@@ -9,6 +9,7 @@ from investment_research.modules.documents.deletion_contracts import (
     DeleteDocumentsCommand,
     DocumentDeletionReceipt,
     DocumentDeletionState,
+    DocumentPurgeJobV1,
 )
 from investment_research.modules.documents.deletion_ports import (
     DENSE_VECTOR_PURGE_BATCH_LIMIT,
@@ -19,6 +20,7 @@ from investment_research.modules.documents.deletion_ports import (
     OriginalPurger,
 )
 from investment_research.modules.documents.ports import ObjectStorageError
+from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.ports import SearchProviderError
 
@@ -76,3 +78,17 @@ class PurgeDocumentService:
 
         with self.unit_of_work_factory() as unit_of_work:
             return unit_of_work.deletions.complete(context, document_id, self.clock())
+
+
+@dataclass(frozen=True, slots=True)
+class ExecuteDocumentPurgeJobService:
+    """Treat broker workspace IDs as untrusted and require recorded canonical intent."""
+
+    purge_service: PurgeDocumentService
+    identity_context_provider: IdentityContextProvider
+
+    def execute(self, job: DocumentPurgeJobV1) -> DocumentDeletionReceipt:
+        context = self.identity_context_provider.resolve()
+        if job.workspace_id != context.workspace_id:
+            raise DocumentDeletionUnavailableError("document deletion is unavailable")
+        return self.purge_service.purge(context, job.document_id)

@@ -73,6 +73,10 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.documents.deletion import (
+    ExecuteDocumentPurgeJobService,
+    PurgeDocumentService,
+)
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.evidence.contracts import (
     EvidenceValidationDecision,
@@ -793,6 +797,20 @@ def test_build_worker_container_wires_only_processing_resources(tmp_path: Path) 
             assert container.provider_operation_executor is not None
             assert isinstance(container.open_original_service, OpenOriginalService)
             assert isinstance(container.process_document_service, ProcessDocumentService)
+            assert isinstance(container.purge_document_service, PurgeDocumentService)
+            assert isinstance(
+                container.execute_document_purge_job_service, ExecuteDocumentPurgeJobService
+            )
+            assert container.purge_document_service.originals is container.object_storage
+            assert container.purge_document_service.vectors is container.dense_index_writer
+            assert (
+                container.execute_document_purge_job_service.purge_service
+                is container.purge_document_service
+            )
+            assert (
+                container.execute_document_purge_job_service.identity_context_provider
+                is container.identity_context_provider
+            )
             assert isinstance(
                 container.index_active_chunks_service,
                 IndexActiveChunksService,
@@ -852,6 +870,7 @@ def test_build_worker_container_wires_credential_free_m1_acceptance(
         assert container.embedding_provider is None
         assert container.dense_index_writer is None
         assert container.provider_operation_executor is not None
+        assert container.purge_document_service.vectors is container.acceptance_dense_index
         assert container.index_active_chunks_service is not None
         assert (
             container.index_active_chunks_service.dense_index_writer
@@ -909,6 +928,7 @@ def test_build_worker_container_supports_credential_free_m0_regression(
         assert container.index_active_chunks_service is None
         assert container.index_processing_run_service is None
         assert container.execute_processing_job_service.indexing_service is None
+        assert container.purge_document_service.vectors is None
         assert container.process_document_service._profile is M0_0_PROCESSING_PROFILE
     finally:
         container.close()

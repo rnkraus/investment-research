@@ -10,6 +10,8 @@ from kombu.exceptions import KombuError  # type: ignore[import-untyped]
 from redis.exceptions import RedisError
 
 from investment_research.infrastructure.logging import application_logger
+from investment_research.modules.documents.deletion_contracts import DocumentPurgeJobV1
+from investment_research.modules.documents.deletion_ports import DocumentPurgeDispatchError
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.ports import ProcessingDispatchError
 from investment_research.settings import QueueSettings
@@ -17,6 +19,7 @@ from investment_research.settings import QueueSettings
 CELERY_APPLICATION_NAME: Final = "investment-research"
 PROCESSING_QUEUE_NAME: Final = "document-processing"
 PROCESS_DOCUMENT_TASK_NAME: Final = "investment_research.processing.process_document.v1"
+PURGE_DOCUMENT_TASK_NAME: Final = "investment_research.documents.purge_document.v1"
 BROKER_VISIBILITY_TIMEOUT_SECONDS: Final = 420
 BROKER_READINESS_TIMEOUT_SECONDS: Final = 2
 
@@ -59,6 +62,7 @@ def create_celery_app(settings: QueueSettings) -> Celery:
         task_reject_on_worker_lost=True,
         task_routes={
             PROCESS_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
+            PURGE_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
         },
         task_serializer="json",
         task_store_errors_even_if_ignored=False,
@@ -116,3 +120,23 @@ class CeleryProcessingDispatcher:
             )
         except (CeleryError, KombuError, RedisError, OSError) as error:
             raise ProcessingDispatchError("processing job publication failed") from error
+
+
+@dataclass(frozen=True, slots=True)
+class CeleryDocumentPurgeDispatcher:
+    """Publish exact canonical purge identities without document content or SDK errors."""
+
+    application: Celery
+
+    def dispatch(self, job: DocumentPurgeJobV1) -> None:
+        try:
+            self.application.send_task(
+                PURGE_DOCUMENT_TASK_NAME,
+                kwargs={"payload": job.model_dump(mode="json")},
+                task_id=job.idempotency_key,
+                queue=PROCESSING_QUEUE_NAME,
+                serializer="json",
+                ignore_result=True,
+            )
+        except CeleryError, KombuError, RedisError, OSError:
+            raise DocumentPurgeDispatchError("document purge publication failed") from None
