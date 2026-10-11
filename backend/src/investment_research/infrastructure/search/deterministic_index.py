@@ -8,6 +8,7 @@ from math import sqrt
 from pathlib import Path
 from uuid import UUID
 
+from investment_research.modules.documents.deletion_ports import DENSE_VECTOR_PURGE_BATCH_LIMIT
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.application import (
     DENSE_VECTOR_ID_ADAPTER,
@@ -175,6 +176,41 @@ class DeterministicSqliteDenseIndex:
 
         visible_ids = {str(row[0]) for row in rows}
         return tuple(vector_id for vector_id in requested_ids if vector_id in visible_ids)
+
+    def delete_vectors(
+        self, context: WorkspaceContext, vector_ids: tuple[DenseVectorId, ...]
+    ) -> None:
+        """Exercise exact scoped purge without live providers in acceptance tests."""
+
+        requested_ids = tuple(DENSE_VECTOR_ID_ADAPTER.validate_python(item) for item in vector_ids)
+        if not requested_ids or len(requested_ids) > DENSE_VECTOR_PURGE_BATCH_LIMIT:
+            raise ValueError("dense index deletion requires a bounded non-empty batch")
+        if len(requested_ids) != len(set(requested_ids)):
+            raise ValueError("dense index deletion requires unique vector IDs")
+        placeholders = ", ".join("?" for _ in requested_ids)
+        parameters = (dense_index_namespace(context), *requested_ids)
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    "DELETE FROM dense_vectors "
+                    f"WHERE namespace = ? AND vector_id IN ({placeholders})",
+                    parameters,
+                )
+                remaining = connection.execute(
+                    "SELECT 1 FROM dense_vectors "
+                    f"WHERE namespace = ? AND vector_id IN ({placeholders}) LIMIT 1",
+                    parameters,
+                ).fetchone()
+                if remaining is not None:
+                    raise SearchProviderTransientError("dense index cleanup is not yet visible")
+        except sqlite3.OperationalError:
+            raise SearchProviderTransientError(
+                "deterministic dense index is temporarily unavailable"
+            ) from None
+        except sqlite3.DatabaseError:
+            raise SearchProviderConfigurationError(
+                "deterministic dense index rejected cleanup"
+            ) from None
 
     def retrieve(
         self,
