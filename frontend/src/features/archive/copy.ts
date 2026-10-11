@@ -50,6 +50,50 @@ export const archiveCopy = {
     ready: "Searchable evidence is ready.",
     failed: "Processing stopped safely.",
   },
+  catalog: {
+    eyebrow: "Saved evidence",
+    heading: "Documents in your archive",
+    description:
+      "Open any saved original, or select searchable documents to focus your next question.",
+    loading: "Loading saved documents…",
+    refresh: "Refresh documents",
+    loadMore: "Load more documents",
+    empty:
+      "No documents saved yet. Import a PDF or paste text below to get started.",
+    unavailable:
+      "Saved documents could not be loaded. Try refreshing the list.",
+    openOriginal: "Open original",
+    selectDocument: "Select document",
+    selected: "Selected documents",
+    selectionRequired:
+      "Select at least one searchable document, or choose all saved documents.",
+    selectionReset:
+      "The document list was refreshed. Select your documents again before asking a focused question.",
+    selectionLimit: "You can select up to 100 documents per question.",
+    selectionHint:
+      "Only documents marked Searchable can be selected. Loading more preserves your selection; refreshing clears it. Dates are shown in UTC.",
+    unknownDate: "Unknown",
+    published: "Published",
+    captured: "Captured",
+    available: "Available",
+    notProcessed: "No processing status",
+    statuses: {
+      CAPTURED: "Queued",
+      PARSING: "Parsing",
+      LEXICAL_READY: "Text extracted",
+      INDEXING: "Indexing",
+      SEARCHABLE: "Searchable",
+      FAILED: "Processing failed",
+    },
+    originalEyebrow: "Saved original",
+    originalHeading: "Original document",
+    originalLoading: "Loading the integrity-checked original…",
+    originalNotice:
+      "This is the complete saved original, not a validated answer or a highlighted citation.",
+    originalUnavailable:
+      "This original could not be opened or is no longer available in this workspace.",
+    openPdf: "Open PDF in a separate tab",
+  },
   research: {
     eyebrow: "Research saved evidence",
     heading: "Ask the archive",
@@ -57,9 +101,9 @@ export const archiveCopy = {
       "Search already saved PDFs and text without importing again. Answers use only validated evidence from eligible sources in this workspace.",
     scopeLegend: "Search scope",
     archiveScope: "All saved documents",
-    documentScope: "Current processed document",
+    documentScope: "Selected documents",
     scopeHint:
-      "Only searchable, current evidence is eligible. Choose the current document after its processing finishes to narrow the search.",
+      "Only current, eligible evidence in this workspace is searched. The server checks source eligibility again for every question.",
     questionLabel: "Research question",
     answerableExample: "Use answerable example",
     unanswerableExample: "Use insufficient-evidence example",

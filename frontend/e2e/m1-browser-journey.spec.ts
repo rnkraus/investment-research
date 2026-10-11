@@ -28,6 +28,8 @@ const TEXT_STATEMENT =
   "Northstar identified a shortage of high-voltage transformers as the primary constraint on new customer deployments.";
 const TEXT_EVIDENCE =
   "The primary constraint on new customer deployments is a shortage of high-voltage transformers.";
+const PDF_TITLE = "M1 browser PDF source";
+const TEXT_TITLE = "M1 browser pasted-text source";
 
 async function waitUntilSearchable(page: Page) {
   await expect(page.getByText("SEARCHABLE", { exact: true })).toBeVisible({
@@ -61,10 +63,16 @@ test.describe("M1 visible browser journey", () => {
   }) => {
     await page.goto("/");
     await page.getByLabel("PDF document").setInputFiles(PDF_FIXTURE);
+    await page.getByLabel("Document title").fill(PDF_TITLE);
     await page.getByRole("button", { name: "Import document" }).click();
     await waitUntilSearchable(page);
 
-    await page.getByLabel("Current processed document").check();
+    await page
+      .getByRole("checkbox", {
+        name: `Select document: ${PDF_TITLE}`,
+        exact: true,
+      })
+      .check();
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
 
@@ -85,8 +93,32 @@ test.describe("M1 visible browser journey", () => {
     await expect(
       page.getByRole("heading", { name: "Ask the archive" }),
     ).toBeVisible();
-    await expect(page.getByLabel("Current processed document")).toHaveCount(0);
     await expect(page.getByLabel("All saved documents")).toBeChecked();
+    await expect(
+      page.getByRole("checkbox", {
+        name: `Select document: ${PDF_TITLE}`,
+        exact: true,
+      }),
+    ).toBeEnabled();
+    const originalPopup = page.waitForEvent("popup");
+    await page
+      .getByRole("link", { name: `Open original: ${PDF_TITLE}`, exact: true })
+      .click();
+    const originalPage = await originalPopup;
+    await expect(
+      originalPage.getByRole("heading", { name: "Original PDF" }),
+    ).toBeVisible();
+    await expect(originalPage.locator("iframe")).toHaveAttribute(
+      "src",
+      /^blob:/,
+    );
+    await originalPage.close();
+    await page
+      .getByRole("checkbox", {
+        name: `Select document: ${PDF_TITLE}`,
+        exact: true,
+      })
+      .check();
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
   });
@@ -100,14 +132,17 @@ test.describe("M1 visible browser journey", () => {
     await page.getByText("Paste text", { exact: true }).click();
     await expect(page.getByLabel("Paste text")).toBeChecked();
     await page.getByLabel("Research text").fill(sourceText);
-    await page
-      .getByLabel("Document title")
-      .fill("Northstar Grid Analytics Ltd. - FY2026 Capacity Update");
+    await page.getByLabel("Document title").fill(TEXT_TITLE);
     await page.getByLabel("Publication date").fill("2026-07-22");
     await page.getByRole("button", { name: "Import document" }).click();
     await waitUntilSearchable(page);
 
-    await page.getByLabel("Current processed document").check();
+    await page
+      .getByRole("checkbox", {
+        name: `Select document: ${TEXT_TITLE}`,
+        exact: true,
+      })
+      .check();
     await askQuestion(page, TEXT_QUESTION, TEXT_STATEMENT);
     await expect(page.getByText(TEXT_EVIDENCE, { exact: true })).toBeVisible();
 
@@ -119,5 +154,161 @@ test.describe("M1 visible browser journey", () => {
     await expect(highlight).toHaveText(TEXT_EVIDENCE);
     await expect(highlight).toHaveCount(1);
     await expect(sourcePage.locator("pre")).toHaveText(sourceText);
+  });
+
+  test("saved-source selection is explicit, paginated, and cleared safely on refresh", async ({
+    page,
+    context,
+  }) => {
+    const versionId = "10000000-0000-4000-8000-000000000099";
+    const makeEntry = (ordinal: number, state: "SEARCHABLE" | "PARSING") => {
+      const id = `10000000-0000-4000-8000-${String(ordinal).padStart(12, "0")}`;
+      return {
+        document_id: id,
+        document_version_id: versionId,
+        title: `Catalog source ${ordinal}`,
+        language: "en",
+        media_type: "text/plain",
+        byte_size: 32,
+        created_at: `2026-10-${String(20 - ordinal).padStart(2, "0")}T12:00:00Z`,
+        captured_at: "2026-10-11T12:00:00Z",
+        published_at: null,
+        available_at: null,
+        processing: {
+          processing_run_id: id,
+          document_version_id: versionId,
+          state,
+          error_summary: null,
+        },
+        original_url: `/api/v1/documents/${id}/versions/${versionId}/original`,
+      };
+    };
+    const first = makeEntry(1, "SEARCHABLE");
+    const pending = makeEntry(2, "PARSING");
+    const second = makeEntry(3, "SEARCHABLE");
+    let submittedIds: readonly string[] | undefined;
+    await context.route("**/api/v1/research-requests/models", (route) =>
+      route.fulfill({
+        json: {
+          provider_enabled: false,
+          generation_models: [],
+          support_models: [],
+        },
+      }),
+    );
+    await context.route("**/api/v1/documents?*", (route) => {
+      const nextPage = new URL(route.request().url()).searchParams.has(
+        "after_document_id",
+      );
+      return route.fulfill({
+        json: nextPage
+          ? { items: [second], next_cursor: null }
+          : {
+              items: [first, pending],
+              next_cursor: {
+                created_at: pending.created_at,
+                document_id: pending.document_id,
+              },
+            },
+      });
+    });
+    await context.route("**/api/v1/research-requests", (route) => {
+      submittedIds = route.request().postDataJSON().context.document_ids;
+      return route.fulfill({
+        contentType: "text/event-stream",
+        body: `event: answer.insufficient\ndata: ${JSON.stringify({
+          event: "answer.insufficient",
+          schema_version: "1.0",
+          research_request_id: versionId,
+          coverage: "INSUFFICIENT",
+          message: "No supported answer in these test sources.",
+        })}\n\n`,
+      });
+    });
+    await context.route(`**${first.original_url}`, (route) =>
+      route.fulfill({
+        contentType: "text/plain; charset=utf-8",
+        body: "Saved text: <script>not executable</script> 🧪\n",
+      }),
+    );
+    await page.goto("/");
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 2",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await page
+      .getByRole("radio", { name: "Selected documents", exact: true })
+      .check();
+    const submit = page.getByRole("button", {
+      name: "Ask the archive",
+      exact: true,
+    });
+    await expect(submit).toBeDisabled();
+    await page
+      .getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      })
+      .check();
+    await page.getByRole("button", { name: "Load more documents" }).click();
+    await page
+      .getByRole("checkbox", {
+        name: "Select document: Catalog source 3",
+        exact: true,
+      })
+      .check();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await submit.click();
+    await expect(
+      page.getByRole("heading", { name: "Insufficient evidence" }),
+    ).toBeVisible();
+    expect(submittedIds).toEqual([first.document_id, second.document_id]);
+
+    const popupPromise = page.waitForEvent("popup");
+    await page
+      .getByRole("link", {
+        name: "Open original: Catalog source 1",
+        exact: true,
+      })
+      .click();
+    const original = await popupPromise;
+    await expect(original.locator("pre")).toHaveText(
+      "Saved text: <script>not executable</script> 🧪\n",
+    );
+    await expect(original.locator("mark")).toHaveCount(0);
+    await original.close();
+
+    await page.getByRole("button", { name: "Refresh documents" }).click();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "Select document: Catalog source 1",
+        exact: true,
+      }),
+    ).not.toBeChecked();
+    await expect(
+      page.getByRole("radio", { name: "Selected documents", exact: true }),
+    ).toBeChecked();
+    await expect(submit).toBeDisabled();
+    await page
+      .getByRole("radio", { name: "All saved documents", exact: true })
+      .check();
+    await submit.click();
+    await expect(
+      page.getByRole("heading", { name: "Insufficient evidence" }),
+    ).toBeVisible();
+    expect(submittedIds).toEqual([]);
   });
 });
