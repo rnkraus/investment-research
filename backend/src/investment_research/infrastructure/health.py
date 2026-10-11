@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from investment_research.infrastructure.logging import application_logger
 
-REQUIRED_DATABASE_REVISIONS = frozenset({"0009_m1_5_reranking_operations"})
+REQUIRED_DATABASE_REVISIONS = frozenset({"0010_permanent_document_deletion"})
 
 _logger = application_logger("health")
 

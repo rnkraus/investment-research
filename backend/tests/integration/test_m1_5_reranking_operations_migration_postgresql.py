@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, select, text, update
+from sqlalchemy import Engine, column, create_engine, select, table, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
@@ -32,7 +32,7 @@ from tests.integration.factories import (
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 PRE_RERANKING_REVISION = "0008_m1_provider_operations"
-RERANKING_REVISION = "0009_m1_5_reranking_operations"
+CURRENT_REVISION = "0010_permanent_document_deletion"
 
 
 def test_reranking_migration_preserves_history_and_enforces_owner_and_workspace(
@@ -88,15 +88,31 @@ def test_reranking_migration_preserves_history_and_enforces_owner_and_workspace(
                 "reserved_cost_micro_usd": 0,
             }
         )
+        # The pre-deletion schema has no owner_deleted column. Use its historical shape
+        # until upgrade, rather than selecting/inserting the current ORM's newer columns.
+        legacy_operations = table(
+            "provider_operations",
+            *(
+                column(item.name, item.type)
+                for item in ProviderOperationRow.__table__.c
+                if item.name != "owner_deleted"
+            ),
+        )
         with transactional_session(session_factory) as session:
-            SqlAlchemyProviderOperationRepository(session).add(source.context, historical)
+            session.execute(
+                legacy_operations.insert().values(
+                    **historical.model_dump(exclude={"owner_deleted"})
+                )
+            )
         with pytest.raises(IntegrityError), transactional_session(session_factory) as session:
-            SqlAlchemyProviderOperationRepository(session).add(source.context, reranking)
+            session.execute(
+                legacy_operations.insert().values(**reranking.model_dump(exclude={"owner_deleted"}))
+            )
 
         # With only old-kind records, upgrade/downgrade/upgrade must preserve history exactly.
-        command.upgrade(config, RERANKING_REVISION)
+        command.upgrade(config, CURRENT_REVISION)
         command.downgrade(config, PRE_RERANKING_REVISION)
-        command.upgrade(config, RERANKING_REVISION)
+        command.upgrade(config, CURRENT_REVISION)
         with transactional_session(session_factory) as session:
             repository = SqlAlchemyProviderOperationRepository(session)
             assert repository.get_by_id(source.context, historical.id) == historical
@@ -141,7 +157,7 @@ def test_reranking_migration_preserves_history_and_enforces_owner_and_workspace(
         with migration_engine.connect() as connection:
             assert connection.execute(
                 text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == (RERANKING_REVISION)
+            ).scalar_one() == (CURRENT_REVISION)
         with transactional_session(session_factory) as session:
             repository = SqlAlchemyProviderOperationRepository(session)
             assert repository.get_by_id(source.context, completed.id) == completed

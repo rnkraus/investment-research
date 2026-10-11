@@ -80,6 +80,27 @@ def test_started_operation_is_content_free_and_normalizes_safe_values() -> None:
     }.isdisjoint(operation.model_fields_set)
 
 
+@pytest.mark.parametrize("kind", list(ProviderOperationKind))
+def test_deleted_owner_preserves_accounting_without_source_relationships(
+    kind: ProviderOperationKind,
+) -> None:
+    operation = ProviderOperation.model_validate(
+        operation_values(operation=kind, research_request_id=None, owner_deleted=True)
+    )
+    assert operation.owner_deleted
+    assert operation.research_request_id is None
+    assert operation.processing_run_id is None
+    assert operation.reserved_cost_micro_usd == 20
+
+
+@pytest.mark.parametrize("owner", ["research_request_id", "processing_run_id"])
+def test_deleted_owner_rejects_retained_source_relationship(owner: str) -> None:
+    values = operation_values(research_request_id=None, owner_deleted=True)
+    values[owner] = RESEARCH_REQUEST_ID
+    with pytest.raises(ValidationError, match="must not retain source relationships"):
+        ProviderOperation.model_validate(values)
+
+
 def test_succeeded_operation_accepts_bounded_usage_and_cost() -> None:
     operation = ProviderOperation.model_validate(
         operation_values(

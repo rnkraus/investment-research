@@ -33,9 +33,10 @@ StorageKey = Annotated[
 
 
 class DocumentLifecycleState(StrEnum):
-    """Document states implemented by the M0.0 lifecycle subset."""
+    """Canonical admission state, including irreversible deletion intent."""
 
     ACTIVE = "ACTIVE"
+    PURGE_PENDING = "PURGE_PENDING"
 
 
 class OriginalMediaType(StrEnum):

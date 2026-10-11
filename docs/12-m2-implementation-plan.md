@@ -4,6 +4,12 @@
 **Date:** 2026-10-01  
 **Milestone:** M2 — Reliable ingestion and lifecycle
 
+**Deletion-policy update (2026-10-12):** The owner approved the local permanent-deletion path in
+[ADR-0019](./adr/0019-permanent-local-document-deletion.md), including complete dependent-answer
+removal and detached cost retention. Its no-restoration policy supersedes every older restore or
+30-day recovery proposal in this draft. Schema work is in progress; this does not accept the full
+M2 lifecycle gate. The remaining non-deletion decisions below still require their normal review.
+
 **Sources of truth:** [Delivery plan](./05-delivery-plan.md),
 [M1-to-M2 handoff](./10-m1-implementation-plan.md#81-m1-to-m2-handoff),
 [M1.5 RAG quality plan](./13-m1-5-rag-quality-plan.md),
@@ -39,7 +45,7 @@ only approved public or non-sensitive material may reach external AI providers.
 | Processing  | One leased `ProcessingRun` resumes parsing or indexing after redelivery.                                                      | A durable `Job` view and independently retryable `ProcessingStage` attempts expose safe failure and repair history.                        |
 | Dense index | Deterministic vector IDs and bounded visibility checks precede `SEARCHABLE`.                                                  | Durable index intent and receipts explain partial writes; reconciliation repairs missing, stale, and orphaned vectors.                     |
 | Activation  | One current document version and active chunk set are used for new retrieval.                                                 | A candidate version or reprocessing run stays inactive until its complete derived output is ready; one PostgreSQL transaction promotes it. |
-| Deletion    | No user-facing lifecycle operation.                                                                                           | Immediate canonical exclusion, 30-day restore, then scoped, auditable purge and derived-store cleanup.                                     |
+| Deletion    | No user-facing lifecycle operation.                                                                                           | Immediate irreversible canonical exclusion, exact scoped purge, dependent-answer removal, and preserved content-free costs under ADR-0019. |
 
 The intended flow is:
 
@@ -246,27 +252,26 @@ handled. No archive-wide reprocessing screen.
 **Gate:** Replaying promotion is a no-op; only one compatible active set is used for new research,
 and a failed candidate cannot displace it.
 
-### Step 6 — Soft deletion, restoration, and bounded purge
+### Step 6 — Permanent local deletion and bounded purge
 
-**Backend:** Extend `DocumentLifecycleState` through `ACTIVE → SOFT_DELETED → PURGE_PENDING →
-PURGED`. Soft deletion commits canonical exclusion immediately and writes cleanup intent; it does
-not wait for Pinecone. Restore only within 30 days, under a scoped expected-state check, and repair
-required derived state before making the version eligible again. An operator-only, exact-target
-purge workflow begins after the deadline, removes originals and derived/provider content
-idempotently, and retains only the content-free audit tombstone approved in Step 0. No broad
-filesystem, bucket, namespace, or database delete is allowed.
+**Backend:** Follow ADR-0019: `ACTIVE → PURGE_PENDING`, then physical content removal and a
+`COMPLETED` deletion receipt. Commit canonical exclusion and scoped intent together; perform exact
+object/vector cleanup outside transactions, then remove source rows and complete affected research
+history in a short transaction. Preserve detached content-free provider accounting and the minimal
+receipt. No restoration, recovery deadline, broad filesystem, bucket, namespace, or database delete.
 
 **CI:** Test research and citation denial immediately after soft deletion, stale-vector rejection,
-restore before/at/after the deadline, repeated and interrupted purge, object/provider failure,
+no restoration path, repeated and interrupted purge, object/provider failure,
 cross-workspace non-disclosure, and retention/FK behavior. Document the required 35-day backup
 expiry boundary; M5 owns the later full backup-and-restore exercise. Use isolated synthetic
 resources only; never purge the user's normal local archive during verification.
 
-**Frontend:** Add delete and restore controls with explicit state and recovery deadline for a
-document already in context. No bulk archive-management UI before M3.
+**Frontend:** The separately approved catalog follow-up places confirmed Delete selected above the
+document list and supports explicit bounded multi-selection. Distinguish pending cleanup from
+completed deletion; do not offer restore or claim cross-store completion before it is verified.
 
-**Gate:** Deleted content cannot enter a new answer even with stale vectors; permitted restoration
-recovers one coherent active state; repeated purge has the same content-free terminal result.
+**Gate:** Deleted content cannot enter a new answer even with stale vectors; no restore operation
+exists; repeated purge has the same content-free terminal result and does not reset cost accounting.
 
 ## 6. Final M2 acceptance and review
 
@@ -274,7 +279,7 @@ Run a clean-database migration to Alembic head, an upgrade from M1 data, drift c
 format/lint/type/unit/PostgreSQL tests, frontend format/lint/type/contracts/tests/build, and the
 isolated Compose journey. Add a synthetic failure matrix for Redis outage, worker crash, duplicate
 message/event, partial Pinecone write, provider timeout, stale vector, version promotion, delete,
-restore, and purge. Preserve the M1 PDF/text, answerable/unanswerable, exact-citation, and
+permanent purge, and detached accounting. Preserve the M1 PDF/text, answerable/unanswerable, exact-citation, and
 cross-workspace cases. No normal CI gate calls paid providers.
 
 Review migrations, repository boundaries, queue payloads, object keys, logs, and traces for
@@ -287,8 +292,8 @@ The most important acceptance sequence is:
 
 ```text
 Capture → lose Redis → recover delivery → retry a failed stage → index partially
-→ reconcile → activate once → answer with exact evidence → soft-delete
-→ reject a stale vector → restore within 30 days → answer again → purge after deadline
+→ reconcile → activate once → answer with exact evidence → request permanent deletion
+→ reject a stale vector → retry interrupted cleanup → verify purge and preserved costs
 ```
 
 Each arrow must be observable through canonical state or a safe operational record. Destructive

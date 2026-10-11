@@ -32,6 +32,7 @@ Write the ADR immediately before the decision becomes an implementation constrai
 | [ADR-0008](./0008-application-owned-ai-and-vector-adapters.md) | Application-owned OpenAI, Pinecone, and OpenTelemetry adapters for the first dense RAG slice | Accepted |
 | [ADR-0009](./0009-stable-source-anchors.md) | Discriminated, immutable PDF-page and pasted-text passage anchors | Accepted |
 | [ADR-0018](./0018-pinecone-reranking-experiment.md) | Bounded opt-in Pinecone BGE reranking and its public/synthetic inference boundary | Accepted for M1.5 experiment; implementation/adoption pending |
+| [ADR-0019](./0019-permanent-local-document-deletion.md) | Permanent scoped local document/answer deletion with durable cleanup intent and preserved cost accounting | Accepted; implementation in progress |
 
 ## 3. Proposed ADRs
 
