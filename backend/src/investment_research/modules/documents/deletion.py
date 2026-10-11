@@ -9,6 +9,7 @@ from investment_research.modules.documents.deletion_contracts import (
     DeleteDocumentsCommand,
     DocumentDeletionReceipt,
     DocumentDeletionState,
+    DocumentDeletionSubmission,
     DocumentPurgeJobV1,
 )
 from investment_research.modules.documents.deletion_ports import (
@@ -16,6 +17,8 @@ from investment_research.modules.documents.deletion_ports import (
     DenseVectorPurger,
     DocumentDeletionUnavailableError,
     DocumentDeletionUnitOfWorkFactory,
+    DocumentPurgeDispatcher,
+    DocumentPurgeDispatchError,
     DocumentPurgePendingError,
     OriginalPurger,
 )
@@ -39,6 +42,46 @@ class RequestDocumentDeletionService:
     ) -> tuple[DocumentDeletionReceipt, ...]:
         with self.unit_of_work_factory() as unit_of_work:
             return unit_of_work.deletions.request(context, command, self.clock())
+
+
+@dataclass(frozen=True, slots=True)
+class SubmitDocumentDeletionService:
+    """Publish only after the entire explicit batch commits; never undo exclusion."""
+
+    request_service: RequestDocumentDeletionService
+    dispatcher: DocumentPurgeDispatcher
+
+    def submit(
+        self, context: WorkspaceContext, command: DeleteDocumentsCommand
+    ) -> DocumentDeletionSubmission:
+        receipts = self.request_service.request(context, command)
+        pending_dispatch: list[UUID] = []
+        for receipt in receipts:
+            if receipt.state is DocumentDeletionState.COMPLETED:
+                continue
+            try:
+                self.dispatcher.dispatch(
+                    DocumentPurgeJobV1.create(
+                        workspace_id=context.workspace_id, document_id=receipt.document_id
+                    )
+                )
+            except DocumentPurgeDispatchError:
+                pending_dispatch.append(receipt.document_id)
+        return DocumentDeletionSubmission(receipts, tuple(pending_dispatch))
+
+
+@dataclass(frozen=True, slots=True)
+class GetDocumentDeletionService:
+    """Read a content-free receipt even after physical document removal."""
+
+    unit_of_work_factory: DocumentDeletionUnitOfWorkFactory
+
+    def get(self, context: WorkspaceContext, document_id: UUID) -> DocumentDeletionReceipt:
+        with self.unit_of_work_factory() as unit_of_work:
+            receipt = unit_of_work.deletions.get_receipt(context, document_id)
+        if receipt is None:
+            raise DocumentDeletionUnavailableError("document deletion is unavailable")
+        return receipt
 
 
 @dataclass(frozen=True, slots=True)
