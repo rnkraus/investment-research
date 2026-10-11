@@ -121,6 +121,19 @@ class LocalObjectStorage:
     ) -> None:
         """Remove only an in-scope object whose canonical transaction did not commit."""
 
+        self._delete_exact_key(context, storage_key)
+
+    def delete_original(self, context: WorkspaceContext, storage_key: StorageKey) -> None:
+        """Permanently remove one canonical original without following symbolic links."""
+
+        try:
+            self._delete_exact_key(context, storage_key)
+        except OSError:
+            raise ObjectStorageError("original cleanup could not be confirmed") from None
+
+    def _delete_exact_key(self, context: WorkspaceContext, storage_key: StorageKey) -> None:
+        """Share only the scoped filesystem primitive, not admission or business policy."""
+
         parts = self._validate_key(context, storage_key, hide_scope=False)
         try:
             with self._open_parent_directory(
@@ -139,6 +152,7 @@ class LocalObjectStorage:
                 finally:
                     os.close(descriptor)
                 os.unlink(object_name, dir_fd=parent_descriptor)
+                os.fsync(parent_descriptor)
         except FileNotFoundError:
             return
         except OSError as error:

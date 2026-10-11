@@ -58,6 +58,7 @@ class RecordingGrpcIndex:
     error: Exception | None = None
     upsert_calls: list[dict[str, object]] = field(default_factory=list)
     fetch_calls: list[dict[str, object]] = field(default_factory=list)
+    delete_calls: list[dict[str, object]] = field(default_factory=list)
     closed: bool = False
 
     def upsert(self, **kwargs: object) -> UpsertResponse:
@@ -74,6 +75,11 @@ class RecordingGrpcIndex:
 
     def close(self) -> None:
         self.closed = True
+
+    def delete(self, **kwargs: object) -> None:
+        self.delete_calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
 
 
 def make_context() -> WorkspaceContext:
@@ -143,6 +149,49 @@ def test_upsert_uses_workspace_namespace_and_bounded_metadata() -> None:
             "timeout": PINECONE_OPERATION_TIMEOUT_SECONDS,
         }
     ]
+
+
+def test_vector_cleanup_deletes_only_explicit_ids_and_checks_absence() -> None:
+    index = RecordingGrpcIndex()
+    vector_id = make_vector().vector_id
+    make_writer(index).delete_vectors(make_context(), (vector_id,))
+    assert index.delete_calls == [
+        {
+            "ids": [vector_id],
+            "namespace": f"ws-{WORKSPACE_ID.hex}",
+            "timeout": PINECONE_OPERATION_TIMEOUT_SECONDS,
+        }
+    ]
+    assert index.fetch_calls[0]["ids"] == [vector_id]
+
+
+def test_vector_cleanup_remains_pending_while_index_still_exposes_ids() -> None:
+    vector_id = make_vector().vector_id
+    index = RecordingGrpcIndex(fetch_response=FetchResponse(vectors={vector_id: object()}))
+    with pytest.raises(SearchProviderTransientError, match="not yet visible"):
+        make_writer(index).delete_vectors(make_context(), (vector_id,))
+
+
+def test_vector_cleanup_verifies_every_id_in_a_full_purge_batch() -> None:
+    index = RecordingGrpcIndex()
+    vector_ids = tuple(make_vector(UUID(int=item + 1)).vector_id for item in range(100))
+    make_writer(index).delete_vectors(make_context(), vector_ids)
+    assert index.delete_calls[0]["ids"] == list(vector_ids)
+    assert [item for call in index.fetch_calls for item in cast(list[str], call["ids"])] == list(
+        vector_ids
+    )
+
+
+@pytest.mark.parametrize(
+    "targets", [(), ("invalid",), ("v1:" + "f" * 64,) * 2, ("v1:" + "f" * 64,) * 101]
+)
+def test_vector_cleanup_rejects_invalid_unbounded_or_duplicate_ids(
+    targets: tuple[str, ...],
+) -> None:
+    index = RecordingGrpcIndex()
+    with pytest.raises(ValueError):
+        make_writer(index).delete_vectors(make_context(), targets)
+    assert index.delete_calls == index.fetch_calls == []
 
 
 def test_fetch_visible_preserves_request_order_and_rejects_extra_ids() -> None:

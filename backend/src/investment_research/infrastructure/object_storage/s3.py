@@ -45,6 +45,9 @@ class S3Client(Protocol):
     def get_object(self, **kwargs: object) -> Mapping[str, object]:
         """Open one S3 object."""
 
+    def head_object(self, **kwargs: object) -> Mapping[str, object]:
+        """Check one exact object without downloading its contents."""
+
     def delete_object(self, **kwargs: object) -> Mapping[str, object]:
         """Delete one S3 object."""
 
@@ -207,6 +210,33 @@ class S3ObjectStorage:
             raise ObjectStorageError("object storage request failed") from error
         except BotoCoreError as error:
             raise ObjectStorageError("object storage request failed") from error
+
+    def delete_original(self, context: WorkspaceContext, storage_key: StorageKey) -> None:
+        """Purge one canonical key in the unversioned local store and verify absence."""
+
+        key = self._validate_key(context, storage_key, hide_scope=False)
+        try:
+            # An absent bucket or denied access is not proof of successful deletion.
+            self._client.head_bucket(Bucket=self._bucket)
+            self._client.delete_object(Bucket=self._bucket, Key=key)
+        except ClientError, BotoCoreError:
+            raise ObjectStorageError("original cleanup could not be confirmed") from None
+        try:
+            self._client.head_object(Bucket=self._bucket, Key=key)
+        except ClientError as error:
+            if (
+                self._error_code(error) in {"NoSuchKey", "NotFound", "404"}
+                and self._http_status(error) == 404
+            ):
+                try:
+                    self._client.head_bucket(Bucket=self._bucket)
+                except ClientError, BotoCoreError:
+                    raise ObjectStorageError("original cleanup could not be confirmed") from None
+                return
+            raise ObjectStorageError("original cleanup could not be confirmed") from None
+        except BotoCoreError:
+            raise ObjectStorageError("original cleanup could not be confirmed") from None
+        raise ObjectStorageError("original cleanup could not be confirmed")
 
     @staticmethod
     def _validate_key(

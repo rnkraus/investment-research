@@ -16,6 +16,7 @@ from pinecone.errors import (
 from pinecone.grpc import GrpcIndex
 from pydantic import ValidationError
 
+from investment_research.modules.documents.deletion_ports import DENSE_VECTOR_PURGE_BATCH_LIMIT
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.application import (
     DENSE_VECTOR_ID_ADAPTER,
@@ -154,6 +155,32 @@ class PineconeDenseIndexWriter:
         """Release the SDK-owned gRPC channel."""
 
         self.index.close()
+
+    def delete_vectors(
+        self, context: WorkspaceContext, vector_ids: tuple[DenseVectorId, ...]
+    ) -> None:
+        """Delete explicit IDs only; eventual visibility keeps the purge pending."""
+
+        requested_ids = tuple(DENSE_VECTOR_ID_ADAPTER.validate_python(item) for item in vector_ids)
+        if not requested_ids or len(requested_ids) > DENSE_VECTOR_PURGE_BATCH_LIMIT:
+            raise ValueError("dense index deletion requires a bounded non-empty batch")
+        if len(requested_ids) != len(set(requested_ids)):
+            raise ValueError("dense index deletion requires unique vector IDs")
+        try:
+            self.index.delete(
+                ids=list(requested_ids),
+                namespace=dense_index_namespace(context),
+                timeout=self.operation_timeout_seconds,
+            )
+        except _TRANSIENT_PINECONE_ERRORS:
+            raise SearchProviderTransientError(
+                "dense index cleanup is temporarily unavailable"
+            ) from None
+        except PineconeError:
+            raise SearchProviderConfigurationError("dense index cleanup was rejected") from None
+        for start in range(0, len(requested_ids), M1_EMBEDDING_BATCH_LIMIT):
+            if self.fetch_visible(context, requested_ids[start : start + M1_EMBEDDING_BATCH_LIMIT]):
+                raise SearchProviderTransientError("dense index cleanup is not yet visible")
 
 
 @dataclass(frozen=True, slots=True)

@@ -96,6 +96,36 @@ def test_discard_uncommitted_removes_object_idempotently(tmp_path: Path) -> None
         pytest.fail("a discarded uncommitted object must not remain available")
 
 
+def test_permanent_cleanup_preserves_other_objects_and_is_idempotent(tmp_path: Path) -> None:
+    storage = LocalObjectStorage(tmp_path)
+    context = make_context()
+    key = original_key()
+    storage.store_immutable(context, key, BytesIO(PDF_CONTENT))
+    storage.store_immutable(context, key + ".other", BytesIO(b"preserve"))
+    storage.delete_original(context, key)
+    storage.delete_original(context, key)
+    with pytest.raises(ObjectNotFoundError), storage.open(context, key):
+        pytest.fail("a purged original must not remain available")
+    with storage.open(context, key + ".other") as content:
+        assert content.read() == b"preserve"
+
+
+def test_permanent_cleanup_rejects_symlink_and_foreign_workspace(tmp_path: Path) -> None:
+    storage = LocalObjectStorage(tmp_path)
+    context = make_context()
+    key = original_key()
+    target = tmp_path / "unrelated.txt"
+    target.write_bytes(b"preserve")
+    link = tmp_path / key
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target)
+    with pytest.raises(ObjectStorageScopeError):
+        storage.delete_original(context, key)
+    with pytest.raises(ObjectStorageScopeError):
+        storage.delete_original(context, original_key(OTHER_WORKSPACE_ID))
+    assert target.read_bytes() == b"preserve"
+
+
 @pytest.mark.parametrize(
     "unsafe_key",
     [
