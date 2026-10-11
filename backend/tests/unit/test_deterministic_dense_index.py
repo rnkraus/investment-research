@@ -18,7 +18,10 @@ from investment_research.modules.search.contracts import (
     DenseRetrievalQuery,
 )
 from investment_research.modules.search.domain import RetrievalFilters
-from investment_research.modules.search.ports import SearchProviderContractError
+from investment_research.modules.search.ports import (
+    SearchProviderContractError,
+    SearchProviderTransientError,
+)
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -152,3 +155,54 @@ def test_upsert_rejects_inconsistent_vector_identity(tmp_path: Path) -> None:
 
     with pytest.raises(SearchProviderContractError, match="inconsistent vector identity"):
         index.upsert(make_context(), make_request(vector))
+
+
+def test_purge_is_exact_idempotent_and_scoped_to_one_namespace(tmp_path: Path) -> None:
+    database_path = tmp_path / "dense-index.sqlite3"
+    index = DeterministicSqliteDenseIndex(database_path)
+    first = make_vector(FIRST_CHUNK_ID, basis_vector(0))
+    retained = make_vector(SECOND_CHUNK_ID, basis_vector(1))
+    index.upsert(make_context(), make_request(first, retained))
+    foreign = make_context(FOREIGN_WORKSPACE_ID)
+    foreign_vector = make_vector(FIRST_CHUNK_ID, basis_vector(0), context=foreign)
+    index.upsert(foreign, make_request(foreign_vector))
+    index.delete_vectors(make_context(), (first.vector_id,))
+    index.delete_vectors(make_context(), (first.vector_id,))
+    reader = DeterministicSqliteDenseIndex(database_path)
+    assert reader.fetch_visible(make_context(), (first.vector_id, retained.vector_id)) == (
+        retained.vector_id,
+    )
+    assert reader.fetch_visible(foreign, (foreign_vector.vector_id,)) == (foreign_vector.vector_id,)
+    # Even a correctly shaped foreign ID cannot delete another namespace's row.
+    index.delete_vectors(make_context(), (foreign_vector.vector_id,))
+    assert reader.fetch_visible(foreign, (foreign_vector.vector_id,)) == (foreign_vector.vector_id,)
+
+
+@pytest.mark.parametrize(
+    "ids", [(), ("invalid",), ("v1:" + "f" * 64,) * 2, ("v1:" + "f" * 64,) * 101]
+)
+def test_purge_rejects_invalid_or_unbounded_batches(tmp_path: Path, ids: tuple[str, ...]) -> None:
+    index = DeterministicSqliteDenseIndex(tmp_path / "dense-index.sqlite3")
+    with pytest.raises(ValueError):
+        index.delete_vectors(make_context(), ids)
+
+
+def test_purge_supports_a_full_batch_and_preserves_unrelated_vectors(tmp_path: Path) -> None:
+    index = DeterministicSqliteDenseIndex(tmp_path / "dense-index.sqlite3")
+    vectors = tuple(make_vector(UUID(int=ordinal + 1), basis_vector(0)) for ordinal in range(101))
+    for vector in vectors:
+        index.upsert(make_context(), make_request(vector))
+    index.delete_vectors(make_context(), tuple(vector.vector_id for vector in vectors[:100]))
+    with sqlite3.connect(index.database_path) as connection:
+        rows = connection.execute("SELECT vector_id FROM dense_vectors").fetchall()
+    assert rows == [(vectors[-1].vector_id,)]
+
+
+def test_purge_reports_database_failure_without_details(tmp_path: Path) -> None:
+    index = DeterministicSqliteDenseIndex(tmp_path / "dense-index.sqlite3")
+    with sqlite3.connect(index.database_path) as connection:
+        connection.execute("DROP TABLE dense_vectors")
+    with pytest.raises(SearchProviderTransientError, match="temporarily unavailable"):
+        index.delete_vectors(
+            make_context(), (make_vector(FIRST_CHUNK_ID, basis_vector(0)).vector_id,)
+        )
