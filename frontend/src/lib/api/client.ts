@@ -1,6 +1,10 @@
 import type { components } from "./generated/schema";
 
 export type DocumentAccepted = components["schemas"]["DocumentAccepted"];
+export type DocumentCatalogEntry =
+  components["schemas"]["DocumentCatalogEntry"];
+export type DocumentCatalogPage = components["schemas"]["DocumentCatalogPage"];
+export type DocumentListCursor = components["schemas"]["DocumentListCursor"];
 export type ProcessingRunResult = components["schemas"]["ProcessingRunResult"];
 export type PastedTextDocumentInput =
   components["schemas"]["PastedTextDocumentInput"];
@@ -177,6 +181,74 @@ function isProcessingRunResult(value: unknown): value is ProcessingRunResult {
     (value.error_summary === undefined ||
       value.error_summary === null ||
       isNonEmptyString(value.error_summary))
+  );
+}
+
+function isTimestamp(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      value,
+    ) &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
+function isOptionalTimestamp(value: unknown): boolean {
+  return value === undefined || value === null || isTimestamp(value);
+}
+
+function isDocumentListCursor(value: unknown): value is DocumentListCursor {
+  return (
+    isRecord(value) &&
+    isTimestamp(value.created_at) &&
+    isUuid(value.document_id)
+  );
+}
+
+function isDocumentCatalogEntry(value: unknown): value is DocumentCatalogEntry {
+  return (
+    isRecord(value) &&
+    isUuid(value.document_id) &&
+    isUuid(value.document_version_id) &&
+    isNonEmptyString(value.title) &&
+    Array.from(value.title).length <= 300 &&
+    isNonEmptyString(value.language) &&
+    ["application/pdf", "text/plain"].includes(String(value.media_type)) &&
+    Number.isSafeInteger(value.byte_size) &&
+    Number(value.byte_size) > 0 &&
+    isTimestamp(value.created_at) &&
+    isTimestamp(value.captured_at) &&
+    isOptionalTimestamp(value.published_at) &&
+    isOptionalTimestamp(value.available_at) &&
+    (value.processing === null ||
+      (isProcessingRunResult(value.processing) &&
+        value.processing.document_version_id === value.document_version_id)) &&
+    value.original_url ===
+      `/api/v1/documents/${value.document_id}/versions/${value.document_version_id}/original`
+  );
+}
+
+function isDocumentCatalogPage(value: unknown): value is DocumentCatalogPage {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.items) ||
+    value.items.length > 100 ||
+    !value.items.every(isDocumentCatalogEntry) ||
+    new Set(value.items.map((item) => item.document_id)).size !==
+      value.items.length
+  ) {
+    return false;
+  }
+  if (value.next_cursor === undefined || value.next_cursor === null) {
+    return true;
+  }
+  const last = value.items.at(-1);
+  return (
+    isDocumentListCursor(value.next_cursor) &&
+    last !== undefined &&
+    value.next_cursor.document_id === last.document_id &&
+    value.next_cursor.created_at === last.created_at
   );
 }
 
@@ -451,6 +523,35 @@ export function createApiClient(
   fetchImplementation: FetchImplementation = globalThis.fetch.bind(globalThis),
 ) {
   return {
+    async listDocuments(
+      after?: DocumentListCursor,
+      signal?: AbortSignal,
+    ): Promise<DocumentCatalogPage> {
+      if (after !== undefined && !isDocumentListCursor(after)) {
+        throw new ApiProtocolError("The document list cursor is invalid.");
+      }
+      const query = new URLSearchParams({ page_size: "20" });
+      if (after !== undefined) {
+        query.set("after_created_at", after.created_at);
+        query.set("after_document_id", after.document_id);
+      }
+      const page = await requestJson(
+        fetchImplementation,
+        `/api/v1/documents?${query}`,
+        isDocumentCatalogPage,
+        { signal, cache: "no-store" },
+      );
+      if (
+        page.items.length > 20 ||
+        (after !== undefined &&
+          page.next_cursor?.document_id === after.document_id &&
+          page.next_cursor.created_at === after.created_at)
+      ) {
+        throw new ApiProtocolError("The document list did not advance.");
+      }
+      return page;
+    },
+
     captureDocument(
       input: CaptureDocumentInput,
       signal?: AbortSignal,
@@ -581,7 +682,7 @@ export function createApiClient(
 
       const response = await fetchImplementation(
         `/api/v1/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(documentVersionId)}/original`,
-        { signal },
+        { signal, cache: "no-store" },
       );
       if (!response.ok) {
         throw await requestError(response);
