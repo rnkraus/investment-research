@@ -187,8 +187,10 @@ of M3: list saved current documents, open their originals, and select one or mor
 for research. Implement backend behavior first, then contract/CI checks, then the frontend. Keep
 the fixed local identity, workspace isolation, original-integrity checks, and existing retrieval
 eligibility rules. Do not add deletion, version-management controls, company discovery, new
-providers, or public access. The first backend block implements bounded current-document metadata
-reads with stable cursor pagination; HTTP/status composition and website selection are still pending.
+providers, or public access. The backend implements bounded current-document metadata reads with
+stable cursor pagination and `GET /api/v1/documents`, composing the latest scoped processing status
+and an authorized original link for each current version. Contract/CI checks cover that read-only
+surface; the website list, original view, and multi-document selection are still pending.
 This follow-up does not complete M3 or change the M1.5 evaluation/default-adoption gates.
 
 ## 6A. M1.5 — RAG quality proof

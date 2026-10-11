@@ -111,8 +111,20 @@ flowchart LR
 ```
 
 The owner approved a small read-only document-selection follow-up ahead of the broader M3 archive
-work. This first backend block exposes application-owned metadata reads only: it does not yet add
-an HTTP route, processing-status composition, or a browser list. Those are subsequent blocks.
+work. `GET /api/v1/documents` now composes this module's metadata page with Processing's bounded
+latest-run status service. The website list and source-selection controls remain pending.
+
+```mermaid
+flowchart LR
+    API[GET /api/v1/documents] --> DOCUMENTS[ListDocumentsService]
+    DOCUMENTS --> PAGE[Scoped current metadata page]
+    PAGE --> VERSIONS[At most 100 current version IDs]
+    VERSIONS --> PROCESSING[GetProcessingRunService.get_latest_for_versions]
+    PROCESSING --> STATUS[Latest scoped run per version]
+    PAGE --> RESPONSE[DocumentCatalogPage]
+    STATUS --> RESPONSE
+    RESPONSE --> ORIGINAL[Authorized original route per entry]
+```
 
 `DocumentListQuery` defaults to 20 entries and accepts 1–100. Its optional `after` cursor contains
 the last returned document's timezone-aware creation time and UUID. The next query uses an
@@ -132,6 +144,14 @@ processing-table reads, or paid-provider calls. The existing schema is unchanged
 query bounds, field allowlists, SQL scope and ordering, and read-session cleanup; PostgreSQL tests
 cover workspace isolation, equal-time pagination with concurrent newer imports, missing originals,
 and current-version selection. Broader M3 browsing and lifecycle gates remain separate.
+
+The API accepts `page_size`, `after_created_at`, and `after_document_id`; the continuation fields
+must be supplied together. Unknown parameters, including `workspace_id`, are rejected. A response
+adds a nullable `processing` result and a server-generated `original_url` to each metadata entry,
+and uses `Cache-Control: private, no-store`. Neither list construction nor status composition opens
+original bytes. A missing status remains null. A status read failure fails the request safely
+rather than presenting incomplete data as success. The HTTP contract is documented in
+[M1 contracts](../../../../../docs/11-m1-contracts.md#33-saved-document-catalog-follow-up).
 
 ## Database isolation and eligibility
 
