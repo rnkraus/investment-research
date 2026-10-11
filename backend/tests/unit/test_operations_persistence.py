@@ -99,6 +99,19 @@ def test_detached_cost_record_round_trips_without_deleted_owner() -> None:
     assert restored.actual_cost_micro_usd == 12
 
 
+def test_in_flight_cost_finalization_never_reattaches_a_deleted_owner() -> None:
+    session = create_autospec(Session, instance=True)
+    row = ProviderOperationRow.from_domain(make_operation())
+    row.owner_deleted = True
+    row.research_request_id = None
+    session.scalar.return_value = row
+    terminal = make_operation(ProviderOperationState.SUCCEEDED)
+    assert SqlAlchemyProviderOperationRepository(session).finalize(make_context(), terminal)
+    assert row.actual_cost_micro_usd == 12
+    assert row.owner_deleted is True
+    assert row.research_request_id is row.processing_run_id is None
+
+
 def test_row_round_trips_research_owned_reranking_usage() -> None:
     values = make_operation(ProviderOperationState.SUCCEEDED).model_dump()
     values.update(
