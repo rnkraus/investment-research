@@ -1,11 +1,16 @@
-"""Celery worker entry point for canonical document-processing jobs."""
+"""Celery worker entry point for canonical document-processing and purge jobs."""
 
 from celery import Celery  # type: ignore[import-untyped]
 from celery.signals import worker_process_shutdown  # type: ignore[import-untyped]
 
 from investment_research.bootstrap import WorkerContainer, build_worker_container
 from investment_research.infrastructure.queue.celery import create_celery_app
+from investment_research.infrastructure.queue.deletion_tasks import register_document_purge_tasks
 from investment_research.infrastructure.queue.tasks import register_processing_tasks
+from investment_research.modules.documents.deletion_contracts import (
+    DocumentDeletionReceipt,
+    DocumentPurgeJobV1,
+)
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.domain import ProcessingRun
 from investment_research.settings import WorkerSettings, load_worker_settings
@@ -22,6 +27,11 @@ class WorkerProcessingJobExecutor:
         """Build this process's resources on first use and execute one job."""
 
         return self._get_container().execute_processing_job_service.execute(job)
+
+    def execute_purge(self, job: DocumentPurgeJobV1) -> DocumentDeletionReceipt:
+        """Share this child's resources without constructing clients before Celery forks."""
+
+        return self._get_container().execute_document_purge_job_service.execute(job)
 
     def close(self) -> None:
         """Release this process's database and provider resources once."""
@@ -42,13 +52,14 @@ class WorkerProcessingJobExecutor:
 def create_worker_application(
     settings: WorkerSettings,
 ) -> tuple[Celery, WorkerProcessingJobExecutor]:
-    """Build a broker application and register its processing task adapter."""
+    """Build a broker application and register processing and deletion adapters."""
 
     if settings.processing_profile == "m1":
         settings.require_m1_processing_configuration()
     application = create_celery_app(settings)
     executor = WorkerProcessingJobExecutor(settings)
     register_processing_tasks(application, executor)
+    register_document_purge_tasks(application, executor)
     return application, executor
 
 

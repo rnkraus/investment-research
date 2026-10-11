@@ -17,6 +17,9 @@ from investment_research.infrastructure.acceptance import (
     create_m1_acceptance_embedding_provider,
     create_m1_acceptance_support_evaluator,
 )
+from investment_research.infrastructure.database.document_deletion import (
+    create_document_deletion_unit_of_work_factory,
+)
 from investment_research.infrastructure.database.metadata import get_model_metadata
 from investment_research.infrastructure.database.session import (
     SessionFactory,
@@ -116,6 +119,11 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.documents.deletion import (
+    ExecuteDocumentPurgeJobService,
+    PurgeDocumentService,
+)
+from investment_research.modules.documents.deletion_ports import OriginalPurger
 from investment_research.modules.documents.listing import ListDocumentsService
 from investment_research.modules.documents.ports import ObjectStorage
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
@@ -292,6 +300,7 @@ class _ObjectStorageResources:
     """One object-storage adapter and its optional provider readiness probe."""
 
     adapter: ObjectStorage
+    purger: OriginalPurger
     readiness_probe: ReadinessProbe | None
 
 
@@ -310,8 +319,10 @@ def _build_object_storage(settings: ObjectStorageSettings) -> _ObjectStorageReso
     """Select one adapter and provider probe at the process composition boundary."""
 
     if settings.object_storage_provider == "local":
+        local_storage = LocalObjectStorage(settings.object_storage_root)
         return _ObjectStorageResources(
-            adapter=LocalObjectStorage(settings.object_storage_root),
+            adapter=local_storage,
+            purger=local_storage,
             readiness_probe=None,
         )
 
@@ -322,8 +333,10 @@ def _build_object_storage(settings: ObjectStorageSettings) -> _ObjectStorageReso
         access_key_id=s3.access_key_id.get_secret_value(),
         secret_access_key=s3.secret_access_key.get_secret_value(),
     )
+    storage = S3ObjectStorage(client=client, bucket=s3.bucket)
     return _ObjectStorageResources(
-        adapter=S3ObjectStorage(client=client, bucket=s3.bucket),
+        adapter=storage,
+        purger=storage,
         readiness_probe=S3ObjectStorageReadinessProbe(client=client, bucket=s3.bucket),
     )
 
@@ -397,6 +410,8 @@ class WorkerContainer:
     index_active_chunks_service: IndexActiveChunksService | None
     index_processing_run_service: IndexProcessingRunService | None
     execute_processing_job_service: ExecuteProcessingJobService
+    purge_document_service: PurgeDocumentService
+    execute_document_purge_job_service: ExecuteDocumentPurgeJobService
 
     def close(self) -> None:
         """Release process-wide resources owned by the worker container."""
@@ -1028,6 +1043,15 @@ def build_worker_container(
                 ),
                 profile=processing_profile,
             )
+        purge_document_service = PurgeDocumentService(
+            unit_of_work_factory=create_document_deletion_unit_of_work_factory(
+                database.session_factory
+            ),
+            originals=object_storage.purger,
+            vectors=acceptance_dense_index
+            if acceptance_dense_index is not None
+            else dense_index_writer,
+        )
         return WorkerContainer(
             settings=settings,
             identity_context_provider=identity_context_provider,
@@ -1046,6 +1070,11 @@ def build_worker_container(
             execute_processing_job_service=ExecuteProcessingJobService(
                 processing_service=process_document_service,
                 indexing_service=index_processing_run_service,
+                identity_context_provider=identity_context_provider,
+            ),
+            purge_document_service=purge_document_service,
+            execute_document_purge_job_service=ExecuteDocumentPurgeJobService(
+                purge_service=purge_document_service,
                 identity_context_provider=identity_context_provider,
             ),
         )

@@ -16,6 +16,13 @@ from uuid import UUID, uuid4
 from sqlalchemy import URL, Engine, create_engine, func, select, update
 from sqlalchemy.orm import Session
 
+from investment_research.modules.documents.deletion_contracts import DocumentDeletionState
+from investment_research.modules.documents.persistence import (
+    DocumentDeletionRow,
+    DocumentRow,
+    DocumentVersionRow,
+    OriginalArtifactRow,
+)
 from investment_research.modules.identity.application import LOCAL_DEVELOPMENT_WORKSPACE_ID
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import (
@@ -87,6 +94,41 @@ pool_workers = None if not isinstance(pool_stats, dict) else pool_stats.get("pro
 if not isinstance(pool_workers, list) or len(pool_workers) != 1:
     raise SystemExit("expected exactly one Celery pool worker")
 os.kill(int(pool_workers[0]), signal.SIGKILL)
+"""
+
+PURGE_PROBE_CODE = """\
+from sqlalchemy import select
+
+from investment_research.bootstrap import build_api_container
+from investment_research.infrastructure.database.document_deletion import (
+    create_document_deletion_unit_of_work_factory,
+)
+from investment_research.infrastructure.queue.celery import CeleryDocumentPurgeDispatcher
+from investment_research.modules.documents.deletion import RequestDocumentDeletionService
+from investment_research.modules.documents.deletion_contracts import (
+    DeleteDocumentsCommand,
+    DocumentPurgeJobV1,
+)
+from investment_research.modules.documents.persistence import DocumentRow
+from investment_research.settings import load_api_settings
+
+container = build_api_container(load_api_settings(env_file=None))
+try:
+    context = container.identity_context_provider.resolve()
+    with container.session_factory() as session:
+        document_id = session.scalars(select(DocumentRow.id).where(
+            DocumentRow.workspace_id == context.workspace_id
+        )).one()
+    service = RequestDocumentDeletionService(
+        create_document_deletion_unit_of_work_factory(container.session_factory)
+    )
+    service.request(context, DeleteDocumentsCommand(document_ids=(document_id,)))
+    job = DocumentPurgeJobV1.create(workspace_id=context.workspace_id, document_id=document_id)
+    dispatcher = CeleryDocumentPurgeDispatcher(container.queue_application)
+    dispatcher.dispatch(job)
+    dispatcher.dispatch(job)
+finally:
+    container.close()
 """
 
 
@@ -281,6 +323,57 @@ def verify_single_recovered_output(engine: Engine, processing_run_id: UUID) -> N
         )
 
 
+def find_document_id(engine: Engine, processing_run_id: UUID) -> UUID:
+    """Resolve the exact synthetic source before any irreversible test cleanup."""
+
+    with Session(engine) as session:
+        document_id = session.scalar(
+            select(DocumentVersionRow.document_id)
+            .join(ProcessingRunRow, ProcessingRunRow.document_version_id == DocumentVersionRow.id)
+            .where(
+                DocumentVersionRow.workspace_id == LOCAL_DEVELOPMENT_WORKSPACE_ID,
+                ProcessingRunRow.workspace_id == LOCAL_DEVELOPMENT_WORKSPACE_ID,
+                ProcessingRunRow.id == processing_run_id,
+            )
+        )
+    if document_id is None:
+        raise QueueRecoveryVerificationError("synthetic purge target is unavailable")
+    return document_id
+
+
+def wait_for_document_purge(engine: Engine, document_id: UUID) -> None:
+    """Require completed canonical cleanup after real worker/S3 execution."""
+
+    deadline = time.monotonic() + STATE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        with Session(engine) as session:
+            receipt = session.get(
+                DocumentDeletionRow, (LOCAL_DEVELOPMENT_WORKSPACE_ID, document_id)
+            )
+            if receipt is not None and receipt.state is DocumentDeletionState.COMPLETED:
+                for model in (
+                    DocumentRow,
+                    DocumentVersionRow,
+                    OriginalArtifactRow,
+                    ProcessingRunRow,
+                    StructureBlockRow,
+                    ChunkSetRow,
+                    ChunkRow,
+                ):
+                    remaining = session.scalar(
+                        select(func.count())
+                        .select_from(model)
+                        .where(model.workspace_id == LOCAL_DEVELOPMENT_WORKSPACE_ID)
+                    )
+                    if remaining != 0:
+                        raise QueueRecoveryVerificationError(
+                            "completed purge retained canonical source data"
+                        )
+                return
+        time.sleep(POLL_INTERVAL_SECONDS)
+    raise QueueRecoveryVerificationError("document purge did not complete before timeout")
+
+
 def verify_queue_recovery() -> int:
     """Run and always remove one isolated worker-loss recovery environment."""
 
@@ -421,6 +514,26 @@ def verify_queue_recovery() -> int:
             wait_for_processing_state(engine, processing_run_id, ProcessingState.LEXICAL_READY)
             verify_single_recovered_output(engine, processing_run_id)
             print("Queue recovery produced one canonical lexical output.", flush=True)
+            document_id = find_document_id(engine, processing_run_id)
+            run_command(
+                "Publish permanent deletion for the isolated synthetic document",
+                [
+                    *compose_command,
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "--entrypoint",
+                    "/app/.venv/bin/python",
+                    "--env",
+                    "INVESTMENT_RESEARCH_API_HOST=0.0.0.0",
+                    "worker",
+                    "-c",
+                    PURGE_PROBE_CODE,
+                ],
+                environment=compose_environment,
+            )
+            wait_for_document_purge(engine, document_id)
+            print("Queue purge completed canonical and original cleanup.", flush=True)
         except (QueueRecoveryVerificationError, subprocess.CalledProcessError) as error:
             if isinstance(error, QueueRecoveryVerificationError):
                 print(f"Queue recovery verification failed: {error}", file=sys.stderr)
