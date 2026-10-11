@@ -22,8 +22,10 @@ die Benutzeroberfläche und die verlinkte technische Detaildokumentation bleiben
 
 - **Ein durchsuchbares Archiv aufbauen:** textbasierte PDFs oder eingefügten Text importieren
   und den Fortschritt von Textextraktion, Embedding-Erzeugung und Indexierung verfolgen.
+- **Gespeicherte Quellen ansehen:** eine seitenweise Dokumentliste mit Verarbeitungsstatus
+  anzeigen und vollständige PDF- oder Textoriginale ohne vorherige Frage öffnen.
 - **Vorhandene Dokumente befragen:** gespeicherte Inhalte ohne erneuten Upload recherchieren
-  oder eine Frage auf das aktuell verarbeitete Dokument beschränken.
+  oder eine Frage auf eines oder mehrere ausgewählte, durchsuchbare Dokumente beschränken.
 - **Originalquellen prüfen:** ein zitiertes PDF auf der zugehörigen physischen Seite öffnen
   oder den exakten Textbereich im eingefügten Original hervorheben.
 - **Grenzen der Belege erkennen:** vollständige, teilweise belegte, widersprüchliche und

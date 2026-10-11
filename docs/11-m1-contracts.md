@@ -115,7 +115,7 @@ service receives only this prepared form.
 
 The owner-approved local usability follow-up adds `GET /api/v1/documents`; it is a read-only subset
 of M3, not acceptance of the broader archive or lifecycle milestone. Existing capture and original
-routes remain unchanged. The website catalog controls are a subsequent implementation block.
+routes remain unchanged. The website catalog consumes this contract through the typed API client.
 
 Query parameters:
 
@@ -147,6 +147,23 @@ Success returns `200` with `Cache-Control: private, no-store`; invalid input ret
 safe `422` envelope, and database failures return a safe `500` without a partial catalog. This
 operation performs no writes, storage-byte reads, provider calls, or schema changes. Existing CI
 unit, PostgreSQL, OpenAPI-drift, and generated-TypeScript checks cover the new contract.
+
+The website initially loads 20 rows and appends additional cursor pages on demand. It displays
+source metadata and the latest processing snapshot, with unknown dates explicitly unknown and
+known dates shown in UTC. Users may search all eligible saved sources or select 1–100 documents
+marked `SEARCHABLE`; an empty selected scope disables submission instead of becoming an all-source
+request. Loading more preserves selection. Manual refresh, capture, and observed processing-state
+transitions reload the first page and clear selection without changing selected scope. A catalog
+failure blocks selected-scope submission, and selection controls are locked during research.
+
+`/documents/{document_id}/versions/{document_version_id}` opens a complete original independently
+of a question. It uses the existing integrity-checking original endpoint, renders PDF bytes or
+escaped plain text, and makes no citation/highlight claim. `/sources/{evidence_span_id}` retains
+its stricter evidence resolution and exact-location checks. List and original reads bypass browser
+caching. No additional backend operation, database table, dependency, or provider call is needed.
+Deterministic frontend tests cover the contract and selection rules; browser journey coverage is
+extended for reload, original opening, pagination, multi-selection, and refresh. Local production
+build and browser verification must be confirmed separately, not inferred from unit tests.
 
 ## 4. Parser, blocks, and chunks
 

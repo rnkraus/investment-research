@@ -190,7 +190,10 @@ eligibility rules. Do not add deletion, version-management controls, company dis
 providers, or public access. The backend implements bounded current-document metadata reads with
 stable cursor pagination and `GET /api/v1/documents`, composing the latest scoped processing status
 and an authorized original link for each current version. Contract/CI checks cover that read-only
-surface; the website list, original view, and multi-document selection are still pending.
+surface. The website now implements the paginated list, independent PDF/text original views, and
+explicit multi-document selection; focused scope never silently expands to all documents.
+Frontend format, lint, type, contract, and deterministic tests pass. The updated browser journey
+and local production build still require separate verification before this follow-up is accepted.
 This follow-up does not complete M3 or change the M1.5 evaluation/default-adoption gates.
 
 ## 6A. M1.5 — RAG quality proof

@@ -61,6 +61,17 @@ Backend-provided status and viewer URLs must remain relative application API pat
 must carry either a valid `PDF_PAGE` or `TEXT_PASSAGE` locator; unknown locator kinds fail before they
 reach the UI.
 
+`listDocuments` requests 20 current documents at a time, with both continuation fields copied
+unchanged from the server cursor. Requests bypass the browser cache. Runtime checks reject
+oversized or duplicate pages, invalid metadata, mismatched processing versions, and original URLs
+that are not the exact relative route for that document/version. A continuation cursor must match
+the last row and advance rather than repeat. The UI constructs its own same-origin original-view
+route from validated IDs; it never navigates to an unchecked provider or storage URL.
+
+Catalog and citation viewers share `openOriginal`. The API reauthorizes the document/version and
+verifies stored-original integrity; the client accepts only PDF or plain text. Original reads also
+bypass the browser cache. Catalog metadata does not authorize retrieval or replace citation checks.
+
 Known API error codes retain their safe public messages and request IDs. An unstructured HTTP
 failure instead reports its status and a possible web-to-API timeout without displaying its raw
 body. Connection and stream failures also use fixed safe messages; transport exception text and

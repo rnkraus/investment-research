@@ -9,6 +9,8 @@ PostgreSQL, or parse document content.
 | File                    | Responsibility                                                                       |
 | ----------------------- | ------------------------------------------------------------------------------------ |
 | `copy.ts`               | Centralizes English feature text and defaults for later localization.                |
+| `archive-research.tsx`  | Loads the saved-document catalog and coordinates explicit research scope.            |
+| `document-selection.ts` | Keeps bounded selection and empty-scope admission independent of React.              |
 | `document-workflow.tsx` | Captures one PDF or pasted-text original and polls its background-processing status. |
 | `processing-state.ts`   | Defines polling completion and fail-closed research admission.                       |
 | `publication-date.ts`   | Formats the user's local calendar day for the editable publication-date default.     |
@@ -16,6 +18,7 @@ PostgreSQL, or parse document content.
 | `research-workflow.tsx` | Loads model choices, asks a bounded question, and opens exact source evidence.       |
 | `source-anchor.ts`      | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
 | `source-viewer.tsx`     | Resolves and renders an authorized immutable PDF or pasted-text source.              |
+| `original-viewer.tsx`   | Opens a complete authorized original without claiming citation validation.           |
 
 ## Capture and processing flow
 
@@ -92,15 +95,18 @@ The answer and citations remain hidden until the terminal validated events arriv
 
 ```mermaid
 flowchart LR
-    ARCHIVE[Saved archive] --> OPTIONS[Load approved model options]
-    READY[New SEARCHABLE document] --> SCOPE[Optional current-document scope]
-    SCOPE --> OPTIONS
+    ARCHIVE[Saved archive] --> LIST[Bounded document catalog]
+    LIST --> SCOPE[All eligible sources or explicit selected document IDs]
+    SCOPE --> OPTIONS[Load approved model options]
+    LIST --> ORIGINAL_VIEW[OriginalViewer without citation highlight]
+    ORIGINAL_VIEW --> ORIGINAL
     OPTIONS -->|provider mode| CHOICES[Choose answer and support models]
     OPTIONS -->|deterministic mode| FORM[ResearchWorkflow]
     CHOICES --> FORM
     OPTIONS -->|unavailable or invalid| BLOCK[Disable research submission]
     FORM -->|all saved documents: empty document_ids| STREAM
-    FORM -->|current document: one document ID| STREAM
+    FORM -->|selected documents: 1 to 100 IDs| STREAM
+    SCOPE -->|selected scope without IDs| BLOCK
     STREAM[Typed research event stream] --> SESSION[Research session reducer]
     SESSION -->|validated completion| IDS[Evidence span IDs]
     IDS --> RESOLVE[Authorized evidence endpoint]
@@ -114,11 +120,21 @@ flowchart LR
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
 
-`document-workflow.tsx` always mounts the research UI, including after a page reload with no new
-upload. The default scope submits `document_ids: []` to search eligible current sources in the
-server-derived workspace. Once a newly captured document reaches `SEARCHABLE`, the user may narrow
-the request to its ID. Changing to a different document resets that optional filter. In provider
-mode, the form independently selects the answer-generation and statement-support models from the
+`document-workflow.tsx` always mounts `ArchiveResearch`, including after a page reload with no new
+upload. It refreshes the catalog after capture and each observed processing-state transition.
+The catalog loads 20 entries per request and appends pages using the server's unmodified cursor.
+Titles, media, language, byte size, publication, capture, and availability dates are shown alongside
+the latest processing snapshot. Unknown dates remain unknown; displayed dates use UTC.
+
+The default scope submits `document_ids: []` to search eligible current sources in the server-derived
+workspace. Checkboxes select 1–100 `SEARCHABLE` documents, automatically enabling selected scope;
+pending, missing, and failed statuses cannot be selected. Loading more preserves selection.
+Refreshing clears selection but preserves selected scope, visibly disabling submission until the
+user selects again or explicitly chooses all sources. List errors also block selected-scope
+submission, never silently widening a question. Selection controls are disabled during research.
+The server rechecks eligibility; neither the status snapshot nor possession of an ID authorizes use.
+
+In provider mode, the form independently selects the answer-generation and statement-support models from the
 backend-advertised Terra/Luna choices; both default to Terra. In deterministic mode, the paid-model
 controls are absent. An unavailable or invalid choices response disables submission instead of
 making an implicit model choice. The UI never treats streamed partial text as a usable answer.
@@ -137,3 +153,9 @@ count as one Unicode code point just as they do in Python. The stored range must
 `exact_text` and its SHA-256 checksum before the viewer renders the original with only that range
 inside a `<mark>` element. Unknown media, mismatched routes, invalid ranges, and changed text fail
 closed without rendering source content.
+
+The separate `/documents/{document_id}/versions/{document_version_id}` page opens an original
+without needing a question or citation. It uses the same authorized, integrity-checking original
+endpoint. PDFs use a revocable object URL and offer a separate-tab fallback; text is rendered as
+escaped plain text, preserving whitespace. It has no evidence highlight and explicitly distinguishes
+the complete original from a validated cited passage. Neither viewer exposes storage URLs or keys.
