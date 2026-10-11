@@ -151,7 +151,11 @@ PostgreSQL and Pinecone do not use distributed transactions.
 4. A reconciliation job detects and repairs missing, stale, or orphaned vectors.
 5. Retrieval accepts a Pinecone hit only after resolving it to an active canonical chunk version.
 
-Soft deletion changes canonical eligibility immediately; asynchronous vector deletion is cleanup, not the access-control mechanism.
+The owner-approved local permanent-deletion path changes canonical eligibility to `PURGE_PENDING`
+immediately, without restoration. External vector/object deletion is cleanup, not the access-control
+mechanism. Short database transactions surround external cleanup; only verified absence and an
+atomic canonical purge allow a completed receipt. See
+[ADR-0019](./adr/0019-permanent-local-document-deletion.md) for scope and activation status.
 
 ## 7. Direct RAG flow
 

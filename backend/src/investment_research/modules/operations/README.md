@@ -47,11 +47,17 @@ flowchart LR
     FAILURE --> BUDGET
 ```
 
-Each operation belongs to exactly one research request or processing run. The repository requires a
+Each new operation belongs to exactly one research request or processing run. The repository requires a
 `WorkspaceContext`, and PostgreSQL composite foreign keys reject cross-workspace ownership even if
 application code is wrong. Repositories participate in the caller's transaction and never commit
 independently. A workspace-scoped PostgreSQL transaction lock makes the combined monthly check and
 reservation safe under concurrency without blocking unrelated workspaces.
+
+Permanent document deletion detaches affected operation owners using `owner_deleted = true` and
+null request/run foreign keys. The content-free ledger remains in monthly budget and quota totals.
+An already running provider call may finalize its original reservation after deletion, but cannot
+reattach the removed owner. All other immutable operation identities and reservation bounds are
+still checked; see [ADR-0019](../../../../../docs/adr/0019-permanent-local-document-deletion.md).
 
 Provider-operation records and traces may contain identifiers, configuration versions, unit counts,
 costs, durations, trace IDs, and safe error categories. They must not contain document text, user

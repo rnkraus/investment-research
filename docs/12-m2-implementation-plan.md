@@ -92,11 +92,11 @@ the first work block; record an ADR only if a final choice changes an accepted c
    versions must survive reprocessing and version promotion. Current M1 source opening rejects an
    inactive version. Decide explicitly whether an authorized historical-answer view may open a
    retained inactive version; keep it separate from _new-answer_ eligibility. Do not loosen the
-   existing endpoint silently. Soft-deleted and purged content must never be exposed through it.
-5. **Purge retention matrix.** Freeze which source-bound answers, evidence, derived rows, audit
-   metadata, originals, and backups are deleted or reduced to content-free tombstones. Existing
-   restrictive foreign keys make this a schema decision, not a cascade shortcut. No physical purge
-   runs until the matrix, recovery deadline, and exact-target checks are tested.
+   existing endpoint silently. Pending-deletion and purged content must never be exposed through it.
+5. **Purge retention matrix.** ADR-0019 freezes source-bound answer removal, exact-target cleanup,
+   content-free receipts/accounting, and backup-expiry boundaries for the local path. There is no
+   application restoration period. M2 must extend and verify delivery/reconciliation without
+   weakening those decisions; a public or multi-user retention policy needs separate review.
 6. **Periodic repair trigger.** Prefer one separately run Celery Beat scheduler using the existing
    broker and worker image, not an embedded worker `-B` or a new backing service. PostgreSQL remains
    the work authority, so duplicate or missed ticks are harmless; a bounded operator command can
@@ -113,15 +113,15 @@ confirmed against the frozen Step 0 contracts before a migration is written.
 
 | Owner                                                                                 | Intended change                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `modules/documents/{domain,contracts,ports,application,persistence}.py`               | New-version capture, duplicate provenance, lifecycle transitions, restore deadline, scoped purge intent. Preserve the existing original-storage port.                                        |
+| `modules/documents/`               | New-version capture, duplicate provenance, lifecycle transitions, and the existing separate deletion contracts/services/ports. Preserve the original-storage port and ADR-0019 policy. |
 | `modules/processing/{domain,contracts,ports,application,persistence}.py`              | Stage state, attempt history, bounded retry/lease ownership, and existing `ProcessingRun` compatibility. Keep parser and provider work outside transactions.                                 |
 | `modules/delivery/` (new, if Step 0 confirms ownership)                               | Typed `Job` and `OutboxEvent` contracts, scoped repositories, due-event claiming, dispatch, and safe retry policy. Application modules use declared ports, not another module's persistence. |
 | `modules/search/{ports,indexing,persistence}.py` and `modules/processing/indexing.py` | Durable index intent, receipts, desired-versus-observed reconciliation, and active-output promotion. Pinecone SDK behavior stays behind `infrastructure/search/`.                            |
 | `infrastructure/database/{unit_of_work,metadata}.py`                                  | Compose capture, stage, outbox, receipt, and promotion writes in short PostgreSQL transactions. Repositories never commit independently.                                                     |
 | `infrastructure/queue/`, `bootstrap.py`, `compose.yaml`                               | Thin event/task adapters, one repair trigger, process wiring, and health checks without another business service.                                                                            |
-| `api/routes/{documents,processing}.py`                                                | Version/batch capture, status/history, retry, reprocess, delete, and restore contracts. No broad archive list or company API.                                                                |
+| `api/routes/{documents,processing}.py`                                                | Version/batch capture, status/history, retry, reprocess, and permanent-deletion contracts. Preserve the separately approved local catalog; no broad company discovery API. |
 | `backend/migrations/versions/`                                                        | Sequential Alembic revisions after M1 head `0008`; each work block includes constraints, backfill/compatibility, indexes, and an upgrade test. No `create_all()` in application code.        |
-| `frontend/src/features/archive/`                                                      | Minimal batch/version, stage/error/retry, reprocess, and deletion/restore controls only in their owning steps. M3 owns archive browsing.                                                     |
+| `frontend/src/features/archive/`                                                      | Minimal batch/version, stage/error/retry, reprocess, and permanent-deletion controls in their owning steps. Preserve the approved local catalog; M3 owns broader archive discovery. |
 | `backend/tests/`, `frontend/`, `.github/workflows/ci.yml`, runtime verifiers          | Offline correctness and PostgreSQL/Compose failure gates; live providers remain bounded, optional, and public-synthetic only.                                                                |
 
 At minimum, Step 0 reviews the need for `jobs`, `outbox_events`, `processing_stages`, stage-attempt
@@ -145,7 +145,7 @@ UI files. Pause between coherent work blocks for review as required by `AGENTS.m
 - Specify migration/backfill behavior for M1 runs and answers. Do not invent historical stage
   attempts that never occurred; mark legacy state honestly.
 - Add synthetic fixtures for two versions, exact duplicates, partial index visibility, stale
-  vectors, worker loss, deletion, restoration, and a known historical citation.
+  vectors, worker loss, interrupted permanent deletion, and a known historical citation.
 
 **Gate:** Contracts, migration ownership, security implications, and the first implementation work
 block are reviewable without any M2 runtime code. Resolve conflicts with accepted ADRs before Step 1.
@@ -260,7 +260,7 @@ object/vector cleanup outside transactions, then remove source rows and complete
 history in a short transaction. Preserve detached content-free provider accounting and the minimal
 receipt. No restoration, recovery deadline, broad filesystem, bucket, namespace, or database delete.
 
-**CI:** Test research and citation denial immediately after soft deletion, stale-vector rejection,
+**CI:** Test research and citation denial immediately after canonical exclusion, stale-vector rejection,
 no restoration path, repeated and interrupted purge, object/provider failure,
 cross-workspace non-disclosure, and retention/FK behavior. Document the required 35-day backup
 expiry boundary; M5 owns the later full backup-and-restore exercise. Use isolated synthetic
@@ -272,6 +272,11 @@ completed deletion; do not offer restore or claim cross-store completion before 
 
 **Gate:** Deleted content cannot enter a new answer even with stale vectors; no restore operation
 exists; repeated purge has the same content-free terminal result and does not reset cost accounting.
+
+**Local follow-up status:** Admission/purge services, exact-key/vector adapters, detached accounting,
+and migration `0011_document_purge_guards` are implemented. Endpoint, task dispatch, website
+activation, and isolated live-store cleanup verification remain pending. This does not complete
+M2's durable outbox or periodic reconciliation work.
 
 ## 6. Final M2 acceptance and review
 
