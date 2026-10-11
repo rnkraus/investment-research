@@ -169,6 +169,55 @@ extended for reload, original opening, pagination, multi-selection, hiding/showi
 refresh. Local production build and browser verification must be confirmed separately, not inferred
 from unit tests.
 
+### 3.4 Permanent-deletion follow-up
+
+The separately owner-approved local path follows
+[ADR-0019](./adr/0019-permanent-local-document-deletion.md). It has no restoration and removes
+complete affected stored answers, including mixed-document answers. It does not approve public
+access or complete M2 delivery/reconciliation.
+
+`POST /api/v1/documents/deletions` accepts strict JSON:
+
+```json
+{
+  "document_ids": ["00000000-0000-4000-8000-000000000003"],
+  "confirm_permanent": true
+}
+```
+
+Require 1–100 distinct UUIDs and the actual JSON boolean `true`; no default confirmation,
+client-supplied workspace, object keys, or provider targets. Empty selection never means all.
+The application commits exclusion and receipts for the entire batch before publishing ID-only
+Celery jobs outside the transaction. One unknown or foreign target returns the same safe `404`;
+unfinished processing returns `409`. Neither case admits any part of the selection. Invalid input
+returns `422`; canonical database failures return a safe `500`, with status checking recommended
+before retry because a connection failure can make the commit outcome uncertain.
+
+Success returns `202` and `DocumentDeletionsAccepted`:
+
+- `items`: ordered receipt snapshots with `document_id`, `state`, `requested_at`, nullable
+  `completed_at`, and `/api/v1/documents/{document_id}/deletion` as `status_url`.
+- `dispatch_pending_document_ids`: IDs whose publication failed in this attempt. This is not
+  durable queue/worker state; an empty list does not mean cleanup completed.
+
+`202` confirms canonical acceptance, not cross-store completion. A known broker failure still
+returns the committed receipts and failed publication IDs rather than pretending admission rolled
+back. Reposting the same confirmed explicit IDs returns existing receipts and republishes pending
+jobs; completed targets publish nothing. Resubmission can race a running worker safely because
+canonical receipts and exact-store cleanup are idempotent. The endpoint never calls paid providers
+or performs external cleanup itself. No transactional outbox is claimed.
+
+`GET /api/v1/documents/{document_id}/deletion` returns one `DocumentDeletionResult` with `200`.
+`PENDING` already excludes the document from new use; `COMPLETED` means verified external cleanup
+and canonical purge committed. Receipts survive physical document removal. Unknown, unrequested,
+and foreign IDs share the same `404`; malformed UUIDs return `422`; database failure returns a
+safe `500`. Both successful operations use `Cache-Control: private, no-store` and expose no source
+content, workspace ID, storage key, vector ID, or provider details.
+
+Unit, disposable PostgreSQL, OpenAPI-drift, and generated-TypeScript gates cover this API. Website
+confirmation, pending/completed display, and bounded polling remain the next work block; existing
+browser controls are not activated by generating a contract.
+
 ## 4. Parser, blocks, and chunks
 
 ### 4.1 Parser protocol

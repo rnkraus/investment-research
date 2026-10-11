@@ -93,8 +93,12 @@ not implement M2's durable outbox or periodic reconciliation.
 
 The isolated queue-recovery verifier publishes deletion jobs after recovering its synthetic source
 and confirms a completed receipt and absent canonical source rows. The service confirms exact
-original-object absence in live unversioned SeaweedFS before completion. Live Pinecone deletion,
-the HTTP endpoint, and website activation remain pending; this is not yet a user-facing feature.
+original-object absence in live unversioned SeaweedFS before completion. Confirmed batch admission
+and scoped receipt reads are now exposed through the
+[HTTP contract](../11-m1-contracts.md#34-permanent-deletion-follow-up). Admission commits before
+publication; failed publication IDs are returned without restoring content, and resubmission
+retries pending jobs. Status snapshots never expose source text or provider/storage targets.
+Live Pinecone deletion verification and website activation remain pending.
 
 Backend-block verification (2026-10-12): `scripts.verify_backend` passed formatting, lint, typing,
 and 2,039 unit tests. `scripts.verify_postgres` passed the empty migration cycle, schema checks,
@@ -109,3 +113,12 @@ duplicate execution, retry exhaustion, invalid/foreign payloads, soft timeouts, 
 and deterministic-index exact-ID isolation. Frontend format, lint, typecheck, contract checks, and
 61 tests also passed. No browser or production build was run for this backend-only block. This
 gate does not exercise live Pinecone deletion or the user's normal archive.
+
+API-block verification (2026-10-12): `scripts.verify_backend` passed formatting, lint, typing,
+and 2,093 unit tests. `scripts.verify_postgres` passed migration cycling, schema checks, and 219
+integration tests; seven separate SeaweedFS tests were skipped. API tests verify post-commit
+publication using a separate connection, broker failure/resubmission, whole-batch rejection, and
+receipt visibility/isolation after physical removal. OpenAPI drift checking and frontend format,
+lint, typecheck, generated-contract checks, and 61 tests passed. No browser, production build,
+live Pinecone deletion, or normal archive deletion was performed for this block. UI activation
+remains the next work block.
