@@ -76,6 +76,37 @@ def test_document_capture_uses_scoped_multipart_contract() -> None:
         }
 
 
+def test_document_catalog_exposes_bounded_pagination_without_workspace_input() -> None:
+    schema = create_app(ApiSettings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/documents"]["get"]
+
+    assert {parameter["name"] for parameter in operation["parameters"]} == {
+        "page_size",
+        "after_created_at",
+        "after_document_id",
+    }
+    size_schema = next(
+        parameter["schema"]
+        for parameter in operation["parameters"]
+        if parameter["name"] == "page_size"
+    )
+    assert size_schema["minimum"] == 1
+    assert size_schema["maximum"] == 100
+    assert size_schema["default"] == 20
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/DocumentCatalogPage"
+    }
+    assert (
+        schema["components"]["schemas"]["DocumentCatalogPage"]["properties"]["items"]["maxItems"]
+        == 100
+    )
+    for status_code in ("422", "500"):
+        assert operation["responses"][status_code]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+    assert "workspace_id" not in json.dumps(operation)
+
+
 def test_text_capture_uses_strict_bounded_json_contract() -> None:
     schema = create_app(ApiSettings(environment="test")).openapi()
     operation = schema["paths"]["/api/v1/documents/text"]["post"]

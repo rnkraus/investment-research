@@ -1,9 +1,9 @@
-"""HTTP endpoints for secure document capture and original access."""
+"""HTTP endpoints for scoped document listing, capture, and original access."""
 
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from pydantic import AwareDatetime, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.background import BackgroundTask
@@ -11,15 +11,21 @@ from starlette.responses import StreamingResponse
 
 from investment_research.api.contracts import (
     DocumentAccepted,
+    DocumentCatalogEntry,
+    DocumentCatalogPage,
+    DocumentCatalogQuery,
     DocumentMetadataInput,
     ErrorCode,
     ErrorResponse,
     LanguageCode,
     PastedTextDocumentInput,
+    ProcessingRunResult,
     TrimmedTitle,
 )
 from investment_research.api.dependencies import (
     CaptureDocumentServiceDependency,
+    GetProcessingRunServiceDependency,
+    ListDocumentsServiceDependency,
     OpenOriginalServiceDependency,
     WorkspaceContextDependency,
 )
@@ -33,6 +39,8 @@ from investment_research.modules.documents.application import (
     UploadTooLargeError,
 )
 from investment_research.modules.documents.contracts import (
+    DocumentListCursor,
+    DocumentListQuery,
     PastedTextCaptureInput,
     PdfCaptureInput,
 )
@@ -40,6 +48,7 @@ from investment_research.modules.documents.ports import (
     ObjectAlreadyExistsError,
     ObjectStorageError,
 )
+from investment_research.modules.processing.contracts import ProcessingStatusQuery
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -64,6 +73,73 @@ DocumentMetadataDependency = Annotated[
     DocumentMetadataInput,
     Depends(document_metadata_from_form),
 ]
+
+
+@router.get(
+    "",
+    response_model=DocumentCatalogPage,
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorResponse},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse},
+    },
+)
+def list_documents(
+    query: Annotated[DocumentCatalogQuery, Query()],
+    service: ListDocumentsServiceDependency,
+    processing_service: GetProcessingRunServiceDependency,
+    context: WorkspaceContextDependency,
+    response: Response,
+) -> DocumentCatalogPage:
+    """Compose current metadata and latest status through scoped application services."""
+
+    cursor = (
+        DocumentListCursor(created_at=query.after_created_at, document_id=query.after_document_id)
+        if query.after_created_at is not None and query.after_document_id is not None
+        else None
+    )
+    try:
+        page = service.list_documents(
+            context, DocumentListQuery(page_size=query.page_size, after=cursor)
+        )
+        runs = processing_service.get_latest_for_versions(
+            context,
+            ProcessingStatusQuery(
+                document_version_ids=tuple(entry.document_version_id for entry in page.items)
+            ),
+        )
+    except SQLAlchemyError as error:
+        raise ApiError(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="document list could not be read",
+        ) from error
+
+    statuses = {
+        run.document_version_id: ProcessingRunResult(
+            processing_run_id=run.id,
+            document_version_id=run.document_version_id,
+            state=run.state,
+            error_summary=run.error_summary,
+        )
+        for run in runs
+    }
+    response.headers["cache-control"] = "private, no-store"
+    return DocumentCatalogPage(
+        items=tuple(
+            DocumentCatalogEntry.model_validate(
+                {
+                    **entry.model_dump(),
+                    "processing": statuses.get(entry.document_version_id),
+                    "original_url": (
+                        f"/api/v1/documents/{entry.document_id}"
+                        f"/versions/{entry.document_version_id}/original"
+                    ),
+                }
+            )
+            for entry in page.items
+        ),
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.post(

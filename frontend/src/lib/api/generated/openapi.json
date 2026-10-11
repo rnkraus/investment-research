@@ -272,6 +272,154 @@
         "title": "DocumentAccepted",
         "type": "object"
       },
+      "DocumentCatalogEntry": {
+        "additionalProperties": false,
+        "description": "Current metadata with a safe status snapshot and authorized original route.",
+        "properties": {
+          "available_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available At"
+          },
+          "byte_size": {
+            "exclusiveMinimum": 0.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$",
+            "title": "Language",
+            "type": "string"
+          },
+          "media_type": {
+            "$ref": "#/components/schemas/OriginalMediaType"
+          },
+          "original_url": {
+            "title": "Original Url",
+            "type": "string"
+          },
+          "processing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessingRunResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "document_id",
+          "document_version_id",
+          "media_type",
+          "byte_size",
+          "created_at",
+          "captured_at",
+          "processing",
+          "original_url"
+        ],
+        "title": "DocumentCatalogEntry",
+        "type": "object"
+      },
+      "DocumentCatalogPage": {
+        "additionalProperties": false,
+        "description": "One bounded archive page; statuses are snapshots, not retrieval authorization.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentCatalogEntry"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentListCursor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DocumentCatalogPage",
+        "type": "object"
+      },
+      "DocumentListCursor": {
+        "additionalProperties": false,
+        "description": "Exclusive position in descending document creation-time and UUID order.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "document_id"
+        ],
+        "title": "DocumentListCursor",
+        "type": "object"
+      },
       "DocumentMetadataInput": {
         "additionalProperties": false,
         "description": "Validated metadata fields submitted alongside an uploaded document.",
@@ -544,6 +692,15 @@
         ],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "OriginalMediaType": {
+        "description": "Original media types accepted by the archive capture boundary.",
+        "enum": [
+          "application/pdf",
+          "text/plain"
+        ],
+        "title": "OriginalMediaType",
+        "type": "string"
       },
       "PastedTextDocumentInput": {
         "additionalProperties": false,
@@ -901,6 +1058,94 @@
   "openapi": "3.1.0",
   "paths": {
     "/api/v1/documents": {
+      "get": {
+        "description": "Compose current metadata and latest status through scoped application services.",
+        "operationId": "list_documents_api_v1_documents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_created_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Created At"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_document_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentCatalogPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List Documents",
+        "tags": [
+          "documents"
+        ]
+      },
       "post": {
         "description": "Accept one bounded PDF and return its canonical capture identifiers.",
         "operationId": "capture_document_api_v1_documents_post",

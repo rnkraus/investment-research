@@ -116,6 +116,7 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.documents.listing import ListDocumentsService
 from investment_research.modules.documents.ports import ObjectStorage
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.evidence.contracts import (
@@ -350,6 +351,7 @@ class ApiContainer:
     processing_dispatcher: ProcessingDispatcher
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
+    list_documents_service: ListDocumentsService
     get_processing_run_service: GetProcessingRunService
     retrieve_research_service: RetrieveResearchService
     generate_validated_answer_service: GenerateValidatedAnswerService
@@ -881,6 +883,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             processing_profile=processing_profile,
         ),
         open_original_service=open_original_service,
+        list_documents_service=ListDocumentsService(
+            unit_of_work_factory=create_document_read_unit_of_work_factory(
+                database.session_factory
+            ),
+        ),
         get_processing_run_service=GetProcessingRunService(
             unit_of_work_factory=create_processing_read_unit_of_work_factory(
                 database.session_factory
