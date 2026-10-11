@@ -112,7 +112,9 @@ flowchart LR
 
 The owner approved a small read-only document-selection follow-up ahead of the broader M3 archive
 work. `GET /api/v1/documents` now composes this module's metadata page with Processing's bounded
-latest-run status service. The website list and source-selection controls remain pending.
+latest-run status service. The website consumes this contract for saved-document listing,
+independent original views, and explicit multi-source research selection; its UI flow is documented
+in the [archive feature guide](../../../../../frontend/src/features/archive/README.md).
 
 ```mermaid
 flowchart LR

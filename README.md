@@ -20,8 +20,10 @@ or an investment-advice service.
 
 - **Build a searchable archive:** import text-based PDFs or pasted text and follow automatic
   parsing, embedding, and indexing progress.
+- **Browse saved sources:** view a paginated document list with processing status and open
+  complete PDF or text originals without first asking a question.
 - **Ask saved evidence:** research existing documents without another upload, or restrict a
-  question to the current processed document.
+  question to one or more selected searchable documents.
 - **Inspect the source:** open a cited original PDF at its physical page or highlight the exact
   range in a pasted-text original.
 - **See evidence limits:** distinguish complete, partial, conflicting, and insufficient
