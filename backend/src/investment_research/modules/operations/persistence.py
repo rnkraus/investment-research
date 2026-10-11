@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -54,11 +55,13 @@ class ProviderOperationRow(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "(operation = 'DOCUMENT_EMBEDDING' "
+            "(owner_deleted IS TRUE "
+            "AND research_request_id IS NULL AND processing_run_id IS NULL) OR "
+            "(owner_deleted IS FALSE AND ((operation = 'DOCUMENT_EMBEDDING' "
             "AND processing_run_id IS NOT NULL AND research_request_id IS NULL) OR "
             "(operation IN ('QUERY_EMBEDDING', 'ANSWER_GENERATION', 'STATEMENT_SUPPORT', "
             "'RERANKING') "
-            "AND research_request_id IS NOT NULL AND processing_run_id IS NULL)",
+            "AND research_request_id IS NOT NULL AND processing_run_id IS NULL)))",
             name="coherent_owner",
         ),
         CheckConstraint(
@@ -128,6 +131,9 @@ class ProviderOperationRow(Base):
     correlation_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     research_request_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
     processing_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    owner_deleted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     operation: Mapped[ProviderOperationKind] = mapped_column(
         SqlEnum(
             ProviderOperationKind,
@@ -201,6 +207,7 @@ class ProviderOperationRow(Base):
             correlation_id=self.correlation_id,
             research_request_id=self.research_request_id,
             processing_run_id=self.processing_run_id,
+            owner_deleted=self.owner_deleted,
             operation=self.operation,
             provider=self.provider,
             model=self.model,

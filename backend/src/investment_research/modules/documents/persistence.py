@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Select,
     String,
@@ -28,6 +29,10 @@ from investment_research.modules.documents.contracts import (
     DocumentListEntry,
     DocumentListPage,
     DocumentListQuery,
+)
+from investment_research.modules.documents.deletion_contracts import (
+    DocumentDeletionReceipt,
+    DocumentDeletionState,
 )
 from investment_research.modules.documents.domain import (
     Document,
@@ -65,7 +70,9 @@ class DocumentRow(Base):
             "document_type ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'",
             name="valid_document_type",
         ),
-        CheckConstraint("lifecycle_state IN ('ACTIVE')", name="document_lifecycle_state"),
+        CheckConstraint(
+            "lifecycle_state IN ('ACTIVE', 'PURGE_PENDING')", name="document_lifecycle_state"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -113,6 +120,50 @@ class DocumentRow(Base):
             lifecycle_state=self.lifecycle_state,
             current_version_id=self.current_version_id,
             created_at=self.created_at,
+        )
+
+
+class DocumentDeletionRow(Base):
+    """Durable content-free deletion intent that survives removal of the document."""
+
+    __tablename__ = "document_deletions"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
+        CheckConstraint("state IN ('PENDING', 'COMPLETED')", name="deletion_state"),
+        CheckConstraint(
+            "(state = 'PENDING' AND completed_at IS NULL) OR "
+            "(state = 'COMPLETED' AND completed_at IS NOT NULL AND completed_at >= requested_at)",
+            name="deletion_completion",
+        ),
+        Index(None, "state", "requested_at"),
+    )
+
+    # Deliberately no document FK: this receipt outlives its physically purged target.
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    document_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    state: Mapped[DocumentDeletionState] = mapped_column(
+        SqlEnum(
+            DocumentDeletionState,
+            native_enum=False,
+            create_constraint=False,
+            validate_strings=True,
+            length=16,
+            values_callable=lambda enum_type: [member.value for member in enum_type],
+        ),
+        nullable=False,
+    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    def to_contract(self) -> DocumentDeletionReceipt:
+        """Return the content-free receipt without ORM identity or persistence details."""
+
+        return DocumentDeletionReceipt(
+            workspace_id=self.workspace_id,
+            document_id=self.document_id,
+            state=self.state,
+            requested_at=self.requested_at,
+            completed_at=self.completed_at,
         )
 
 

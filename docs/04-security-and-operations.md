@@ -223,12 +223,16 @@ Later LangGraph workflows require separate approval criteria, tool allowlists, s
 
 ### Deletion
 
-- Soft deletion immediately excludes a document from browsing, retrieval, and new answers.
-- The recovery period is 30 days.
-- Irreversible deletion begins after the recovery period.
+- The owner-approved local deletion path is permanent, without application restoration; see
+  [ADR-0019](./adr/0019-permanent-local-document-deletion.md) for the retention matrix and gates.
+- Canonical `PURGE_PENDING` immediately excludes a document from browsing, retrieval, and new answers.
+- Purge removes original objects, vectors, canonical source content, and complete affected stored answers.
+- Content-free deletion receipts and detached provider accounting remain; deletion must not reset budgets.
 - Derived vectors, processing artifacts, cached data, and provider-held data are included in deletion workflows.
 - Affected backups expire within 35 days unless a documented hold applies.
 - Purge jobs are idempotent and leave an auditable completion result without retaining deleted content unnecessarily.
+- Endpoint, worker cleanup, and UI activation remain under implementation. This local policy does not
+  approve public or multi-user retention; review that policy separately before such deployment.
 
 ### Local runtime
 

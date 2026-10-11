@@ -157,15 +157,15 @@ The diagram shows ownership and traceability, not physical database cardinalitie
 ### Document lifecycle
 
 ```text
-ACTIVE → SOFT_DELETED → PURGE_PENDING → PURGED
-   ↑          |
-   └── RESTORE┘  within the recovery period
+ACTIVE → PURGE_PENDING → physical content removal
+                            + COMPLETED deletion receipt
 ```
 
-- `SOFT_DELETED` content is immediately ineligible for normal browsing, retrieval, and new answers.
-- Restoration is allowed for 30 days.
-- Purging removes canonical content and schedules removal of derived records and stored artifacts according to retention rules.
-- Historical audit records retain only the minimum permitted identifiers after purge.
+- The owner-approved local path has no restoration period; `PURGE_PENDING` immediately excludes content.
+- Purging removes originals, vectors, canonical source content, and complete affected stored answers.
+- A content-free deletion receipt outlives the document; detached cost accounting still counts toward budgets.
+- [ADR-0019](./adr/0019-permanent-local-document-deletion.md) defines the retention matrix and gates.
+  Schema support is being implemented; endpoint, worker cleanup, and website activation are not yet complete.
 
 ### Processing readiness
 

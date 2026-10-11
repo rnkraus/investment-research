@@ -86,6 +86,19 @@ def test_row_round_trips_started_and_terminal_operations() -> None:
         assert ProviderOperationRow.from_domain(operation).to_domain() == operation
 
 
+def test_detached_cost_record_round_trips_without_deleted_owner() -> None:
+    operation = ProviderOperation.model_validate(
+        {
+            **make_operation(ProviderOperationState.SUCCEEDED).model_dump(),
+            "research_request_id": None,
+            "owner_deleted": True,
+        }
+    )
+    restored = ProviderOperationRow.from_domain(operation).to_domain()
+    assert restored == operation
+    assert restored.actual_cost_micro_usd == 12
+
+
 def test_row_round_trips_research_owned_reranking_usage() -> None:
     values = make_operation(ProviderOperationState.SUCCEEDED).model_dump()
     values.update(

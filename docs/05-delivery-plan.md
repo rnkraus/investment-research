@@ -196,6 +196,14 @@ Frontend format, lint, type, contract, and deterministic tests pass. The updated
 and local production build still require separate verification before this follow-up is accepted.
 This follow-up does not complete M3 or change the M1.5 evaluation/default-adoption gates.
 
+**Owner-approved permanent-deletion follow-up (2026-10-12):** Separately extend the local catalog
+with explicit multi-document deletion, without restoration, including complete stored answers that
+used a selected source. [ADR-0019](./adr/0019-permanent-local-document-deletion.md) freezes the
+retention matrix, exact scoped cleanup, cost preservation, and activation gates. Schema support is
+under implementation; endpoint, worker cleanup, and active frontend controls are not yet available.
+This approval overrides the earlier read-only follow-up's exclusion of deletion only for this
+bounded local feature; broader M2/M3 work and public deployment remain out of scope.
+
 ## 6A. M1.5 — RAG quality proof
 
 The repository owner prioritized a measurable local RAG demonstration before broadening the

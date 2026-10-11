@@ -162,3 +162,20 @@ Every table carries `workspace_id` and a direct foreign key to `workspaces`. Com
 Repository reads always filter by the trusted workspace. Version and original reads also require an `ACTIVE` document and the requested current version. Unknown, foreign, inactive, and mismatched identifiers therefore share the same `None` result.
 
 Domain entities are frozen, and the repository exposes no update operation for `DocumentVersion` or `OriginalArtifact`. The reviewed Alembic migration adds PostgreSQL triggers that reject updates and deletes for both immutable tables, and the integration tests verify that protection directly against PostgreSQL.
+
+## Permanent-deletion foundation
+
+The owner-approved local policy is defined in
+[ADR-0019](../../../../../docs/adr/0019-permanent-local-document-deletion.md). It has no restore
+period and includes complete affected stored answers. `deletion_contracts.py` requires 1–100
+distinct explicit target IDs and defines content-free pending/completed receipts.
+`DocumentDeletionRow` persists those receipts without a document foreign key, allowing the receipt
+to outlive a physically removed document. `DocumentLifecycleState.PURGE_PENDING` is not `ACTIVE`
+and therefore fails existing document/original admission queries.
+
+Migration `0010_permanent_document_deletion` adds this schema without deleting existing records.
+The Operations module can retain content-free costs with `owner_deleted = true` and null owner FKs,
+so later purge does not reset the provider budget. Downgrade refuses to erase irreversible intent
+or detached accounting. Original/version immutability triggers remain unchanged in this foundation.
+The request service, worker/store cleanup, HTTP endpoint, and active UI button are not implemented
+by this schema block; do not treat a receipt model alone as a working deletion feature.

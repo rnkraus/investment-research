@@ -137,6 +137,7 @@ class ProviderOperation(BaseModel):
     correlation_id: UUID
     research_request_id: UUID | None = None
     processing_run_id: UUID | None = None
+    owner_deleted: bool = False
     operation: ProviderOperationKind
     provider: ProviderIdentifier
     model: ProviderIdentifier
@@ -174,7 +175,10 @@ class ProviderOperation(BaseModel):
 
         has_research_request = self.research_request_id is not None
         has_processing_run = self.processing_run_id is not None
-        if has_research_request == has_processing_run:
+        if self.owner_deleted:
+            if has_research_request or has_processing_run:
+                raise ValueError("deleted operation owner must not retain source relationships")
+        elif has_research_request == has_processing_run:
             raise ValueError("exactly one of research_request_id or processing_run_id is required")
 
         research_operations = {
@@ -183,9 +187,17 @@ class ProviderOperation(BaseModel):
             ProviderOperationKind.ANSWER_GENERATION,
             ProviderOperationKind.STATEMENT_SUPPORT,
         }
-        if self.operation in research_operations and not has_research_request:
+        if (
+            not self.owner_deleted
+            and self.operation in research_operations
+            and not has_research_request
+        ):
             raise ValueError("research provider operation requires research_request_id")
-        if self.operation is ProviderOperationKind.DOCUMENT_EMBEDDING and not has_processing_run:
+        if (
+            not self.owner_deleted
+            and self.operation is ProviderOperationKind.DOCUMENT_EMBEDDING
+            and not has_processing_run
+        ):
             raise ValueError("document embedding requires processing_run_id")
 
         if self.actual_cost_micro_usd is not None and (
