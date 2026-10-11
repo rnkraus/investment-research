@@ -98,6 +98,7 @@ from investment_research.infrastructure.operations.opentelemetry import (
 from investment_research.infrastructure.parsing.client import HttpDocumentParser
 from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
+    CeleryDocumentPurgeDispatcher,
     CeleryProcessingDispatcher,
     create_celery_app,
 )
@@ -121,7 +122,10 @@ from investment_research.modules.documents.application import (
 )
 from investment_research.modules.documents.deletion import (
     ExecuteDocumentPurgeJobService,
+    GetDocumentDeletionService,
     PurgeDocumentService,
+    RequestDocumentDeletionService,
+    SubmitDocumentDeletionService,
 )
 from investment_research.modules.documents.deletion_ports import OriginalPurger
 from investment_research.modules.documents.listing import ListDocumentsService
@@ -365,6 +369,8 @@ class ApiContainer:
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
     list_documents_service: ListDocumentsService
+    submit_document_deletion_service: SubmitDocumentDeletionService
+    get_document_deletion_service: GetDocumentDeletionService
     get_processing_run_service: GetProcessingRunService
     retrieve_research_service: RetrieveResearchService
     generate_validated_answer_service: GenerateValidatedAnswerService
@@ -902,6 +908,15 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             unit_of_work_factory=create_document_read_unit_of_work_factory(
                 database.session_factory
             ),
+        ),
+        submit_document_deletion_service=SubmitDocumentDeletionService(
+            request_service=RequestDocumentDeletionService(
+                create_document_deletion_unit_of_work_factory(database.session_factory)
+            ),
+            dispatcher=CeleryDocumentPurgeDispatcher(queue_application),
+        ),
+        get_document_deletion_service=GetDocumentDeletionService(
+            create_document_deletion_unit_of_work_factory(database.session_factory)
         ),
         get_processing_run_service=GetProcessingRunService(
             unit_of_work_factory=create_processing_read_unit_of_work_factory(

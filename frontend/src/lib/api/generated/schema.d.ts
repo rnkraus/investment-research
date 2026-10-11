@@ -28,6 +28,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/documents/deletions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Request Document Deletions
+         * @description Exclude the whole confirmed batch before best-effort post-commit publication.
+         */
+        readonly post: operations["request_document_deletions_api_v1_documents_deletions_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/documents/text": {
         readonly parameters: {
             readonly query?: never;
@@ -42,6 +62,26 @@ export interface paths {
          * @description Accept one bounded English text original and return its capture identifiers.
          */
         readonly post: operations["capture_pasted_text_api_v1_documents_text_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/documents/{document_id}/deletion": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Document Deletion
+         * @description Return a receipt after removal without disclosing foreign or unknown targets.
+         */
+        readonly get: operations["get_document_deletion_api_v1_documents__document_id__deletion_get"];
+        readonly put?: never;
+        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -416,6 +456,60 @@ export interface components {
             /** Items */
             readonly items: readonly components["schemas"]["DocumentCatalogEntry"][];
             readonly next_cursor?: components["schemas"]["DocumentListCursor"] | null;
+        };
+        /**
+         * DocumentDeletionInput
+         * @description Explicit confirmation of permanent source and dependent-answer deletion.
+         */
+        readonly DocumentDeletionInput: {
+            /**
+             * Confirm Permanent
+             * @description Permanently delete selected sources and their affected stored answers; no restore
+             * @constant
+             */
+            readonly confirm_permanent: true;
+            /** Document Ids */
+            readonly document_ids: readonly string[];
+        };
+        /**
+         * DocumentDeletionResult
+         * @description Scoped content-free status, never a source or provider locator.
+         */
+        readonly DocumentDeletionResult: {
+            /** Completed At */
+            readonly completed_at: string | null;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            readonly requested_at: string;
+            readonly state: components["schemas"]["DocumentDeletionState"];
+            /** Status Url */
+            readonly status_url: string;
+        };
+        /**
+         * DocumentDeletionState
+         * @description A pending purge is already irreversible; completion confirms store cleanup.
+         * @enum {string}
+         */
+        readonly DocumentDeletionState: "PENDING" | "COMPLETED";
+        /**
+         * DocumentDeletionsAccepted
+         * @description Committed snapshots; publication failures may be retried with the same explicit IDs.
+         */
+        readonly DocumentDeletionsAccepted: {
+            /**
+             * Dispatch Pending Document Ids
+             * @description IDs whose publication failed in this attempt; not a durable worker status
+             */
+            readonly dispatch_pending_document_ids: readonly string[];
+            /** Items */
+            readonly items: readonly components["schemas"]["DocumentDeletionResult"][];
         };
         /**
          * DocumentListCursor
@@ -850,6 +944,66 @@ export interface operations {
             };
         };
     };
+    readonly request_document_deletions_api_v1_documents_deletions_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["DocumentDeletionInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentDeletionsAccepted"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly capture_pasted_text_api_v1_documents_text_post: {
         readonly parameters: {
             readonly query?: never;
@@ -883,6 +1037,55 @@ export interface operations {
             };
             /** @description Content Too Large */
             readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_document_deletion_api_v1_documents__document_id__deletion_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly document_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentDeletionResult"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

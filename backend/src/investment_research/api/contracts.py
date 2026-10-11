@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -17,6 +18,11 @@ from investment_research.modules.documents.contracts import (
     MAX_PASTED_TEXT_CHARACTERS,
     DocumentListCursor,
     DocumentListEntry,
+)
+from investment_research.modules.documents.deletion_contracts import (
+    DOCUMENT_DELETION_LIMIT,
+    DeleteDocumentsCommand,
+    DocumentDeletionState,
 )
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import ResearchModel, ResearchProgressStage
@@ -131,6 +137,45 @@ class DocumentCatalogPage(StrictContract):
 
     items: tuple[DocumentCatalogEntry, ...] = Field(max_length=100)
     next_cursor: DocumentListCursor | None = None
+
+
+class DocumentDeletionInput(DeleteDocumentsCommand):
+    """Explicit confirmation of permanent source and dependent-answer deletion."""
+
+    confirm_permanent: Literal[True] = Field(
+        description=(
+            "Permanently delete selected sources and their affected stored answers; no restore"
+        )
+    )
+
+    @field_validator("confirm_permanent", mode="before")
+    @classmethod
+    def require_explicit_confirmation(cls, value: object) -> bool:
+        if value is not True:
+            raise ValueError("permanent deletion requires explicit confirmation")
+        return True
+
+
+class DocumentDeletionResult(StrictContract):
+    """Scoped content-free status, never a source or provider locator."""
+
+    document_id: UUID
+    state: DocumentDeletionState
+    requested_at: AwareDatetime
+    completed_at: AwareDatetime | None
+    status_url: str
+
+
+class DocumentDeletionsAccepted(StrictContract):
+    """Committed snapshots; publication failures may be retried with the same explicit IDs."""
+
+    items: tuple[DocumentDeletionResult, ...] = Field(
+        min_length=1, max_length=DOCUMENT_DELETION_LIMIT
+    )
+    dispatch_pending_document_ids: tuple[UUID, ...] = Field(
+        max_length=DOCUMENT_DELETION_LIMIT,
+        description="IDs whose publication failed in this attempt; not a durable worker status",
+    )
 
 
 class ResearchRequestContext(StrictContract):
