@@ -6,8 +6,9 @@ This module owns logical archive documents, immutable content versions, and immu
 
 | File             | Responsibility                                                                                       |
 | ---------------- | ---------------------------------------------------------------------------------------------------- |
-| `contracts.py`   | Defines validated capture metadata and the stable application result.                                |
+| `contracts.py`   | Defines validated capture metadata, bounded catalog pages, and stable application results.           |
 | `application.py` | Captures bounded PDFs and resolves verified current originals for downloads or processing.           |
+| `listing.py`     | Lists a workspace's current document metadata through a short-lived read unit of work.               |
 | `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values. |
 | `ports.py`       | Defines object storage, repository, binary-stream, and write/read unit-of-work contracts.            |
 | `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.           |
@@ -95,6 +96,42 @@ only the `ProcessingOriginalProvider` stream contract, not document tables or st
 The read unit of work opens one short-lived SQLAlchemy session and exposes only the document
 repository. It does not reuse the capture transaction, include the processing repository, or commit
 on a read-only request.
+
+## Current-document catalog reads
+
+```mermaid
+flowchart LR
+    INPUT[Trusted WorkspaceContext and DocumentListQuery] --> SERVICE[ListDocumentsService]
+    SERVICE --> READ[DocumentReadUnitOfWork]
+    READ --> REPOSITORY[DocumentRepository.list_current_documents]
+    REPOSITORY --> JOIN[Active document and its current version and original metadata]
+    JOIN --> ORDER[Creation time and document UUID descending]
+    ORDER --> BOUND[Page size plus one lookahead row]
+    BOUND --> PAGE[DocumentListPage and optional next cursor]
+```
+
+The owner approved a small read-only document-selection follow-up ahead of the broader M3 archive
+work. This first backend block exposes application-owned metadata reads only: it does not yet add
+an HTTP route, processing-status composition, or a browser list. Those are subsequent blocks.
+
+`DocumentListQuery` defaults to 20 entries and accepts 1–100. Its optional `after` cursor contains
+the last returned document's timezone-aware creation time and UUID. The next query uses an
+exclusive descending keyset boundary, not an offset. Equal timestamps remain deterministic, and
+newer imports do not shift already traversed page boundaries. This is not a frozen snapshot across
+requests; refresh the first page to see new arrivals. The cursor is a position, never authorization.
+
+Every join includes the workspace relationship. Only `ACTIVE` documents with their current version
+and original metadata are returned. Entries include opaque document/version IDs, title, language,
+media type, byte size, and separately named creation, capture, publication, and availability times.
+Unknown source times stay null. Storage keys, checksums, original bytes, and provider data are not
+selected or exposed. Listing original metadata does not replace integrity and eligibility checks
+when the original is subsequently opened.
+
+The service closes its read session before returning and performs no writes, storage access,
+processing-table reads, or paid-provider calls. The existing schema is unchanged. Unit tests cover
+query bounds, field allowlists, SQL scope and ordering, and read-session cleanup; PostgreSQL tests
+cover workspace isolation, equal-time pagination with concurrent newer imports, missing originals,
+and current-version selection. Broader M3 browsing and lifecycle gates remain separate.
 
 ## Database isolation and eligibility
 

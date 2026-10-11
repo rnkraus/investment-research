@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
+from investment_research.modules.documents.contracts import DocumentListPage, DocumentListQuery
 from investment_research.modules.documents.domain import (
     Document,
     DocumentVersion,
@@ -77,6 +78,13 @@ class ObjectStorage(Protocol):
 
 class DocumentRepository(Protocol):
     """Persist and retrieve document aggregates within one trusted workspace."""
+
+    def list_current_documents(
+        self,
+        context: WorkspaceContext,
+        query: DocumentListQuery,
+    ) -> DocumentListPage:
+        """Return a bounded metadata page for active current originals in scope."""
 
     def add_capture(
         self,

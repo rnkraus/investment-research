@@ -182,6 +182,15 @@ workspace; a newly processed document can still be selected as an explicit one-d
 This small usability addition does not include document browsing, bulk import, version-management
 controls, or the M2 lifecycle guarantees.
 
+**Owner-approved local usability follow-up (2026-10-11):** Pull forward a small read-only subset
+of M3: list saved current documents, open their originals, and select one or more eligible sources
+for research. Implement backend behavior first, then contract/CI checks, then the frontend. Keep
+the fixed local identity, workspace isolation, original-integrity checks, and existing retrieval
+eligibility rules. Do not add deletion, version-management controls, company discovery, new
+providers, or public access. The first backend block implements bounded current-document metadata
+reads with stable cursor pagination; HTTP/status composition and website selection are still pending.
+This follow-up does not complete M3 or change the M1.5 evaluation/default-adoption gates.
+
 ## 6A. M1.5 — RAG quality proof
 
 The repository owner prioritized a measurable local RAG demonstration before broadening the
