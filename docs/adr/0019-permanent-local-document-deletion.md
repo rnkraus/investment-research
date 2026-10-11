@@ -75,5 +75,21 @@ exact-key/vector isolation, repeated/failed/interrupted cleanup, immutable-sourc
 clean-database plus existing-history migrations. Use only disposable synthetic resources. Public
 or multi-user operation requires a separately reviewed retention and authorization policy.
 
-The current schema work adds receipt contracts, the pending document state, and detached accounting.
-It does not yet expose a deletion endpoint, dispatch a purge task, or enable the website button.
+The backend now includes admission and purge services, canonical cleanup manifests, exact-key
+storage and exact-ID vector adapters, and atomic dependency cleanup. Migration
+`0011_document_purge_guards` permits delete-only cleanup of pending originals/versions and rejects
+source-bound writes after exclusion. Shared document locks serialize those writes with deletion
+admission. In-flight provider accounting may finalize after its deleted owner is detached, without
+reattaching it or resetting the budget.
+
+The S3 adapter targets the current unversioned local SeaweedFS store; versioned cloud object
+history requires a separately reviewed purge policy. Backend integration tests use disposable
+synthetic PostgreSQL and local storage, and adapter tests use provider doubles. They do not prove
+live Pinecone or SeaweedFS cleanup. Task registration, dispatch, the HTTP endpoint, and website
+activation remain pending; this is not yet a usable deletion feature.
+
+Backend-block verification (2026-10-12): `scripts.verify_backend` passed formatting, lint, typing,
+and 2,039 unit tests. `scripts.verify_postgres` passed the empty migration cycle, schema checks,
+and 215 integration tests; seven SeaweedFS tests were skipped because their separate verifier was
+not active. Frontend format, lint, typecheck, contract checks, and 61 tests passed. No browser,
+production build, live provider deletion, or normal archive purge was performed for this block.

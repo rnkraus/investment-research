@@ -161,9 +161,11 @@ Every table carries `workspace_id` and a direct foreign key to `workspaces`. Com
 
 Repository reads always filter by the trusted workspace. Version and original reads also require an `ACTIVE` document and the requested current version. Unknown, foreign, inactive, and mismatched identifiers therefore share the same `None` result.
 
-Domain entities are frozen, and the repository exposes no update operation for `DocumentVersion` or `OriginalArtifact`. The reviewed Alembic migration adds PostgreSQL triggers that reject updates and deletes for both immutable tables, and the integration tests verify that protection directly against PostgreSQL.
+Domain entities are frozen, and the capture repository exposes no update operation for
+`DocumentVersion` or `OriginalArtifact`. PostgreSQL always rejects their updates. Deletes are
+allowed only through the separately guarded permanent-purge path below.
 
-## Permanent-deletion foundation
+## Permanent-deletion backend
 
 The owner-approved local policy is defined in
 [ADR-0019](../../../../../docs/adr/0019-permanent-local-document-deletion.md). It has no restore
@@ -173,9 +175,39 @@ distinct explicit target IDs and defines content-free pending/completed receipts
 to outlive a physically removed document. `DocumentLifecycleState.PURGE_PENDING` is not `ACTIVE`
 and therefore fails existing document/original admission queries.
 
-Migration `0010_permanent_document_deletion` adds this schema without deleting existing records.
-The Operations module can retain content-free costs with `owner_deleted = true` and null owner FKs,
-so later purge does not reset the provider budget. Downgrade refuses to erase irreversible intent
-or detached accounting. Original/version immutability triggers remain unchanged in this foundation.
-The request service, worker/store cleanup, HTTP endpoint, and active UI button are not implemented
-by this schema block; do not treat a receipt model alone as a working deletion feature.
+| File | Responsibility |
+| --- | --- |
+| `deletion_contracts.py` | Explicit batch and content-free pending/completed receipts. |
+| `deletion_ports.py` | Repository, unit-of-work, original purger, and exact-vector purger interfaces. |
+| `deletion.py` | Admission and retry-safe cleanup services; no provider calls inside a transaction. |
+| `../../infrastructure/database/document_deletion.py` | Canonical target resolution and dependency-ordered PostgreSQL purge. |
+
+```mermaid
+flowchart TD
+    COMMAND[Trusted workspace and explicit document IDs] --> ADMIT[Short transaction: exclude batch and save receipts]
+    ADMIT --> MANIFEST[Short transaction: resolve all canonical keys and vector IDs]
+    MANIFEST --> VECTORS[Delete exact vector batches and confirm absence]
+    VECTORS --> ORIGINALS[Delete exact original keys and confirm absence]
+    ORIGINALS --> FINAL[Short transaction: delete source graph and complete affected answers]
+    FINAL --> RECEIPT[Commit completed content-free receipt]
+    VECTORS -->|provider failure| PENDING[Keep pending intent for retry]
+    ORIGINALS -->|storage failure| PENDING
+    FINAL -->|rollback| PENDING
+```
+
+Migration `0010_permanent_document_deletion` adds intent and accounting support.
+`0011_document_purge_guards` rejects source-bound writes after exclusion and allows original/version
+deletion only for the same pending document and receipt. It keeps immutable updates forbidden.
+The deferred current-version FK uses `NO ACTION`, allowing both document and versions to disappear
+in one transaction without dropping the relationship check.
+
+Purging removes entire affected research graphs, including mixed-document answers, but preserves
+unrelated documents and answers. Content-free costs keep `owner_deleted = true` and null owner FKs;
+late provider finalization still records usage without restoring those FKs. Deletion never resets
+the provider budget. Downgrade refuses to erase irreversible intent or detached accounting.
+
+Original and Pinecone adapters implement exact scoped deletion; local S3 cleanup assumes the
+unversioned SeaweedFS store. PostgreSQL tests cover repeat/failure behavior, mixed answers,
+workspace isolation, write locking, and retained accounting. Provider adapter tests use doubles.
+Worker dispatch, HTTP access, live cleanup verification, and the active website button remain
+pending. These services are not yet registered as an operational deletion feature.

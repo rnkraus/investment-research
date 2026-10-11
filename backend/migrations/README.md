@@ -79,3 +79,12 @@ records. Downgrade refuses to discard that operation kind while its accounting r
 The initial revision also installs PostgreSQL triggers that reject updates and deletes for
 `document_versions` and `original_artifacts`. Corrections create a new document version instead of
 rewriting preserved source history.
+
+Revision `0010_permanent_document_deletion` records irreversible local intent and detached
+content-free accounting. Revision `0011_document_purge_guards` keeps immutable updates forbidden
+but permits delete-only cleanup for the same pending document and deletion receipt. It adds
+source/research write guards and shared document locks, preventing new derived content or answers
+after canonical exclusion. The deferred current-version FK uses `NO ACTION` rather than
+non-deferrable `RESTRICT` enforcement so both sides can be removed atomically. These migrations
+do not themselves delete archive content or activate a public endpoint. See
+[ADR-0019](../../docs/adr/0019-permanent-local-document-deletion.md).

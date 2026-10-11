@@ -231,7 +231,11 @@ Later LangGraph workflows require separate approval criteria, tool allowlists, s
 - Derived vectors, processing artifacts, cached data, and provider-held data are included in deletion workflows.
 - Affected backups expire within 35 days unless a documented hold applies.
 - Purge jobs are idempotent and leave an auditable completion result without retaining deleted content unnecessarily.
-- Endpoint, worker cleanup, and UI activation remain under implementation. This local policy does not
+- The backend purge service verifies external absence before atomic canonical removal. Database
+  guards serialize source writes with deletion admission and reject writes after exclusion.
+- Exact-key S3 cleanup covers the unversioned local store, not historical versions in a future
+  versioned cloud bucket. Live adapter cleanup still needs its isolated runtime verification.
+- Endpoint, worker dispatch, and UI activation remain under implementation. This local policy does not
   approve public or multi-user retention; review that policy separately before such deployment.
 
 ### Local runtime
@@ -320,7 +324,7 @@ Maintain short runbooks for:
 - database restore;
 - vector-index rebuild and drift repair;
 - failed migration or deployment rollback;
-- accidental deletion and recovery-period restore;
+- permanent-deletion confirmation, interrupted cleanup, and backup-expiry boundaries;
 - suspected cross-workspace or credential exposure.
 
 ## 13. Provisional service objectives

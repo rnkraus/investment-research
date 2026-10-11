@@ -199,8 +199,9 @@ This follow-up does not complete M3 or change the M1.5 evaluation/default-adopti
 **Owner-approved permanent-deletion follow-up (2026-10-12):** Separately extend the local catalog
 with explicit multi-document deletion, without restoration, including complete stored answers that
 used a selected source. [ADR-0019](./adr/0019-permanent-local-document-deletion.md) freezes the
-retention matrix, exact scoped cleanup, cost preservation, and activation gates. Schema support is
-under implementation; endpoint, worker cleanup, and active frontend controls are not yet available.
+retention matrix, exact scoped cleanup, cost preservation, and activation gates. The schema, backend
+admission/purge services, store adapters, and database write guards are implemented. Endpoint,
+worker dispatch, live cleanup verification, and active frontend controls are not yet available.
 This approval overrides the earlier read-only follow-up's exclusion of deletion only for this
 bounded local feature; broader M2/M3 work and public deployment remain out of scope.
 
@@ -233,8 +234,8 @@ does not approve an unresolved source-access or purge-retention decision by itse
 - Versioned parser, structure, chunk, embedding, and index outputs.
 - Transactional outbox, deterministic vector IDs, index receipts, and reconciliation.
 - Reprocessing with atomic activation of new derived versions.
-- Soft deletion, 30-day restoration semantics, and purge workflow.
-- Tests for duplicate messages, provider timeouts, partial indexing, stale vectors, deletion, and restoration.
+- Permanent canonical exclusion and retryable exact scoped purge under ADR-0019; no application restoration.
+- Tests for duplicate messages, provider timeouts, partial indexing, stale vectors, and interrupted deletion.
 
 ### Exit gate
 
@@ -304,7 +305,7 @@ The expanded representative evaluation baseline is recorded against one versione
 - Backup and restore of PostgreSQL and original objects.
 - Full vector-index rebuild from canonical active chunks.
 - Reconciliation, stuck-job, provider-outage, and rate-limit exercises.
-- Deletion and recovery-period tests.
+- Permanent-deletion and backup-expiry boundary tests.
 - Useful local dashboards or reports for imports, research requests, errors, and cost.
 - Short operational runbooks from `04-security-and-operations.md`.
 

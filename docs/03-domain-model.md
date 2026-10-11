@@ -165,7 +165,9 @@ ACTIVE → PURGE_PENDING → physical content removal
 - Purging removes originals, vectors, canonical source content, and complete affected stored answers.
 - A content-free deletion receipt outlives the document; detached cost accounting still counts toward budgets.
 - [ADR-0019](./adr/0019-permanent-local-document-deletion.md) defines the retention matrix and gates.
-  Schema support is being implemented; endpoint, worker cleanup, and website activation are not yet complete.
+  Backend admission, exact scoped cleanup, and atomic dependency purge are implemented. Database
+  guards prevent source writes after exclusion; endpoint, worker dispatch, and website activation
+  remain pending.
 
 ### Processing readiness
 
