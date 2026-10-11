@@ -4,6 +4,7 @@ from base64 import b64encode
 from collections.abc import Mapping
 from io import BytesIO, StringIO
 from typing import BinaryIO, cast
+from unittest.mock import patch
 from uuid import UUID
 
 import boto3  # type: ignore[import-untyped]
@@ -64,11 +65,13 @@ class FakeS3Client:
         self.head_calls: list[dict[str, object]] = []
         self.put_calls: list[dict[str, object]] = []
         self.get_calls: list[dict[str, object]] = []
+        self.object_head_calls: list[dict[str, object]] = []
         self.delete_calls: list[dict[str, object]] = []
         self.next_put_error: BaseException | None = None
         self.next_head_error: BaseException | None = None
         self.next_get_error: BaseException | None = None
         self.next_delete_error: BaseException | None = None
+        self.next_object_head_error: BaseException | None = None
         self.last_response_body: TrackingBytesIO | None = None
 
     def head_bucket(self, **kwargs: object) -> Mapping[str, object]:
@@ -103,6 +106,13 @@ class FakeS3Client:
         bucket = cast(str, kwargs["Bucket"])
         key = cast(str, kwargs["Key"])
         self.objects.pop((bucket, key), None)
+        return {}
+
+    def head_object(self, **kwargs: object) -> Mapping[str, object]:
+        self.object_head_calls.append(kwargs)
+        self._raise_once("next_object_head_error")
+        if (cast(str, kwargs["Bucket"]), cast(str, kwargs["Key"])) not in self.objects:
+            raise make_client_error("NoSuchKey", 404, "HeadObject")
         return {}
 
     def _raise_once(self, attribute: str) -> None:
@@ -140,6 +150,88 @@ def test_s3_adapter_matches_object_storage_protocol() -> None:
     storage: ObjectStorage = S3ObjectStorage(client=FakeS3Client(), bucket=BUCKET)
 
     assert isinstance(storage, S3ObjectStorage)
+
+
+def test_permanent_original_cleanup_is_exact_verified_and_idempotent() -> None:
+    client = FakeS3Client()
+    key = original_key()
+    client.objects[(BUCKET, key)] = PDF_CONTENT
+    client.objects[(BUCKET, key + ".unrelated")] = b"retain"
+    storage = S3ObjectStorage(client=client, bucket=BUCKET)
+    storage.delete_original(make_context(), key)
+    storage.delete_original(make_context(), key)
+    assert client.objects == {(BUCKET, key + ".unrelated"): b"retain"}
+    assert client.object_head_calls == [{"Bucket": BUCKET, "Key": key}] * 2
+    assert client.get_calls == []
+
+
+@pytest.mark.parametrize("failure_stage", ["bucket", "delete", "verify"])
+def test_permanent_cleanup_never_treats_access_failure_as_absence(failure_stage: str) -> None:
+    client = FakeS3Client()
+    attribute = {
+        "bucket": "next_head_error",
+        "delete": "next_delete_error",
+        "verify": "next_object_head_error",
+    }[failure_stage]
+    setattr(client, attribute, make_client_error("AccessDenied", 403, "Cleanup"))
+    with pytest.raises(ObjectStorageError, match="could not be confirmed"):
+        S3ObjectStorage(client=client, bucket=BUCKET).delete_original(
+            make_context(), original_key()
+        )
+
+
+@pytest.mark.parametrize("code", ["NoSuchKey", "NotFound", "404"])
+def test_permanent_cleanup_accepts_only_confirmed_object_absence(code: str) -> None:
+    client = FakeS3Client()
+    client.next_object_head_error = make_client_error(code, 404, "HeadObject")
+    S3ObjectStorage(client=client, bucket=BUCKET).delete_original(make_context(), original_key())
+    assert client.head_calls == [{"Bucket": BUCKET}] * 2
+
+
+def test_permanent_cleanup_does_not_confuse_a_missing_bucket_with_a_missing_object() -> None:
+    client = FakeS3Client()
+    client.next_object_head_error = make_client_error("NoSuchBucket", 404, "HeadObject")
+    with pytest.raises(ObjectStorageError, match="could not be confirmed"):
+        S3ObjectStorage(client=client, bucket=BUCKET).delete_original(
+            make_context(), original_key()
+        )
+
+
+def test_permanent_cleanup_rechecks_bucket_access_after_generic_object_not_found() -> None:
+    client = FakeS3Client()
+    client.next_object_head_error = make_client_error("404", 404, "HeadObject")
+    with (
+        patch.object(
+            client,
+            "head_bucket",
+            side_effect=[{}, make_client_error("AccessDenied", 403, "HeadBucket")],
+        ),
+        pytest.raises(ObjectStorageError, match="could not be confirmed"),
+    ):
+        S3ObjectStorage(client=client, bucket=BUCKET).delete_original(
+            make_context(), original_key()
+        )
+
+
+def test_permanent_cleanup_rejects_foreign_key_before_any_call() -> None:
+    client = FakeS3Client()
+    with pytest.raises(ObjectStorageScopeError):
+        S3ObjectStorage(client=client, bucket=BUCKET).delete_original(
+            make_context(), original_key(OTHER_WORKSPACE_ID)
+        )
+    assert client.head_calls == client.delete_calls == client.object_head_calls == []
+
+
+def test_permanent_cleanup_rejects_still_present_object() -> None:
+    client = FakeS3Client()
+    # An acknowledged delete is insufficient if HEAD still reports an object.
+    with (
+        patch.object(client, "head_object", return_value={}),
+        pytest.raises(ObjectStorageError, match="could not be confirmed"),
+    ):
+        S3ObjectStorage(client=client, bucket=BUCKET).delete_original(
+            make_context(), original_key()
+        )
 
 
 def test_s3_readiness_checks_only_the_configured_bucket() -> None:
