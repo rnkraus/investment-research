@@ -22,6 +22,7 @@ from investment_research.api.contracts import (
     ResearchFailedEvent,
     ResearchModelOptions,
     ResearchProgressEvent,
+    ResearchRejectionDiagnostic,
     ResearchRequestInput,
     ResearchStreamEvent,
 )
@@ -31,16 +32,21 @@ from investment_research.api.contracts import (
 )
 from investment_research.api.dependencies import (
     AnswerResearchRequestServiceDependency,
+    ContainerDependency,
     WorkspaceContextDependency,
 )
+from investment_research.api.research_diagnostics import build_rejection_diagnostic
 from investment_research.infrastructure.logging import current_request_id
+from investment_research.modules.evidence.contracts import EvidenceValidationDecision
 from investment_research.modules.research.application import ResearchProviderUnavailableError
 from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
+    AnswerGenerationSource,
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
+    UnvalidatedGeneratedAnswer,
     ValidatedAnswerResult,
 )
 from investment_research.modules.research.domain import AnswerState
@@ -65,6 +71,8 @@ def get_research_models(
 
 def build_research_stream_events(
     result: ValidatedAnswerResult,
+    *,
+    diagnostic: ResearchRejectionDiagnostic | None = None,
 ) -> tuple[ResearchStreamEvent, ...]:
     """Map one validated terminal aggregate to safe public stream events."""
 
@@ -88,6 +96,7 @@ def build_research_stream_events(
                     message="answer failed evidence validation",
                 ),
                 retriable=False,
+                diagnostic=diagnostic,
             ),
         )
 
@@ -140,7 +149,12 @@ def build_research_stream_events(
 def encode_server_sent_event(event: ResearchStreamEvent) -> bytes:
     """Serialize one typed event into a UTF-8 server-sent-event frame."""
 
-    return f"event: {event.event}\ndata: {event.model_dump_json()}\n\n".encode()
+    exclude = (
+        {"diagnostic"}
+        if isinstance(event, ResearchFailedEvent) and event.diagnostic is None
+        else None
+    )
+    return f"event: {event.event}\ndata: {event.model_dump_json(exclude=exclude)}\n\n".encode()
 
 
 async def stream_research_events(
@@ -148,12 +162,16 @@ async def stream_research_events(
     context: WorkspaceContextDependency,
     retrieval_input: ResearchRetrievalInput,
     http_request_id: UUID | None,
+    *,
+    local_diagnostics_enabled: bool = False,
 ) -> AsyncGenerator[bytes]:
     """Deliver real progress while bounded synchronous research runs in a worker thread."""
 
     loop = asyncio.get_running_loop()
     events: asyncio.Queue[ResearchStreamEvent | None] = asyncio.Queue()
     research_request_id: UUID | None = None
+    selected_sources: tuple[AnswerGenerationSource, ...] = ()
+    rejection_diagnostic: ResearchRejectionDiagnostic | None = None
 
     def publish_progress(request_id: UUID, stage: ResearchProgressStage) -> None:
         nonlocal research_request_id
@@ -166,8 +184,9 @@ async def stream_research_events(
             )
 
     def publish_context(generation_input: AnswerGenerationInput) -> None:
-        nonlocal research_request_id
+        nonlocal research_request_id, selected_sources
         research_request_id = generation_input.research_request_id
+        selected_sources = generation_input.sources
         event = ResearchContextEvent(
             research_request_id=research_request_id,
             sources=generation_input.sources,
@@ -176,16 +195,34 @@ async def stream_research_events(
         with suppress(RuntimeError):
             loop.call_soon_threadsafe(events.put_nowait, event)
 
+    def capture_rejection(
+        proposal: UnvalidatedGeneratedAnswer,
+        decision: EvidenceValidationDecision,
+    ) -> None:
+        nonlocal rejection_diagnostic
+        if local_diagnostics_enabled:
+            rejection_diagnostic = build_rejection_diagnostic(
+                proposal,
+                decision,
+                selected_sources,
+                answer_model=retrieval_input.generation_model,
+                support_model=retrieval_input.support_model,
+            )
+
     async def run_research() -> None:
         try:
+            diagnostic_options = (
+                {"on_rejection": capture_rejection} if local_diagnostics_enabled else {}
+            )
             result = await run_in_threadpool(
                 service.answer,
                 context,
                 retrieval_input,
                 progress=publish_progress,
                 on_context=publish_context,
+                **diagnostic_options,
             )
-            terminal_events = build_research_stream_events(result)
+            terminal_events = build_research_stream_events(result, diagnostic=rejection_diagnostic)
         except ResearchProviderUnavailableError as error:
             terminal_events = (
                 ResearchFailedEvent(
@@ -278,6 +315,7 @@ def answer_research_request(
     request: ResearchRequestInput,
     service: AnswerResearchRequestServiceDependency,
     context: WorkspaceContextDependency,
+    container: ContainerDependency,
 ) -> StreamingResponse:
     """Stream selected source context separately from fully validated answer content."""
 
@@ -290,7 +328,13 @@ def answer_research_request(
         support_model=request.support_model,
     )
     return StreamingResponse(
-        stream_research_events(service, context, retrieval_input, current_request_id()),
+        stream_research_events(
+            service,
+            context,
+            retrieval_input,
+            current_request_id(),
+            local_diagnostics_enabled=container.settings.local_model_failure_output,
+        ),
         media_type="text/event-stream",
         headers={
             "cache-control": "private, no-store, no-transform",

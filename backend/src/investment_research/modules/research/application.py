@@ -19,6 +19,7 @@ from investment_research.modules.research.answer_validation import (
 from investment_research.modules.research.answer_validation import (
     GenerateValidatedAnswerService as GenerateValidatedAnswerService,
 )
+from investment_research.modules.research.answer_validation import RejectionDiagnostic
 from investment_research.modules.research.answer_validation import (
     StatementSupportAccountingProfile as StatementSupportAccountingProfile,
 )
@@ -67,6 +68,7 @@ class AnswerResearchRequestService:
         *,
         progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
         on_context: Callable[[AnswerGenerationInput], None] | None = None,
+        on_rejection: RejectionDiagnostic | None = None,
     ) -> ValidatedAnswerResult:
         """Return only the validated terminal result of one research request."""
 
@@ -88,6 +90,14 @@ class AnswerResearchRequestService:
                 context, retrieval_input, progress=progress
             )
         try:
+            if on_rejection is not None:
+                return generation_service.generate(
+                    context,
+                    retrieval_result,
+                    progress=progress,
+                    on_context=on_context,
+                    on_rejection=on_rejection,
+                )
             if on_context is not None:
                 return generation_service.generate(
                     context, retrieval_result, progress=progress, on_context=on_context

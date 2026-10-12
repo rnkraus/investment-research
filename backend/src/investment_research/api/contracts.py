@@ -24,6 +24,7 @@ from investment_research.modules.documents.deletion_contracts import (
     DeleteDocumentsCommand,
     DocumentDeletionState,
 )
+from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import (
     AnswerGenerationSource,
@@ -356,12 +357,53 @@ class AnswerInsufficientEvent(StreamEventBase):
     message: SafeMessage
 
 
+class RejectedEvidenceRange(StrictContract):
+    """A range in this request's already disclosed source context, not a citation."""
+
+    retrieval_candidate_id: UUID
+    start_character: int = Field(ge=0)
+    end_character: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def require_ordered_range(self) -> Self:
+        if self.end_character <= self.start_character:
+            raise ValueError("diagnostic range must be nonempty")
+        return self
+
+
+class RejectedStatementDiagnostic(StrictContract):
+    """An untrusted, rejected claim with source ranges available for local inspection."""
+
+    ordinal: int = Field(ge=0, le=7)
+    text: Annotated[str, StringConstraints(min_length=1, max_length=10_000)]
+    evidence: tuple[RejectedEvidenceRange, ...] = Field(max_length=2)
+
+
+class RejectedFindingDiagnostic(StrictContract):
+    """An application-owned failed rule, never a provider explanation."""
+
+    rule: ValidationRule
+    statement_ordinal: int | None = Field(ge=0, le=7)
+    reason: Annotated[str, StringConstraints(min_length=1, max_length=1_000)]
+
+
+class ResearchRejectionDiagnostic(StrictContract):
+    """Opt-in local debugging only; this proposal failed answer validation."""
+
+    unvalidated: Literal[True] = True
+    answer_model: ResearchModel
+    support_model: ResearchModel
+    statements: tuple[RejectedStatementDiagnostic, ...] = Field(max_length=8)
+    findings: tuple[RejectedFindingDiagnostic, ...] = Field(min_length=1, max_length=64)
+
+
 class ResearchFailedEvent(StreamEventBase):
     """Terminal event for a safely reported research failure."""
 
     event: Literal["research.failed"] = "research.failed"
     error: ErrorDetail
     retriable: bool
+    diagnostic: ResearchRejectionDiagnostic | None = None
 
 
 ResearchStreamEvent = Annotated[

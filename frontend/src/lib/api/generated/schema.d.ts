@@ -759,6 +759,44 @@ export interface components {
             readonly status: "ready" | "not_ready";
         };
         /**
+         * RejectedEvidenceRange
+         * @description A range in this request's already disclosed source context, not a citation.
+         */
+        readonly RejectedEvidenceRange: {
+            /** End Character */
+            readonly end_character: number;
+            /**
+             * Retrieval Candidate Id
+             * Format: uuid
+             */
+            readonly retrieval_candidate_id: string;
+            /** Start Character */
+            readonly start_character: number;
+        };
+        /**
+         * RejectedFindingDiagnostic
+         * @description An application-owned failed rule, never a provider explanation.
+         */
+        readonly RejectedFindingDiagnostic: {
+            /** Reason */
+            readonly reason: string;
+            readonly rule: components["schemas"]["ValidationRule"];
+            /** Statement Ordinal */
+            readonly statement_ordinal: number | null;
+        };
+        /**
+         * RejectedStatementDiagnostic
+         * @description An untrusted, rejected claim with source ranges available for local inspection.
+         */
+        readonly RejectedStatementDiagnostic: {
+            /** Evidence */
+            readonly evidence: readonly components["schemas"]["RejectedEvidenceRange"][];
+            /** Ordinal */
+            readonly ordinal: number;
+            /** Text */
+            readonly text: string;
+        };
+        /**
          * ResearchContextEvent
          * @description Ordered canonical passages selected for generation, not validated answer evidence.
          */
@@ -787,6 +825,8 @@ export interface components {
          * @description Terminal event for a safely reported research failure.
          */
         readonly ResearchFailedEvent: {
+            /** @default null */
+            readonly diagnostic: components["schemas"]["ResearchRejectionDiagnostic"] | null;
             readonly error: components["schemas"]["ErrorDetail"];
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -853,6 +893,24 @@ export interface components {
             readonly stage: "EMBEDDING_QUESTION" | "SEARCHING_SOURCES" | "SELECTING_PASSAGES" | "GENERATING_ANSWER" | "VALIDATING_EVIDENCE" | "SAVING_RESULT";
         };
         /**
+         * ResearchRejectionDiagnostic
+         * @description Opt-in local debugging only; this proposal failed answer validation.
+         */
+        readonly ResearchRejectionDiagnostic: {
+            readonly answer_model: components["schemas"]["ResearchModel"];
+            /** Findings */
+            readonly findings: readonly components["schemas"]["RejectedFindingDiagnostic"][];
+            /** Statements */
+            readonly statements: readonly components["schemas"]["RejectedStatementDiagnostic"][];
+            readonly support_model: components["schemas"]["ResearchModel"];
+            /**
+             * Unvalidated
+             * @default true
+             * @constant
+             */
+            readonly unvalidated: true;
+        };
+        /**
          * ResearchRequestContext
          * @description Explicit archive filters supplied with a research question.
          */
@@ -893,6 +951,12 @@ export interface components {
          * @enum {string}
          */
         readonly TemporalMode: "CURRENT" | "PUBLIC_KNOWLEDGE" | "PERSONAL_ARCHIVE";
+        /**
+         * ValidationRule
+         * @description Server-side evidence rules recorded by the M0.0 validator.
+         * @enum {string}
+         */
+        readonly ValidationRule: "WORKSPACE_SCOPE" | "ACTIVE_DOCUMENT_VERSION" | "TEMPORAL_ELIGIBILITY" | "RETRIEVAL_CANDIDATE" | "EXACT_SOURCE_SPAN" | "STATEMENT_SUPPORT" | "COVERAGE";
     };
     responses: never;
     parameters: never;

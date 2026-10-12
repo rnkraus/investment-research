@@ -1001,6 +1001,102 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "RejectedEvidenceRange": {
+        "additionalProperties": false,
+        "description": "A range in this request's already disclosed source context, not a citation.",
+        "properties": {
+          "end_character": {
+            "exclusiveMinimum": 0,
+            "title": "End Character",
+            "type": "integer"
+          },
+          "retrieval_candidate_id": {
+            "format": "uuid",
+            "title": "Retrieval Candidate Id",
+            "type": "string"
+          },
+          "start_character": {
+            "minimum": 0,
+            "title": "Start Character",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "retrieval_candidate_id",
+          "start_character",
+          "end_character"
+        ],
+        "title": "RejectedEvidenceRange",
+        "type": "object"
+      },
+      "RejectedFindingDiagnostic": {
+        "additionalProperties": false,
+        "description": "An application-owned failed rule, never a provider explanation.",
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/ValidationRule"
+          },
+          "statement_ordinal": {
+            "anyOf": [
+              {
+                "maximum": 7,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statement Ordinal"
+          }
+        },
+        "required": [
+          "rule",
+          "statement_ordinal",
+          "reason"
+        ],
+        "title": "RejectedFindingDiagnostic",
+        "type": "object"
+      },
+      "RejectedStatementDiagnostic": {
+        "additionalProperties": false,
+        "description": "An untrusted, rejected claim with source ranges available for local inspection.",
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedEvidenceRange"
+            },
+            "maxItems": 2,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "ordinal": {
+            "maximum": 7,
+            "minimum": 0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ordinal",
+          "text",
+          "evidence"
+        ],
+        "title": "RejectedStatementDiagnostic",
+        "type": "object"
+      },
       "ResearchContextEvent": {
         "additionalProperties": false,
         "description": "Ordered canonical passages selected for generation, not validated answer evidence.",
@@ -1042,6 +1138,17 @@
         "additionalProperties": false,
         "description": "Terminal event for a safely reported research failure.",
         "properties": {
+          "diagnostic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResearchRejectionDiagnostic"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "error": {
             "$ref": "#/components/schemas/ErrorDetail"
           },
@@ -1154,6 +1261,49 @@
           "stage"
         ],
         "title": "ResearchProgressEvent",
+        "type": "object"
+      },
+      "ResearchRejectionDiagnostic": {
+        "additionalProperties": false,
+        "description": "Opt-in local debugging only; this proposal failed answer validation.",
+        "properties": {
+          "answer_model": {
+            "$ref": "#/components/schemas/ResearchModel"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedFindingDiagnostic"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Findings",
+            "type": "array"
+          },
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedStatementDiagnostic"
+            },
+            "maxItems": 8,
+            "title": "Statements",
+            "type": "array"
+          },
+          "support_model": {
+            "$ref": "#/components/schemas/ResearchModel"
+          },
+          "unvalidated": {
+            "const": true,
+            "default": true,
+            "title": "Unvalidated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "answer_model",
+          "support_model",
+          "statements",
+          "findings"
+        ],
+        "title": "ResearchRejectionDiagnostic",
         "type": "object"
       },
       "ResearchRequestContext": {
@@ -1272,6 +1422,20 @@
           "PERSONAL_ARCHIVE"
         ],
         "title": "TemporalMode",
+        "type": "string"
+      },
+      "ValidationRule": {
+        "description": "Server-side evidence rules recorded by the M0.0 validator.",
+        "enum": [
+          "WORKSPACE_SCOPE",
+          "ACTIVE_DOCUMENT_VERSION",
+          "TEMPORAL_ELIGIBILITY",
+          "RETRIEVAL_CANDIDATE",
+          "EXACT_SOURCE_SPAN",
+          "STATEMENT_SUPPORT",
+          "COVERAGE"
+        ],
+        "title": "ValidationRule",
         "type": "string"
       }
     }

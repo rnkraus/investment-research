@@ -318,6 +318,7 @@ class GenerateValidatedAnswerService:
         *,
         progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
         on_context: Callable[[AnswerGenerationInput], None] | None = None,
+        on_rejection: RejectionDiagnostic | None = None,
     ) -> ValidatedAnswerResult:
         """Persist only the terminal aggregate derived from a complete validation decision."""
 
@@ -445,8 +446,11 @@ class GenerateValidatedAnswerService:
                 result.validations,
             )
 
-        if not decision.accepted and self._rejection_diagnostic is not None:
-            self._rejection_diagnostic(generated_answer, decision)
+        if not decision.accepted:
+            if self._rejection_diagnostic is not None:
+                self._rejection_diagnostic(generated_answer, decision)
+            if on_rejection is not None:
+                on_rejection(generated_answer, decision)
         return result
 
     def _load_source_snapshot(

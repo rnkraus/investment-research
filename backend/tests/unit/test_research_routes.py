@@ -23,6 +23,10 @@ from investment_research.api.routes.research import stream_research_events
 from investment_research.infrastructure.logging import configure_logging
 from investment_research.main import create_app
 from investment_research.modules.documents.domain import SourceLocatorKind
+from investment_research.modules.evidence.contracts import (
+    EvidenceValidationDecision,
+    ValidationFinding,
+)
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceRelationship,
@@ -31,6 +35,7 @@ from investment_research.modules.evidence.domain import (
     ValidationRule,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.research.answer_validation import RejectionDiagnostic
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     ResearchProviderUnavailableError,
@@ -45,6 +50,9 @@ from investment_research.modules.research.contracts import (
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
+    UnvalidatedEvidenceReference,
+    UnvalidatedGeneratedAnswer,
+    UnvalidatedGeneratedStatement,
     ValidatedAnswerResult,
 )
 from investment_research.modules.research.domain import (
@@ -87,6 +95,7 @@ class FakeAnswerResearchRequestService:
         self.error: Exception | None = None
         self.progress_stages: tuple[ResearchProgressStage, ...] = ()
         self.selected_context: AnswerGenerationInput | None = None
+        self.rejection: tuple[UnvalidatedGeneratedAnswer, EvidenceValidationDecision] | None = None
         self.calls: list[tuple[WorkspaceContext, ResearchRetrievalInput]] = []
         self.model_services: dict[tuple[ResearchModel, ResearchModel], object] | None = None
 
@@ -97,6 +106,7 @@ class FakeAnswerResearchRequestService:
         *,
         progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
         on_context: Callable[[AnswerGenerationInput], None] | None = None,
+        on_rejection: RejectionDiagnostic | None = None,
     ) -> ValidatedAnswerResult:
         """Record the call before returning or raising the configured outcome."""
 
@@ -108,6 +118,8 @@ class FakeAnswerResearchRequestService:
                 progress(REQUEST_ID, stage)
         if self.error is not None:
             raise self.error
+        if on_rejection is not None and self.rejection is not None:
+            on_rejection(*self.rejection)
         return self.result
 
 
@@ -284,6 +296,85 @@ def test_research_route_exposes_selected_context_separately_from_answer(
         assert not any(event["event_name"] == "answer.statement" for event in events)
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("rejected", [False, True])
+def test_rejection_details_require_local_opt_in_and_a_rejected_terminal_result(
+    enabled: bool, rejected: bool
+) -> None:
+    service = FakeAnswerResearchRequestService()
+    service.result = make_result(state=AnswerState.REJECTED if rejected else AnswerState.STREAMED)
+    source = AnswerGenerationSource(
+        retrieval_candidate_id=RUN_ID,
+        chunk_id=BLOCK_ID,
+        document_id=DOCUMENT_ID,
+        document_version_id=VERSION_ID,
+        structure_block_id=BLOCK_ID,
+        source_locator_kind=SourceLocatorKind.PDF_PAGE,
+        page_number=2,
+        text=EVIDENCE_TEXT,
+    )
+    service.selected_context = AnswerGenerationInput(
+        research_request_id=REQUEST_ID, question=QUESTION, sources=(source,)
+    )
+    service.rejection = (
+        UnvalidatedGeneratedAnswer(
+            coverage_status=CoverageStatus.COMPLETE,
+            rendered_text=STATEMENT,
+            statements=(
+                UnvalidatedGeneratedStatement(
+                    text=STATEMENT,
+                    evidence=(
+                        UnvalidatedEvidenceReference(
+                            retrieval_candidate_id=RUN_ID,
+                            start_character=0,
+                            end_character=len(EVIDENCE_TEXT),
+                            exact_text=EVIDENCE_TEXT,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        EvidenceValidationDecision(
+            accepted=False,
+            coverage_status=None,
+            statements=(),
+            findings=(
+                ValidationFinding(
+                    rule=ValidationRule.STATEMENT_SUPPORT,
+                    statement_ordinal=0,
+                    passed=False,
+                    reason="Claim is not fully supported.",
+                ),
+            ),
+        ),
+    )
+
+    async def collect() -> str:
+        frames = [
+            frame.decode()
+            async for frame in stream_research_events(
+                cast(AnswerResearchRequestService, service),
+                make_context(),
+                ResearchRetrievalInput(question=QUESTION),
+                None,
+                local_diagnostics_enabled=enabled,
+            )
+        ]
+        return "".join(frames)
+
+    events = parse_server_sent_events(asyncio.run(collect()))
+    terminal = events[-1]["payload"]
+    if enabled and rejected:
+        assert terminal["diagnostic"]["unvalidated"] is True
+        assert terminal["diagnostic"]["statements"][0]["text"] == STATEMENT
+        assert terminal["diagnostic"]["statements"][0]["evidence"][0]["end_character"] == len(
+            EVIDENCE_TEXT
+        )
+        assert not any(event["event_name"] == "answer.statement" for event in events)
+    else:
+        assert "diagnostic" not in terminal
+
+
 def test_research_route_streams_only_validated_statement_and_citation(
     research_client: tuple[TestClient, FakeAnswerResearchRequestService],
 ) -> None:
@@ -424,6 +515,7 @@ def test_research_progress_arrives_while_service_is_still_running() -> None:
             *,
             progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
             on_context: Callable[[AnswerGenerationInput], None] | None = None,
+            on_rejection: RejectionDiagnostic | None = None,
         ) -> ValidatedAnswerResult:
             assert progress is not None
             progress(REQUEST_ID, "GENERATING_ANSWER")
