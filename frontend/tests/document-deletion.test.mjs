@@ -10,6 +10,7 @@ import {
   acceptDeletionBatch,
   beginDeletionBatch,
   isDeletionComplete,
+  monitorDeletionBatch,
   refreshDeletionBatch,
   waitForDeletionCheck,
 } from "../src/features/archive/document-deletion.ts";
@@ -295,4 +296,202 @@ test("cancellation stops status reads and the scheduled next check", async () =>
   const waiting = waitForDeletionCheck(next.signal);
   next.abort();
   await assert.rejects(waiting, { name: "AbortError" });
+});
+
+function trackingClock() {
+  let elapsed = 0;
+  return {
+    now: () => elapsed,
+    async wait(signal, delayMs) {
+      signal.throwIfAborted();
+      assert.ok(delayMs > 0 && delayMs <= 5_000);
+      elapsed += delayMs;
+    },
+    advance(delayMs) {
+      elapsed += delayMs;
+    },
+  };
+}
+
+test("automatic tracking continues beyond four rounds and stops on confirmed completion", async () => {
+  const clock = trackingClock();
+  const seen = [];
+  const updates = [];
+  let secondReads = 0;
+  const result = await monitorDeletionBatch(
+    beginDeletionBatch([FIRST, SECOND]),
+    {
+      async getDocumentDeletion(id) {
+        seen.push(id);
+        if (id === FIRST) return receipt(id, "COMPLETED");
+        secondReads += 1;
+        return receipt(id, secondReads === 6 ? "COMPLETED" : "PENDING");
+      },
+    },
+    new AbortController().signal,
+    (batch) => updates.push(batch),
+    clock,
+  );
+  assert.equal(secondReads, 6);
+  assert.equal(seen.filter((id) => id === FIRST).length, 1);
+  assert.equal(updates.length, 6);
+  assert.equal(clock.now(), 30_000);
+  assert.equal(isDeletionComplete(result), true);
+});
+
+test("five-minute tracking deadline preserves pending counts and allows a later manual check", async () => {
+  const clock = trackingClock();
+  let calls = 0;
+  const result = await monitorDeletionBatch(
+    beginDeletionBatch([FIRST]),
+    {
+      async getDocumentDeletion(id) {
+        calls += 1;
+        return receipt(id);
+      },
+    },
+    new AbortController().signal,
+    () => {},
+    clock,
+  );
+  assert.equal(clock.now(), 300_000);
+  assert.equal(calls, 59);
+  assert.equal(isDeletionComplete(result), false);
+  assert.deepEqual(result.receipts, [receipt()]);
+  const refreshed = await refreshDeletionBatch(
+    result,
+    {
+      async getDocumentDeletion(id) {
+        return receipt(id, "COMPLETED");
+      },
+    },
+    new AbortController().signal,
+  );
+  assert.equal(isDeletionComplete(refreshed), true);
+});
+
+test("slow status reads count toward the same automatic tracking budget", async () => {
+  const clock = trackingClock();
+  let calls = 0;
+  await monitorDeletionBatch(
+    beginDeletionBatch([FIRST]),
+    {
+      async getDocumentDeletion(id) {
+        calls += 1;
+        clock.advance(8_000);
+        return receipt(id);
+      },
+    },
+    new AbortController().signal,
+    () => {},
+    clock,
+  );
+  assert.equal(calls, 23);
+  assert.equal(clock.now(), 300_000);
+});
+
+test("the overall tracking deadline also cancels an in-flight read", async (t) => {
+  const deadline = new AbortController();
+  t.mock.method(AbortSignal, "timeout", (milliseconds) => {
+    assert.ok(milliseconds === 300_000 || milliseconds === 10_000);
+    return milliseconds === 300_000
+      ? deadline.signal
+      : new AbortController().signal;
+  });
+  const batch = acceptDeletionBatch(
+    beginDeletionBatch([FIRST]),
+    accepted({ items: [receipt()] }),
+  );
+  let calls = 0;
+  const result = await monitorDeletionBatch(
+    batch,
+    {
+      async getDocumentDeletion(id, signal) {
+        calls += 1;
+        deadline.abort(new DOMException("Tracking deadline", "TimeoutError"));
+        assert.equal(signal.aborted, true);
+        signal.throwIfAborted();
+      },
+    },
+    new AbortController().signal,
+    () => assert.fail("expired reads must not update the count"),
+    trackingClock(),
+  );
+  assert.equal(calls, 1);
+  assert.equal(result, batch);
+  assert.equal(isDeletionComplete(result), false);
+});
+
+test("temporary read failures do not end tracking or imply completed deletion", async () => {
+  const clock = trackingClock();
+  const updates = [];
+  let calls = 0;
+  const result = await monitorDeletionBatch(
+    beginDeletionBatch([FIRST]),
+    {
+      async getDocumentDeletion(id) {
+        calls += 1;
+        if (calls === 1) throw new TypeError("offline");
+        return receipt(id, "COMPLETED");
+      },
+    },
+    new AbortController().signal,
+    (batch) => updates.push(batch),
+    clock,
+  );
+  assert.deepEqual(updates[0].unavailableDocumentIds, [FIRST]);
+  assert.equal(isDeletionComplete(updates[0]), false);
+  assert.equal(isDeletionComplete(result), true);
+  assert.equal(calls, 2);
+});
+
+test("cancelling background tracking prevents further reads and state updates", async () => {
+  const controller = new AbortController();
+  const clock = trackingClock();
+  let reads = 0;
+  let updates = 0;
+  await assert.rejects(
+    monitorDeletionBatch(
+      beginDeletionBatch([FIRST]),
+      {
+        async getDocumentDeletion(id) {
+          reads += 1;
+          return receipt(id);
+        },
+      },
+      controller.signal,
+      () => {
+        updates += 1;
+        controller.abort();
+      },
+      clock,
+    ),
+    { name: "AbortError" },
+  );
+  assert.equal(reads, 1);
+  assert.equal(updates, 1);
+});
+
+test("already completed batches never schedule automatic reads", async () => {
+  const batch = acceptDeletionBatch(
+    beginDeletionBatch([FIRST]),
+    accepted({ items: [receipt(FIRST, "COMPLETED")] }),
+  );
+  const result = await monitorDeletionBatch(
+    batch,
+    {
+      async getDocumentDeletion() {
+        assert.fail("must not read");
+      },
+    },
+    new AbortController().signal,
+    () => assert.fail("must not update"),
+    {
+      now: () => 0,
+      async wait() {
+        assert.fail("must not wait");
+      },
+    },
+  );
+  assert.equal(result, batch);
 });

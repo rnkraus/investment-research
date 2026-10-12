@@ -151,6 +151,10 @@ test("bulk deletion requires confirmation, clears stale answers, and waits for c
   await expect(
     page.getByRole("button", { name: "Close deletion status", exact: true }),
   ).toHaveCount(0);
+  await expect(
+    page.getByText(/Status updates automatically every five seconds/),
+  ).toBeVisible();
+  await expect(ask).toBeEnabled();
   complete = true;
   await expect(
     page.getByText("Confirmed cleanup: 2 / 2", { exact: true }),
@@ -203,6 +207,68 @@ test("an uncertain submission checks receipts instead of repeating the destructi
   ).toBeVisible();
   await expect(
     page.getByText("Unstructured internal response must not be displayed"),
+  ).toHaveCount(0);
+  expect(submissions).toBe(1);
+});
+
+test("expired automatic tracking is explicit and a manual check refreshes the stale count", async ({
+  page,
+  context,
+}) => {
+  await page.clock.install();
+  let admitted = false;
+  let complete = false;
+  let submissions = 0;
+  await mockArchive(context, () => admitted);
+  await context.route("**/api/v1/documents/deletions", (route) => {
+    admitted = true;
+    submissions += 1;
+    return route.fulfill({
+      status: 202,
+      json: {
+        items: [receipt(FIRST, false)],
+        dispatch_pending_document_ids: [],
+      },
+    });
+  });
+  await context.route(`**/api/v1/documents/${FIRST}/deletion`, (route) =>
+    route.fulfill({ json: receipt(FIRST, complete) }),
+  );
+  await page.goto("/");
+  await page
+    .getByRole("checkbox", {
+      name: "Select document: Synthetic searchable source",
+      exact: true,
+    })
+    .check();
+  await page
+    .getByRole("button", { name: "Delete selected", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Permanently delete", exact: true })
+    .click();
+  await expect(
+    page.getByText(/Status updates automatically every five seconds/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Ask the archive", exact: true }),
+  ).toBeEnabled();
+  await page.clock.fastForward(300_001);
+  await expect(
+    page.getByText(/Automatic status updates have stopped/),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Confirmed cleanup: 0 / 1", { exact: true }),
+  ).toBeVisible();
+  complete = true;
+  await page
+    .getByRole("button", { name: "Check deletion status", exact: true })
+    .click();
+  await expect(
+    page.getByText("Confirmed cleanup: 1 / 1", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Automatic status updates have stopped/),
   ).toHaveCount(0);
   expect(submissions).toBe(1);
 });
