@@ -61,7 +61,6 @@ from investment_research.infrastructure.generation.openai import (
     M1_ANSWER_GENERATION_CONFIG_VERSION,
     M1_ANSWER_GENERATOR_VERSION,
     M1_ANSWER_PROMPT_VERSION,
-    OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS,
     OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
     OPENAI_ANSWER_MODEL,
@@ -609,6 +608,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 model=OPENAI_ANSWER_MODEL,
                 operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
                 max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+                input_overhead_limit=settings.rag.generation.input_overhead_limit,
                 local_validation_output=(
                     _local_model_failure_sink("answer", OPENAI_ANSWER_MODEL)
                     if settings.local_model_failure_output
@@ -633,6 +633,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 model=ResearchModel.LUNA,
                 operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
                 max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+                input_overhead_limit=settings.rag.generation.input_overhead_limit,
                 local_validation_output=(
                     _local_model_failure_sink("answer", ResearchModel.LUNA)
                     if settings.local_model_failure_output
@@ -710,7 +711,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         generation_accounting = AnswerGenerationAccountingProfile(
             provider="openai",
             model=OPENAI_ANSWER_MODEL,
-            input_overhead_units=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+            input_overhead_units=settings.rag.generation.input_overhead_limit,
             maximum_output_units=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
             cost_policy=ProviderCostPolicy(
                 input_micro_usd_per_million_units=(
@@ -844,7 +845,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     generation_accounting=AnswerGenerationAccountingProfile(
                         provider="openai",
                         model=answer_model,
-                        input_overhead_units=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+                        input_overhead_units=settings.rag.generation.input_overhead_limit,
                         maximum_output_units=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
                         cost_policy=ProviderCostPolicy(
                             input_micro_usd_per_million_units=(

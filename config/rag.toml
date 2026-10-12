@@ -9,3 +9,8 @@ dense_candidate_limit = 20 # 1..20: vector-search candidates
 [context]
 chunk_limit = 8 # 1..32: maximum unique chunks passed to the answer model
 character_limit = 24000 # 1..24000: combined Unicode code points, not tokens
+
+[generation]
+# Conservative UTF-8-byte allowance for prompt, schema, and serialized metadata, not tokens.
+# Used by both source-unit preflight and answer cost reservation; monthly budgets stay unchanged.
+input_overhead_limit = 18000 # 16000..18000; question and source text are reserved separately

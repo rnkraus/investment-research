@@ -12,6 +12,9 @@ from investment_research.modules.search.contracts import (
 )
 from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
+DEFAULT_GENERATION_INPUT_OVERHEAD_LIMIT = 16_000
+MAX_GENERATION_INPUT_OVERHEAD_LIMIT = 18_000
+
 
 class StrictRagSettings(BaseModel):
     """Reject unknown keys, booleans, strings, and coercion of numeric settings."""
@@ -33,11 +36,22 @@ class ContextTuning(StrictRagSettings):
     character_limit: int = Field(default=M1_CONTEXT_CHARACTER_LIMIT, ge=1, le=24_000)
 
 
+class GenerationTuning(StrictRagSettings):
+    """Share the conservative metadata ceiling between preflight and cost reservation."""
+
+    input_overhead_limit: int = Field(
+        default=DEFAULT_GENERATION_INPUT_OVERHEAD_LIMIT,
+        ge=DEFAULT_GENERATION_INPUT_OVERHEAD_LIMIT,
+        le=MAX_GENERATION_INPUT_OVERHEAD_LIMIT,
+    )
+
+
 class RagSettings(StrictRagSettings):
     """Immutable startup snapshot; programmatic tests retain frozen defaults."""
 
     retrieval: RetrievalTuning = Field(default_factory=RetrievalTuning)
     context: ContextTuning = Field(default_factory=ContextTuning)
+    generation: GenerationTuning = Field(default_factory=GenerationTuning)
 
 
 class RagConfigurationError(ValueError):
@@ -56,6 +70,7 @@ def load_rag_settings(path: Path) -> RagSettings:
     required = {
         "retrieval": {"lexical_candidate_limit", "dense_candidate_limit"},
         "context": {"chunk_limit", "character_limit"},
+        "generation": {"input_overhead_limit"},
     }
     for section, keys in required.items():
         content = values.get(section)

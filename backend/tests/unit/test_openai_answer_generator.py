@@ -919,7 +919,10 @@ def test_factory_disables_sdk_retries_and_close_releases_client(
 
     monkeypatch.setattr(openai_module, "OpenAI", recording_constructor)
 
-    generator = create_openai_answer_generator(api_key="synthetic-test-key")
+    generator = create_openai_answer_generator(
+        api_key="synthetic-test-key", input_overhead_limit=18_000
+    )
+    assert generator.input_overhead_limit == 18_000
     generator.close()
 
     assert captured == {

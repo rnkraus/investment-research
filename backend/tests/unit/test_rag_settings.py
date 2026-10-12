@@ -15,10 +15,12 @@ dense_candidate_limit = 16
 [context]
 chunk_limit = 16
 character_limit = 12000
+[generation]
+input_overhead_limit = 18000
 """
 
 
-def test_loads_all_four_tuning_values(tmp_path: Path) -> None:
+def test_loads_all_five_tuning_values(tmp_path: Path) -> None:
     path = tmp_path / "rag.toml"
     path.write_text(TOML, encoding="utf-8")
     settings = load_rag_settings(path)
@@ -26,6 +28,7 @@ def test_loads_all_four_tuning_values(tmp_path: Path) -> None:
     assert settings.retrieval.dense_candidate_limit == 16
     assert settings.context.chunk_limit == 16
     assert settings.context.character_limit == 12_000
+    assert settings.generation.input_overhead_limit == 18_000
 
 
 def test_programmatic_settings_keep_frozen_defaults() -> None:
@@ -34,6 +37,12 @@ def test_programmatic_settings_keep_frozen_defaults() -> None:
     assert settings.retrieval.dense_candidate_limit == 20
     assert settings.context.chunk_limit == 8
     assert settings.context.character_limit == 24_000
+    assert settings.generation.input_overhead_limit == 16_000
+
+
+def test_repository_config_has_a_valid_live_overhead() -> None:
+    path = Path(__file__).resolve().parents[3] / "config" / "rag.toml"
+    assert 16_000 <= load_rag_settings(path).generation.input_overhead_limit <= 18_000
 
 
 @pytest.mark.parametrize(
@@ -48,6 +57,13 @@ def test_programmatic_settings_keep_frozen_defaults() -> None:
         ("chunk_limit = 16", "chunk_limit = 16.0"),
         ("character_limit = 12000", "character_limit = 24001"),
         ("character_limit = 12000", "character_limit = 0"),
+        ("input_overhead_limit = 18000", "input_overhead_limit = 18001"),
+        ("input_overhead_limit = 18000", "input_overhead_limit = 15999"),
+        ("input_overhead_limit = 18000", "input_overhead_limit = true"),
+        ("input_overhead_limit = 18000", 'input_overhead_limit = "18000"'),
+        ("input_overhead_limit = 18000", "input_overhead_limit = 18000.0"),
+        ("input_overhead_limit = 18000", "input_overhead_units = 18000"),
+        ("[generation]\ninput_overhead_limit = 18000", ""),
         ("chunk_limit = 16", "chunks = 16"),
         ("[context]", "[contex]"),
         ("character_limit = 12000", 'character_limit = 12000\napi_key = "private-test-marker"'),

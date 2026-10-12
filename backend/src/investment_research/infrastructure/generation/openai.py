@@ -38,12 +38,16 @@ from investment_research.modules.research.ports import (
     AnswerGenerationProviderRefusalError,
     AnswerGenerationProviderTransientError,
 )
+from investment_research.rag_settings import (
+    DEFAULT_GENERATION_INPUT_OVERHEAD_LIMIT,
+    MAX_GENERATION_INPUT_OVERHEAD_LIMIT,
+)
 
 OPENAI_ANSWER_MODEL = "gpt-5.6-terra"
 logger = logging.getLogger(__name__)
 OPENAI_ANSWER_TIMEOUT_SECONDS = 60.0
 OPENAI_ANSWER_MAX_OUTPUT_TOKENS = 2_000
-OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS = 16_000
+OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS = DEFAULT_GENERATION_INPUT_OVERHEAD_LIMIT
 OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS = 2_000_000
 OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS = 12_000_000
 M1_ANSWER_GENERATOR_VERSION = "openai-responses-structured-v2"
@@ -167,11 +171,12 @@ class OpenAIAnswerGenerator:
     model: str = OPENAI_ANSWER_MODEL
     operation_timeout_seconds: float = OPENAI_ANSWER_TIMEOUT_SECONDS
     max_output_tokens: int = OPENAI_ANSWER_MAX_OUTPUT_TOKENS
+    input_overhead_limit: int = OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS
     local_validation_output: Callable[[str], None] | None = None
     local_proposal_output: Callable[[str], None] | None = None
 
     def __post_init__(self) -> None:
-        """Reject adapter settings outside the frozen M1 answer profile."""
+        """Reject adapter settings outside the reviewed answer bounds."""
 
         if self.model not in ResearchModel:
             raise ValueError("answer model must be an allowlisted research model")
@@ -179,6 +184,13 @@ class OpenAIAnswerGenerator:
             raise ValueError("OpenAI answer timeout must be between 0 and 60 seconds")
         if not 1 <= self.max_output_tokens <= OPENAI_ANSWER_MAX_OUTPUT_TOKENS:
             raise ValueError("OpenAI answer output must be between 1 and 2000 tokens")
+        if (
+            type(self.input_overhead_limit) is not int
+            or not DEFAULT_GENERATION_INPUT_OVERHEAD_LIMIT
+            <= self.input_overhead_limit
+            <= MAX_GENERATION_INPUT_OVERHEAD_LIMIT
+        ):
+            raise ValueError("OpenAI answer input overhead must be between 16000 and 18000 units")
 
     def generate(self, generation_input: AnswerGenerationInput) -> AnswerGenerationResult:
         """Return one schema-valid proposal and usage or raise a safe provider error."""
@@ -473,6 +485,7 @@ def create_openai_answer_generator(
     model: str = OPENAI_ANSWER_MODEL,
     operation_timeout_seconds: float = OPENAI_ANSWER_TIMEOUT_SECONDS,
     max_output_tokens: int = OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+    input_overhead_limit: int = OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     local_validation_output: Callable[[str], None] | None = None,
     local_proposal_output: Callable[[str], None] | None = None,
 ) -> OpenAIAnswerGenerator:
@@ -490,6 +503,7 @@ def create_openai_answer_generator(
         model=model,
         operation_timeout_seconds=operation_timeout_seconds,
         max_output_tokens=max_output_tokens,
+        input_overhead_limit=input_overhead_limit,
         local_validation_output=local_validation_output,
         local_proposal_output=local_proposal_output,
     )

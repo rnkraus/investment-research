@@ -38,7 +38,7 @@ from investment_research.modules.research.domain import CoverageStatus, Statemen
 
 M1_5_CITABLE_ANSWER_GENERATOR_VERSION = "openai-responses-citable-units-v3"
 M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v7"
-# Leave room inside the existing reservation for request framing, without raising its ceiling.
+# Leave dedicated margins inside the configured reservation for framing and schema expansion.
 _REQUEST_FRAMING_OVERHEAD_UNITS = 512
 _STRICT_SCHEMA_OVERHEAD_UNITS = 512
 
@@ -239,13 +239,13 @@ class OpenAICitableUnitAnswerGenerator(OpenAIAnswerGenerator):
             + _REQUEST_FRAMING_OVERHEAD_UNITS
             + _STRICT_SCHEMA_OVERHEAD_UNITS
         )
-        if overhead > OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS:
+        if overhead > self.input_overhead_limit:
             raise CitableUnitLimitError(
                 "source-unit metadata exceeds the input reservation",
                 details=CitableUnitLimitDetails(
                     kind="input_metadata",
                     observed=overhead,
-                    limit=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
+                    limit=self.input_overhead_limit,
                 ),
             )
         return schema
@@ -337,6 +337,7 @@ def create_openai_citable_unit_answer_generator(
     model: str = OPENAI_ANSWER_MODEL,
     operation_timeout_seconds: float = OPENAI_ANSWER_TIMEOUT_SECONDS,
     max_output_tokens: int = OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+    input_overhead_limit: int = OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     local_validation_output: Callable[[str], None] | None = None,
     local_proposal_output: Callable[[str], None] | None = None,
 ) -> OpenAICitableUnitAnswerGenerator:
@@ -349,6 +350,7 @@ def create_openai_citable_unit_answer_generator(
         model=model,
         operation_timeout_seconds=operation_timeout_seconds,
         max_output_tokens=max_output_tokens,
+        input_overhead_limit=input_overhead_limit,
         local_validation_output=local_validation_output,
         local_proposal_output=local_proposal_output,
     )
