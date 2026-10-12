@@ -155,7 +155,8 @@ Queued (`CAPTURED`), Text extracted (`LEXICAL_READY`), Failed, and sources witho
 snapshot can be selected for deletion, but research still requires every selected source to be
 Searchable. Parsing and Indexing remain unselectable. The catalog does not expose lease details:
 the backend rechecks every processing run at admission, accepts unclaimed queued work and completed
-lexical-only output, and rejects the entire batch if parsing or dense indexing has already started.
+Text extracted output without a lease regardless of embedding/index configuration, and rejects the
+entire batch if parsing or unfinished dense indexing is still in progress.
 Even an expired lease does not prove that external work stopped. Refresh before trying a rejected
 selection again; this feature does not cancel a running worker.
 

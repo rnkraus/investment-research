@@ -33,8 +33,11 @@ only part of that batch. Never use a bucket-wide or namespace-wide delete.
 **Owner-requested waiting-source extension (2026-10-12):** An unclaimed `CAPTURED` run is deletable:
 its canonical state requires zero attempts, no start time, and no lease. Admission locks the document;
 the existing source-write guard serializes a competing claim and rejects a delayed claim after
-exclusion, before processing can open storage or invoke the parser. Completed lexical-only
-`LEXICAL_READY` runs remain deletable. A leased `LEXICAL_READY`, `PARSING`, or `INDEXING` run still
+exclusion, before processing can open storage or invoke the parser. Completed `LEXICAL_READY` runs
+with no lease are deletable regardless of their embedding/index configuration, including historical
+configurations. Configuration labels are not proof of active execution; completion and absent lease
+metadata are required. Exact deterministic vectors are still purged for configurations other than
+the current disabled-embedding sentinel. A leased `LEXICAL_READY`, `PARSING`, or `INDEXING` run still
 rejects the entire batch, even if its lease expired: expiry alone does not prove external work has
 stopped. This is not active-worker cancellation or stale-run recovery.
 
@@ -109,7 +112,7 @@ retries pending jobs. Status snapshots never expose source text or provider/stor
 The website now implements above-catalog multi-document confirmation, honest cleanup status,
 bounded receipt reads, and explicit same-batch retry. Failed or unprocessed sources are deletable
 but never admitted to research. Queued and Text extracted sources are also selectable for deletion;
-the backend rejects Text extracted if dense processing has not completed. Parsing and Indexing
+the backend rejects Text extracted if its run is unfinished or still owns a lease. Parsing and Indexing
 remain unselectable. A deletion attempt clears
 the current answer view and refreshes the catalog, including uncertain commit outcomes. Tracking
 is page-local and the reload limitation is shown explicitly; accepted worker cleanup continues.
@@ -151,3 +154,12 @@ purge, delayed-claim fencing, competing claim/admission in both lock orders, who
 and refusal of started work even with expired leases. Frontend format, lint, typing, contract checks,
 and 83 deterministic tests passed. Additional mocked browser cases were type-checked, not executed
 locally. No production build, live provider deletion, or normal archive purge was performed.
+
+Historical completed-source correction (2026-10-12): deletion admission now checks completion and
+absent lease metadata instead of requiring the current disabled-embedding configuration label.
+Backend formatting, lint, typing, and 2,093 unit tests passed; the changed integration module also
+passed typing with the application sources. The isolated PostgreSQL gate passed migration cycling,
+schema checks, and 229 integration tests; seven separate SeaweedFS tests were skipped. Regressions
+prove complete historical-source/answer cleanup, exact vector targets, idempotency, and stale-write
+rejection while leased work remains protected. Frontend documentation formatting passed. No normal
+archive deletion, live provider cleanup, browser, or production build was performed for this fix.

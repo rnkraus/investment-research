@@ -110,9 +110,9 @@ class PostgresDocumentDeletionRepository:
                     ),
                     and_(
                         ProcessingRunRow.state == ProcessingState.LEXICAL_READY,
-                        ProcessingRunRow.embedding_config_version
-                        == M0_DISABLED_EMBEDDING_CONFIG_VERSION,
                         ProcessingRunRow.completed_at.is_not(None),
+                        ProcessingRunRow.lease_id.is_(None),
+                        ProcessingRunRow.lease_expires_at.is_(None),
                     ),
                 ),
             )
