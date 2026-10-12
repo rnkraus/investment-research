@@ -314,7 +314,7 @@ def test_citable_runner_preserves_accounting_coverage_and_citation_readback(
     assert report.summary.conflict_coverage_match_count == report.summary.conflict_match_count
     assert (
         report.admission_plan.configuration.answer_prompt_version
-        == "m1-5-citable-units-en-answer-prompt-v6"
+        == "m1-5-citable-units-en-answer-prompt-v7"
     )
     assert report.reserved_cost_micro_usd <= plan.maximum_spend_micro_usd
     assert all(record.usage_state == "REPORTED" for record in report.provider_calls)

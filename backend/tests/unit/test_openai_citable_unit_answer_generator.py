@@ -421,6 +421,27 @@ def test_focused_prompt_preserves_qualifications_and_needed_attribution(
     assert len(client.responses.calls) == 1
 
 
+@pytest.mark.parametrize("model", list(ResearchModel))
+def test_prompt_requires_one_claim_supported_by_its_selected_units(model: ResearchModel) -> None:
+    generation_input = make_input()
+    generator, client = make_generator(generation_input, model=model)
+    client.responses.overrides["model"] = model.value
+
+    generator.generate(generation_input)
+
+    instructions = cast(str, client.responses.calls[0]["instructions"])
+    # Instruction delivery is deterministic; live model adherence still needs evaluation.
+    assert "one independently verifiable factual claim per statement" in instructions
+    assert "Split distinct capabilities,\nactivities, or plans" in instructions
+    assert "that statement's own selected units" in instructions
+    assert "omit unsupported details, even if typical" in instructions
+    assert "Do not add facts in rendered_text" in instructions
+    assert "Prioritize within eight statements rather than bundle claims" in instructions
+    assert "Select the supporting units before composing each statement" in instructions
+    assert "Retain uncertainty, conditions, and time scope" in instructions
+    assert len(client.responses.calls) == 1
+
+
 def test_statement_schema_describes_independent_claims_without_a_word_blacklist() -> None:
     generation_input = make_input(text="Harbor Instruments reports that it has enough staff.")
     payload = make_payload(generation_input)
@@ -692,8 +713,8 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v3"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v6"
-    assert "citable-units-en-v6" in profile.generation_config_version
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v7"
+    assert "citable-units-en-v7" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v2"
 
 
