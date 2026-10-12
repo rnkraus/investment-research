@@ -4,7 +4,11 @@ const FIRST = "10000000-0000-4000-8000-000000000001";
 const SECOND = "10000000-0000-4000-8000-000000000002";
 const VERSION = "10000000-0000-4000-8000-000000000099";
 
-function document(id: string, title: string, state: "SEARCHABLE" | "FAILED") {
+function document(
+  id: string,
+  title: string,
+  state: "SEARCHABLE" | "FAILED" | "CAPTURED" | "LEXICAL_READY",
+) {
   return {
     document_id: id,
     document_version_id: VERSION,
@@ -36,7 +40,14 @@ function receipt(id: string, complete: boolean) {
   };
 }
 
-async function mockArchive(context: BrowserContext, excluded: () => boolean) {
+async function mockArchive(
+  context: BrowserContext,
+  excluded: () => boolean,
+  documents = [
+    document(FIRST, "Synthetic searchable source", "SEARCHABLE"),
+    document(SECOND, "Synthetic failed source", "FAILED"),
+  ],
+) {
   await context.route("**/api/v1/research-requests/models", (route) =>
     route.fulfill({
       json: {
@@ -49,12 +60,7 @@ async function mockArchive(context: BrowserContext, excluded: () => boolean) {
   await context.route("**/api/v1/documents?*", (route) =>
     route.fulfill({
       json: {
-        items: excluded()
-          ? []
-          : [
-              document(FIRST, "Synthetic searchable source", "SEARCHABLE"),
-              document(SECOND, "Synthetic failed source", "FAILED"),
-            ],
+        items: excluded() ? [] : documents,
         next_cursor: null,
       },
     }),
@@ -169,6 +175,95 @@ test("bulk deletion requires confirmation, clears stale answers, and waits for c
       exact: true,
     }),
   ).toHaveCount(0);
+});
+
+for (const state of ["CAPTURED", "LEXICAL_READY"] as const) {
+  test(`${state} can be selected for confirmed deletion but not research`, async ({
+    page,
+    context,
+  }) => {
+    let admitted = false;
+    let submissions = 0;
+    await mockArchive(context, () => admitted, [
+      document(FIRST, "Synthetic waiting source", state),
+    ]);
+    await context.route("**/api/v1/documents/deletions", (route) => {
+      expect(route.request().postDataJSON()).toEqual({
+        document_ids: [FIRST],
+        confirm_permanent: true,
+      });
+      admitted = true;
+      submissions += 1;
+      return route.fulfill({
+        status: 202,
+        json: {
+          items: [receipt(FIRST, false)],
+          dispatch_pending_document_ids: [],
+        },
+      });
+    });
+    await context.route(`**/api/v1/documents/${FIRST}/deletion`, (route) =>
+      route.fulfill({ json: receipt(FIRST, true) }),
+    );
+    await page.goto("/");
+    await page
+      .getByRole("checkbox", {
+        name: "Select document: Synthetic waiting source",
+        exact: true,
+      })
+      .check();
+    await expect(
+      page.getByRole("button", { name: "Ask the archive", exact: true }),
+    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "Delete selected", exact: true })
+      .click();
+    expect(submissions).toBe(0);
+    await page
+      .getByRole("button", { name: "Permanently delete", exact: true })
+      .click();
+    await expect(
+      page.getByText("Confirmed cleanup: 1 / 1", { exact: true }),
+    ).toBeVisible();
+    expect(submissions).toBe(1);
+  });
+}
+
+test("a Text extracted source that is still being indexed is rejected without claiming deletion", async ({
+  page,
+  context,
+}) => {
+  await mockArchive(context, () => false, [
+    document(FIRST, "Synthetic leased source", "LEXICAL_READY"),
+  ]);
+  let submissions = 0;
+  await context.route("**/api/v1/documents/deletions", (route) => {
+    submissions += 1;
+    return route.fulfill({ status: 409 });
+  });
+  await context.route("**/api/v1/documents/*/deletion", () => {
+    throw new Error("A rejected batch must not start status tracking");
+  });
+  await page.goto("/");
+  await page
+    .getByRole("checkbox", {
+      name: "Select document: Synthetic leased source",
+      exact: true,
+    })
+    .check();
+  await page
+    .getByRole("button", { name: "Delete selected", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Permanently delete", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Processing may still be in progress",
+  );
+  await expect(
+    page.getByRole("region", { name: "Permanent deletion", exact: true }),
+  ).toHaveCount(0);
+  expect(submissions).toBe(1);
 });
 
 test("an uncertain submission checks receipts instead of repeating the destructive request automatically", async ({

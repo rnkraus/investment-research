@@ -288,8 +288,8 @@ test("clearing several selected documents keeps focused scope and does not mutat
   );
 });
 
-test("ongoing processing cannot be selected for research or deletion", () => {
-  for (const state of ["CAPTURED", "PARSING", "LEXICAL_READY", "INDEXING"]) {
+test("parsing and indexing cannot be selected for research or deletion", () => {
+  for (const state of ["PARSING", "INDEXING"]) {
     const document = entry({
       processing: state === null ? null : { ...entry().processing, state },
     });
@@ -305,6 +305,25 @@ test("ongoing processing cannot be selected for research or deletion", () => {
       getDeletionDocumentIds({ scope: "SELECTED", documents: [document] }),
       undefined,
     );
+  }
+});
+
+test("queued and text-extracted sources are selectable for deletion but never research", () => {
+  for (const state of ["CAPTURED", "LEXICAL_READY"]) {
+    const document = entry({ processing: { ...entry().processing, state } });
+    const selected = toggleDocumentSelection(
+      EMPTY_DOCUMENT_SELECTION,
+      document,
+    );
+    assert.deepEqual(getDeletionDocumentIds(selected), [DOCUMENT_ID]);
+    assert.equal(getResearchDocumentIds(selected), undefined);
+    const mixed = toggleDocumentSelection(
+      selected,
+      entry({ document_id: RUN_ID }),
+    );
+    assert.deepEqual(getDeletionDocumentIds(mixed), [DOCUMENT_ID, RUN_ID]);
+    assert.equal(getResearchDocumentIds(mixed), undefined);
+    assert.deepEqual(toggleDocumentSelection(selected, document).documents, []);
   }
 });
 

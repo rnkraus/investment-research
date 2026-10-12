@@ -233,8 +233,11 @@ rather than silently using another model. The deterministic runtime has no paid-
 The research form is available without a new upload: its default searches eligible saved documents
 in the local workspace. The paginated catalog opens saved originals independently of a question and
 allows selecting 1–100 documents. Research requires every selected source to be `SEARCHABLE`;
-failed or unprocessed sources are selectable for permanent deletion only, while ongoing processing
-blocks selection. Hide/show preserves the selection; Clear selection keeps focused scope and blocks
+queued, Text extracted, failed, or unprocessed sources are selectable for permanent deletion only.
+Parsing and Indexing block selection. The backend refuses the whole deletion batch if work has
+started, including a leased Text extracted run even after lease expiry; completed lexical-only
+output and unclaimed queued runs are allowed. Hide/show preserves the selection; Clear selection
+keeps focused scope and blocks
 research submission until sources are chosen again. Refreshing clears the selection. Delete selected
 requires a second irreversible-deletion confirmation under [ADR-0019](adr/0019-permanent-local-document-deletion.md).
 The page tracks cleanup in the background for up to five minutes with five seconds between checks,
