@@ -174,8 +174,6 @@ export const archiveCopy = {
     scopeHint:
       "Only current, eligible evidence in this workspace is searched. The server checks source eligibility again for every question.",
     questionLabel: "Research question",
-    answerableExample: "Use answerable example",
-    unanswerableExample: "Use insufficient-evidence example",
     modelSettingsLabel: "AI models",
     generationModelLabel: "Answer model",
     generationModelHint: "Drafts the answer from selected source passages.",
@@ -211,6 +209,8 @@ export const archiveCopy = {
     supports: "Supporting evidence",
     conflicts: "Conflicting evidence",
     resolving: "Resolving exact source…",
+    publishedLabel: "Published",
+    unknownDate: "Publication date unknown",
     pageLabel: "Page",
     textRangeLabel: "Characters",
     openOriginal: "Open original source",
@@ -238,8 +238,4 @@ export const archiveCopy = {
 export const fixtureDefaults = {
   title: "Northstar Grid Analytics Ltd. - FY2025 Earnings Brief",
   language: "en",
-  answerableQuestion:
-    "What was Northstar Grid Analytics' FY2025 revenue, and how did it change from FY2024?",
-  unanswerableQuestion:
-    "What dividend did Northstar Grid Analytics declare for FY2025?",
 } as const;

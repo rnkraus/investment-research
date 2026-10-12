@@ -443,6 +443,8 @@ test("evidence spans accept PDF-page and text-passage locators", async () => {
         evidence_span_id: EVIDENCE_SPAN_ID,
         document_id: DOCUMENT_ID,
         document_version_id: VERSION_ID,
+        document_title: "Synthetic FY2025 earnings",
+        published_at: "2026-02-18T00:00:00Z",
         start_character: 0,
         end_character: 18,
         exact_text: "Revenue increased.",
@@ -455,6 +457,49 @@ test("evidence spans accept PDF-page and text-passage locators", async () => {
     const result = await client.resolveEvidenceSpan(EVIDENCE_SPAN_ID);
 
     assert.deepEqual(result.locator, locator);
+    assert.equal(result.document_title, "Synthetic FY2025 earnings");
+    assert.equal(result.published_at, "2026-02-18T00:00:00Z");
+  }
+});
+
+test("evidence spans validate citation metadata and allow an unknown publication date", async () => {
+  const source = {
+    evidence_span_id: EVIDENCE_SPAN_ID,
+    document_id: DOCUMENT_ID,
+    document_version_id: VERSION_ID,
+    document_title: "Synthetic FY2025 earnings",
+    published_at: "2026-02-18T00:00:00Z",
+    start_character: 0,
+    end_character: 18,
+    exact_text: "Revenue increased.",
+    text_sha256: "a".repeat(64),
+    locator: { kind: "PDF_PAGE", page: 2 },
+    viewer_url: `/sources/${EVIDENCE_SPAN_ID}`,
+  };
+
+  for (const invalid of [
+    { document_title: undefined },
+    { document_title: "   " },
+    { document_title: "a".repeat(301) },
+    { published_at: "not-a-date" },
+    { published_at: "2026-02-18T00:00:00" },
+  ]) {
+    const client = createApiClient(async () =>
+      jsonResponse({ ...source, ...invalid }),
+    );
+    await assert.rejects(
+      client.resolveEvidenceSpan(EVIDENCE_SPAN_ID),
+      ApiProtocolError,
+    );
+  }
+
+  for (const published_at of [null, undefined]) {
+    const client = createApiClient(async () =>
+      jsonResponse({ ...source, published_at }),
+    );
+    const result = await client.resolveEvidenceSpan(EVIDENCE_SPAN_ID);
+    assert.equal(result.published_at, published_at);
+    assert.equal(result.document_title, source.document_title);
   }
 });
 
@@ -464,6 +509,8 @@ test("evidence spans reject unknown source locator kinds", async () => {
       evidence_span_id: EVIDENCE_SPAN_ID,
       document_id: DOCUMENT_ID,
       document_version_id: VERSION_ID,
+      document_title: "Synthetic FY2025 earnings",
+      published_at: null,
       start_character: 0,
       end_character: 18,
       exact_text: "Revenue increased.",
