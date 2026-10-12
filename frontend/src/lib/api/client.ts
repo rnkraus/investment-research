@@ -20,6 +20,8 @@ export type ResearchModel = components["schemas"]["ResearchModel"];
 export type ResearchModelOptions =
   components["schemas"]["ResearchModelOptions"];
 export type ResearchStreamEvent = components["schemas"]["ResearchStreamEvent"];
+export type ResearchRejectionDiagnostic =
+  components["schemas"]["ResearchRejectionDiagnostic"];
 export type RetrievalContextSource =
   components["schemas"]["AnswerGenerationSource"];
 export type EvidenceSpanResult = components["schemas"]["EvidenceSpanResult"];
@@ -370,6 +372,94 @@ function isRetrievalContextSource(
   );
 }
 
+function isRejectionDiagnostic(
+  value: unknown,
+): value is ResearchRejectionDiagnostic {
+  if (
+    !isRecord(value) ||
+    value.unvalidated !== true ||
+    !RESEARCH_MODELS.has(value.answer_model as ResearchModel) ||
+    !RESEARCH_MODELS.has(value.support_model as ResearchModel) ||
+    !Object.keys(value).every((key) =>
+      [
+        "unvalidated",
+        "answer_model",
+        "support_model",
+        "statements",
+        "findings",
+      ].includes(key),
+    ) ||
+    !Array.isArray(value.statements) ||
+    value.statements.length > 8 ||
+    !Array.isArray(value.findings) ||
+    value.findings.length < 1 ||
+    value.findings.length > 64
+  ) {
+    return false;
+  }
+  const statementsValid = value.statements.every((item: unknown) => {
+    if (
+      !isRecord(item) ||
+      !Object.keys(item).every((key) =>
+        ["ordinal", "text", "evidence"].includes(key),
+      ) ||
+      !isNonNegativeInteger(item.ordinal) ||
+      Number(item.ordinal) > 7 ||
+      !isNonEmptyString(item.text) ||
+      item.text.trim().length === 0 ||
+      Array.from(item.text).length > 10_000 ||
+      !Array.isArray(item.evidence) ||
+      item.evidence.length > 2
+    )
+      return false;
+    return item.evidence.every(
+      (range: unknown) =>
+        isRecord(range) &&
+        Object.keys(range).every((key) =>
+          [
+            "retrieval_candidate_id",
+            "start_character",
+            "end_character",
+          ].includes(key),
+        ) &&
+        isUuid(range.retrieval_candidate_id) &&
+        isNonNegativeInteger(range.start_character) &&
+        isNonNegativeInteger(range.end_character) &&
+        Number(range.end_character) > Number(range.start_character) &&
+        Number(range.end_character) <= 24_000,
+    );
+  });
+  const rules = new Set([
+    "WORKSPACE_SCOPE",
+    "RETRIEVAL_CANDIDATE",
+    "ACTIVE_DOCUMENT_VERSION",
+    "TEMPORAL_ELIGIBILITY",
+    "EXACT_SOURCE_SPAN",
+    "STATEMENT_SUPPORT",
+    "COVERAGE",
+  ]);
+  return (
+    statementsValid &&
+    new Set(value.statements.map((item) => item.ordinal)).size ===
+      value.statements.length &&
+    value.findings.every(
+      (item: unknown) =>
+        isRecord(item) &&
+        Object.keys(item).every((key) =>
+          ["rule", "statement_ordinal", "reason"].includes(key),
+        ) &&
+        typeof item.rule === "string" &&
+        rules.has(item.rule) &&
+        (item.statement_ordinal === null ||
+          (isNonNegativeInteger(item.statement_ordinal) &&
+            Number(item.statement_ordinal) <= 7)) &&
+        isNonEmptyString(item.reason) &&
+        item.reason.trim().length > 0 &&
+        Array.from(item.reason).length <= 1_000,
+    )
+  );
+}
+
 function isResearchStreamEvent(value: unknown): value is ResearchStreamEvent {
   if (
     !isRecord(value) ||
@@ -441,7 +531,12 @@ function isResearchStreamEvent(value: unknown): value is ResearchStreamEvent {
         isRecord(value.error) &&
         isErrorCode(value.error.code) &&
         isNonEmptyString(value.error.message) &&
-        typeof value.retriable === "boolean"
+        typeof value.retriable === "boolean" &&
+        (value.diagnostic === undefined ||
+          value.diagnostic === null ||
+          (value.error.code === "EVIDENCE_VALIDATION_FAILED" &&
+            value.retriable === false &&
+            isRejectionDiagnostic(value.diagnostic)))
       );
   }
 
