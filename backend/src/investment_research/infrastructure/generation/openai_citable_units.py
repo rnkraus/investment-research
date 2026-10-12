@@ -37,7 +37,7 @@ from investment_research.modules.research.contracts import (
 from investment_research.modules.research.domain import CoverageStatus, StatementText
 
 M1_5_CITABLE_ANSWER_GENERATOR_VERSION = "openai-responses-citable-units-v3"
-M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v6"
+M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v7"
 # Leave room inside the existing reservation for request framing, without raising its ceiling.
 _REQUEST_FRAMING_OVERHEAD_UNITS = 512
 _STRICT_SCHEMA_OVERHEAD_UNITS = 512
@@ -53,21 +53,22 @@ each pairing a source_unit_id directly with its unchanged original text. separat
 trailing_separator preserve surrounding whitespace; they are not additional citable units.
 source_unit_id values such as u1 and u2 are short handles valid only in this request.
 Copy the supplied handle exactly; never invent a handle or reuse one from another request.
-Read the surrounding source context, but cite only the supplied source units that support your
-statement. For each statement select one or two distinct source_unit_ids from that catalog.
+Read surrounding context; cite one or two distinct source_unit_ids supporting each statement.
 Select only needed units. Cite title/date units only for necessary subject, report, or time
 attribution, never as a substitute for factual evidence.
 Return the IDs only: do not copy evidence text, calculate offsets, or invent identifiers.
 The application resolves each ID to the unchanged original text and verifies statement support.
 Each statement is checked independently, without preceding statements or rendered_text.
-Write self-contained factual statements: explicitly identify the subject, metric, period, and units
-when needed to understand the claim and established by the supplied sources. Do not rely on a
-pronoun such as "it", "they", or "this" referring to another statement. Do not invent an identity
-or transfer one source's subject or report attribution to another source.
+Write self-contained statements: name the subject, metric, period, and units where needed and
+supported. Do not rely on pronouns referring to other statements, invent identities, or transfer
+another source's subject or report attribution.
 Select the supporting units before composing each statement. Every material fact and qualification
-in that statement must follow from those units together; nearby text is not automatically evidence.
-Prefer a small independently supported claim over bundling unrelated facts. Retain uncertainty,
-conditions, and time scope. Sufficient capacity does not establish that it is not a main constraint.
+must follow from that statement's own selected units; nearby text is not evidence.
+Write one independently verifiable factual claim per statement. Split distinct capabilities,
+activities, or plans; omit unsupported details, even if typical of the company or industry.
+Do not add facts in rendered_text. Prioritize within eight statements rather than bundle claims.
+Retain uncertainty, conditions, and time scope. Sufficient capacity does not establish that it is
+not a main constraint.
 If a claim needs more than two units, split it into independently supported statements or omit it.
 Return at most eight statements. Choose coverage_status for the question as a whole:
 COMPLETE when the sources support every material part of the answer.
@@ -196,11 +197,11 @@ def citable_answer_schema(catalog: CitableUnitCatalog) -> type[_CitableAnswer]:
 
 
 def citable_answer_profile(model: ResearchModel) -> AnswerGenerationProfile:
-    """Identify the v6 focused prompt, unchanged v3 transport, and v2 unit boundaries."""
+    """Identify the v7 atomic-claim prompt, unchanged v3 transport, and v2 unit boundaries."""
 
     return AnswerGenerationProfile(
         generator_version=M1_5_CITABLE_ANSWER_GENERATOR_VERSION,
-        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v6",
+        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v7",
         prompt_version=M1_5_CITABLE_ANSWER_PROMPT_VERSION,
     )
 

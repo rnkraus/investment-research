@@ -39,6 +39,7 @@ from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
+    ResearchModel,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
     UnvalidatedGeneratedStatement,
@@ -287,7 +288,7 @@ def test_luna_receives_versioned_verbatim_evidence_instructions() -> None:
     generator.generate(make_generation_input())
 
     instructions = cast(str, client.responses.calls[0]["instructions"])
-    assert M1_ANSWER_PROMPT_VERSION == "m1-grounded-answer-prompt-v4"
+    assert M1_ANSWER_PROMPT_VERSION == "m1-grounded-answer-prompt-v5"
     assert "COMPLETE when the supplied sources support every material part" in instructions
     assert "PARTIAL when at least one material part is supported" in instructions
     assert "CONFLICTING only when the supplied sources directly disagree" in instructions
@@ -299,6 +300,31 @@ def test_luna_receives_versioned_verbatim_evidence_instructions() -> None:
     assert (
         "If no unique verbatim substring supports a statement, omit that statement" in instructions
     )
+
+
+@pytest.mark.parametrize("model", list(ResearchModel))
+def test_prompt_requires_atomic_claims_supported_by_their_own_evidence(
+    model: ResearchModel,
+) -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(response=StubParsedResponse(model=model.value))
+    )
+    generator = OpenAIAnswerGenerator(client=cast(OpenAI, client), model=model.value)
+
+    generator.generate(make_generation_input())
+
+    instructions = cast(str, client.responses.calls[0]["instructions"])
+    # Instruction delivery is deterministic; live model adherence still needs evaluation.
+    assert "one independently verifiable factual claim per statement" in instructions
+    assert "Select its supporting evidence\nbefore writing the claim" in instructions
+    assert "Split lists of distinct capabilities, activities, or plans" in instructions
+    assert "that statement's own cited evidence" in instructions
+    assert "Omit any unsupported detail" in instructions
+    assert "do not add facts in the summary" in instructions
+    assert "prioritize the question's material parts" in instructions
+    assert "self-contained" in instructions
+    assert "conditions, uncertainty, and time scope" in instructions
+    assert len(client.responses.calls) == 1
 
 
 @pytest.mark.parametrize(
