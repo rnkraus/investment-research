@@ -102,6 +102,9 @@ class PostgresDocumentDeletionRepository:
                 ProcessingRunRow.workspace_id == context.workspace_id,
                 ProcessingRunRow.document_version_id.in_(versions),
                 ~or_(
+                    # An unclaimed queued run has not started external work. The document
+                    # lock and source-write guard fence any competing or delayed claim.
+                    ProcessingRunRow.state == ProcessingState.CAPTURED,
                     ProcessingRunRow.state.in_(
                         [ProcessingState.SEARCHABLE, ProcessingState.FAILED]
                     ),

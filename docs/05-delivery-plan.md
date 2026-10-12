@@ -208,6 +208,9 @@ tracking, uncertain-outcome handling, and explicit same-batch retry. Tracking la
 page; reload does not stop cleanup but does not rediscover older batches. Manual browser/build
 verification and live Pinecone deletion verification remain pending. M2 still owns
 durable outbox delivery and periodic reconciliation.
+The owner-requested waiting-source extension permits deletion of unclaimed queued sources and
+selection of completed Text extracted sources; started parsing/indexing remains protected,
+including expired leases. It does not add worker cancellation or orphaned-run recovery.
 This approval overrides the earlier read-only follow-up's exclusion of deletion only for this
 bounded local feature; broader M2/M3 work and public deployment remain out of scope.
 

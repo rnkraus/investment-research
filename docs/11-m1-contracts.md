@@ -189,7 +189,10 @@ Require 1–100 distinct UUIDs and the actual JSON boolean `true`; no default co
 client-supplied workspace, object keys, or provider targets. Empty selection never means all.
 The application commits exclusion and receipts for the entire batch before publishing ID-only
 Celery jobs outside the transaction. One unknown or foreign target returns the same safe `404`;
-unfinished processing returns `409`. Neither case admits any part of the selection. Invalid input
+started parsing or unfinished indexing returns `409`, including a leased `LEXICAL_READY` run
+even after lease expiry. Unclaimed `CAPTURED` runs and completed lexical-only `LEXICAL_READY` runs
+are deletable; document locking and source-write guards fence delayed or competing processing claims.
+Neither rejection admits any part of the selection. Invalid input
 returns `422`; canonical database failures return a safe `500`, with status checking recommended
 before retry because a connection failure can make the commit outcome uncertain.
 

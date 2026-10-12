@@ -24,7 +24,7 @@ class DocumentDeletionUnavailableError(ValueError):
 
 
 class DocumentDeletionBusyError(ValueError):
-    """Refuse the whole batch while any target still has unfinished processing."""
+    """Refuse the whole batch while any target has parsing or indexing work in progress."""
 
 
 class DocumentPurgePendingError(RuntimeError):

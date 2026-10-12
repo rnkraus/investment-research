@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import Engine, delete, select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.orm import Session
 
 from investment_research.infrastructure.database.document_deletion import (
     PostgresDocumentDeletionRepository,
@@ -91,6 +92,7 @@ from tests.integration.factories import (
     persist_answer_result,
     persist_research_source,
     persist_retrieval_result,
+    persist_workspace,
 )
 
 PURGE_TIME = FIXTURE_TIME + timedelta(days=1)
@@ -358,17 +360,27 @@ def test_invalid_batch_never_partially_excludes_valid_target(
         )
 
 
-def test_unfinished_processing_refuses_entire_batch(integration_database_engine: Engine) -> None:
+@pytest.mark.parametrize(
+    "state", [ProcessingState.PARSING, ProcessingState.LEXICAL_READY, ProcessingState.INDEXING]
+)
+@pytest.mark.parametrize("expired", [False, True])
+def test_started_processing_refuses_entire_batch(
+    integration_database_engine: Engine, state: ProcessingState, expired: bool
+) -> None:
     source = make_research_source(label="Finished batch source")
     busy = related_source(source)
     busy = replace(
         busy,
         processing_run=busy.processing_run.model_copy(
             update={
-                "state": ProcessingState.CAPTURED,
-                "attempt_count": 0,
-                "started_at": None,
+                "state": state,
+                "attempt_count": 1,
+                "started_at": FIXTURE_TIME + timedelta(seconds=1),
                 "completed_at": None,
+                "lease_id": uuid4(),
+                "lease_expires_at": PURGE_TIME + timedelta(minutes=-1 if expired else 1),
+                "embedding_config_version": "deletion-test-embedding-v1",
+                "dense_index_config_version": "deletion-test-dense-v1",
             }
         ),
     )
@@ -377,7 +389,7 @@ def test_unfinished_processing_refuses_entire_batch(integration_database_engine:
     factory = create_session_factory(integration_database_engine)
     with pytest.raises(DocumentDeletionBusyError):
         RequestDocumentDeletionService(
-            create_document_deletion_unit_of_work_factory(factory)
+            create_document_deletion_unit_of_work_factory(factory), clock=lambda: PURGE_TIME
         ).request(
             source.context,
             DeleteDocumentsCommand(document_ids=(source.document.id, busy.document.id)),
@@ -388,6 +400,134 @@ def test_unfinished_processing_refuses_entire_batch(integration_database_engine:
             assert (
                 document is not None and document.lifecycle_state is DocumentLifecycleState.ACTIVE
             )
+            assert (
+                session.get(DocumentDeletionRow, (source.context.workspace_id, document_id)) is None
+            )
+
+
+def persist_unclaimed_source(engine: Engine) -> ResearchSource:
+    """Persist only capture metadata and an unclaimed run, without invented derived output."""
+
+    source = make_research_source(label="Unclaimed queued deletion")
+    source = replace(
+        source,
+        processing_run=source.processing_run.model_copy(
+            update={
+                "state": ProcessingState.CAPTURED,
+                "attempt_count": 0,
+                "started_at": None,
+                "completed_at": None,
+            }
+        ),
+    )
+    persist_workspace(engine, source)
+    factory = create_session_factory(engine)
+    with transactional_session(factory) as session:
+        SqlAlchemyDocumentRepository(session).add_capture(
+            source.context, source.document, source.version, source.original
+        )
+    with transactional_session(factory) as session:
+        SqlAlchemyProcessingRepository(session).add_run(source.context, source.processing_run)
+    return source
+
+
+def test_unclaimed_queued_source_is_purged_and_delayed_claim_is_fenced(
+    integration_database_engine: Engine, tmp_path: Path
+) -> None:
+    source = persist_unclaimed_source(integration_database_engine)
+    factory = create_session_factory(integration_database_engine)
+    uow = create_document_deletion_unit_of_work_factory(factory)
+    command = DeleteDocumentsCommand(document_ids=(source.document.id,))
+    receipts = RequestDocumentDeletionService(uow, clock=lambda: PURGE_TIME).request(
+        source.context, command
+    )
+    assert receipts[0].state is DocumentDeletionState.PENDING
+    claimed_run = source.processing_run.claim_for_processing(
+        lease_id=uuid4(),
+        claimed_at=PURGE_TIME + timedelta(seconds=1),
+        lease_expires_at=PURGE_TIME + timedelta(minutes=6),
+        maximum_attempts=4,
+    )
+    # Processing commits its claim before opening storage or invoking the parser. The existing
+    # source guard prevents that commit even if a late broker message still contains the run ID.
+    with (
+        pytest.raises(IntegrityError, match="source is unavailable"),
+        transactional_session(factory) as session,
+    ):
+        repository = SqlAlchemyProcessingRepository(session)
+        assert repository.get_run_by_id_for_update(source.context, claimed_run.id) is not None
+        assert repository.update_run(source.context, claimed_run)
+        session.flush()
+    with factory() as session:
+        run = session.get(ProcessingRunRow, source.processing_run.id)
+        assert run is not None and run.state is ProcessingState.CAPTURED
+    with uow() as work:
+        manifest = work.deletions.load_manifest(source.context, source.document.id)
+        assert manifest.original_keys == (source.original.storage_key,)
+        assert manifest.vector_ids == ()
+    storage = LocalObjectStorage(tmp_path)
+    storage.store_immutable(
+        source.context, source.original.storage_key, BytesIO(b"synthetic original")
+    )
+    completed = PurgeDocumentService(uow, storage, clock=lambda: PURGE_TIME).purge(
+        source.context, source.document.id
+    )
+    assert completed.state is DocumentDeletionState.COMPLETED
+    with factory() as session:
+        for model, identifier in (
+            (DocumentRow, source.document.id),
+            (DocumentVersionRow, source.version.id),
+            (OriginalArtifactRow, source.original.id),
+            (ProcessingRunRow, source.processing_run.id),
+        ):
+            assert session.get(model, identifier) is None
+    with (
+        pytest.raises(ObjectNotFoundError),
+        storage.open(source.context, source.original.storage_key),
+    ):
+        pytest.fail("purged queued original remains accessible")
+
+
+@pytest.mark.parametrize("deletion_first", [False, True])
+def test_queued_claim_and_deletion_admission_serialize(
+    integration_database_engine: Engine, deletion_first: bool
+) -> None:
+    source = persist_unclaimed_source(integration_database_engine)
+    factory = create_session_factory(integration_database_engine)
+    command = DeleteDocumentsCommand(document_ids=(source.document.id,))
+    claimed_run = source.processing_run.claim_for_processing(
+        lease_id=uuid4(),
+        claimed_at=PURGE_TIME,
+        lease_expires_at=PURGE_TIME + timedelta(minutes=6),
+        maximum_attempts=4,
+    )
+
+    def perform(session: Session, *, deletion: bool) -> None:
+        if deletion:
+            PostgresDocumentDeletionRepository(session).request(source.context, command, PURGE_TIME)
+        else:
+            repository = SqlAlchemyProcessingRepository(session)
+            assert repository.get_run_by_id_for_update(source.context, claimed_run.id) is not None
+            assert repository.update_run(source.context, claimed_run)
+            session.flush()
+
+    def compete() -> str:
+        try:
+            with transactional_session(factory) as session:
+                session.execute(text("SET LOCAL lock_timeout = '200ms'"))
+                perform(session, deletion=not deletion_first)
+        except DBAPIError as error:
+            return str(getattr(error.orig, "sqlstate", "unknown"))
+        return "unexpected_success"
+
+    with ThreadPoolExecutor(max_workers=1) as pool, transactional_session(factory) as session:
+        perform(session, deletion=deletion_first)
+        assert pool.submit(compete).result(timeout=5) == "55P03"
+    if not deletion_first:
+        with pytest.raises(DocumentDeletionBusyError):
+            RequestDocumentDeletionService(
+                create_document_deletion_unit_of_work_factory(factory)
+            ).request(source.context, command)
 
 
 def test_pending_purge_denies_stale_writes_but_never_allows_immutable_updates(
