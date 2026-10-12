@@ -104,6 +104,15 @@ titles are display labels only, with an ID fallback for unloaded entries. The cu
 survives a failed or insufficient request and resets for a new question. It neither proves an
 answer nor records successful provider use, and is not stored in browser persistence or logs.
 
+With the explicit local diagnostic override, a terminal evidence rejection can also carry
+`diagnostic` details. `rejection-diagnostic.tsx` displays rejected claims, the model pair, selected
+excerpts, and failed rules under **Rejected answer diagnostics**. The session reducer requires
+every excerpt range to belong to this request's selected context; the component uses Unicode
+code-point slicing and React text escaping. These unvalidated claims never enter the accepted
+statement/citation list and reset for a new question. Normal runs have no diagnostic payload.
+See the [runtime guide](../../../../docs/development.md#default-m15-source-id-research) for the
+public/synthetic-only opt-in and its limitations.
+
 ## Research UI flow
 
 ```mermaid
@@ -130,6 +139,7 @@ flowchart LR
     LOCATOR -->|PDF_PAGE| PAGE[PDF blob at stored physical page]
     LOCATOR -->|TEXT_PASSAGE| TEXT[Verified exact-range highlight]
     SESSION -->|insufficient evidence| EMPTY[Explicit empty result]
+    SESSION -->|evidence rejected and local diagnostics enabled| DIAGNOSTIC[Unvalidated claims and selected excerpts]
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
 

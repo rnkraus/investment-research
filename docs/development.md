@@ -184,7 +184,20 @@ these application events.
 For an explicitly approved public or synthetic document, an opt-in local diagnostic can show raw
 provider output when answer generation or statement-support response parsing fails. It also shows
 the unvalidated answer proposal and failed rules when server-side evidence validation rejects an
-answer. Start the API with the additional override, then watch its terminal logs:
+answer. With this override, an evidence-validation rejection also exposes its rejected claims,
+selected source excerpts, model pair, and failed rules in the website's **Rejected answer
+diagnostics** panel. These are explicitly unvalidated diagnostics, not accepted answers or
+citations. Rebuild API and web when first updating to this feature, then reproduce the question:
+
+```shell
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml up --build --detach --wait api web
+```
+
+The panel resolves excerpts only from the current request's already selected context; it does not
+fetch additional source data or expose prompts or credentials. It resets on the next question and
+cannot recover an earlier failure. It shows application-owned rejection findings, not a raw
+support-model explanation. Schema or provider failures before evidence validation still have only
+their existing terminal diagnostics, not this panel. To watch the terminal logs:
 
 ```shell
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml up --build --detach --wait api
@@ -199,7 +212,8 @@ text; the quote remains unverified until it matches that source exactly. For `ev
 the nested JSON has the proposed rendering, rejected statements and proposed citation text, and
 failed validation findings. A `STATEMENT_SUPPORT` failure means the support decision did not accept
 the statement as fully supported; it does not expose a model explanation. The proposal and citation
-text remain untrusted and are not sent to the browser or stored as accepted answer content. Output
+text remain untrusted and are never stored as accepted answer content. Only the bounded rejected
+claims and matching ranges described above reach the browser with this explicit override. Output
 is capped at 100,000 characters and may contain source text. Do not use this override with private documents
 or in CI, staging, or public deployments; do not paste raw output into tickets or chats. Connection
 failures without a model response have no output text to show. Docker may retain these logs after

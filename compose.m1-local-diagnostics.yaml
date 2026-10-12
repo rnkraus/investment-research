@@ -1,4 +1,5 @@
-# Opt-in only for public or synthetic local M1 research; model text may enter Docker logs.
+# Opt-in only for public or synthetic local research; unvalidated model text may enter
+# Docker logs and the website's rejected-answer diagnostic panel. Never use for private data.
 services:
   api:
     environment:
