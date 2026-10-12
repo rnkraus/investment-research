@@ -40,6 +40,8 @@ from investment_research.modules.research.citable_unit_contracts import (
     CitableUnitLimitError,
 )
 from investment_research.modules.research.contracts import (
+    AnswerGenerationInput,
+    AnswerGenerationSource,
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
@@ -84,6 +86,7 @@ class FakeAnswerResearchRequestService:
         self.result = make_result()
         self.error: Exception | None = None
         self.progress_stages: tuple[ResearchProgressStage, ...] = ()
+        self.selected_context: AnswerGenerationInput | None = None
         self.calls: list[tuple[WorkspaceContext, ResearchRetrievalInput]] = []
         self.model_services: dict[tuple[ResearchModel, ResearchModel], object] | None = None
 
@@ -93,10 +96,13 @@ class FakeAnswerResearchRequestService:
         retrieval_input: ResearchRetrievalInput,
         *,
         progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
+        on_context: Callable[[AnswerGenerationInput], None] | None = None,
     ) -> ValidatedAnswerResult:
         """Record the call before returning or raising the configured outcome."""
 
         self.calls.append((context, retrieval_input))
+        if on_context is not None and self.selected_context is not None:
+            on_context(self.selected_context)
         if progress is not None:
             for stage in self.progress_stages:
                 progress(REQUEST_ID, stage)
@@ -240,6 +246,44 @@ def research_client(
         yield client, fake_service
 
 
+@pytest.mark.parametrize("fails", [False, True])
+def test_research_route_exposes_selected_context_separately_from_answer(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService], fails: bool
+) -> None:
+    client, service = research_client
+    service.selected_context = AnswerGenerationInput(
+        research_request_id=REQUEST_ID,
+        question=QUESTION,
+        sources=(
+            AnswerGenerationSource(
+                retrieval_candidate_id=RUN_ID,
+                chunk_id=BLOCK_ID,
+                document_id=DOCUMENT_ID,
+                document_version_id=VERSION_ID,
+                structure_block_id=BLOCK_ID,
+                source_locator_kind=SourceLocatorKind.PDF_PAGE,
+                page_number=2,
+                text=EVIDENCE_TEXT,
+            ),
+        ),
+    )
+    if fails:
+        service.error = ResearchProviderUnavailableError(REQUEST_ID, retriable=True)
+
+    response = client.post("/api/v1/research-requests", json={"question": QUESTION})
+
+    events = parse_server_sent_events(response.text)
+    assert events[0]["event_name"] == "research.context"
+    assert events[0]["payload"]["sources"] == [
+        service.selected_context.sources[0].model_dump(mode="json")
+    ]
+    assert events[-1]["event_name"] == ("research.failed" if fails else "answer.completed")
+    assert "workspace_id" not in events[0]["payload"]
+    assert "question" not in events[0]["payload"]
+    if fails:
+        assert not any(event["event_name"] == "answer.statement" for event in events)
+
+
 def test_research_route_streams_only_validated_statement_and_citation(
     research_client: tuple[TestClient, FakeAnswerResearchRequestService],
 ) -> None:
@@ -379,6 +423,7 @@ def test_research_progress_arrives_while_service_is_still_running() -> None:
             retrieval_input: ResearchRetrievalInput,
             *,
             progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
+            on_context: Callable[[AnswerGenerationInput], None] | None = None,
         ) -> ValidatedAnswerResult:
             assert progress is not None
             progress(REQUEST_ID, "GENERATING_ANSWER")

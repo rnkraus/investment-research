@@ -317,6 +317,7 @@ class GenerateValidatedAnswerService:
         retrieval_result: ResearchRetrievalResult,
         *,
         progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
+        on_context: Callable[[AnswerGenerationInput], None] | None = None,
     ) -> ValidatedAnswerResult:
         """Persist only the terminal aggregate derived from a complete validation decision."""
 
@@ -340,6 +341,9 @@ class GenerateValidatedAnswerService:
             if self._generation_input_builder is None
             else self._generation_input_builder.build(context, retrieval_result)
         )
+        if on_context is not None:
+            # Selected context is source content, not a validated answer or a provider receipt.
+            on_context(generation_input)
         if progress is not None:
             progress(retrieval_result.request.id, "GENERATING_ANSWER")
         if self._generation_input_builder is not None and not generation_input.sources:

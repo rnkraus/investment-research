@@ -18,6 +18,7 @@ from investment_research.api.contracts import (
     ErrorCode,
     ErrorDetail,
     ErrorResponse,
+    ResearchContextEvent,
     ResearchFailedEvent,
     ResearchModelOptions,
     ResearchProgressEvent,
@@ -36,6 +37,7 @@ from investment_research.infrastructure.logging import current_request_id
 from investment_research.modules.research.application import ResearchProviderUnavailableError
 from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
+    AnswerGenerationInput,
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
@@ -163,6 +165,17 @@ async def stream_research_events(
                 ResearchProgressEvent(research_request_id=request_id, stage=stage),
             )
 
+    def publish_context(generation_input: AnswerGenerationInput) -> None:
+        nonlocal research_request_id
+        research_request_id = generation_input.research_request_id
+        event = ResearchContextEvent(
+            research_request_id=research_request_id,
+            sources=generation_input.sources,
+        )
+        # Send only to this request's browser; never log the selected source text.
+        with suppress(RuntimeError):
+            loop.call_soon_threadsafe(events.put_nowait, event)
+
     async def run_research() -> None:
         try:
             result = await run_in_threadpool(
@@ -170,6 +183,7 @@ async def stream_research_events(
                 context,
                 retrieval_input,
                 progress=publish_progress,
+                on_context=publish_context,
             )
             terminal_events = build_research_stream_events(result)
         except ResearchProviderUnavailableError as error:
@@ -254,7 +268,7 @@ async def stream_research_events(
                     "schema": {"$ref": "#/components/schemas/ResearchStreamEvent"},
                 }
             },
-            "description": "Validated research answer events",
+            "description": "Selected retrieval context and validated research answer events",
         },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorResponse},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse},
@@ -265,7 +279,7 @@ def answer_research_request(
     service: AnswerResearchRequestServiceDependency,
     context: WorkspaceContextDependency,
 ) -> StreamingResponse:
-    """Start a live stream without exposing content before complete validation."""
+    """Stream selected source context separately from fully validated answer content."""
 
     retrieval_input = ResearchRetrievalInput(
         question=request.question,

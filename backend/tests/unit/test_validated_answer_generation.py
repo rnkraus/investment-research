@@ -438,6 +438,42 @@ def test_generator_provider_failure_opens_no_answer_transaction() -> None:
     unit_of_work.research_mock.add_answer.assert_not_called()
 
 
+def test_context_callback_matches_exact_generator_input_before_provider_failure() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    service, generator = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        generator_error=AnswerGenerationProviderTransientError("safe generation failure"),
+    )
+    observed: list[AnswerGenerationInput] = []
+
+    def observe(generation_input: AnswerGenerationInput) -> None:
+        assert not generator.calls
+        assert not unit_of_work.is_open
+        observed.append(generation_input)
+
+    with pytest.raises(AnswerGenerationProviderTransientError):
+        service.generate(make_context(), make_retrieval_result(), on_context=observe)
+
+    assert observed == generator.calls
+    assert observed[0].sources[0].text == SOURCE_TEXT
+    assert observed[0].sources[0].document_id == DOCUMENT_ID
+    assert observed[0].sources[0].chunk_id == CHUNK_ID
+
+
+def test_foreign_workspace_never_publishes_context() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    service, generator = make_service(unit_of_work, make_answer_proposal())
+    observed: list[AnswerGenerationInput] = []
+    foreign_context = make_context().model_copy(update={"workspace_id": UUID(int=999)})
+
+    with pytest.raises(ValueError, match="outside the active workspace"):
+        service.generate(foreign_context, make_retrieval_result(), on_context=observed.append)
+
+    assert observed == []
+    assert generator.calls == []
+
+
 def test_m1_generation_accounts_provider_usage_before_answer_transaction() -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     executor = make_provider_operation_executor()

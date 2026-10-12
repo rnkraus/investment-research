@@ -336,7 +336,7 @@ def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
         }
         for frame in body.strip().split("\n\n")
         if (lines := frame.splitlines())
-        if lines[0] != "event: research.progress"
+        if lines[0] not in {"event: research.progress", "event: research.context"}
     ]
 
 

@@ -1,5 +1,6 @@
 """Exercise opt-in source-ID API composition with PostgreSQL and zero-spend providers."""
 
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -217,6 +218,19 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
         )
         events = parse_server_sent_events(response.text)
         assert response.status_code == 200
+        context_frames = [
+            frame
+            for frame in response.text.split("\n\n")
+            if frame.startswith("event: research.context\n")
+        ]
+        assert len(context_frames) == 1
+        selected_context = json.loads(context_frames[0].split("data: ", 1)[1])
+        assert [item["document_id"] for item in selected_context["sources"]] == [
+            str(source.document.id)
+        ]
+        assert selected_context["sources"][0]["text"] == TEXT
+        assert selected_context["sources"][0]["chunk_id"] == str(source.chunks[0].id)
+        assert str(foreign.document.id) not in context_frames[0]
         assert [event["event_name"] for event in events] == [
             "answer.statement",
             "answer.citation",
@@ -306,7 +320,8 @@ def test_citable_api_does_not_publish_invalid_or_unsupported_proposals(
     events = parse_server_sent_events(response.text)
     assert response.status_code == 200
     assert [event["event_name"] for event in events] == ["research.failed"]
-    assert QUOTE not in response.text
+    # Selected source context is inspectable; rejected generated content is never an answer.
+    assert QUOTE not in json.dumps(events)
     assert "synthetic-generation-key" not in response.text
     assert len(generators[ResearchModel.TERRA].requests) == 1
     assert len(evaluators[ResearchModel.TERRA].requests) == (0 if unknown_id else 1)

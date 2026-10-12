@@ -236,3 +236,24 @@ def test_unavailable_model_pair_fails_before_retrieval() -> None:
         )
 
     assert retrieval.calls == []
+
+
+def test_selected_model_service_receives_context_callback() -> None:
+    retrieval = StaticRetrievalService()
+    selected_generation = Mock(spec=GenerateValidatedAnswerService)
+    callback = Mock()
+    service = AnswerResearchRequestService(
+        retrieval_service=cast(RetrieveResearchService, retrieval),
+        generation_service=Mock(spec=GenerateValidatedAnswerService),
+        model_services={(ResearchModel.LUNA, ResearchModel.TERRA): selected_generation},
+    )
+
+    service.answer(
+        make_context(),
+        ResearchRetrievalInput(question=QUESTION, generation_model=ResearchModel.LUNA),
+        on_context=callback,
+    )
+
+    selected_generation.generate.assert_called_once_with(
+        make_context(), retrieval.result, progress=None, on_context=callback
+    )

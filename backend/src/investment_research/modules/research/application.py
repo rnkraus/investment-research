@@ -23,6 +23,7 @@ from investment_research.modules.research.answer_validation import (
     StatementSupportAccountingProfile as StatementSupportAccountingProfile,
 )
 from investment_research.modules.research.contracts import (
+    AnswerGenerationInput,
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
@@ -65,6 +66,7 @@ class AnswerResearchRequestService:
         retrieval_input: ResearchRetrievalInput,
         *,
         progress: Callable[[UUID, ResearchProgressStage], None] | None = None,
+        on_context: Callable[[AnswerGenerationInput], None] | None = None,
     ) -> ValidatedAnswerResult:
         """Return only the validated terminal result of one research request."""
 
@@ -86,6 +88,10 @@ class AnswerResearchRequestService:
                 context, retrieval_input, progress=progress
             )
         try:
+            if on_context is not None:
+                return generation_service.generate(
+                    context, retrieval_result, progress=progress, on_context=on_context
+                )
             if progress is None:
                 return generation_service.generate(context, retrieval_result)
             return generation_service.generate(context, retrieval_result, progress=progress)
