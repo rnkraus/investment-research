@@ -187,7 +187,10 @@ active, its version is still current, and at least one validated statement in a 
 links to it. Every failed condition raises the same application error, so callers cannot distinguish
 an unknown identifier from inaccessible or stale evidence.
 
-`ResolvedEvidenceSpan` contains only the authorized domain span and its document identifier. The
+`ResolvedEvidenceSpan` contains the authorized domain span, its document identifier, and the title
+and optional publication timestamp from that same immutable document version. Metadata is returned
+only after the existing authorization and eligibility checks pass; no catalog lookup is needed.
+An unknown publication date remains unknown rather than falling back to capture time. The
 HTTP layer maps its immutable source locator to the discriminated `PDF_PAGE` or `TEXT_PASSAGE`
 result and constructs `/sources/{evidence_span_id}` because URLs are a transport concern rather
 than an Evidence domain value. It never exposes a storage URL or places exact source text in the

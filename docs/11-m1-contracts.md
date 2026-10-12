@@ -661,6 +661,8 @@ The evidence response retains block-relative offsets and adds the ADR-0009 locat
   "evidence_span_id": "00000000-0000-4000-8000-000000000001",
   "document_id": "00000000-0000-4000-8000-000000000002",
   "document_version_id": "00000000-0000-4000-8000-000000000003",
+  "document_title": "Synthetic earnings brief",
+  "published_at": "2026-02-18T00:00:00Z",
   "start_character": 0,
   "end_character": 94,
   "exact_text": "The primary constraint on new customer deployments is a shortage of high-voltage transformers.",
@@ -676,6 +678,13 @@ The evidence response retains block-relative offsets and adds the ADR-0009 locat
 
 For PDF, `locator` is `{"kind": "PDF_PAGE", "page": 2}`. Unknown locator variants fail contract
 validation.
+
+Citation metadata comes from the same authorized immutable document version as the span:
+`document_title` is required; `published_at` is the publication timestamp selected at import,
+not the capture or ingestion timestamp. A missing publication date remains `null`; the UI labels
+it as unknown. Validated-answer citations display the title, UTC publication date, and locator
+without relying on the currently loaded catalog page. Authorization and source eligibility checks
+remain unchanged.
 
 ### 11.3 Research stream
 
