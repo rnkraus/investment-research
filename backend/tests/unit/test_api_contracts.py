@@ -106,6 +106,7 @@ def test_evidence_span_requires_an_ordered_source_range() -> None:
             evidence_span_id=UUID("00000000-0000-4000-8000-000000000010"),
             document_id=UUID("00000000-0000-4000-8000-000000000011"),
             document_version_id=UUID("00000000-0000-4000-8000-000000000012"),
+            document_title="Synthetic earnings brief",
             start_character=20,
             end_character=20,
             exact_text="Revenue increased.",

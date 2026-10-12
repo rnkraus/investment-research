@@ -262,6 +262,8 @@ class EvidenceSpanResult(StrictContract):
     evidence_span_id: UUID
     document_id: UUID
     document_version_id: UUID
+    document_title: TrimmedTitle
+    published_at: AwareDatetime | None = None
     start_character: int = Field(ge=0)
     end_character: int = Field(gt=0)
     exact_text: Annotated[str, StringConstraints(min_length=1)]

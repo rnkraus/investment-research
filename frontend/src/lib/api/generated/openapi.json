@@ -749,6 +749,12 @@
             "title": "Document Id",
             "type": "string"
           },
+          "document_title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Document Title",
+            "type": "string"
+          },
           "document_version_id": {
             "format": "uuid",
             "title": "Document Version Id",
@@ -787,6 +793,18 @@
             ],
             "title": "Locator"
           },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
           "start_character": {
             "minimum": 0.0,
             "title": "Start Character",
@@ -806,6 +824,7 @@
           "evidence_span_id",
           "document_id",
           "document_version_id",
+          "document_title",
           "start_character",
           "end_character",
           "exact_text",

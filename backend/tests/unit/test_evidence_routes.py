@@ -33,6 +33,8 @@ DOCUMENT_ID = UUID("10000000-0000-4000-8000-000000000002")
 VERSION_ID = UUID("10000000-0000-4000-8000-000000000003")
 BLOCK_ID = UUID("10000000-0000-4000-8000-000000000004")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
+PUBLISHED_AT = datetime(2026, 2, 18, tzinfo=UTC)
+DOCUMENT_TITLE = "Synthetic FY2025 earnings"
 EVIDENCE_TEXT = "FY2025 revenue was $184.2 million."
 TEXT_SOURCE_START = 185
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
@@ -71,6 +73,8 @@ def make_result() -> ResolvedEvidenceSpan:
 
     return ResolvedEvidenceSpan(
         document_id=DOCUMENT_ID,
+        document_title=DOCUMENT_TITLE,
+        published_at=PUBLISHED_AT,
         span=EvidenceSpan(
             id=SPAN_ID,
             workspace_id=WORKSPACE_ID,
@@ -94,6 +98,7 @@ def make_text_result() -> ResolvedEvidenceSpan:
 
     return ResolvedEvidenceSpan(
         document_id=DOCUMENT_ID,
+        document_title=DOCUMENT_TITLE,
         span=EvidenceSpan(
             id=SPAN_ID,
             workspace_id=WORKSPACE_ID,
@@ -152,6 +157,8 @@ def test_evidence_route_returns_exact_location_and_protected_viewer_target(
         "evidence_span_id": str(SPAN_ID),
         "document_id": str(DOCUMENT_ID),
         "document_version_id": str(VERSION_ID),
+        "document_title": DOCUMENT_TITLE,
+        "published_at": "2026-02-18T00:00:00Z",
         "start_character": 0,
         "end_character": len(EVIDENCE_TEXT),
         "exact_text": EVIDENCE_TEXT,
@@ -180,6 +187,8 @@ def test_evidence_route_returns_absolute_text_passage_locator(
         "end_character": TEXT_SOURCE_START + len(EVIDENCE_TEXT),
     }
     assert response.json()["viewer_url"] == f"/sources/{SPAN_ID}"
+    assert response.json()["document_title"] == DOCUMENT_TITLE
+    assert response.json()["published_at"] is None
     assert response.headers["cache-control"] == "private, no-store"
 
 
@@ -209,6 +218,8 @@ def test_evidence_route_translates_failures_without_internal_details(
     assert response.status_code == expected_status
     assert response.json()["error"]["code"] == expected_code
     assert "private database detail" not in response.text
+    assert DOCUMENT_TITLE not in response.text
+    assert "published_at" not in response.text
 
 
 def test_evidence_route_hides_invalid_identifier_before_service_call(

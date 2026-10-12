@@ -67,6 +67,8 @@ class ResolveEvidenceSpanService:
         return ResolvedEvidenceSpan(
             span=source.span,
             document_id=source.document_id,
+            document_title=source.document_title,
+            published_at=source.published_at,
         )
 
 

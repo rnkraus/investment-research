@@ -642,6 +642,8 @@ export interface components {
              * Format: uuid
              */
             readonly document_id: string;
+            /** Document Title */
+            readonly document_title: string;
             /**
              * Document Version Id
              * Format: uuid
@@ -658,6 +660,8 @@ export interface components {
             readonly exact_text: string;
             /** Locator */
             readonly locator: components["schemas"]["EvidencePdfPageLocator"] | components["schemas"]["EvidenceTextPassageLocator"];
+            /** Published At */
+            readonly published_at?: string | null;
             /** Start Character */
             readonly start_character: number;
             /** Text Sha256 */

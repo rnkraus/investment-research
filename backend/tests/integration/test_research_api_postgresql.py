@@ -245,6 +245,9 @@ def test_evidence_api_resolves_a_streamed_citation_to_its_exact_active_source(
     assert payload["evidence_span_id"] == citation_event["payload"]["evidence_span_id"]
     assert payload["document_id"] == str(source.document.id)
     assert payload["document_version_id"] == str(source.version.id)
+    assert payload["document_title"] == source.version.title
+    assert source.version.published_at is not None
+    assert payload["published_at"] == source.version.published_at.isoformat().replace("+00:00", "Z")
     assert payload["locator"] == {"kind": "PDF_PAGE", "page": 2}
     assert payload["start_character"] == expected_start
     assert payload["end_character"] == (
