@@ -23,7 +23,7 @@ examples below are the accepted target contract; generated files must never be e
 ## 2. Fixed M1 configuration
 
 **Local tuning amendment (2026-10-12):** The table below remains the historical M1 baseline
-and the default configuration. Normal provider-backed M1/M1.5 API research can now read four
+and programmatic defaults. Normal provider-backed M1/M1.5 API research can now read five
 bounded overrides from [`config/rag.toml`](../config/rag.toml). Candidate lanes remain capped
 at 20 each; selected context permits 1–32 chunks within the unchanged 24,000-code-point ceiling.
 Each retrieval run stores all four effective limits alongside its unchanged algorithm version;
@@ -31,6 +31,13 @@ this explicit snapshot supersedes the requirement to create a new algorithm vers
 numeric limit change alone. Processing, embedding, prompt, and algorithm changes still require
 their existing versioning. Historical acceptance/evaluation profiles remain frozen and do not
 adopt local tuning implicitly. See the [tuning guide](../config/README.md).
+
+The fifth override, `generation.input_overhead_limit`, is bounded to 16,000–18,000 conservative
+UTF-8-byte accounting units and is set to 18,000 in the committed live file. Source-unit preflight
+and answer-generation reservations use the same value for both models and all model pairs.
+Question and source bytes remain separately reserved; the support reservation and monthly budget
+are unchanged. This numeric allowance is not a token measurement or a retrieval-history field.
+Provider operations continue to record the resulting reserved cost and reconciled usage.
 
 | Concern                    | M1 value                                                                  |
 | -------------------------- | ------------------------------------------------------------------------- |

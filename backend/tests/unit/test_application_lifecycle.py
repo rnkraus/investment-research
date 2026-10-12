@@ -495,6 +495,7 @@ def test_build_api_container_wires_m1_query_resources(
             model=OPENAI_ANSWER_MODEL,
             operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            input_overhead_limit=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
             local_validation_output=None,
         )
         fakes.answer_factory.assert_any_call(
@@ -502,6 +503,7 @@ def test_build_api_container_wires_m1_query_resources(
             model=ResearchModel.LUNA,
             operation_timeout_seconds=OPENAI_ANSWER_TIMEOUT_SECONDS,
             max_output_tokens=OPENAI_ANSWER_MAX_OUTPUT_TOKENS,
+            input_overhead_limit=OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS,
             local_validation_output=None,
         )
         assert fakes.support_factory.call_count == 2
@@ -565,11 +567,12 @@ def test_build_api_container_applies_local_rag_tuning(
     tmp_path: Path,
     citable_units: bool,
 ) -> None:
-    install_api_provider_fakes(monkeypatch, citable_units=citable_units)
+    fakes = install_api_provider_fakes(monkeypatch, citable_units=citable_units)
     values = make_m1_api_settings(tmp_path / "objects", citable_units=citable_units).model_dump()
     values["rag"] = {
         "retrieval": {"lexical_candidate_limit": 12, "dense_candidate_limit": 16},
         "context": {"chunk_limit": 16, "character_limit": 12_000},
+        "generation": {"input_overhead_limit": 18_000},
     }
     container = build_api_container(ApiSettings.model_validate(values))
     try:
@@ -580,6 +583,22 @@ def test_build_api_container_applies_local_rag_tuning(
         assert dependencies.dense_profile.candidate_limit == 16
         assert dependencies.selection_profile.context_chunk_limit == 16
         assert dependencies.selection_profile.context_character_limit == 12_000
+        assert fakes.answer_factory.call_count == 2
+        for call in fakes.answer_factory.call_args_list:
+            assert call.kwargs["input_overhead_limit"] == 18_000
+        services = container.answer_research_request_service.model_services
+        assert services is not None and len(services) == 4
+        for answer_service in services.values():
+            accounting = answer_service._generation_accounting
+            assert accounting is not None
+            assert accounting.input_overhead_units == 18_000
+            support_accounting = answer_service._statement_support_accounting
+            assert support_accounting is not None
+            assert support_accounting.input_overhead_units == 16_000
+        assert (
+            dependencies.provider_operation_executor.reservation_service.budget_policy.monthly_limit_micro_usd
+            == 5_000_000
+        )
     finally:
         container.close()
 

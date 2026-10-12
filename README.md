@@ -13,8 +13,8 @@ generation, server-resolved source references, and a separate statement-support 
 [Local demo](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) ·
 [Developer setup](docs/development.md)
 
-For local retrieval/context experiments, edit [config/rag.toml](config/rag.toml);
-the [tuning guide](config/README.md) explains the four settings, bounds, and API restart.
+For local retrieval, context, and generation-overhead experiments, edit [config/rag.toml](config/rag.toml);
+the [tuning guide](config/README.md) explains the five settings, bounds, and API restart.
 
 This is a local, single-user Applied AI project. It is a research archive, not a trading system
 or an investment-advice service.

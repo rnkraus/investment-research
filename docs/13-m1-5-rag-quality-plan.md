@@ -1877,6 +1877,21 @@ support evaluation, and fail-closed evidence validation remain unchanged. Earlie
 reviewed observations retain their recorded versions. Offline tests verify instruction delivery
 for Terra and Luna; quality improvement still requires a separate opt-in live evaluation.
 
+#### Owner-requested generation overhead tuning (2026-10-12)
+
+A broad local question produced 17,272 conservative input-metadata units against the fixed 16,000
+ceiling. Normal provider-backed API research now reads `generation.input_overhead_limit` from
+`config/rag.toml`, with an approved 16,000–18,000 range and a committed live value of 18,000.
+The same startup value controls source-unit preflight and answer-generation cost reservation for
+Terra, Luna, and all answer/support pairs. Question and source-text bytes remain reserved separately
+once each. Support-evaluator accounting, monthly budgets, context bounds, evidence validation,
+prompts, and model versions do not change. Larger metadata can still fail safely before generation.
+
+This is an explicit local-runtime allowance increase, not a quality claim or a retroactive change
+to the historical 16,000-unit evaluation profiles described above. Standalone evaluations retain
+their frozen defaults. No new paid comparison is authorized by this configuration change; use the
+[tuning guide](../config/README.md) for bounds and restart instructions.
+
 ## 4. Handoff and stop rule
 
 Stop M1.5 when its reviewed correctness gates pass and the chosen retrieval/citation approach has

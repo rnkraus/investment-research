@@ -3,7 +3,7 @@
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import cast
@@ -729,7 +729,10 @@ def test_factory_disables_sdk_retries_and_closes_its_client(
         return cast(OpenAI, client)
 
     monkeypatch.setattr(adapter, "OpenAI", create_client)
-    generator = adapter.create_openai_citable_unit_answer_generator(api_key="synthetic-test-key")
+    generator = adapter.create_openai_citable_unit_answer_generator(
+        api_key="synthetic-test-key", input_overhead_limit=18_000
+    )
+    assert generator.input_overhead_limit == 18_000
     assert calls == [{"api_key": "synthetic-test-key", "timeout": 60.0, "max_retries": 0}]
     generator.close()
     assert client.closed
@@ -799,13 +802,31 @@ def test_metadata_reservation_boundary_is_enforced_before_a_call(
     assert len(json.dumps(to_strict_json_schema(schema)).encode("utf-8")) <= (
         len(json.dumps(schema.model_json_schema()).encode("utf-8")) + 512
     )
-    monkeypatch.setattr(adapter, "OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS", overhead)
-    generator.generate(generation_input)
+    # Pad only synthetic instructions so the measured request exactly reaches the approved ceiling.
+    assert overhead < 18_000
+    monkeypatch.setattr(
+        adapter.OpenAICitableUnitAnswerGenerator,
+        "instructions",
+        generator.instructions + "x" * (18_000 - overhead),
+    )
+    raised_limit = replace(generator, input_overhead_limit=18_000)
+    raised_limit.generate(generation_input)
     assert len(client.responses.calls) == 1
-    monkeypatch.setattr(adapter, "OPENAI_ANSWER_ACCOUNTING_INPUT_OVERHEAD_UNITS", overhead - 1)
-    with pytest.raises(CitableUnitLimitError):
-        generator.generate(generation_input)
+    for limit in (16_000, 17_999):
+        with pytest.raises(CitableUnitLimitError) as failure:
+            replace(generator, input_overhead_limit=limit).preflight(generation_input)
+        assert failure.value.details is not None
+        assert failure.value.details.observed == 18_000
+        assert failure.value.details.limit == limit
     assert len(client.responses.calls) == 1
+
+
+@pytest.mark.parametrize("limit", [15_999, 18_001, True, "18000", 18_000.0])
+def test_unreviewed_or_noninteger_overhead_is_rejected(limit: object) -> None:
+    generator, client = make_generator(make_input())
+    with pytest.raises(ValueError, match="input overhead"):
+        replace(generator, input_overhead_limit=cast(int, limit))
+    assert not client.responses.calls
 
 
 def test_tampered_catalog_is_revalidated_before_calling_provider() -> None:

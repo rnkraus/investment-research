@@ -337,6 +337,7 @@ def make_service(
     support_evaluator: StatementSupportEvaluator | None = None,
     support_context_builder: StatementSupportContextBuilder | None = None,
     provider_operation_executor: Mock | None = None,
+    generation_input_overhead_units: int = 16_000,
     rejection_diagnostic: (
         Callable[[UnvalidatedGeneratedAnswer, EvidenceValidationDecision], None] | None
     ) = None,
@@ -377,7 +378,7 @@ def make_service(
             else AnswerGenerationAccountingProfile(
                 provider="openai",
                 model="gpt-5.6-terra",
-                input_overhead_units=16_000,
+                input_overhead_units=generation_input_overhead_units,
                 maximum_output_units=2_000,
                 cost_policy=ProviderCostPolicy(
                     input_micro_usd_per_million_units=2_000_000,
@@ -417,6 +418,33 @@ def make_provider_operation_executor() -> Mock:
         )
     )
     return executor
+
+
+@pytest.mark.parametrize("overhead", [16_000, 18_000])
+def test_answer_reservation_includes_the_configured_overhead(overhead: int) -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    executor = make_provider_operation_executor()
+    service, generator = make_service(
+        unit_of_work,
+        make_answer_proposal(),
+        provider_operation_executor=executor,
+        generation_input_overhead_units=overhead,
+    )
+    result = service.generate(make_context(), make_retrieval_result())
+    assert result.answer.state is AnswerState.STREAMED
+    attempts = [
+        call.args[1]
+        for call in executor.execute.call_args_list
+        if call.args[1].operation.value == "ANSWER_GENERATION"
+    ]
+    assert len(attempts) == 1
+    generation_input = generator.calls[0]
+    assert attempts[0].maximum_usage.input_units == (
+        overhead
+        + len(generation_input.question.encode("utf-8"))
+        + sum(len(source.text.encode("utf-8")) for source in generation_input.sources)
+    )
+    assert attempts[0].maximum_usage.output_units == 2_000
 
 
 def test_generator_provider_failure_opens_no_answer_transaction() -> None:
