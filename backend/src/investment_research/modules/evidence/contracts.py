@@ -8,6 +8,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 from investment_research.modules.documents.domain import (
     DocumentLifecycleState,
+    DocumentTitle,
     SourceLocatorKind,
 )
 from investment_research.modules.evidence.domain import (
@@ -91,6 +92,8 @@ class CanonicalEvidenceSpanSource(ImmutableEvidenceContract):
 
     span: EvidenceSpan
     document_id: UUID
+    document_title: DocumentTitle
+    published_at: AwareDatetime | None = None
     document_lifecycle_state: DocumentLifecycleState
     document_current_version_id: UUID | None
     linked_to_streamed_answer: bool
@@ -101,6 +104,8 @@ class ResolvedEvidenceSpan(ImmutableEvidenceContract):
 
     span: EvidenceSpan
     document_id: UUID
+    document_title: DocumentTitle
+    published_at: AwareDatetime | None = None
 
 
 M1_5_SUPPORT_CONTEXT_CHARACTER_LIMIT = 800

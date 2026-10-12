@@ -71,6 +71,8 @@ class PostgresCanonicalEvidenceSpanReader:
             select(
                 EvidenceSpanRow,
                 DocumentVersionRow.document_id,
+                DocumentVersionRow.title,
+                DocumentVersionRow.published_at,
                 DocumentRow.lifecycle_state,
                 DocumentRow.current_version_id,
                 linked_to_streamed_answer.label("linked_to_streamed_answer"),
@@ -98,10 +100,12 @@ class PostgresCanonicalEvidenceSpanReader:
         if row is None:
             return None
 
-        span, document_id, lifecycle_state, current_version_id, is_linked = row
+        span, document_id, title, published_at, lifecycle_state, current_version_id, is_linked = row
         return CanonicalEvidenceSpanSource(
             span=span.to_domain(),
             document_id=document_id,
+            document_title=title,
+            published_at=published_at,
             document_lifecycle_state=lifecycle_state,
             document_current_version_id=current_version_id,
             linked_to_streamed_answer=is_linked,

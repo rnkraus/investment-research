@@ -35,6 +35,8 @@ VERSION_ID = UUID("10000000-0000-4000-8000-000000000003")
 OTHER_VERSION_ID = UUID("10000000-0000-4000-8000-000000000004")
 BLOCK_ID = UUID("10000000-0000-4000-8000-000000000005")
 CREATED_AT = datetime(2026, 2, 20, 12, tzinfo=UTC)
+PUBLISHED_AT = datetime(2026, 2, 18, tzinfo=UTC)
+DOCUMENT_TITLE = "Synthetic FY2025 earnings"
 EVIDENCE_TEXT = "FY2025 revenue was $184.2 million."
 
 
@@ -108,6 +110,8 @@ def make_source() -> CanonicalEvidenceSpanSource:
     return CanonicalEvidenceSpanSource(
         span=make_span(),
         document_id=DOCUMENT_ID,
+        document_title=DOCUMENT_TITLE,
+        published_at=PUBLISHED_AT,
         document_lifecycle_state=DocumentLifecycleState.ACTIVE,
         document_current_version_id=VERSION_ID,
         linked_to_streamed_answer=True,
@@ -130,9 +134,20 @@ def test_resolve_returns_only_a_current_linked_workspace_span() -> None:
     result = service.resolve(make_context(), SPAN_ID)
 
     assert result.document_id == DOCUMENT_ID
+    assert result.document_title == DOCUMENT_TITLE
+    assert result.published_at == PUBLISHED_AT
     assert result.span == make_span()
     assert unit_of_work.reader.calls == [(make_context(), SPAN_ID)]
     assert unit_of_work.enter_count == unit_of_work.exit_count == 1
+
+
+def test_resolve_keeps_unknown_publication_date_instead_of_using_capture_time() -> None:
+    service, _ = make_service(make_source().model_copy(update={"published_at": None}))
+
+    result = service.resolve(make_context(), SPAN_ID)
+
+    assert result.document_title == DOCUMENT_TITLE
+    assert result.published_at is None
 
 
 @pytest.mark.parametrize(
