@@ -9,10 +9,12 @@ import {
   apiClient,
   requireLocalSourcePath,
   type ResearchModel,
+  type DocumentCatalogEntry,
   type ResearchModelOptions,
 } from "@/lib/api/client";
 
 import { archiveCopy, fixtureDefaults } from "./copy";
+import { RetrievalContext } from "./retrieval-context";
 import {
   applyResearchEvent,
   attachCitationSource,
@@ -24,6 +26,7 @@ import {
 } from "./research-session";
 
 interface ResearchWorkflowProps {
+  readonly documents?: readonly DocumentCatalogEntry[];
   readonly documentIds: readonly string[] | undefined;
   readonly onBusyChange: (busy: boolean) => void;
 }
@@ -47,6 +50,7 @@ function modelLabel(model: ResearchModel): string {
 }
 
 export function ResearchWorkflow({
+  documents = [],
   documentIds,
   onBusyChange,
 }: ResearchWorkflowProps) {
@@ -175,7 +179,11 @@ export function ResearchWorkflow({
       }
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
-        setSession(EMPTY_RESEARCH_SESSION);
+        setSession({
+          ...EMPTY_RESEARCH_SESSION,
+          researchRequestId: currentSession.researchRequestId,
+          retrievalContext: currentSession.retrievalContext,
+        });
         setErrorMessage(safeErrorMessage(error));
       }
     } finally {
@@ -356,6 +364,14 @@ export function ResearchWorkflow({
             : archiveCopy.research.submitIdle}
         </button>
       </form>
+
+      {session.retrievalContext !== undefined ? (
+        <RetrievalContext
+          key={session.researchRequestId}
+          sources={session.retrievalContext}
+          documents={documents}
+        />
+      ) : null}
 
       <div aria-live="polite" className="mt-7">
         {session.status === "RUNNING" ? (
