@@ -9,10 +9,13 @@ import {
 } from "@/lib/api/client";
 
 import { archiveCopy } from "./copy";
+import { DocumentDeletionPanel } from "./document-deletion-panel";
 import {
   DOCUMENT_SELECTION_LIMIT,
   EMPTY_DOCUMENT_SELECTION,
   getResearchDocumentIds,
+  getDeletionDocumentIds,
+  isDocumentSelectable,
   resetDocumentSelection,
   toggleDocumentSelection,
   type DocumentSelection,
@@ -44,6 +47,8 @@ export function ArchiveResearch({
   const [refreshCount, setRefreshCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isResearching, setIsResearching] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [answerResetKey, setAnswerResetKey] = useState(0);
   const [failed, setFailed] = useState(false);
   const [selectionWasReset, setSelectionWasReset] = useState(false);
   const request = useRef<AbortController | null>(null);
@@ -122,8 +127,9 @@ export function ArchiveResearch({
   }
 
   const documentIds = getResearchDocumentIds(selection);
+  const deletionDocumentIds = getDeletionDocumentIds(selection);
   const researchDocumentIds =
-    selection.scope === "SELECTED" && (isLoading || failed)
+    isDeleting || (selection.scope === "SELECTED" && (isLoading || failed))
       ? undefined
       : documentIds;
 
@@ -162,7 +168,7 @@ export function ArchiveResearch({
             </button>
             <button
               type="button"
-              disabled={isLoading || isResearching}
+              disabled={isLoading || isResearching || isDeleting}
               onClick={() => setRefreshCount((current) => current + 1)}
               className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
             >
@@ -171,7 +177,7 @@ export function ArchiveResearch({
           </div>
         </div>
 
-        <fieldset disabled={isResearching} className="mt-6">
+        <fieldset disabled={isResearching || isDeleting} className="mt-6">
           <legend className="text-sm font-semibold text-slate-800">
             {archiveCopy.research.scopeLegend}
           </legend>
@@ -205,17 +211,36 @@ export function ArchiveResearch({
           <p className="mt-2 text-xs text-slate-500">
             {archiveCopy.catalog.selectionHint}
           </p>
-          <button
-            type="button"
-            disabled={selection.documents.length === 0}
-            onClick={() => {
-              setSelection(resetDocumentSelection);
-              setSelectionWasReset(false);
-            }}
-            className="mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
-          >
-            {archiveCopy.catalog.clearSelection}
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={selection.documents.length === 0}
+              onClick={() => {
+                setSelection(resetDocumentSelection);
+                setSelectionWasReset(false);
+              }}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
+            >
+              {archiveCopy.catalog.clearSelection}
+            </button>
+          </div>
+        </fieldset>
+
+        <DocumentDeletionPanel
+          documents={
+            deletionDocumentIds === undefined ? [] : selection.documents
+          }
+          disabled={isLoading || failed || isResearching}
+          onBusyChange={setIsDeleting}
+          onArchiveChanged={() => {
+            setSelection(resetDocumentSelection);
+            setAnswerResetKey((current) => current + 1);
+            setRefreshCount((current) => current + 1);
+          }}
+        />
+
+        <fieldset disabled={isResearching || isDeleting}>
+          <legend className="sr-only">{archiveCopy.catalog.heading}</legend>
 
           <div id={documentListId} hidden={!isListVisible}>
             <ul className="mt-5 divide-y divide-slate-200">
@@ -223,7 +248,7 @@ export function ArchiveResearch({
                 const selected = selection.documents.some(
                   (item) => item.document_id === document.document_id,
                 );
-                const selectable = document.processing?.state === "SEARCHABLE";
+                const selectable = isDocumentSelectable(document);
                 const label = `${archiveCopy.catalog.selectDocument}: ${document.title}`;
                 return (
                   <li
@@ -290,7 +315,7 @@ export function ArchiveResearch({
                         ))}
                       </dl>
                       <p
-                        className={`mt-2 text-xs font-semibold ${selectable ? "text-emerald-700" : "text-slate-600"}`}
+                        className={`mt-2 text-xs font-semibold ${document.processing?.state === "SEARCHABLE" ? "text-emerald-700" : "text-slate-600"}`}
                       >
                         {document.processing === null
                           ? archiveCopy.catalog.notProcessed
@@ -360,6 +385,7 @@ export function ArchiveResearch({
         </div>
       </section>
       <ResearchWorkflow
+        key={answerResetKey}
         documentIds={researchDocumentIds}
         onBusyChange={setIsResearching}
       />
