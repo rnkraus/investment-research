@@ -10,6 +10,16 @@ export interface DeletionBatch {
   readonly unavailableDocumentIds: readonly string[];
 }
 
+interface DeletionStatusClient {
+  getDocumentDeletion(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentDeletionResult>;
+}
+
+const AUTOMATIC_TRACKING_MS = 5 * 60_000;
+const STATUS_CHECK_INTERVAL_MS = 5_000;
+
 export function beginDeletionBatch(
   documentIds: readonly string[],
 ): DeletionBatch {
@@ -47,12 +57,7 @@ export function isDeletionComplete(batch: DeletionBatch): boolean {
 /** Read only explicit targets; a missing or unreachable receipt never proves completion. */
 export async function refreshDeletionBatch(
   batch: DeletionBatch,
-  client: {
-    getDocumentDeletion(
-      id: string,
-      signal?: AbortSignal,
-    ): Promise<DocumentDeletionResult>;
-  },
+  client: DeletionStatusClient,
   signal: AbortSignal,
 ): Promise<DeletionBatch> {
   const receipts = new Map(
@@ -91,7 +96,49 @@ export async function refreshDeletionBatch(
   };
 }
 
-export function waitForDeletionCheck(signal: AbortSignal): Promise<void> {
+/** Background tracking reads receipts only; it never submits or retries deletion. */
+export async function monitorDeletionBatch(
+  batch: DeletionBatch,
+  client: DeletionStatusClient,
+  signal: AbortSignal,
+  onUpdate: (updated: DeletionBatch) => void,
+  timing = {
+    now: () => performance.now(),
+    wait: waitForDeletionCheck,
+  },
+): Promise<DeletionBatch> {
+  signal.throwIfAborted();
+  if (isDeletionComplete(batch)) return batch;
+  const deadline = timing.now() + AUTOMATIC_TRACKING_MS;
+  const timeout = AbortSignal.timeout(AUTOMATIC_TRACKING_MS);
+  const trackingSignal = AbortSignal.any([signal, timeout]);
+  let updated = batch;
+  try {
+    while (!isDeletionComplete(updated)) {
+      trackingSignal.throwIfAborted();
+      const remaining = deadline - timing.now();
+      if (remaining <= 0) break;
+      await timing.wait(
+        trackingSignal,
+        Math.min(STATUS_CHECK_INTERVAL_MS, remaining),
+      );
+      trackingSignal.throwIfAborted();
+      if (timing.now() >= deadline) break;
+      updated = await refreshDeletionBatch(updated, client, trackingSignal);
+      trackingSignal.throwIfAborted();
+      onUpdate(updated);
+    }
+  } catch (error) {
+    signal.throwIfAborted();
+    if (!timeout.aborted) throw error;
+  }
+  return updated;
+}
+
+export function waitForDeletionCheck(
+  signal: AbortSignal,
+  delayMs = STATUS_CHECK_INTERVAL_MS,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     signal.throwIfAborted();
     function cancel() {
@@ -101,7 +148,7 @@ export function waitForDeletionCheck(signal: AbortSignal): Promise<void> {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", cancel);
       resolve();
-    }, 2_000);
+    }, delayMs);
     signal.addEventListener("abort", cancel, { once: true });
   });
 }

@@ -232,9 +232,16 @@ credentials stay server-side. If the choices cannot be loaded, research submissi
 rather than silently using another model. The deterministic runtime has no paid-model controls.
 The research form is available without a new upload: its default searches eligible saved documents
 in the local workspace. The paginated catalog opens saved originals independently of a question and
-allows selecting 1–100 `SEARCHABLE` documents. Hide/show preserves the selection; Clear selection
-keeps focused scope and blocks submission until sources are chosen again. Refreshing clears the
-selection. This read-only catalog does not yet implement deletion or version management.
+allows selecting 1–100 documents. Research requires every selected source to be `SEARCHABLE`;
+failed or unprocessed sources are selectable for permanent deletion only, while ongoing processing
+blocks selection. Hide/show preserves the selection; Clear selection keeps focused scope and blocks
+research submission until sources are chosen again. Refreshing clears the selection. Delete selected
+requires a second irreversible-deletion confirmation under [ADR-0019](adr/0019-permanent-local-document-deletion.md).
+The page tracks cleanup in the background for up to five minutes with five seconds between checks,
+without blocking research. If tracking stops, an explicit stale-count warning offers a manual check
+that resumes tracking. Reloading does not stop accepted cleanup, but does not rediscover the batch.
+See the [archive workflow](../frontend/src/features/archive/README.md#permanent-local-deletion)
+for confirmation, uncertain outcomes, and retry behavior. Version management remains later work.
 After a frontend code change, rebuild the Compose web image with the `up --build` command above
 before checking the served website.
 

@@ -13,8 +13,8 @@ import {
   acceptDeletionBatch,
   beginDeletionBatch,
   isDeletionComplete,
+  monitorDeletionBatch,
   refreshDeletionBatch,
-  waitForDeletionCheck,
   type DeletionBatch,
 } from "./document-deletion";
 
@@ -39,39 +39,56 @@ export function DocumentDeletionPanel({
   >(null);
   const [batch, setBatch] = useState<DeletionBatch | null>(null);
   const [busy, setBusy] = useState(false);
+  const [automaticallyUpdating, setAutomaticallyUpdating] = useState(false);
   const [rejected, setRejected] = useState(false);
   const operation = useRef<AbortController | null>(null);
+  const tracking = useRef<AbortController | null>(null);
 
-  useEffect(() => () => operation.current?.abort(), []);
+  useEffect(
+    () => () => {
+      operation.current?.abort();
+      tracking.current?.abort();
+    },
+    [],
+  );
 
-  async function monitor(
-    current: DeletionBatch,
-    signal: AbortSignal,
-    rounds: number,
-  ) {
-    let updated = current;
-    for (
-      let round = 0;
-      round < rounds && !isDeletionComplete(updated);
-      round += 1
-    ) {
-      if (round > 0) await waitForDeletionCheck(signal);
-      updated = await refreshDeletionBatch(updated, apiClient, signal);
-      signal.throwIfAborted();
-      setBatch(updated);
+  async function track(current: DeletionBatch) {
+    if (isDeletionComplete(current)) return;
+    const controller = new AbortController();
+    tracking.current = controller;
+    setAutomaticallyUpdating(true);
+    try {
+      await monitorDeletionBatch(
+        current,
+        apiClient,
+        controller.signal,
+        setBatch,
+      );
+    } catch {
+      // Preserve the last confirmed count and expose stopped automatic tracking.
+    } finally {
+      if (tracking.current === controller) {
+        tracking.current = null;
+        if (!controller.signal.aborted) setAutomaticallyUpdating(false);
+      }
     }
   }
 
   async function run(current: DeletionBatch, submit: boolean) {
     if (operation.current !== null) return;
+    // A manual check or explicit retry replaces tracking instead of overlapping its reads.
+    tracking.current?.abort();
+    tracking.current = null;
+    setAutomaticallyUpdating(false);
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
-    onBusyChange(true);
+    if (submit) onBusyChange(true);
     setRejected(false);
     setConfirmation(null);
     setBatch(current);
     if (submit) onArchiveChanged();
+    let nextTrackingBatch: DeletionBatch | null = null;
     try {
       let updated = current;
       if (submit) {
@@ -111,15 +128,23 @@ export function DocumentDeletionPanel({
           }
         }
       }
-      await monitor(updated, controller.signal, submit ? 4 : 1);
+      updated = await refreshDeletionBatch(
+        updated,
+        apiClient,
+        controller.signal,
+      );
+      controller.signal.throwIfAborted();
+      setBatch(updated);
+      nextTrackingBatch = updated;
     } catch {
       // Keep the last confirmed snapshots; cancellation or failed reads are not completion.
     } finally {
       if (!controller.signal.aborted) {
         if (submit) onArchiveChanged();
         setBusy(false);
-        onBusyChange(false);
+        if (submit) onBusyChange(false);
         operation.current = null;
+        if (nextTrackingBatch !== null) void track(nextTrackingBatch);
       }
     }
   }
@@ -249,6 +274,13 @@ export function DocumentDeletionPanel({
             {busy ? (
               <p role="status" className="mt-2">
                 {archiveCopy.deletion.checking}
+              </p>
+            ) : null}
+            {!busy && !complete ? (
+              <p role="status" className="mt-2 text-slate-700">
+                {automaticallyUpdating
+                  ? archiveCopy.deletion.automaticallyUpdating
+                  : archiveCopy.deletion.automaticUpdatesStopped}
               </p>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">

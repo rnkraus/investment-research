@@ -109,6 +109,10 @@ export const archiveCopy = {
     confirm: "Permanently delete",
     cancel: "Cancel",
     checking: "Checking deletion status…",
+    automaticallyUpdating:
+      "Status updates automatically every five seconds for up to five minutes. You can continue using the archive.",
+    automaticUpdatesStopped:
+      "Automatic status updates have stopped. The count may be out of date; accepted cleanup continues independently. Check deletion status to refresh the count and resume automatic updates.",
     trackingLifetime:
       "Keep this page open to track or retry this batch. Reloading does not stop accepted deletion, but this page does not rediscover earlier batches.",
     tracking: "Permanent deletion",

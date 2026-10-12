@@ -147,7 +147,8 @@ Delete selected appears above the document rows, even when the rows are hidden. 
 empty selection, failed catalog reads, and ongoing research disable deletion. A second explicit
 confirmation lists the frozen selection and explains irreversible source/dependent-answer removal
 and the backup/provider/export boundaries in ADR-0019. Cancel sends no request. Selection and
-research are blocked during confirmation and active deletion requests.
+research are blocked during confirmation and deletion submission, not during background tracking
+or a manual status check.
 
 ```mermaid
 flowchart LR
@@ -158,6 +159,9 @@ flowchart LR
     POST -->|uncertain transport or server outcome| CHECK[Read scoped receipts]
     ACCEPTED --> CHECK
     CHECK -->|pending or unavailable| PENDING[Honest incomplete status]
+    PENDING -->|automatic check every five seconds| CHECK
+    PENDING -->|five-minute tracking deadline| PAUSED[Show stopped updates and possibly stale count]
+    PAUSED -->|manual check and resume tracking| CHECK
     PENDING -->|manual check| CHECK
     PENDING -->|explicit retry same IDs| POST
     CHECK -->|every receipt completed| DONE[Show completed cleanup]
@@ -166,12 +170,19 @@ flowchart LR
 The catalog and displayed research result are invalidated when a confirmed deletion is attempted
 and refreshed after the operation. This conservatively clears stale answer/citation UI even when
 the commit outcome is uncertain. `202` and successful publication never imply cleanup completion.
-After submission, at most four status-read rounds run, separated by two seconds. Each read round
-has a shared ten-second deadline and at most five concurrent reads; the submission timeout is
-fifteen seconds. Manual status checks run one read round. Timeouts and missing receipts preserve
-the last confirmed snapshots rather than reporting success or silently repeating the POST.
+After submission, one status-read round runs before releasing the submission lock. Unfinished
+batches then receive background checks with five seconds between rounds for up to five minutes.
+The monotonic tracking budget includes read latency, and its cancellation signal also bounds
+in-flight reads. Each read round has a shared ten-second deadline and at most five concurrent
+reads; the submission timeout is fifteen seconds. Completed receipts are not reread. Background
+tracking never submits a deletion request or invalidates a newly displayed research answer.
+When tracking stops, the UI explicitly warns that the count may be stale and that accepted worker
+cleanup continues independently. A manual check or explicit retry cancels the previous tracking
+loop before reading; an unfinished result starts a fresh bounded tracking period.
+Timeouts and missing receipts preserve the last confirmed snapshots rather than reporting success
+or silently repeating the POST. Page unmount cancels both foreground and background requests.
 An explicit retry checks status first, then resubmits only the same confirmed IDs if needed.
-Completed receipts are not polled again. The backend remains authoritative and idempotent.
+The backend remains authoritative and idempotent.
 
 Tracking is page-local: reload does not cancel worker cleanup, but the UI does not yet rediscover
 earlier batches. This limitation is shown before confirmation and while cleanup is pending.
