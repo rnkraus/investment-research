@@ -130,8 +130,9 @@ the latest processing snapshot. Unknown dates remain unknown; displayed dates us
 
 The default scope submits `document_ids: []` to search eligible current sources in the server-derived
 workspace. Checkboxes select 1–100 documents, automatically enabling selected scope. Research
-requires every selected document to be `SEARCHABLE`. Failed or unprocessed documents can be
-selected for deletion only; ongoing processing cannot be selected. Loading more preserves selection.
+requires every selected document to be `SEARCHABLE`. Queued, Text extracted, Failed, and unprocessed
+documents can be selected for deletion only; Parsing and Indexing cannot be selected. Backend
+admission rechecks processing eligibility as described below. Loading more preserves selection.
 The document rows and pagination can be hidden and shown without changing selection or making
 another request. Scope controls and the selected count remain visible. Clicking a document title
 toggles its checkbox. Clear selection removes all chosen documents while preserving focused scope,
@@ -149,6 +150,14 @@ confirmation lists the frozen selection and explains irreversible source/depende
 and the backup/provider/export boundaries in ADR-0019. Cancel sends no request. Selection and
 research are blocked during confirmation and deletion submission, not during background tracking
 or a manual status check.
+
+Queued (`CAPTURED`), Text extracted (`LEXICAL_READY`), Failed, and sources without a processing
+snapshot can be selected for deletion, but research still requires every selected source to be
+Searchable. Parsing and Indexing remain unselectable. The catalog does not expose lease details:
+the backend rechecks every processing run at admission, accepts unclaimed queued work and completed
+lexical-only output, and rejects the entire batch if parsing or dense indexing has already started.
+Even an expired lease does not prove that external work stopped. Refresh before trying a rejected
+selection again; this feature does not cancel a running worker.
 
 ```mermaid
 flowchart LR

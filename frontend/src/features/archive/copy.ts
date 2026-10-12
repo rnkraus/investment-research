@@ -77,7 +77,7 @@ export const archiveCopy = {
       "The document list was refreshed. Select your documents again before asking a focused question.",
     selectionLimit: "You can select up to 100 documents at a time.",
     selectionHint:
-      "Select Searchable documents for research. Failed or unprocessed documents can be selected for deletion only; documents still processing cannot be selected. Hiding the list or loading more keeps selection; refreshing clears it. Dates are shown in UTC.",
+      "Select Searchable documents for research. Queued, Text extracted, Failed, and unprocessed documents can be selected for deletion only. The server refuses deletion if processing has started or indexing is still unfinished. Parsing and Indexing documents cannot be selected. Hiding the list or loading more keeps selection; refreshing clears it. Dates are shown in UTC.",
     unknownDate: "Unknown",
     published: "Published",
     captured: "Captured",
@@ -123,7 +123,7 @@ export const archiveCopy = {
     dispatchPending:
       "Some cleanup jobs could not be queued. Retry the confirmed deletion to send them again.",
     rejected:
-      "The server rejected this batch. No deletion was accepted by this request. Refresh the list before selecting again.",
+      "The server rejected this batch. No deletion was accepted by this request. Processing may still be in progress, or the selection may be out of date. Refresh the list before selecting again.",
     completed:
       "Cleanup completed for all confirmed documents, including affected stored answers and canonical search data.",
     progress: "Confirmed cleanup",

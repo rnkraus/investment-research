@@ -15,6 +15,8 @@ export const EMPTY_DOCUMENT_SELECTION: DocumentSelection = {
 export function isDocumentSelectable(document: DocumentCatalogEntry): boolean {
   return (
     document.processing === null ||
+    document.processing.state === "CAPTURED" ||
+    document.processing.state === "LEXICAL_READY" ||
     document.processing.state === "SEARCHABLE" ||
     document.processing.state === "FAILED"
   );
