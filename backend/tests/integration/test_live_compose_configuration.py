@@ -71,13 +71,13 @@ def render_configuration(tmp_path: Path, *, live: bool, profile: str | None) -> 
     ("live", "profile", "expected"),
     [
         (False, "m1-5-citable-units", None),
-        (True, None, "m1"),
+        (True, None, "m1-5-citable-units"),
         (True, "m1", "m1"),
         (True, "m1-5-citable-units", "m1-5-citable-units"),
     ],
     ids=["base-unaffected", "live-default", "live-m1", "live-citable-units"],
 )
-def test_compose_research_profile_is_api_only_and_explicitly_opt_in(
+def test_compose_live_defaults_to_citable_units_and_keeps_profile_api_only(
     tmp_path: Path, live: bool, profile: str | None, expected: str | None
 ) -> None:
     services = render_configuration(tmp_path, live=live, profile=profile)["services"]

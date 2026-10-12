@@ -445,11 +445,22 @@ def load_api_settings(
     env_file: Path | None = ROOT_ENV_FILE,
     rag_config_file: Path = PROJECT_ROOT / "config" / "rag.toml",
 ) -> ApiSettings:
-    """Load only values required by the FastAPI process."""
+    """Load API values, defaulting complete live providers to source-ID research."""
 
     rag = load_rag_settings(rag_config_file)
     file_values = _read_local_values(env_file)
     database_values = _database_runtime_values(file_values)
+    query_provider_values = _dense_provider_runtime_values(
+        file_values,
+        embedding_key_name="INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
+        pinecone_key_name="INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
+    )
+    generation_provider_values = _generation_provider_runtime_values(file_values)
+    default_research_profile = (
+        "m1-5-citable-units"
+        if query_provider_values is not None and generation_provider_values is not None
+        else "m1"
+    )
     values = {
         **database_values,
         **_queue_runtime_values(file_values, database_values.get("runtime_location")),
@@ -464,7 +475,7 @@ def load_api_settings(
         "research_profile": _configuration_value(
             "INVESTMENT_RESEARCH_RESEARCH_PROFILE",
             file_values,
-            "m1",
+            default_research_profile,
         ),
         "app_name": _configuration_value(
             "INVESTMENT_RESEARCH_APP_NAME",
@@ -482,12 +493,8 @@ def load_api_settings(
             file_values,
             str(DEFAULT_MAX_UPLOAD_BYTES),
         ),
-        "query_providers": _dense_provider_runtime_values(
-            file_values,
-            embedding_key_name="INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY",
-            pinecone_key_name="INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY",
-        ),
-        "generation_provider": _generation_provider_runtime_values(file_values),
+        "query_providers": query_provider_values,
+        "generation_provider": generation_provider_values,
         "acceptance_dense_index_path": _configuration_value(
             "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
             file_values,
