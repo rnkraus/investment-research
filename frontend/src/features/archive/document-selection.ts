@@ -12,6 +12,14 @@ export const EMPTY_DOCUMENT_SELECTION: DocumentSelection = {
   documents: [],
 };
 
+export function isDocumentSelectable(document: DocumentCatalogEntry): boolean {
+  return (
+    document.processing === null ||
+    document.processing.state === "SEARCHABLE" ||
+    document.processing.state === "FAILED"
+  );
+}
+
 export function toggleDocumentSelection(
   selection: DocumentSelection,
   document: DocumentCatalogEntry,
@@ -29,12 +37,27 @@ export function toggleDocumentSelection(
     };
   }
   if (
-    document.processing?.state !== "SEARCHABLE" ||
+    !isDocumentSelectable(document) ||
     selection.documents.length >= DOCUMENT_SELECTION_LIMIT
   ) {
     return selection;
   }
   return { scope: "SELECTED", documents: [...selection.documents, document] };
+}
+
+export function getDeletionDocumentIds(
+  selection: DocumentSelection,
+): readonly string[] | undefined {
+  if (
+    selection.scope !== "SELECTED" ||
+    selection.documents.length === 0 ||
+    selection.documents.length > DOCUMENT_SELECTION_LIMIT ||
+    selection.documents.some((item) => !isDocumentSelectable(item))
+  ) {
+    return undefined;
+  }
+  const ids = selection.documents.map((item) => item.document_id);
+  return new Set(ids).size === ids.length ? ids : undefined;
 }
 
 export function resetDocumentSelection(

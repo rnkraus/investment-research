@@ -60,6 +60,9 @@ export const archiveCopy = {
     hideDocuments: "Hide documents",
     showDocuments: "Show documents",
     clearSelection: "Clear selection",
+    deleteSelected: "Delete selected",
+    deletionHint:
+      "Delete only explicitly selected documents. Permanent deletion also removes complete saved answers that used them. There is no restore.",
     loadMore: "Load more documents",
     empty:
       "No documents saved yet. Import a PDF or paste text below to get started.",
@@ -69,12 +72,12 @@ export const archiveCopy = {
     selectDocument: "Select document",
     selected: "Selected documents",
     selectionRequired:
-      "Select at least one searchable document, or choose all saved documents.",
+      "Research requires a non-empty selection containing only Searchable documents, or all saved documents.",
     selectionReset:
       "The document list was refreshed. Select your documents again before asking a focused question.",
-    selectionLimit: "You can select up to 100 documents per question.",
+    selectionLimit: "You can select up to 100 documents at a time.",
     selectionHint:
-      "Select one or more Searchable documents using the checkboxes. Hiding the list or loading more keeps your selection; refreshing clears it. Dates are shown in UTC.",
+      "Select Searchable documents for research. Failed or unprocessed documents can be selected for deletion only; documents still processing cannot be selected. Hiding the list or loading more keeps selection; refreshing clears it. Dates are shown in UTC.",
     unknownDate: "Unknown",
     published: "Published",
     captured: "Captured",
@@ -96,6 +99,36 @@ export const archiveCopy = {
     originalUnavailable:
       "This original could not be opened or is no longer available in this workspace.",
     openPdf: "Open PDF in a separate tab",
+  },
+  deletion: {
+    heading: "Permanently delete selected documents?",
+    warning:
+      "This cannot be undone. All versions, originals, search data, and complete stored answers that used these documents will be removed, including answers that also used other documents.",
+    boundary:
+      "Usage accounting is retained. Previously downloaded copies, backups, local diagnostic output, and copies already sent to AI providers are not erased by this action.",
+    confirm: "Permanently delete",
+    cancel: "Cancel",
+    checking: "Checking deletion status…",
+    trackingLifetime:
+      "Keep this page open to track or retry this batch. Reloading does not stop accepted deletion, but this page does not rediscover earlier batches.",
+    tracking: "Permanent deletion",
+    pending:
+      "Accepted documents are excluded from the archive and new research. Cleanup is not yet confirmed complete. You can check again or retry the same confirmed deletion.",
+    uncertain:
+      "Some deletion statuses could not be confirmed. A missing response does not mean nothing was deleted. Check status before retrying; retry uses only the same confirmed document IDs.",
+    dispatchPending:
+      "Some cleanup jobs could not be queued. Retry the confirmed deletion to send them again.",
+    rejected:
+      "The server rejected this batch. No deletion was accepted by this request. Refresh the list before selecting again.",
+    completed:
+      "Cleanup completed for all confirmed documents, including affected stored answers and canonical search data.",
+    progress: "Confirmed cleanup",
+    check: "Check deletion status",
+    retry: "Retry confirmed deletion",
+    close: "Close deletion status",
+    selection: "Documents to delete",
+    clearedAnswer:
+      "The previous answer view was cleared because deletion can invalidate its sources.",
   },
   research: {
     eyebrow: "Research saved evidence",

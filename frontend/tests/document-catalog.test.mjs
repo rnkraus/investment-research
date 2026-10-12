@@ -9,6 +9,7 @@ import {
 import {
   EMPTY_DOCUMENT_SELECTION,
   getResearchDocumentIds,
+  getDeletionDocumentIds,
   resetDocumentSelection,
   toggleDocumentSelection,
 } from "../src/features/archive/document-selection.ts";
@@ -287,15 +288,8 @@ test("clearing several selected documents keeps focused scope and does not mutat
   );
 });
 
-test("missing, pending, and failed processing cannot be selected", () => {
-  for (const state of [
-    null,
-    "CAPTURED",
-    "PARSING",
-    "LEXICAL_READY",
-    "INDEXING",
-    "FAILED",
-  ]) {
+test("ongoing processing cannot be selected for research or deletion", () => {
+  for (const state of ["CAPTURED", "PARSING", "LEXICAL_READY", "INDEXING"]) {
     const document = entry({
       processing: state === null ? null : { ...entry().processing, state },
     });
@@ -307,7 +301,47 @@ test("missing, pending, and failed processing cannot be selected", () => {
       getResearchDocumentIds({ scope: "SELECTED", documents: [document] }),
       undefined,
     );
+    assert.equal(
+      getDeletionDocumentIds({ scope: "SELECTED", documents: [document] }),
+      undefined,
+    );
   }
+});
+
+test("failed and unprocessed documents are deletable but never admitted to research", () => {
+  for (const processing of [null, { ...entry().processing, state: "FAILED" }]) {
+    const selected = toggleDocumentSelection(
+      EMPTY_DOCUMENT_SELECTION,
+      entry({ processing }),
+    );
+    assert.deepEqual(getDeletionDocumentIds(selected), [DOCUMENT_ID]);
+    assert.equal(getResearchDocumentIds(selected), undefined);
+    const mixed = toggleDocumentSelection(
+      selected,
+      entry({ document_id: RUN_ID }),
+    );
+    assert.deepEqual(getDeletionDocumentIds(mixed), [DOCUMENT_ID, RUN_ID]);
+    assert.equal(getResearchDocumentIds(mixed), undefined);
+  }
+});
+
+test("deletion never interprets all scope or an empty focused scope as a batch", () => {
+  assert.equal(getDeletionDocumentIds(EMPTY_DOCUMENT_SELECTION), undefined);
+  assert.equal(
+    getDeletionDocumentIds({ scope: "ALL", documents: [entry()] }),
+    undefined,
+  );
+  assert.equal(
+    getDeletionDocumentIds({ scope: "SELECTED", documents: [] }),
+    undefined,
+  );
+  assert.equal(
+    getDeletionDocumentIds({
+      scope: "SELECTED",
+      documents: [entry(), entry()],
+    }),
+    undefined,
+  );
 });
 
 test("selection is bounded at 100, but removing an existing source remains possible", () => {
@@ -318,6 +352,7 @@ test("selection is bounded at 100, but removing an existing source remains possi
   );
   const selection = { scope: "SELECTED", documents };
   assert.equal(getResearchDocumentIds(selection).length, 100);
+  assert.equal(getDeletionDocumentIds(selection).length, 100);
   assert.equal(toggleDocumentSelection(selection, entry()), selection);
   assert.equal(
     toggleDocumentSelection(selection, documents[0]).documents.length,
@@ -325,6 +360,13 @@ test("selection is bounded at 100, but removing an existing source remains possi
   );
   assert.equal(
     getResearchDocumentIds({
+      scope: "SELECTED",
+      documents: [...documents, entry()],
+    }),
+    undefined,
+  );
+  assert.equal(
+    getDeletionDocumentIds({
       scope: "SELECTED",
       documents: [...documents, entry()],
     }),
