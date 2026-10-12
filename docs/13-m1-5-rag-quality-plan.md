@@ -20,6 +20,14 @@ unchanged. Earlier dated references to opt-in use and unchanged website defaults
 those historical blocks, not the current live default. This selection prevents accidental
 quote-copying starts; it is not a new quality observation or full milestone acceptance.
 
+**Local rejection inspection (2026-10-13):** The existing explicit local diagnostic override
+additionally exposes rejected claims and their matching selected excerpts in a separately labeled
+website panel. Normal runs still disclose no rejected proposal, and no unvalidated claim becomes
+accepted answer content. The panel is request-local, public/synthetic-only, and does not alter
+generation, support decisions, evidence rules, or quality measurements. See the
+[stream contract](./11-m1-contracts.md#113-research-stream) and
+[runtime guide](./development.md#default-m15-source-id-research).
+
 The accepted M1 path already answers questions over saved, eligible PDF and pasted-text documents
 with lexical and dense retrieval, typed generation, statement-support evaluation, and exact
 original-source citations. M1.5 makes that path more robust and measurable for a local portfolio
@@ -47,7 +55,8 @@ the server resolves offsets and rejects a missing or ambiguous quote. Luna's obs
 weaken validation.
 
 - Preserve the M1 API response and citation-viewer contract unless a reviewed contract change is
-  required. A selected model must never make an unsupported statement visible.
+  required. A selected model must never publish an unsupported statement as an accepted answer;
+  explicitly enabled local diagnostics remain separate, unvalidated development output.
 - Keep PostgreSQL and immutable originals canonical. Pinecone scores and model-selected IDs are
   untrusted suggestions, not evidence or authorization.
 - Apply workspace, current-version, lifecycle, processing, configuration, and temporal eligibility
