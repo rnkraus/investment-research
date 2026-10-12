@@ -26,9 +26,17 @@ commit one distributed transaction, and immutable originals must remain protecte
 
 Accept only explicit batches of 1–100 unique document IDs under the trusted `WorkspaceContext`.
 An empty batch never means all documents. Confirm permanent deletion in the UI before submission;
-place Delete selected above the catalog, next to the other selection actions. Initially refuse a
-batch containing a still-processing document rather than racing a worker; do not silently delete
+place Delete selected above the catalog, next to the other selection actions. Refuse a batch
+containing started parsing or indexing work rather than racing a worker; do not silently delete
 only part of that batch. Never use a bucket-wide or namespace-wide delete.
+
+**Owner-requested waiting-source extension (2026-10-12):** An unclaimed `CAPTURED` run is deletable:
+its canonical state requires zero attempts, no start time, and no lease. Admission locks the document;
+the existing source-write guard serializes a competing claim and rejects a delayed claim after
+exclusion, before processing can open storage or invoke the parser. Completed lexical-only
+`LEXICAL_READY` runs remain deletable. A leased `LEXICAL_READY`, `PARSING`, or `INDEXING` run still
+rejects the entire batch, even if its lease expired: expiry alone does not prove external work has
+stopped. This is not active-worker cancellation or stale-run recovery.
 
 Commit `Document.lifecycle_state = PURGE_PENDING` and a content-free `document_deletions` receipt
 together. Pending deletion is already irreversible: normal listing, retrieval, original opening,
@@ -100,7 +108,9 @@ publication; failed publication IDs are returned without restoring content, and 
 retries pending jobs. Status snapshots never expose source text or provider/storage targets.
 The website now implements above-catalog multi-document confirmation, honest cleanup status,
 bounded receipt reads, and explicit same-batch retry. Failed or unprocessed sources are deletable
-but never admitted to research; in-progress sources remain unselectable. A deletion attempt clears
+but never admitted to research. Queued and Text extracted sources are also selectable for deletion;
+the backend rejects Text extracted if dense processing has not completed. Parsing and Indexing
+remain unselectable. A deletion attempt clears
 the current answer view and refreshes the catalog, including uncertain commit outcomes. Tracking
 is page-local and the reload limitation is shown explicitly; accepted worker cleanup continues.
 Manual browser/build verification and live Pinecone deletion verification remain pending.
@@ -133,3 +143,11 @@ Frontend-block verification (2026-10-12): `pnpm format`, `pnpm lint`, `pnpm type
 deletion browser tests were added to the existing CI discovery and type-checked, not executed
 locally. No browser, production build, live Pinecone deletion, or normal archive deletion was
 performed. The backend was unchanged in this block; its earlier verification remains separate.
+
+Waiting-source extension verification (2026-10-12): backend format, lint, typing, and 2,093 unit
+tests passed. The isolated PostgreSQL gate passed empty migration cycling, schema checks, and 227
+integration tests; seven separate SeaweedFS tests were skipped. Added regressions cover queued-source
+purge, delayed-claim fencing, competing claim/admission in both lock orders, whole-batch rejection,
+and refusal of started work even with expired leases. Frontend format, lint, typing, contract checks,
+and 83 deterministic tests passed. Additional mocked browser cases were type-checked, not executed
+locally. No production build, live provider deletion, or normal archive purge was performed.
