@@ -72,6 +72,15 @@ Catalog and citation viewers share `openOriginal`. The API reauthorizes the docu
 verifies stored-original integrity; the client accepts only PDF or plain text. Original reads also
 bypass the browser cache. Catalog metadata does not authorize retrieval or replace citation checks.
 
+`deleteDocuments` accepts only 1–100 distinct explicit UUIDs with the actual boolean
+`confirm_permanent: true`. Empty/all-source scope and implicit confirmation never reach the
+network. It checks ordered response IDs, unique failed-publication IDs belonging to pending
+receipts, and the content-free receipt shape. `getDocumentDeletion` constructs its scoped path
+from a validated ID and checks the returned ID, exact relative status route, timezone-aware dates,
+and consistent `PENDING`/`COMPLETED` timestamps. Neither call accepts provider/storage locators.
+Both bypass the browser cache and accept cancellation. Receipt availability is not proof of
+completion; the feature distinguishes acceptance, uncertain responses, and confirmed cleanup.
+
 Known API error codes retain their safe public messages and request IDs. An unstructured HTTP
 failure instead reports its status and a possible web-to-API timeout without displaying its raw
 body. Connection and stream failures also use fixed safe messages; transport exception text and

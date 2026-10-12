@@ -203,7 +203,10 @@ retention matrix, exact scoped cleanup, cost preservation, and activation gates.
 admission/purge services, store adapters, database write guards, and bounded worker dispatch are
 implemented. Confirmed HTTP admission and scoped receipt reads are available; the contract is in
 `docs/11-m1-contracts.md` Section 3.4. The isolated queue gate verifies PostgreSQL/SeaweedFS cleanup.
-Live Pinecone deletion verification and active frontend controls remain pending. M2 still owns
+The website implements confirmed multi-document deletion above the catalog, bounded receipt
+tracking, uncertain-outcome handling, and explicit same-batch retry. Tracking lasts for the current
+page; reload does not stop cleanup but does not rediscover older batches. Manual browser/build
+verification and live Pinecone deletion verification remain pending. M2 still owns
 durable outbox delivery and periodic reconciliation.
 This approval overrides the earlier read-only follow-up's exclusion of deletion only for this
 bounded local feature; broader M2/M3 work and public deployment remain out of scope.

@@ -6,19 +6,21 @@ PostgreSQL, or parse document content.
 
 ## Current files
 
-| File                    | Responsibility                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------ |
-| `copy.ts`               | Centralizes English feature text and defaults for later localization.                |
-| `archive-research.tsx`  | Loads the saved-document catalog and coordinates explicit research scope.            |
-| `document-selection.ts` | Keeps bounded selection and empty-scope admission independent of React.              |
-| `document-workflow.tsx` | Captures one PDF or pasted-text original and polls its background-processing status. |
-| `processing-state.ts`   | Defines polling completion and fail-closed research admission.                       |
-| `publication-date.ts`   | Formats the user's local calendar day for the editable publication-date default.     |
-| `research-session.ts`   | Reduces validated SSE events into one ordered, fail-closed UI result.                |
-| `research-workflow.tsx` | Loads model choices, asks a bounded question, and opens exact source evidence.       |
-| `source-anchor.ts`      | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
-| `source-viewer.tsx`     | Resolves and renders an authorized immutable PDF or pasted-text source.              |
-| `original-viewer.tsx`   | Opens a complete authorized original without claiming citation validation.           |
+| File                          | Responsibility                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `copy.ts`                     | Centralizes English feature text and defaults for later localization.                |
+| `archive-research.tsx`        | Loads the saved-document catalog and coordinates explicit research scope.            |
+| `document-selection.ts`       | Keeps bounded selection and empty-scope admission independent of React.              |
+| `document-deletion.ts`        | Tracks explicit deletion IDs and bounded, cancellation-aware receipt reads.          |
+| `document-deletion-panel.tsx` | Confirms permanent deletion and displays pending, uncertain, and completed cleanup.  |
+| `document-workflow.tsx`       | Captures one PDF or pasted-text original and polls its background-processing status. |
+| `processing-state.ts`         | Defines polling completion and fail-closed research admission.                       |
+| `publication-date.ts`         | Formats the user's local calendar day for the editable publication-date default.     |
+| `research-session.ts`         | Reduces validated SSE events into one ordered, fail-closed UI result.                |
+| `research-workflow.tsx`       | Loads model choices, asks a bounded question, and opens exact source evidence.       |
+| `source-anchor.ts`            | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
+| `source-viewer.tsx`           | Resolves and renders an authorized immutable PDF or pasted-text source.              |
+| `original-viewer.tsx`         | Opens a complete authorized original without claiming citation validation.           |
 
 ## Capture and processing flow
 
@@ -127,8 +129,9 @@ Titles, media, language, byte size, publication, capture, and availability dates
 the latest processing snapshot. Unknown dates remain unknown; displayed dates use UTC.
 
 The default scope submits `document_ids: []` to search eligible current sources in the server-derived
-workspace. Checkboxes select 1–100 `SEARCHABLE` documents, automatically enabling selected scope;
-pending, missing, and failed statuses cannot be selected. Loading more preserves selection.
+workspace. Checkboxes select 1–100 documents, automatically enabling selected scope. Research
+requires every selected document to be `SEARCHABLE`. Failed or unprocessed documents can be
+selected for deletion only; ongoing processing cannot be selected. Loading more preserves selection.
 The document rows and pagination can be hidden and shown without changing selection or making
 another request. Scope controls and the selected count remain visible. Clicking a document title
 toggles its checkbox. Clear selection removes all chosen documents while preserving focused scope,
@@ -137,6 +140,44 @@ Refreshing clears selection but preserves selected scope, visibly disabling subm
 user selects again or explicitly chooses all sources. List errors also block selected-scope
 submission, never silently widening a question. Selection controls are disabled during research.
 The server rechecks eligibility; neither the status snapshot nor possession of an ID authorizes use.
+
+## Permanent local deletion
+
+Delete selected appears above the document rows, even when the rows are hidden. All-source scope,
+empty selection, failed catalog reads, and ongoing research disable deletion. A second explicit
+confirmation lists the frozen selection and explains irreversible source/dependent-answer removal
+and the backup/provider/export boundaries in ADR-0019. Cancel sends no request. Selection and
+research are blocked during confirmation and active deletion requests.
+
+```mermaid
+flowchart LR
+    SELECT[Explicit selected documents] --> CONFIRM[Confirm frozen ID batch]
+    CONFIRM -->|cancel| SELECT
+    CONFIRM -->|permanent confirmation| POST[POST confirmed deletion]
+    POST --> ACCEPTED[Canonical exclusion and receipts]
+    POST -->|uncertain transport or server outcome| CHECK[Read scoped receipts]
+    ACCEPTED --> CHECK
+    CHECK -->|pending or unavailable| PENDING[Honest incomplete status]
+    PENDING -->|manual check| CHECK
+    PENDING -->|explicit retry same IDs| POST
+    CHECK -->|every receipt completed| DONE[Show completed cleanup]
+```
+
+The catalog and displayed research result are invalidated when a confirmed deletion is attempted
+and refreshed after the operation. This conservatively clears stale answer/citation UI even when
+the commit outcome is uncertain. `202` and successful publication never imply cleanup completion.
+After submission, at most four status-read rounds run, separated by two seconds. Each read round
+has a shared ten-second deadline and at most five concurrent reads; the submission timeout is
+fifteen seconds. Manual status checks run one read round. Timeouts and missing receipts preserve
+the last confirmed snapshots rather than reporting success or silently repeating the POST.
+An explicit retry checks status first, then resubmits only the same confirmed IDs if needed.
+Completed receipts are not polled again. The backend remains authoritative and idempotent.
+
+Tracking is page-local: reload does not cancel worker cleanup, but the UI does not yet rediscover
+earlier batches. This limitation is shown before confirmation and while cleanup is pending.
+The durable receipt endpoint survives deletion; broader delivery and reconciliation remain M2
+work. A pending batch stays visible until confirmed complete rather than being silently dismissed.
+Usage accounting, exported copies, provider-held copies, and backups are not claimed erased.
 
 In provider mode, the form independently selects the answer-generation and statement-support models from the
 backend-advertised Terra/Luna choices; both default to Terra. In deterministic mode, the paid-model

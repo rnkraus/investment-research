@@ -242,8 +242,11 @@ Later LangGraph workflows require separate approval criteria, tool allowlists, s
 - The API requires an explicit bounded ID batch and boolean permanent-deletion confirmation, then
   commits exclusion before broker publication. Content-free status reads remain workspace-scoped
   after physical removal. A broker failure does not restore content or claim cleanup completion;
-  resubmission retries pending publication. UI activation remains under implementation. This local
-  policy does not approve public or multi-user retention; review it before such deployment.
+  resubmission retries pending publication. The website requires a second explicit confirmation,
+  clears the old answer view, and never equates acceptance or a missing response with completion.
+  Bounded status reads and same-batch manual retry are implemented; page-local tracking and its
+  reload limitation are visible. Manual UI/build and live Pinecone purge verification remain open.
+  This local policy does not approve public or multi-user retention; review it before such deployment.
 
 ### Local runtime
 
