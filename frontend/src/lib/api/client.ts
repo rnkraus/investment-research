@@ -304,6 +304,10 @@ function isEvidenceSpanResult(value: unknown): value is EvidenceSpanResult {
     isUuid(value.evidence_span_id) &&
     isUuid(value.document_id) &&
     isUuid(value.document_version_id) &&
+    isNonEmptyString(value.document_title) &&
+    value.document_title.trim().length > 0 &&
+    Array.from(value.document_title).length <= 300 &&
+    isOptionalTimestamp(value.published_at) &&
     isNonNegativeInteger(value.start_character) &&
     Number.isInteger(value.end_character) &&
     Number(value.end_character) > Number(value.start_character) &&

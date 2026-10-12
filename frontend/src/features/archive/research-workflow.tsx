@@ -13,7 +13,8 @@ import {
   type ResearchModelOptions,
 } from "@/lib/api/client";
 
-import { archiveCopy, fixtureDefaults } from "./copy";
+import { archiveCopy } from "./copy";
+import { formatPublicationDate } from "./publication-date";
 import { RetrievalContext } from "./retrieval-context";
 import { RejectionDiagnostic } from "./rejection-diagnostic";
 import {
@@ -59,9 +60,7 @@ export function ResearchWorkflow({
   const generationModelId = useId();
   const supportModelId = useId();
   const requestController = useRef<AbortController | null>(null);
-  const [question, setQuestion] = useState<string>(
-    fixtureDefaults.answerableQuestion,
-  );
+  const [question, setQuestion] = useState<string>("");
   const [session, setSession] = useState<ResearchSession>(
     EMPTY_RESEARCH_SESSION,
   );
@@ -244,24 +243,6 @@ export function ResearchWorkflow({
           required
           value={question}
         />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-teal-600 hover:text-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isBusy}
-            onClick={() => setQuestion(fixtureDefaults.answerableQuestion)}
-            type="button"
-          >
-            {archiveCopy.research.answerableExample}
-          </button>
-          <button
-            className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-teal-600 hover:text-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isBusy}
-            onClick={() => setQuestion(fixtureDefaults.unanswerableQuestion)}
-            type="button"
-          >
-            {archiveCopy.research.unanswerableExample}
-          </button>
-        </div>
         {isLoadingModelOptions ? (
           <p className="mt-5 text-sm text-slate-600" role="status">
             {archiveCopy.research.modelOptionsLoading}
@@ -488,6 +469,22 @@ export function ResearchWorkflow({
                             </blockquote>
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                               <span className="text-xs font-semibold text-slate-500">
+                                {citation.source.document_title} ·{" "}
+                                {citation.source.published_at == null ? (
+                                  archiveCopy.citation.unknownDate
+                                ) : (
+                                  <>
+                                    {archiveCopy.citation.publishedLabel}{" "}
+                                    <time
+                                      dateTime={citation.source.published_at}
+                                    >
+                                      {formatPublicationDate(
+                                        citation.source.published_at,
+                                      )}
+                                    </time>
+                                  </>
+                                )}
+                                {" · "}
                                 {citation.source.locator.kind === "PDF_PAGE" ? (
                                   <>
                                     {archiveCopy.citation.pageLabel}{" "}
