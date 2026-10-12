@@ -17,6 +17,7 @@ from investment_research.modules.search.fusion_contracts import (
     RrfSelectionProfile,
     RrfSelectionResult,
 )
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 BGE_RERANK_MODEL: Final = "bge-reranker-v2-m3"
 BGE_RERANK_CONFIG_VERSION: Final = "m1-5-pinecone-bge-none-v1"
@@ -44,7 +45,9 @@ class RrfRerankingProfile(ImmutableSearchContract):
     """Bind this selector to the frozen RRF formula and untruncated BGE configuration."""
 
     selector_config_version: Literal["m1-5-rrf-k60-bge-none-v1"] = RRF_RERANK_SELECTOR_VERSION
-    context_chunk_limit: int = Field(default=M1_CONTEXT_CHUNK_LIMIT, ge=1, le=8, strict=True)
+    context_chunk_limit: int = Field(
+        default=M1_CONTEXT_CHUNK_LIMIT, ge=1, le=MAX_CONTEXT_CHUNKS, strict=True
+    )
     context_character_limit: int = Field(
         default=M1_CONTEXT_CHARACTER_LIMIT, ge=1, le=24_000, strict=True
     )
@@ -122,7 +125,7 @@ class RerankedSelectedCandidate(ImmutableSearchContract):
     candidate: RrfFusedCandidate
     rerank_rank: int = Field(ge=1, le=BGE_RERANK_CANDIDATE_LIMIT, strict=True)
     reranker_score: float = Field(allow_inf_nan=False)
-    selection_rank: int = Field(ge=1, le=M1_CONTEXT_CHUNK_LIMIT, strict=True)
+    selection_rank: int = Field(ge=1, le=MAX_CONTEXT_CHUNKS, strict=True)
 
 
 class RrfRerankingSelectionResult(ImmutableSearchContract):
@@ -130,7 +133,7 @@ class RrfRerankingSelectionResult(ImmutableSearchContract):
 
     prepared: PreparedRrfReranking
     response: RerankResponse | None
-    candidates: tuple[RerankedSelectedCandidate, ...] = Field(max_length=M1_CONTEXT_CHUNK_LIMIT)
+    candidates: tuple[RerankedSelectedCandidate, ...] = Field(max_length=MAX_CONTEXT_CHUNKS)
 
     @model_validator(mode="after")
     def require_coherent_context(self) -> RrfRerankingSelectionResult:

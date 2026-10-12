@@ -559,6 +559,31 @@ def test_build_api_container_wires_m1_query_resources(
     fakes.embedding_provider.close.assert_called_once_with()
 
 
+@pytest.mark.parametrize("citable_units", [False, True])
+def test_build_api_container_applies_local_rag_tuning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    citable_units: bool,
+) -> None:
+    install_api_provider_fakes(monkeypatch, citable_units=citable_units)
+    values = make_m1_api_settings(tmp_path / "objects", citable_units=citable_units).model_dump()
+    values["rag"] = {
+        "retrieval": {"lexical_candidate_limit": 12, "dense_candidate_limit": 16},
+        "context": {"chunk_limit": 16, "character_limit": 12_000},
+    }
+    container = build_api_container(ApiSettings.model_validate(values))
+    try:
+        service = container.retrieve_research_service
+        assert service._search_profile.candidate_limit == 12
+        dependencies = service._m1_query_retrieval
+        assert dependencies is not None
+        assert dependencies.dense_profile.candidate_limit == 16
+        assert dependencies.selection_profile.context_chunk_limit == 16
+        assert dependencies.selection_profile.context_character_limit == 12_000
+    finally:
+        container.close()
+
+
 def test_build_api_container_wires_citable_units_for_all_model_pairs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

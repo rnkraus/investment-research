@@ -14,6 +14,7 @@ from investment_research.modules.search.contracts import (
     QualifiedDenseHit,
 )
 from investment_research.modules.search.domain import RetrievalOrigin
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 RRF_CONFIG_VERSION: Final = "m1-5-rrf-k60-v1"
 RRF_RANK_CONSTANT: Final = 60
@@ -21,11 +22,13 @@ type RrfOrigin = Literal[RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE]
 
 
 class RrfSelectionProfile(ImmutableSearchContract):
-    """Keep equal lane weights, k, and the existing M1 context bounds fixed."""
+    """Keep equal lane weights and k fixed with explicitly bounded context tuning."""
 
     selector_config_version: Literal["m1-5-rrf-k60-v1"] = RRF_CONFIG_VERSION
     rank_constant: Literal[60] = RRF_RANK_CONSTANT
-    context_chunk_limit: int = Field(default=M1_CONTEXT_CHUNK_LIMIT, ge=1, le=8, strict=True)
+    context_chunk_limit: int = Field(
+        default=M1_CONTEXT_CHUNK_LIMIT, ge=1, le=MAX_CONTEXT_CHUNKS, strict=True
+    )
     context_character_limit: int = Field(
         default=M1_CONTEXT_CHARACTER_LIMIT, ge=1, le=24_000, strict=True
     )
@@ -74,7 +77,7 @@ class RrfSelectedCandidate(ImmutableSearchContract):
     """Separate context position from the original pre-budget fusion position."""
 
     candidate: RrfFusedCandidate
-    selection_rank: int = Field(ge=1, le=M1_CONTEXT_CHUNK_LIMIT, strict=True)
+    selection_rank: int = Field(ge=1, le=MAX_CONTEXT_CHUNKS, strict=True)
 
 
 class RrfSelectionResult(ImmutableSearchContract):
@@ -82,7 +85,7 @@ class RrfSelectionResult(ImmutableSearchContract):
 
     profile: RrfSelectionProfile
     ranked_candidates: tuple[RrfFusedCandidate, ...] = Field(max_length=2 * M1_LANE_CANDIDATE_LIMIT)
-    candidates: tuple[RrfSelectedCandidate, ...] = Field(max_length=M1_CONTEXT_CHUNK_LIMIT)
+    candidates: tuple[RrfSelectedCandidate, ...] = Field(max_length=MAX_CONTEXT_CHUNKS)
 
     @model_validator(mode="after")
     def require_coherent_selection(self) -> RrfSelectionResult:

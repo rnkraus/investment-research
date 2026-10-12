@@ -16,6 +16,7 @@ from investment_research.modules.search.reranking_contracts import (
     BGE_RERANK_CONFIG_VERSION,
     BGE_RERANK_MODEL,
 )
+from investment_research.rag_settings import RagSettings
 
 type RuntimeEnvironment = Literal["development", "test"]
 type RuntimeLocation = Literal["host", "container"]
@@ -478,6 +479,7 @@ class ApiSettings(ObjectStorageSettings):
 
     processing_profile: ProcessingProfileName = "m1"
     research_profile: ResearchProfileName = "m1"
+    rag: RagSettings = Field(default_factory=RagSettings)
     app_name: str = "Investment Research Archive"
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1024, le=65535)

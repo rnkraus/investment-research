@@ -41,7 +41,8 @@ flowchart TD
   hits must resolve to eligible canonical chunks; vector scores are not evidence authorization.
 - RRF combines rank positions from the two lanes rather than adding incompatible raw scores.
   A chunk found by both lanes is one candidate with two rank contributions.
-- Context is bounded to eight sources and 24,000 code points. Versioned source units carry exact
+- Context defaults to eight sources and 24,000 code points; [local tuning](../config/README.md)
+  permits up to 32 sources within that unchanged text ceiling. Versioned source units carry exact
   canonical ranges; the model selects short request-local handles such as `u1` instead of
   copying a quote. The server rejects unknown or invalid selections.
 - The support model receives one proposed statement and its resolved exact quotes, plus a checked

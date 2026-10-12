@@ -79,11 +79,11 @@ def test_generation_contracts_accept_the_exact_m1_limits() -> None:
 
 
 def test_generation_input_rejects_too_many_sources() -> None:
-    with pytest.raises(ValidationError, match="at most 8 items"):
+    with pytest.raises(ValidationError, match="at most 32 items"):
         AnswerGenerationInput(
             research_request_id=UUID(int=1),
             question="What does the archive show?",
-            sources=tuple(make_source(index + 1) for index in range(M1_CONTEXT_CHUNK_LIMIT + 1)),
+            sources=tuple(make_source(index + 1) for index in range(33)),
         )
 
 

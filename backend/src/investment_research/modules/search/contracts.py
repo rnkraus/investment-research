@@ -22,6 +22,7 @@ from investment_research.modules.search.domain import (
     RetrievalFilters,
     RetrievalOrigin,
 )
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 SearchableText = Annotated[str, StringConstraints(min_length=1)]
 DenseVectorId = Annotated[
@@ -340,7 +341,7 @@ class M1SelectionProfile(ImmutableSearchContract):
     """Versioned limits for deterministic lexical-first context selection."""
 
     selector_config_version: ConfigurationVersion = M1_SELECTOR_CONFIG_VERSION
-    context_chunk_limit: int = Field(default=M1_CONTEXT_CHUNK_LIMIT, ge=1, le=8)
+    context_chunk_limit: int = Field(default=M1_CONTEXT_CHUNK_LIMIT, ge=1, le=MAX_CONTEXT_CHUNKS)
     context_character_limit: int = Field(
         default=M1_CONTEXT_CHARACTER_LIMIT,
         ge=1,
@@ -370,7 +371,7 @@ class SelectedRetrievalCandidate(ImmutableSearchContract):
     origin: RetrievalOrigin
     rank: int = Field(ge=1)
     raw_score: float = Field(allow_inf_nan=False)
-    selection_rank: int = Field(ge=1, le=M1_CONTEXT_CHUNK_LIMIT)
+    selection_rank: int = Field(ge=1, le=MAX_CONTEXT_CHUNKS)
 
     @field_validator("text")
     @classmethod
@@ -406,7 +407,7 @@ class M1SelectionResult(ImmutableSearchContract):
     """Bounded final context plus the exact selector profile that produced it."""
 
     profile: M1SelectionProfile
-    candidates: tuple[SelectedRetrievalCandidate, ...] = Field(max_length=M1_CONTEXT_CHUNK_LIMIT)
+    candidates: tuple[SelectedRetrievalCandidate, ...] = Field(max_length=MAX_CONTEXT_CHUNKS)
 
     @model_validator(mode="after")
     def require_coherent_selection(self) -> M1SelectionResult:

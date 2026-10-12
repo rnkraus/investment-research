@@ -196,6 +196,13 @@ services:
       INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES: ${INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES:-26214400}
     ports:
       - "127.0.0.1:${INVESTMENT_RESEARCH_API_PORT:-8000}:8000"
+    volumes:
+      - type: bind
+        source: ./config/rag.toml
+        target: /config/rag.toml
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       migration:
         condition: service_completed_successfully

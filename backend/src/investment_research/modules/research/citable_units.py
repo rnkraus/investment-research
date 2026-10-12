@@ -24,8 +24,8 @@ from investment_research.modules.research.contracts import (
 )
 from investment_research.modules.search.contracts import (
     M1_CONTEXT_CHARACTER_LIMIT,
-    M1_CONTEXT_CHUNK_LIMIT,
 )
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 # This versioned heuristic preserves PDF wrapping; it is not a linguistic sentence parser.
 _UNIT_BOUNDARY = re.compile(r"[.?!]+[\"'\u201d\u2019)\]}]*(?=\s|$)|\n[ \t]*\n")
@@ -100,11 +100,11 @@ def build_citable_unit_catalog(
 ) -> CitableUnitCatalog:
     """Prepare units from already-qualified selected sources, not new authorization proof."""
 
-    if len(sources) > M1_CONTEXT_CHUNK_LIMIT:
+    if len(sources) > MAX_CONTEXT_CHUNKS:
         raise CitableUnitLimitError(
             "source-unit preparation exceeds the source limit",
             details=CitableUnitLimitDetails(
-                kind="source_count", observed=len(sources), limit=M1_CONTEXT_CHUNK_LIMIT
+                kind="source_count", observed=len(sources), limit=MAX_CONTEXT_CHUNKS
             ),
         )
     characters = sum(len(item.block.text) for item in sources)

@@ -1807,6 +1807,36 @@ from the previous root README was preserved unchanged in the development guide. 
 `git diff --check` passed. Application tests, builds, browsers, and providers were not run for
 this documentation-only change.
 
+#### Owner-requested local RAG tuning (2026-10-12)
+
+Normal provider-backed API research now reads [`config/rag.toml`](../config/rag.toml) once at
+startup, for both retained M1 and the opt-in M1.5 profile. The owner can tune lexical and dense
+candidate counts separately (1–20 each), final context chunks (1–32), and selected source text
+(1–24,000 Unicode code points). Defaults remain 20/20/8/24,000. The API alone receives the
+read-only Compose mount; keys, models, budgets, processing, reranking adoption, and all existing
+eligibility/evidence checks remain separate and unchanged.
+
+The expanded count ceiling is synchronized across selection, generation, source-unit catalogs,
+domain values, and PostgreSQL migration `0012_rag_context_bounds`. A downgrade refuses incompatible
+history instead of changing or deleting it. Each retrieval run already stores the four effective
+limits beside the selection algorithm version, so numerical tuning remains reconstructible.
+Increasing counts does not expand the character, metadata, source-unit, timeout, or spend caps.
+
+This bounded owner-requested follow-up supersedes the eight-source hard ceiling for normal local
+research only. Earlier observations and frozen baseline/acceptance profiles remain historical
+and unchanged. It is not a new quality result, automatic reranking/default adoption, full M1.5
+acceptance, or M2/M3 completion. Usage and restart instructions are in the
+[configuration guide](../config/README.md).
+
+**Executed verification:** backend formatting/linting and Mypy passed; 2,115 unit tests and
+233 isolated PostgreSQL integration tests passed (seven separate SeaweedFS tests skipped).
+The empty migration upgrade/downgrade/upgrade cycle, metadata checks, history-safe downgrade
+regression, effective-limit persistence, and read-only Compose configuration checks passed.
+A network-disabled, read-only, non-root API test container successfully loaded the mounted TOML
+through the real settings loader. Frontend formatting, linting, type-checking, generated-contract
+consistency, and 83 tests passed. No browser, live paid provider, production frontend build, or
+hosted CI run was executed for this block.
+
 ## 4. Handoff and stop rule
 
 Stop M1.5 when its reviewed correctness gates pass and the chosen retrieval/citation approach has

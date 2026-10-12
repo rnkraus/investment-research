@@ -22,6 +22,16 @@ examples below are the accepted target contract; generated files must never be e
 
 ## 2. Fixed M1 configuration
 
+**Local tuning amendment (2026-10-12):** The table below remains the historical M1 baseline
+and the default configuration. Normal provider-backed M1/M1.5 API research can now read four
+bounded overrides from [`config/rag.toml`](../config/rag.toml). Candidate lanes remain capped
+at 20 each; selected context permits 1–32 chunks within the unchanged 24,000-code-point ceiling.
+Each retrieval run stores all four effective limits alongside its unchanged algorithm version;
+this explicit snapshot supersedes the requirement to create a new algorithm version for a
+numeric limit change alone. Processing, embedding, prompt, and algorithm changes still require
+their existing versioning. Historical acceptance/evaluation profiles remain frozen and do not
+adopt local tuning implicitly. See the [tuning guide](../config/README.md).
+
 | Concern                    | M1 value                                                                  |
 | -------------------------- | ------------------------------------------------------------------------- |
 | Pasted-text maximum        | 100,000 Unicode code points and the existing configured byte limit        |

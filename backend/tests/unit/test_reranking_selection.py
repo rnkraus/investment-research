@@ -268,7 +268,7 @@ def test_result_contract_rejects_forged_selection(kind: str) -> None:
     "values",
     [
         {"selector_config_version": "other"},
-        {"context_chunk_limit": 9},
+        {"context_chunk_limit": 33},
         {"context_chunk_limit": True},
         {"context_character_limit": 24_001},
     ],

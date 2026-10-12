@@ -15,6 +15,8 @@ from pydantic import (
     model_validator,
 )
 
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
+
 QueryText = Annotated[str, StringConstraints(min_length=1, max_length=2_000)]
 NormalizedQuery = Annotated[
     str,
@@ -110,7 +112,7 @@ class RetrievalRun(ImmutableSearchModel):
     selector_config_version: ConfigurationVersion
     lexical_candidate_limit: int = Field(ge=1, le=100)
     dense_candidate_limit: int = Field(default=0, ge=0, le=100)
-    context_chunk_limit: int | None = Field(default=None, ge=1, le=8)
+    context_chunk_limit: int | None = Field(default=None, ge=1, le=MAX_CONTEXT_CHUNKS)
     context_character_limit: int | None = Field(default=None, ge=1, le=24_000)
     started_at: AwareDatetime
     completed_at: AwareDatetime

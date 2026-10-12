@@ -668,17 +668,25 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     if resource is not None:
                         stack.callback(resource.close)
             raise
-        lexical_candidate_limit = M1_LANE_CANDIDATE_LIMIT
+        lexical_candidate_limit = settings.rag.retrieval.lexical_candidate_limit
         m1_query_retrieval = M1QueryRetrievalDependencies(
             embedding_provider=query_embedding_provider,
             dense_retriever=dense_retriever,
             dense_profile=DenseRetrievalProfile(
                 embedding_config_version=provider_settings.embedding.config_version,
                 dense_index_config_version=provider_settings.pinecone.config_version,
-                candidate_limit=M1_LANE_CANDIDATE_LIMIT,
+                candidate_limit=settings.rag.retrieval.dense_candidate_limit,
             ),
             selection_profile=(
-                RrfSelectionProfile() if citable_units_enabled else M1SelectionProfile()
+                RrfSelectionProfile(
+                    context_chunk_limit=settings.rag.context.chunk_limit,
+                    context_character_limit=settings.rag.context.character_limit,
+                )
+                if citable_units_enabled
+                else M1SelectionProfile(
+                    context_chunk_limit=settings.rag.context.chunk_limit,
+                    context_character_limit=settings.rag.context.character_limit,
+                )
             ),
             provider_operation_executor=provider_operation_executor,
             embedding_accounting=QueryEmbeddingAccountingProfile(
