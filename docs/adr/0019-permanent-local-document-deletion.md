@@ -98,7 +98,12 @@ and scoped receipt reads are now exposed through the
 [HTTP contract](../11-m1-contracts.md#34-permanent-deletion-follow-up). Admission commits before
 publication; failed publication IDs are returned without restoring content, and resubmission
 retries pending jobs. Status snapshots never expose source text or provider/storage targets.
-Live Pinecone deletion verification and website activation remain pending.
+The website now implements above-catalog multi-document confirmation, honest cleanup status,
+bounded receipt reads, and explicit same-batch retry. Failed or unprocessed sources are deletable
+but never admitted to research; in-progress sources remain unselectable. A deletion attempt clears
+the current answer view and refreshes the catalog, including uncertain commit outcomes. Tracking
+is page-local and the reload limitation is shown explicitly; accepted worker cleanup continues.
+Manual browser/build verification and live Pinecone deletion verification remain pending.
 
 Backend-block verification (2026-10-12): `scripts.verify_backend` passed formatting, lint, typing,
 and 2,039 unit tests. `scripts.verify_postgres` passed the empty migration cycle, schema checks,
@@ -121,4 +126,10 @@ publication using a separate connection, broker failure/resubmission, whole-batc
 receipt visibility/isolation after physical removal. OpenAPI drift checking and frontend format,
 lint, typecheck, generated-contract checks, and 61 tests passed. No browser, production build,
 live Pinecone deletion, or normal archive deletion was performed for this block. UI activation
-remains the next work block.
+was the next work block at that verification point.
+
+Frontend-block verification (2026-10-12): `pnpm format`, `pnpm lint`, `pnpm typecheck`, and
+`pnpm test` passed, including generated-contract checks and 75 deterministic tests. Two mocked
+deletion browser tests were added to the existing CI discovery and type-checked, not executed
+locally. No browser, production build, live Pinecone deletion, or normal archive deletion was
+performed. The backend was unchanged in this block; its earlier verification remains separate.

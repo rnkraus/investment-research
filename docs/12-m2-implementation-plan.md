@@ -276,8 +276,10 @@ exists; repeated purge has the same content-free terminal result and does not re
 **Local follow-up status:** Admission/purge services, exact-key/vector adapters, detached accounting,
 migration `0011_document_purge_guards`, and bounded Celery purge delivery are implemented. The
 isolated queue-recovery gate verifies PostgreSQL and unversioned SeaweedFS cleanup. Confirmed
-batch admission and scoped receipt reads are exposed through the HTTP API; website activation
-and live Pinecone deletion verification remain pending. This does not complete
+batch admission and scoped receipt reads are exposed through the HTTP API. The website implements
+confirmed bulk deletion and honest pending/completed status, including bounded reads and explicit
+same-batch retry. Manual browser/build and live Pinecone deletion verification remain pending.
+Page-reload discovery of older deletion batches is not implemented. This does not complete
 M2's durable outbox or periodic reconciliation work.
 
 ## 6. Final M2 acceptance and review

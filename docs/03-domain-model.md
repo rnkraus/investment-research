@@ -169,7 +169,8 @@ ACTIVE → PURGE_PENDING → physical content removal
   guards prevent source writes after exclusion. Versioned ID-only jobs execute cleanup through the
   worker with trusted workspace checks and bounded retries. Confirmed batch admission and scoped
   receipt reads are exposed through the HTTP contract in `docs/11-m1-contracts.md` Section 3.4.
-  Live Pinecone deletion verification and website activation remain pending.
+  The website implements explicit batch confirmation and pending/completed receipt tracking.
+  Manual browser/build verification and live Pinecone deletion verification remain pending.
 
 ### Processing readiness
 
