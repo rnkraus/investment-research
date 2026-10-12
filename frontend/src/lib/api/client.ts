@@ -5,6 +5,12 @@ export type DocumentCatalogEntry =
   components["schemas"]["DocumentCatalogEntry"];
 export type DocumentCatalogPage = components["schemas"]["DocumentCatalogPage"];
 export type DocumentListCursor = components["schemas"]["DocumentListCursor"];
+export type DocumentDeletionInput =
+  components["schemas"]["DocumentDeletionInput"];
+export type DocumentDeletionResult =
+  components["schemas"]["DocumentDeletionResult"];
+export type DocumentDeletionsAccepted =
+  components["schemas"]["DocumentDeletionsAccepted"];
 export type ProcessingRunResult = components["schemas"]["ProcessingRunResult"];
 export type PastedTextDocumentInput =
   components["schemas"]["PastedTextDocumentInput"];
@@ -196,6 +202,41 @@ function isTimestamp(value: unknown): value is string {
 
 function isOptionalTimestamp(value: unknown): boolean {
   return value === undefined || value === null || isTimestamp(value);
+}
+
+function isDocumentDeletionResult(
+  value: unknown,
+): value is DocumentDeletionResult {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 5 ||
+    !isUuid(value.document_id) ||
+    !isTimestamp(value.requested_at) ||
+    value.status_url !== `/api/v1/documents/${value.document_id}/deletion`
+  ) {
+    return false;
+  }
+  return (
+    (value.state === "PENDING" && value.completed_at === null) ||
+    (value.state === "COMPLETED" &&
+      isTimestamp(value.completed_at) &&
+      Date.parse(value.completed_at) >= Date.parse(value.requested_at))
+  );
+}
+
+function isDocumentDeletionsAccepted(
+  value: unknown,
+): value is DocumentDeletionsAccepted {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 2 &&
+    Array.isArray(value.items) &&
+    value.items.length > 0 &&
+    value.items.length <= 100 &&
+    value.items.every(isDocumentDeletionResult) &&
+    Array.isArray(value.dispatch_pending_document_ids) &&
+    value.dispatch_pending_document_ids.every(isUuid)
+  );
 }
 
 function isDocumentListCursor(value: unknown): value is DocumentListCursor {
@@ -523,6 +564,74 @@ export function createApiClient(
   fetchImplementation: FetchImplementation = globalThis.fetch.bind(globalThis),
 ) {
   return {
+    async deleteDocuments(
+      input: DocumentDeletionInput,
+      signal?: AbortSignal,
+    ): Promise<DocumentDeletionsAccepted> {
+      if (
+        !isRecord(input) ||
+        Object.keys(input).length !== 2 ||
+        input.confirm_permanent !== true ||
+        !Array.isArray(input.document_ids) ||
+        input.document_ids.length === 0 ||
+        input.document_ids.length > 100 ||
+        !input.document_ids.every(isUuid) ||
+        new Set(input.document_ids.map((id) => id.toLowerCase())).size !==
+          input.document_ids.length
+      ) {
+        throw new ApiProtocolError(
+          "Explicit confirmed document selection is required.",
+        );
+      }
+      const accepted = await requestJson(
+        fetchImplementation,
+        "/api/v1/documents/deletions",
+        isDocumentDeletionsAccepted,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+          cache: "no-store",
+          signal,
+        },
+      );
+      const ids = input.document_ids.map((id) => id.toLowerCase());
+      if (
+        accepted.items.length !== ids.length ||
+        accepted.items.some((item, index) => item.document_id !== ids[index]) ||
+        new Set(accepted.dispatch_pending_document_ids).size !==
+          accepted.dispatch_pending_document_ids.length ||
+        accepted.dispatch_pending_document_ids.some(
+          (id) =>
+            !accepted.items.some(
+              (item) => item.document_id === id && item.state === "PENDING",
+            ),
+        )
+      ) {
+        throw new ApiProtocolError();
+      }
+      return accepted;
+    },
+
+    async getDocumentDeletion(
+      documentId: string,
+      signal?: AbortSignal,
+    ): Promise<DocumentDeletionResult> {
+      if (!isUuid(documentId)) {
+        throw new ApiProtocolError("The document identifier is invalid.");
+      }
+      const result = await requestJson(
+        fetchImplementation,
+        `/api/v1/documents/${documentId}/deletion`,
+        isDocumentDeletionResult,
+        { signal, cache: "no-store" },
+      );
+      if (result.document_id !== documentId.toLowerCase()) {
+        throw new ApiProtocolError();
+      }
+      return result;
+    },
+
     async listDocuments(
       after?: DocumentListCursor,
       signal?: AbortSignal,
