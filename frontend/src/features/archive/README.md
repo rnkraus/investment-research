@@ -83,6 +83,12 @@ research request, rejects duplicate or out-of-order relationships, and refuses t
 whose statement has no citation. Resolving a citation remains a separate authorized API call; only
 then does `attachCitationSource` add the exact source location to the completed UI state.
 
+The research question starts empty and has no fixture-example buttons. Each resolved citation in
+a validated answer shows the authorized document-version title, its UTC publication date, and the
+PDF page or text character range. The date is the publication date selected when importing the
+source, not the upload timestamp; missing dates are labeled "Publication date unknown". These
+fields come from the evidence endpoint rather than the current catalog page.
+
 The UI groups six actual progress events into four stable, English display steps:
 
 | Display step                                  | Backend stages                            |
