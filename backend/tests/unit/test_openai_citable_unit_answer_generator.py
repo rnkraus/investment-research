@@ -714,8 +714,8 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v3"
     assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v7"
-    assert "citable-units-en-v7" in profile.generation_config_version
-    assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v2"
+    assert "citable-units-en-v8" in profile.generation_config_version
+    assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v3"
 
 
 def test_factory_disables_sdk_retries_and_closes_its_client(

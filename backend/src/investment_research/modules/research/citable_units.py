@@ -28,7 +28,8 @@ from investment_research.modules.search.contracts import (
 from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 # This versioned heuristic preserves PDF wrapping; it is not a linguistic sentence parser.
-_UNIT_BOUNDARY = re.compile(r"[.?!]+[\"'\u201d\u2019)\]}]*(?=\s|$)|\n[ \t]*\n")
+_UNIT_BOUNDARY = re.compile(r"(?P<punctuation>[.?!]+)[\"'\u201d\u2019)\]}]*(?=\s|$)|\n[ \t]*\n")
+_COUNTRY_ABBREVIATION = re.compile(r"(?<!\w)U\.[SK]\.(?!\w)", re.IGNORECASE)
 _PDF_HEADING_CHARACTER_LIMIT = 80
 _PDF_HEADING_WORD_LIMIT = 8
 
@@ -82,8 +83,16 @@ def _pdf_heading_end(text: str, start: int, end: int) -> int | None:
 def _source_ranges(text: str, *, pdf: bool) -> Iterator[tuple[int, int]]:
     """Keep punctuation/closing characters and trim separators by moving offsets only."""
 
+    # Prefer a wider exact span to cutting off a country abbreviation's continuation.
+    # Explicit paragraphs, !/? punctuation, and the hard character limit still split units.
+    abbreviation_periods = {match.end() - 1 for match in _COUNTRY_ABBREVIATION.finditer(text)}
+    boundaries = (
+        boundary.end()
+        for boundary in _UNIT_BOUNDARY.finditer(text)
+        if boundary.group("punctuation") != "." or boundary.start() not in abbreviation_periods
+    )
     start = 0
-    for end in chain((boundary.end() for boundary in _UNIT_BOUNDARY.finditer(text)), (len(text),)):
+    for end in chain(boundaries, (len(text),)):
         heading_end = _pdf_heading_end(text, start, end) if pdf else None
         if heading_end is not None:
             yield from _bounded_visible_ranges(text, start, heading_end)

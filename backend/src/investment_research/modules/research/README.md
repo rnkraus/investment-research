@@ -174,9 +174,10 @@ eligibility or authorization.
 
 `build_citable_unit_catalog` requires the trusted `WorkspaceContext`, research-request UUID, and
 those pairs. It preserves the existing 8-source/24,000-code-point budget, splits unchanged block
-text under the English v2 heuristic, and retains at most 256 units of at most 800 code points each.
+text under the English v3 heuristic, and retains at most 256 units of at most 800 code points each.
 Sentence-ending punctuation and blank paragraphs create boundaries; a single PDF line break does
-not, except for the bounded uppercase-heading rule described below. Abbreviations can create
+not, except for the bounded uppercase-heading rule described below. The final periods of standalone
+`U.S.` and `U.K.` are not sentence boundaries on their own; other abbreviations can still create
 short units. This explicit heuristic is not a claim of perfect
 sentence recognition. Overflow is rejected rather than silently dropping evidence.
 
@@ -252,10 +253,14 @@ The live Compose overlay forwards this non-secret profile only to the API; the
 [local run guide](../../../../../docs/development.md#default-m15-source-id-research) gives normal
 startup and explicit M1 comparison commands. Local default adoption was owner-approved on
 2026-10-12; it does not establish a new quality result or full M1.5 acceptance.
-The current source-unit policy is `m1-5-citable-units-en-v2`. It keeps the sentence/paragraph
-boundaries and all original characters, but separates a short uppercase PDF heading at the start
-of a range from capitalized mixed-case prose on the next line. Ordinary wrapped sentences and
-pasted-text boundaries remain unchanged. The exact heuristic and its limits are specified in the
+The current source-unit policy is `m1-5-citable-units-en-v3`. It preserves the v2 rule that separates
+a short uppercase PDF heading at the start of a range from capitalized mixed-case prose on the
+next line. For both PDF and pasted text, it additionally keeps `U.S.`/`U.K.` continuations in one
+unit without rewriting characters or offsets. Explicit paragraphs and question/exclamation marks
+still split ranges; ambiguous sentence-final country abbreviations may retain a wider exact unit.
+The 800-code-point limit remains in force. See the
+[abbreviation amendment](../../../../../docs/13-m1-5-rag-quality-plan.md#country-abbreviation-amendment-2026-10-13)
+for v3 and the original PDF-heading rule in the
 [precision amendment](../../../../../docs/13-m1-5-rag-quality-plan.md#pdf-citation-precision-amendment--block-1-2026-10-09).
 This changes only temporary selection ranges, not canonical blocks, chunks, or historical evidence.
 Quality scoring remains unchanged: a wider exact unit can still fail reviewed containment even
