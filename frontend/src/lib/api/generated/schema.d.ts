@@ -159,7 +159,7 @@ export interface paths {
         readonly put?: never;
         /**
          * Answer Research Request
-         * @description Start a live stream without exposing content before complete validation.
+         * @description Stream selected source context separately from fully validated answer content.
          */
         readonly post: operations["answer_research_request_api_v1_research_requests_post"];
         readonly delete?: never;
@@ -289,6 +289,45 @@ export interface components {
              * @constant
              */
             readonly schema_version: "1.0";
+        };
+        /**
+         * AnswerGenerationSource
+         * @description One ordered retrieval candidate exposed to an untrusted answer generator.
+         */
+        readonly AnswerGenerationSource: {
+            /**
+             * Chunk Id
+             * Format: uuid
+             */
+            readonly chunk_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+            /**
+             * Document Version Id
+             * Format: uuid
+             */
+            readonly document_version_id: string;
+            /**
+             * Page Number
+             * @default null
+             */
+            readonly page_number: number | null;
+            /**
+             * Retrieval Candidate Id
+             * Format: uuid
+             */
+            readonly retrieval_candidate_id: string;
+            readonly source_locator_kind: components["schemas"]["SourceLocatorKind"];
+            /**
+             * Structure Block Id
+             * Format: uuid
+             */
+            readonly structure_block_id: string;
+            /** Text */
+            readonly text: string;
         };
         /**
          * AnswerInsufficientEvent
@@ -720,6 +759,30 @@ export interface components {
             readonly status: "ready" | "not_ready";
         };
         /**
+         * ResearchContextEvent
+         * @description Ordered canonical passages selected for generation, not validated answer evidence.
+         */
+        readonly ResearchContextEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly event: "research.context";
+            /**
+             * Research Request Id
+             * Format: uuid
+             */
+            readonly research_request_id: string;
+            /**
+             * Schema Version
+             * @default 1.0
+             * @constant
+             */
+            readonly schema_version: "1.0";
+            /** Sources */
+            readonly sources: readonly components["schemas"]["AnswerGenerationSource"][];
+        };
+        /**
          * ResearchFailedEvent
          * @description Terminal event for a safely reported research failure.
          */
@@ -817,7 +880,13 @@ export interface components {
             /** @default gpt-5.6-terra */
             readonly support_model: components["schemas"]["ResearchModel"];
         };
-        readonly ResearchStreamEvent: components["schemas"]["ResearchProgressEvent"] | components["schemas"]["AnswerStatementEvent"] | components["schemas"]["AnswerCitationEvent"] | components["schemas"]["AnswerCompletedEvent"] | components["schemas"]["AnswerInsufficientEvent"] | components["schemas"]["ResearchFailedEvent"];
+        readonly ResearchStreamEvent: components["schemas"]["ResearchProgressEvent"] | components["schemas"]["ResearchContextEvent"] | components["schemas"]["AnswerStatementEvent"] | components["schemas"]["AnswerCitationEvent"] | components["schemas"]["AnswerCompletedEvent"] | components["schemas"]["AnswerInsufficientEvent"] | components["schemas"]["ResearchFailedEvent"];
+        /**
+         * SourceLocatorKind
+         * @description Stable ways to locate exact content inside an immutable original.
+         * @enum {string}
+         */
+        readonly SourceLocatorKind: "PDF_PAGE" | "TEXT_PASSAGE";
         /**
          * TemporalMode
          * @description Eligibility clocks available to a research request.
@@ -1275,7 +1344,7 @@ export interface operations {
             };
         };
         readonly responses: {
-            /** @description Validated research answer events */
+            /** @description Selected retrieval context and validated research answer events */
             readonly 200: {
                 headers: {
                     readonly [name: string]: unknown;

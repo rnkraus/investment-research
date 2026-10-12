@@ -83,6 +83,70 @@
         "title": "AnswerCompletedEvent",
         "type": "object"
       },
+      "AnswerGenerationSource": {
+        "additionalProperties": false,
+        "description": "One ordered retrieval candidate exposed to an untrusted answer generator.",
+        "properties": {
+          "chunk_id": {
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Page Number"
+          },
+          "retrieval_candidate_id": {
+            "format": "uuid",
+            "title": "Retrieval Candidate Id",
+            "type": "string"
+          },
+          "source_locator_kind": {
+            "$ref": "#/components/schemas/SourceLocatorKind"
+          },
+          "structure_block_id": {
+            "format": "uuid",
+            "title": "Structure Block Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "retrieval_candidate_id",
+          "chunk_id",
+          "document_id",
+          "document_version_id",
+          "structure_block_id",
+          "source_locator_kind",
+          "text"
+        ],
+        "title": "AnswerGenerationSource",
+        "type": "object"
+      },
       "AnswerInsufficientEvent": {
         "additionalProperties": false,
         "description": "Terminal event when eligible archive evidence is insufficient.",
@@ -937,6 +1001,43 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "ResearchContextEvent": {
+        "additionalProperties": false,
+        "description": "Ordered canonical passages selected for generation, not validated answer evidence.",
+        "properties": {
+          "event": {
+            "const": "research.context",
+            "default": "research.context",
+            "title": "Event",
+            "type": "string"
+          },
+          "research_request_id": {
+            "format": "uuid",
+            "title": "Research Request Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerGenerationSource"
+            },
+            "maxItems": 32,
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "research_request_id",
+          "sources"
+        ],
+        "title": "ResearchContextEvent",
+        "type": "object"
+      },
       "ResearchFailedEvent": {
         "additionalProperties": false,
         "description": "Terminal event for a safely reported research failure.",
@@ -1124,6 +1225,7 @@
             "answer.completed": "#/components/schemas/AnswerCompletedEvent",
             "answer.insufficient": "#/components/schemas/AnswerInsufficientEvent",
             "answer.statement": "#/components/schemas/AnswerStatementEvent",
+            "research.context": "#/components/schemas/ResearchContextEvent",
             "research.failed": "#/components/schemas/ResearchFailedEvent",
             "research.progress": "#/components/schemas/ResearchProgressEvent"
           },
@@ -1132,6 +1234,9 @@
         "oneOf": [
           {
             "$ref": "#/components/schemas/ResearchProgressEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ResearchContextEvent"
           },
           {
             "$ref": "#/components/schemas/AnswerStatementEvent"
@@ -1149,6 +1254,15 @@
             "$ref": "#/components/schemas/ResearchFailedEvent"
           }
         ]
+      },
+      "SourceLocatorKind": {
+        "description": "Stable ways to locate exact content inside an immutable original.",
+        "enum": [
+          "PDF_PAGE",
+          "TEXT_PASSAGE"
+        ],
+        "title": "SourceLocatorKind",
+        "type": "string"
       },
       "TemporalMode": {
         "description": "Eligibility clocks available to a research request.",
@@ -1757,7 +1871,7 @@
     },
     "/api/v1/research-requests": {
       "post": {
-        "description": "Start a live stream without exposing content before complete validation.",
+        "description": "Stream selected source context separately from fully validated answer content.",
         "operationId": "answer_research_request_api_v1_research_requests_post",
         "requestBody": {
           "content": {
@@ -1778,7 +1892,7 @@
                 }
               }
             },
-            "description": "Validated research answer events"
+            "description": "Selected retrieval context and validated research answer events"
           },
           "422": {
             "content": {

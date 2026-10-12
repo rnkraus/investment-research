@@ -1,7 +1,7 @@
 """Tests for strict, versioned M0.0 API contracts."""
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -10,11 +10,40 @@ from investment_research.api.contracts import (
     DocumentMetadataInput,
     EvidencePdfPageLocator,
     EvidenceSpanResult,
+    ResearchContextEvent,
     ResearchRequestContext,
     ResearchRequestInput,
     ResearchStreamEvent,
 )
+from investment_research.modules.documents.domain import SourceLocatorKind
+from investment_research.modules.research.contracts import AnswerGenerationSource
 from investment_research.modules.research.domain import TemporalMode
+
+
+def test_selected_context_requires_unique_bounded_sources() -> None:
+    source = AnswerGenerationSource(
+        retrieval_candidate_id=uuid4(),
+        chunk_id=uuid4(),
+        document_id=uuid4(),
+        document_version_id=uuid4(),
+        structure_block_id=uuid4(),
+        source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+        text="Synthetic passage.",
+    )
+    request_id = uuid4()
+    assert ResearchContextEvent(research_request_id=request_id, sources=()).sources == ()
+    assert ResearchContextEvent(research_request_id=request_id, sources=(source,)).sources == (
+        source,
+    )
+    with pytest.raises(ValidationError, match="unique"):
+        ResearchContextEvent(research_request_id=request_id, sources=(source, source))
+    with pytest.raises(ValidationError, match="character limit"):
+        ResearchContextEvent(
+            research_request_id=request_id,
+            sources=(source.model_copy(update={"text": "x" * 24_001}),),
+        )
+    with pytest.raises(ValidationError, match="32"):
+        ResearchContextEvent(research_request_id=request_id, sources=(source,) * 33)
 
 
 def test_research_request_rejects_client_workspace_scope() -> None:

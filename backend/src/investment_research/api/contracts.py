@@ -25,8 +25,14 @@ from investment_research.modules.documents.deletion_contracts import (
     DocumentDeletionState,
 )
 from investment_research.modules.processing.domain import ProcessingState
-from investment_research.modules.research.contracts import ResearchModel, ResearchProgressStage
+from investment_research.modules.research.contracts import (
+    AnswerGenerationSource,
+    ResearchModel,
+    ResearchProgressStage,
+)
 from investment_research.modules.research.domain import TemporalMode
+from investment_research.modules.search.contracts import M1_CONTEXT_CHARACTER_LIMIT
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 TrimmedTitle = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)
@@ -285,6 +291,28 @@ class ResearchProgressEvent(StreamEventBase):
     stage: ResearchProgressStage
 
 
+class ResearchContextEvent(StreamEventBase):
+    """Ordered canonical passages selected for generation, not validated answer evidence."""
+
+    event: Literal["research.context"] = "research.context"
+    sources: tuple[AnswerGenerationSource, ...] = Field(max_length=MAX_CONTEXT_CHUNKS, repr=False)
+
+    @field_validator("sources")
+    @classmethod
+    def require_bounded_unique_sources(
+        cls, sources: tuple[AnswerGenerationSource, ...]
+    ) -> tuple[AnswerGenerationSource, ...]:
+        if sum(len(source.text) for source in sources) > M1_CONTEXT_CHARACTER_LIMIT:
+            raise ValueError("selected context exceeds the character limit")
+        for identifiers in (
+            [source.retrieval_candidate_id for source in sources],
+            [source.chunk_id for source in sources],
+        ):
+            if len(identifiers) != len(set(identifiers)):
+                raise ValueError("selected context sources must be unique")
+        return sources
+
+
 class AnswerStatementEvent(StreamEventBase):
     """One validated answer statement safe for rendering."""
 
@@ -338,6 +366,7 @@ class ResearchFailedEvent(StreamEventBase):
 
 ResearchStreamEvent = Annotated[
     ResearchProgressEvent
+    | ResearchContextEvent
     | AnswerStatementEvent
     | AnswerCitationEvent
     | AnswerCompletedEvent
@@ -355,6 +384,7 @@ PUBLIC_CONTRACT_MODELS: tuple[type[BaseModel], ...] = (
     ResearchRequestInput,
     EvidenceSpanResult,
     ResearchProgressEvent,
+    ResearchContextEvent,
     AnswerStatementEvent,
     AnswerCitationEvent,
     AnswerCompletedEvent,

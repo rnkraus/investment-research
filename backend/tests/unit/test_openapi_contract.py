@@ -311,6 +311,7 @@ def test_openapi_exposes_discriminated_research_stream_union() -> None:
 
     assert stream_event["discriminator"]["propertyName"] == "event"
     assert set(stream_event["discriminator"]["mapping"]) == {
+        "research.context",
         "research.progress",
         "answer.statement",
         "answer.citation",
@@ -318,4 +319,4 @@ def test_openapi_exposes_discriminated_research_stream_union() -> None:
         "answer.insufficient",
         "research.failed",
     }
-    assert len(stream_event["oneOf"]) == 6
+    assert len(stream_event["oneOf"]) == 7

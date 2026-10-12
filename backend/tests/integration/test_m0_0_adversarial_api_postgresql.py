@@ -101,7 +101,7 @@ def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for frame in body.strip().split("\n\n"):
         lines = frame.splitlines()
-        if not lines or lines[0] == "event: research.progress":
+        if not lines or lines[0] in {"event: research.progress", "event: research.context"}:
             continue
         events.append(
             {
