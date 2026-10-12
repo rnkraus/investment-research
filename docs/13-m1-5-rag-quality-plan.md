@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 source review accepted, local compatibility owner confirmed, and portfolio documented; profile disposition, hosted CI, and milestone acceptance pending
+**Status:** Active — Step 4 source review accepted, local compatibility owner confirmed, portfolio documented, and local M1.5 default owner approved; hosted CI and milestone acceptance pending
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -11,6 +11,14 @@ and accepted [ADRs](./adr/README.md). This plan advances selected M4 RAG work wi
 that the full M4 gate is complete.
 
 ## 1. Outcome and boundary
+
+**Current local default (owner-approved 2026-10-12):** Provider-backed live Compose and host API
+startup now default to `m1-5-citable-units`: RRF, source-ID generation, and document-attribution
+support without BGE reranking or raw diagnostics. Explicit `m1` selection remains available;
+credential-free development, frozen M0/M1 acceptance adapters, and evaluation CLI defaults remain
+unchanged. Earlier dated references to opt-in use and unchanged website defaults below describe
+those historical blocks, not the current live default. This selection prevents accidental
+quote-copying starts; it is not a new quality observation or full milestone acceptance.
 
 The accepted M1 path already answers questions over saved, eligible PDF and pasted-text documents
 with lexical and dense retrieval, typed generation, statement-support evaluation, and exact
@@ -881,7 +889,7 @@ using `m1` when the value is absent or empty. The base Compose and credential-fr
 overlays remain unchanged; worker, parser, web, provider credentials, volumes, and indexes do not
 receive a new profile or policy. This is an explicit local opt-in, not default adoption.
 
-The [development guide](./development.md#opt-in-m15-source-id-research) documents a shell-scoped API
+The [development guide](./development.md#default-m15-source-id-research) documents a shell-scoped API
 restart selecting `m1-5-citable-units` and a return to `m1`. The agent does not inspect or alter
 the owner's real environment or secret files. New research requests use the selected policy;
 existing searchable sources require no upload or reindexing simply to select it. Only approved
@@ -1836,6 +1844,38 @@ A network-disabled, read-only, non-root API test container successfully loaded t
 through the real settings loader. Frontend formatting, linting, type-checking, generated-contract
 consistency, and 83 tests passed. No browser, live paid provider, production frontend build, or
 hosted CI run was executed for this block.
+
+#### Owner-requested selected-context inspection (2026-10-12)
+
+The local website now exposes a collapsed, request-scoped view of the final passages prepared for
+answer generation. The application publishes the generation input's ordered source snapshot as
+`research.context`; the browser displays document attribution, original links, chunk/version IDs,
+pages, and unchanged text within the existing context safety ceilings. This does not expose all
+pre-fusion candidates, provider responses, prompts, or keys. Selected passages are explicitly not
+validated citations or receipts of a completed provider call.
+
+No ranking, model, budget, schema migration, default-profile adoption, browser persistence, or new
+provider operation is introduced. Failed and insufficient requests retain the already received
+context for inspection until the next question. Existing workspace and evidence checks remain
+unchanged. The public contract and compatibility rules are in
+[M1 contracts, research stream](./11-m1-contracts.md#113-research-stream).
+
+#### Owner-requested atomic answer claims (2026-10-12)
+
+A local rejected proposal combined supported platform/infrastructure claims with an additional
+capability not established by its cited excerpts. The source-unit answer prompt now requires one
+independently verifiable factual claim per statement, checks each named capability against that
+statement's own selected units, and splits distinct capabilities, activities, or plans. Unsupported
+details must be omitted, including in `rendered_text`; the eight-statement limit requires
+prioritization rather than bundling. Necessary attribution, conditions, uncertainty, and time scope
+remain required. The retained copied-quote M1 prompt receives the same rule.
+
+New source-unit plans use `m1-5-citable-units-en-answer-prompt-v7` and model-specific
+`m1-5-<model>-low-citable-units-en-v7` configuration; M1 uses `m1-grounded-answer-prompt-v5`.
+Transport v3, canonical unit policy v2, source handles, schemas, model choices, retrieval, budgets,
+support evaluation, and fail-closed evidence validation remain unchanged. Earlier reports and
+reviewed observations retain their recorded versions. Offline tests verify instruction delivery
+for Terra and Luna; quality improvement still requires a separate opt-in live evaluation.
 
 ## 4. Handoff and stop rule
 

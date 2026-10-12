@@ -245,12 +245,13 @@ model-specific generation profile. Separately, API-owned `research_profile=m1-5-
 selects the existing RRF selector, source-unit generator, canonical document-prefix reader, and
 contextual support evaluator in `bootstrap.py`. All four generation/support model pairs share
 the unchanged monthly budget executor and retain model-specific pricing and configuration versions.
-The M1 profile remains available and is still the default. No public request field or browser
+The provider-backed local runtime defaults to M1.5; M1 remains explicitly available for comparison
+and the credential-free adapters retain it. No public request field or browser
 policy switch is added; the source viewer still receives canonical evidence-span identities.
 The live Compose overlay forwards this non-secret profile only to the API; the
-[local run guide](../../../../../docs/development.md#opt-in-m15-source-id-research) gives the opt-in and
-rollback commands. Manual PDF/text source-opening verification remains pending; this wiring
-does not record default adoption or quality acceptance.
+[local run guide](../../../../../docs/development.md#default-m15-source-id-research) gives normal
+startup and explicit M1 comparison commands. Local default adoption was owner-approved on
+2026-10-12; it does not establish a new quality result or full M1.5 acceptance.
 The current source-unit policy is `m1-5-citable-units-en-v2`. It keeps the sentence/paragraph
 boundaries and all original characters, but separates a short uppercase PDF heading at the start
 of a range from capitalized mixed-case prose on the next line. Ordinary wrapped sentences and

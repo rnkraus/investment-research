@@ -87,11 +87,12 @@ necessary uncertainty and conflict. In the reviewed rollout answer, the publishe
 contains the transformer constraint without the earlier unsolicited supplier forecast. This is
 a recorded example, not a controlled causal measurement of the prompt change.
 
-M1 remains the configuration default and a comparison path. M1.5 is available through explicit
-API profile selection, without migrations or reindexing. The normal website support response
+M1.5 is the provider-backed local runtime default; M1 remains explicitly selectable for comparison.
+Switching profiles requires no migrations or reindexing. The normal website support response
 contains only `supported: true/false`; a separate local evaluation option requests a short reason
 and changes the support prompt/schema. Raw failure logging is another opt-in diagnostic, not a
-normal product feature. No default, model, or diagnostic setting changes in this guide.
+normal product feature. Local default adoption was owner-approved on 2026-10-12; it does not
+change the historical evaluation results, models, diagnostic settings, or milestone acceptance.
 
 ## 3. Recorded evaluation, not a general accuracy claim
 
@@ -136,15 +137,14 @@ Prerequisites and owner-managed credentials are in the [development guide](./dev
 Use a local workspace containing only approved demo material. Do not clear an existing archive,
 inspect secrets, or enable raw diagnostics to prepare a recording. Normal provider charges apply.
 
-From the repository root, start the provider-backed stack with an explicit M1.5 profile:
+From the repository root, start the provider-backed stack with its M1.5 default:
 
 ```shell
-INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1-5-citable-units \
-  docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait
 ```
 
-Keep that explicit profile when recreating the API: a later ordinary Compose invocation may
-restore the M1 default. Do not add `compose.m1-local-diagnostics.yaml`. The profile preserves the
+Remove an old explicit `INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1` override or change it to
+`m1-5-citable-units`. Do not add `compose.m1-local-diagnostics.yaml`. The profile preserves the
 ordinary Boolean-only support response and does not activate BGE reranking.
 
 Open `http://127.0.0.1:3000` yourself. Choose answer/support models explicitly; Luna/Luna matches

@@ -66,7 +66,8 @@ Die weiterhin verfügbare M1-Basisvariante wählt abwechselnd lexikalische und s
 aus und löst vom Modell abgeschriebene Zitate auf. M1.5 verwendet ausdrücklich RRF und
 Quellen-ID-basierte Generierung. Das Pinecone-BGE-Cross-Encoder-Reranking ist als separat
 aktivierbares Experiment implementiert, im M1.5-Profil der Website aber nicht eingeschaltet.
-M1 bleibt der Konfigurationsstandard; der Startbefehl unten wählt M1.5 ausdrücklich aus.
+M1.5 ist der Standard für den lokalen Betrieb mit echten Providern; M1 bleibt zum Vergleich
+ausdrücklich auswählbar.
 
 ## Wichtige Architekturentscheidungen
 
@@ -159,14 +160,14 @@ Dabei können Providerkosten entstehen.
 Nach dieser Einrichtung im Hauptordner des Repositorys ausführen:
 
 ```shell
-INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1-5-citable-units \
-  docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait
 ```
 
 <http://127.0.0.1:3000> öffnen, ein freigegebenes Dokument importieren, auf `SEARCHABLE` warten
 und eine Frage stellen. Die normale M1.5-Aussagenprüfung der Website liefert eine
-Ja-/Nein-Entscheidung ohne Diagnosebegründung. Beim Neuerstellen der API das Profil weiterhin
-ausdrücklich setzen; ein gewöhnlicher Compose-Aufruf kann wieder M1 aktivieren. Die
+Ja-/Nein-Entscheidung ohne Diagnosebegründung. Ein alter ausdrücklicher Eintrag
+`INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1` in der Umgebung überschreibt weiterhin den Standard;
+diesen entfernen oder auf `m1-5-citable-units` setzen. Die
 [Demo-Anleitung](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) enthält konkrete
 synthetische Fragen und Quellenprüfungen. Zugangsdaten niemals committen und Diagnosen mit
 ungefilterten Inhalten niemals für private Dokumente aktivieren.

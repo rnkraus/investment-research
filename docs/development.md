@@ -121,18 +121,22 @@ seed or reset commands below when deterministic synthetic workspaces are require
 `compose.yaml` remains the credential-free foundation for isolated tests; by itself it does not
 configure a working M1 indexing worker.
 
-### Opt-in M1.5 source-ID research
+### Default M1.5 source-ID research
 
-M1 remains the default research policy. With the provider-backed local stack above already
-running, rebuild and restart only the API to test the opt-in RRF/source-unit/document-attribution
-path without editing `.env`:
+M1.5 is the default for the provider-backed live Compose stack and for host API startup with
+complete query and generation provider configuration. It uses RRF, source-unit IDs, and
+document-attribution support. Credential-free development and frozen M0/M1 acceptance adapters
+retain their existing profiles. With the live stack above already running, rebuild and restart
+only the API:
 
 ```shell
-INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1-5-citable-units \
-  docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait api
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait api
 ```
 
-The live overlay forwards this non-secret selection only to the API. The model selects short,
+An explicit `INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1` in the process environment or the
+owner-managed `.env` still overrides the default. Remove that old override or set it to
+`m1-5-citable-units` when using the normal website. The live overlay forwards the non-secret
+selection only to the API. The model selects short,
 request-local source handles such as `u1` instead of copying quotes or long UUIDs. The server maps
 them to its unchanged internal IDs, resolves their exact original ranges, and
 still validates every claim. All four answer/support model pairs and the existing monthly budget
@@ -144,8 +148,9 @@ one about pasted text. Open each citation: the PDF must open at the correct phys
 text viewer must highlight the exact original range, including repeated text. Normal provider
 charges apply to these owner-run checks; selecting the profile does not start a paid model request.
 Raw diagnostics remain off unless the separate local-only override below is explicitly enabled.
-The source-opening check and a later default-policy decision remain pending in the
-[M1.5 plan](./13-m1-5-rag-quality-plan.md#live-compose-selection-2026-10-08).
+The owner approved local default adoption on 2026-10-12 to avoid accidental quote-copying starts.
+That choice is not a new quality measurement or full milestone acceptance; historical observations
+and remaining quality gates stay in the [M1.5 plan](./13-m1-5-rag-quality-plan.md).
 
 If source-unit preparation exceeds a bound, the website reports `RESEARCH_CONTEXT_LIMIT` with
 a fixed suggestion to narrow the question or select a single document. Inspect the content-free
@@ -163,7 +168,7 @@ metadata counters are conservative input-accounting units, not measured provider
 diagnostic does not raise limits or silently discard evidence. Rebuild both API and web when
 updating to this error-contract version so the web client recognizes the new code.
 
-To return to the retained M1 policy without changing or deleting archive data:
+To explicitly select the retained M1 comparison policy without changing or deleting archive data:
 
 ```shell
 INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1 \

@@ -460,7 +460,10 @@ This section freezes the retained M1 exact-substring profile. The separately ver
 source-unit ID profile is specified in the
 [Step 2 design contract](./13-m1-5-rag-quality-plan.md#step-2-contract--citable-units-v1).
 Its catalog preparation, ID resolution, provider adapter, Research integration, and explicit
-evaluation selection are implemented, but the profile is not adopted as the runtime default.
+evaluation selection are implemented. Since the owner-approved local change on 2026-10-12,
+M1.5 is the default for live Compose and complete host API provider configuration. An explicit
+`m1` profile remains available; credential-free development and frozen acceptance adapters retain
+their existing defaults. Evaluation CLI policies remain explicitly selectable and unchanged.
 It resolves IDs to the same
 application-owned evidence-reference shape and preserves the validation and source-viewer
 contracts below; it does not reinterpret historical M1 answers.
@@ -486,6 +489,14 @@ An answered proposal contains no more than 8 statements and 2 evidence reference
 Each application reference names only a supplied retrieval-candidate ID and a block-local
 half-open range. An insufficient proposal contains no statements or citations and names the missing
 information.
+
+The current M1 answer prompt, `m1-grounded-answer-prompt-v5`, requires one independently
+verifiable factual claim per statement, supported in full by that statement's own references.
+Distinct capabilities, activities, or plans must not be bundled with unsupported additions.
+Necessary subject, conditions, uncertainty, and time scope remain part of each self-contained
+claim. The rendering may summarize only those supported claims; the eight-statement ceiling
+requires prioritization, not packing unrelated claims together. This is a generation instruction,
+not a replacement for server-side support validation or a guarantee of live model compliance.
 
 The versioned M1 answer prompt defines the four coverage choices for the question as a whole:
 `COMPLETE` when every material part is supported, `PARTIAL` when at least one material part is
@@ -667,6 +678,7 @@ The research SSE stream reports actual application stages while the request is r
 research.progress(EMBEDDING_QUESTION)
 research.progress(SEARCHING_SOURCES)
 research.progress(SELECTING_PASSAGES)
+research.context(sources in final generation-input order)
 research.progress(GENERATING_ANSWER)
 research.progress(VALIDATING_EVIDENCE)
 research.progress(SAVING_RESULT)
@@ -683,13 +695,31 @@ status; `PROVIDER_UNAVAILABLE` and `INTERNAL_ERROR` with the HTTP request ID con
 database details. Provider authentication, rate-limit, timeout, refusal, and schema details remain
 internal safe categories.
 
+The additive `research.context` event carries the prepared generation input's ordered `sources`,
+after canonical context preparation and before generation. Each source includes candidate, chunk,
+document, version, and block IDs, medium/page information, and unchanged passage text. The event
+permits an empty selection, at most 32 unique chunks/candidates, and at most 24,000 Unicode code
+points in total, matching the application safety ceilings. No question, workspace ID, credentials,
+provider response, storage key, or internal prompt is included. The selected passages are not
+validated citations or proof that a provider call succeeded or used every passage. Source-unit
+profiles retain these same passages while presenting their bounded units to the answer model.
+
+The local website provides a collapsed context panel with counts, ordered passages, source IDs,
+page numbers, and authorized original links. Titles come from the already loaded catalog; missing
+titles fall back to document IDs without additional provider calls. Context is retained for the
+current request on success, insufficiency, or failure, and cleared on the next question. It is not
+a persistent context-history feature and is never copied to normal logs, traces, or browser storage.
+The existing workspace boundary and `private, no-store, no-transform` stream headers also apply
+to source context. Clients must update their runtime allowlists and regenerate TypeScript types;
+the envelope stays `1.0`, and older streams without this additive event remain supported.
+
 The opt-in M1.5 source-ID path adds `RESEARCH_CONTEXT_LIMIT` to the error-code enum when catalog
 preparation or its input-metadata preflight exceeds an application-owned bound. It ends with one
 `research.failed`, `retriable=false`, and the fixed message: "Retrieved sources exceed the current
 research limits. Try a more focused question or select a single document." It emits no answer
 statements or citations and never returns the exception message or counters to the browser.
 The server records the content-free `research.context_limit.exceeded` event with the HTTP request
-ID and validated category/counters; see the [runtime guide](./development.md#opt-in-m15-source-id-research).
+ID and validated category/counters; see the [runtime guide](./development.md#default-m15-source-id-research).
 This is not insufficient evidence or a provider outage. The SSE envelope and schema version stay
 unchanged; strict clients must regenerate the enum and update their runtime allowlist together
 with the API. The retained M1 generation/evidence contract remains unchanged.
