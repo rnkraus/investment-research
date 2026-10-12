@@ -405,6 +405,91 @@ def test_started_processing_refuses_entire_batch(
             )
 
 
+@pytest.mark.parametrize("legacy_configuration", [False, True])
+def test_completed_text_extracted_source_is_purged_regardless_of_configuration(
+    integration_database_engine: Engine, tmp_path: Path, legacy_configuration: bool
+) -> None:
+    source = make_research_source(label="Completed historical text extraction")
+    if legacy_configuration:
+        source = replace(
+            source,
+            processing_run=source.processing_run.model_copy(
+                update={
+                    "embedding_config_version": "legacy-embedding-v1",
+                    "dense_index_config_version": "legacy-dense-v1",
+                }
+            ),
+        )
+    assert source.processing_run.completed_at is not None
+    assert source.processing_run.lease_id is None
+    assert source.processing_run.lease_expires_at is None
+    persist_research_source(integration_database_engine, source)
+    answer_id = persist_answer_graph(integration_database_engine, source)
+    factory = create_session_factory(integration_database_engine)
+    uow = create_document_deletion_unit_of_work_factory(factory)
+    command = DeleteDocumentsCommand(document_ids=(source.document.id,))
+    request = RequestDocumentDeletionService(uow, clock=lambda: PURGE_TIME)
+    assert request.request(source.context, command)[0].state is DocumentDeletionState.PENDING
+    # A stale execution cannot write back after deletion admission, even for legacy runs.
+    with (
+        pytest.raises(IntegrityError, match="source is unavailable"),
+        transactional_session(factory) as session,
+    ):
+        assert SqlAlchemyProcessingRepository(session).update_run(
+            source.context, source.processing_run.model_copy(update={"completed_at": PURGE_TIME})
+        )
+        session.flush()
+    with uow() as work:
+        manifest = work.deletions.load_manifest(source.context, source.document.id)
+    expected_vectors = (
+        tuple(
+            dense_vector_id(
+                source.context,
+                chunk_id=chunk.id,
+                embedding_config_version=source.processing_run.embedding_config_version,
+            )
+            for chunk in sorted(source.chunks, key=lambda item: item.id)
+        )
+        if legacy_configuration
+        else ()
+    )
+    assert manifest.vector_ids == expected_vectors
+    storage = LocalObjectStorage(tmp_path)
+    storage.store_immutable(
+        source.context, source.original.storage_key, BytesIO(b"synthetic original")
+    )
+    vectors = RecordingVectorPurger()
+    purge = PurgeDocumentService(uow, storage, vectors, clock=lambda: PURGE_TIME)
+    completed = purge.purge(source.context, source.document.id)
+    assert completed.state is DocumentDeletionState.COMPLETED
+    assert purge.purge(source.context, source.document.id) == completed
+    assert vectors.calls == (
+        [(source.context.workspace_id, expected_vectors)] if legacy_configuration else []
+    )
+    with factory() as session:
+        for model in (
+            DocumentRow,
+            DocumentVersionRow,
+            OriginalArtifactRow,
+            ProcessingRunRow,
+            StructureBlockRow,
+            ChunkSetRow,
+            ChunkRow,
+        ):
+            assert (
+                session.scalar(
+                    select(model).where(model.workspace_id == source.context.workspace_id)
+                )
+                is None
+            )
+        assert session.get(AnswerRow, answer_id) is None
+    with (
+        pytest.raises(ObjectNotFoundError),
+        storage.open(source.context, source.original.storage_key),
+    ):
+        pytest.fail("purged historical original remains accessible")
+
+
 def persist_unclaimed_source(engine: Engine) -> ResearchSource:
     """Persist only capture metadata and an unclaimed run, without invented derived output."""
 

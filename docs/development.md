@@ -235,8 +235,9 @@ in the local workspace. The paginated catalog opens saved originals independentl
 allows selecting 1–100 documents. Research requires every selected source to be `SEARCHABLE`;
 queued, Text extracted, failed, or unprocessed sources are selectable for permanent deletion only.
 Parsing and Indexing block selection. The backend refuses the whole deletion batch if work has
-started, including a leased Text extracted run even after lease expiry; completed lexical-only
-output and unclaimed queued runs are allowed. Hide/show preserves the selection; Clear selection
+started, including a leased Text extracted run even after lease expiry; completed Text extracted
+output with no lease and unclaimed queued runs are allowed. Historical embedding/index configuration
+does not block deletion of completed text extraction. Hide/show preserves the selection; Clear selection
 keeps focused scope and blocks
 research submission until sources are chosen again. Refreshing clears the selection. Delete selected
 requires a second irreversible-deletion confirmation under [ADR-0019](adr/0019-permanent-local-document-deletion.md).
