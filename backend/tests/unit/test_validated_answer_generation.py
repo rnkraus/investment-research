@@ -883,10 +883,22 @@ def test_rejected_answer_reports_final_decision_only_after_commit() -> None:
         rejection_diagnostic=record_rejection,
     )
 
-    result = service.generate(make_context(), make_retrieval_result())
+    request_reports: list[tuple[UnvalidatedGeneratedAnswer, EvidenceValidationDecision]] = []
+
+    def record_request_rejection(
+        proposal: UnvalidatedGeneratedAnswer, decision: EvidenceValidationDecision
+    ) -> None:
+        assert unit_of_work.committed is True
+        assert unit_of_work.is_open is False
+        request_reports.append((proposal, decision))
+
+    result = service.generate(
+        make_context(), make_retrieval_result(), on_rejection=record_request_rejection
+    )
 
     assert result.answer.state is AnswerState.REJECTED
     assert len(reports) == 1
+    assert request_reports == reports
     assert reports[0][0].statements[0].text == STATEMENT
     assert [
         (finding.rule.value, finding.statement_ordinal)
@@ -907,7 +919,11 @@ def test_accepted_answer_does_not_report_a_rejection() -> None:
         rejection_diagnostic=lambda _proposal, decision: reports.append(decision),
     )
 
-    result = service.generate(make_context(), make_retrieval_result())
+    result = service.generate(
+        make_context(),
+        make_retrieval_result(),
+        on_rejection=lambda _proposal, decision: reports.append(decision),
+    )
 
     assert result.answer.state is AnswerState.STREAMED
     assert reports == []
