@@ -82,6 +82,110 @@ function selectedContextEvent(requestId = REQUEST_ID) {
   };
 }
 
+function rejectedAnswerEvent() {
+  return {
+    ...failedEvent(),
+    error: {
+      code: "EVIDENCE_VALIDATION_FAILED",
+      message: "Answer failed evidence validation.",
+      request_id: REQUEST_ID,
+    },
+    retriable: false,
+    diagnostic: {
+      unvalidated: true,
+      answer_model: "gpt-5.6-terra",
+      support_model: "gpt-5.6-luna",
+      statements: [
+        {
+          ordinal: 0,
+          text: "An unvalidated claim.",
+          evidence: [
+            {
+              retrieval_candidate_id: STATEMENT_ID,
+              start_character: 0,
+              end_character: 25,
+            },
+          ],
+        },
+      ],
+      findings: [
+        {
+          rule: "STATEMENT_SUPPORT",
+          statement_ordinal: 0,
+          reason: "Canonical evidence does not support the complete statement.",
+        },
+      ],
+    },
+  };
+}
+
+test("rejected claims remain diagnostics rather than accepted statements and reset for a new question", () => {
+  const selected = applyResearchEvent(
+    beginResearchSession(),
+    selectedContextEvent(),
+  );
+  const event = rejectedAnswerEvent();
+  const rejected = applyResearchEvent(selected, event);
+  assert.equal(rejected.status, "FAILED");
+  assert.deepEqual(rejected.rejectionDiagnostic, event.diagnostic);
+  assert.deepEqual(rejected.statements, []);
+  assert.deepEqual(rejected.retrievalContext, selected.retrievalContext);
+  assert.equal(beginResearchSession().rejectionDiagnostic, undefined);
+});
+
+test("rejection diagnostics require this request's selected context and valid Unicode ranges", () => {
+  const event = rejectedAnswerEvent();
+  assert.throws(
+    () => applyResearchEvent(beginResearchSession(), event),
+    ResearchSequenceError,
+  );
+  const context = selectedContextEvent();
+  context.sources[0].text = "Café 😀 supplies computing capacity.";
+  const selected = applyResearchEvent(beginResearchSession(), context);
+  const statement = event.diagnostic.statements[0];
+  const range = statement.evidence[0];
+  for (const invalid of [
+    { ...range, retrieval_candidate_id: OTHER_REQUEST_ID },
+    { ...range, start_character: -1 },
+    { ...range, end_character: 0 },
+    { ...range, end_character: Array.from(context.sources[0].text).length + 1 },
+  ]) {
+    assert.throws(
+      () =>
+        applyResearchEvent(selected, {
+          ...event,
+          diagnostic: {
+            ...event.diagnostic,
+            statements: [{ ...statement, evidence: [invalid] }],
+          },
+        }),
+      ResearchSequenceError,
+    );
+  }
+  assert.throws(
+    () =>
+      applyResearchEvent(selected, {
+        ...event,
+        research_request_id: OTHER_REQUEST_ID,
+      }),
+    ResearchSequenceError,
+  );
+  const unicodeEvent = {
+    ...event,
+    diagnostic: {
+      ...event.diagnostic,
+      statements: [
+        {
+          ...statement,
+          evidence: [{ ...range, start_character: 5, end_character: 6 }],
+        },
+      ],
+    },
+  };
+  assert.equal(applyResearchEvent(selected, unicodeEvent).status, "FAILED");
+  assert.equal(Array.from(context.sources[0].text).slice(5, 6).join(""), "😀");
+});
+
 test("selected context survives terminal outcomes and clears for the next question", () => {
   const event = selectedContextEvent();
   const selected = applyResearchEvent(beginResearchSession(), event);

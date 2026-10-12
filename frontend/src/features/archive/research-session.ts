@@ -1,4 +1,8 @@
-import type { EvidenceSpanResult, ResearchStreamEvent } from "@/lib/api/client";
+import type {
+  EvidenceSpanResult,
+  ResearchStreamEvent,
+  ResearchRejectionDiagnostic,
+} from "@/lib/api/client";
 
 export type ResearchSessionStatus =
   "IDLE" | "RUNNING" | "COMPLETED" | "INSUFFICIENT" | "FAILED";
@@ -69,6 +73,7 @@ export interface ResearchSession {
   readonly coverage?: "COMPLETE" | "PARTIAL" | "CONFLICTING";
   readonly message?: string;
   readonly statements: readonly ResearchStatement[];
+  readonly rejectionDiagnostic?: ResearchRejectionDiagnostic;
   readonly retrievalContext?: Extract<
     ResearchStreamEvent,
     { readonly event: "research.context" }
@@ -292,12 +297,35 @@ export function applyResearchEvent(
       if (session.statements.length > 0) {
         throw new ResearchSequenceError();
       }
+      if (event.diagnostic != null) {
+        if (
+          event.error.code !== "EVIDENCE_VALIDATION_FAILED" ||
+          session.retrievalContext === undefined ||
+          event.diagnostic.statements.some((statement) =>
+            statement.evidence.some((range) => {
+              const source = session.retrievalContext?.find(
+                (item) =>
+                  item.retrieval_candidate_id === range.retrieval_candidate_id,
+              );
+              return (
+                source === undefined ||
+                range.start_character < 0 ||
+                range.end_character <= range.start_character ||
+                range.end_character > Array.from(source.text).length
+              );
+            }),
+          )
+        ) {
+          throw new ResearchSequenceError();
+        }
+      }
       return {
         ...session,
         status: "FAILED",
         researchRequestId,
         stage: undefined,
         message: event.error.message,
+        rejectionDiagnostic: event.diagnostic ?? undefined,
       };
   }
 }

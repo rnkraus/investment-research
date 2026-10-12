@@ -5,6 +5,20 @@ export const archiveCopy = {
     "Ask a question about saved English research sources, or import a new PDF or text source to expand the archive.",
   workspaceLabel: "Evidence workspace",
   localOnly: "Local-only · Single workspace · English archive",
+  rejectionDiagnostic: {
+    heading: "Rejected answer diagnostics",
+    warning:
+      "Local debugging only. These claims failed validation and are not an accepted answer. The selected passages below are not validated citations.",
+    answerModel: "Answer model",
+    supportModel: "Evidence-check model",
+    statement: "Rejected statement",
+    evidence: "Selected source passage",
+    missingEvidence:
+      "No matching passage is available in this request's selected context.",
+    empty: "No individual statement was identified by the failed rules.",
+    rules: "Failed validation checks",
+    page: "Page",
+  },
   retrievalContext: {
     heading: "Retrieved context",
     description:

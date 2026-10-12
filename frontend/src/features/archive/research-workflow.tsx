@@ -15,6 +15,7 @@ import {
 
 import { archiveCopy, fixtureDefaults } from "./copy";
 import { RetrievalContext } from "./retrieval-context";
+import { RejectionDiagnostic } from "./rejection-diagnostic";
 import {
   applyResearchEvent,
   attachCitationSource,
@@ -433,6 +434,13 @@ export function ResearchWorkflow({
               {archiveCopy.research.failedLabel}
             </h3>
             <p className="mt-2 text-sm leading-6">{session.message}</p>
+            {session.rejectionDiagnostic !== undefined ? (
+              <RejectionDiagnostic
+                diagnostic={session.rejectionDiagnostic}
+                sources={session.retrievalContext ?? []}
+                documents={documents}
+              />
+            ) : null}
           </article>
         ) : null}
 

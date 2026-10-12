@@ -64,6 +64,128 @@ function contextClient(event) {
   );
 }
 
+function rejectionEvent() {
+  return {
+    event: "research.failed",
+    schema_version: "1.0",
+    research_request_id: RESEARCH_REQUEST_ID,
+    error: {
+      code: "EVIDENCE_VALIDATION_FAILED",
+      message: "Answer failed evidence validation.",
+      request_id: RESEARCH_REQUEST_ID,
+    },
+    retriable: false,
+    diagnostic: {
+      unvalidated: true,
+      answer_model: "gpt-5.6-terra",
+      support_model: "gpt-5.6-luna",
+      statements: [
+        {
+          ordinal: 0,
+          text: "An unvalidated claim.",
+          evidence: [
+            {
+              retrieval_candidate_id: STATEMENT_ID,
+              start_character: 0,
+              end_character: 5,
+            },
+          ],
+        },
+      ],
+      findings: [
+        {
+          rule: "STATEMENT_SUPPORT",
+          statement_ordinal: 0,
+          reason: "Canonical evidence does not support the complete statement.",
+        },
+      ],
+    },
+  };
+}
+
+function rejectionClient(event) {
+  return createApiClient(
+    async () =>
+      new Response(
+        `event: research.failed\ndata: ${JSON.stringify(event)}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+}
+
+test("streamResearch accepts bounded rejection diagnostics and ordinary failures", async () => {
+  const event = rejectionEvent();
+  assert.deepEqual(await collectResearch(rejectionClient(event)), [event]);
+  delete event.diagnostic;
+  assert.deepEqual(await collectResearch(rejectionClient(event)), [event]);
+});
+
+test("streamResearch rejects malformed or misplaced rejection diagnostics", async () => {
+  const original = rejectionEvent();
+  const diagnostic = original.diagnostic;
+  const statement = diagnostic.statements[0];
+  const range = statement.evidence[0];
+  const finding = diagnostic.findings[0];
+  const invalidDiagnostics = [
+    { ...diagnostic, unvalidated: false },
+    { ...diagnostic, answer_model: "unknown-model" },
+    { ...diagnostic, support_model: "unknown-model" },
+    { ...diagnostic, unexpected: true },
+    { ...diagnostic, statements: [statement, statement] },
+    { ...diagnostic, statements: [{ ...statement, ordinal: 8 }] },
+    { ...diagnostic, statements: [{ ...statement, text: " " }] },
+    { ...diagnostic, statements: [{ ...statement, text: "x".repeat(10_001) }] },
+    {
+      ...diagnostic,
+      statements: [{ ...statement, evidence: Array(3).fill(range) }],
+    },
+    {
+      ...diagnostic,
+      statements: [
+        { ...statement, evidence: [{ ...range, end_character: 0 }] },
+      ],
+    },
+    {
+      ...diagnostic,
+      statements: [
+        { ...statement, evidence: [{ ...range, end_character: 24_001 }] },
+      ],
+    },
+    {
+      ...diagnostic,
+      statements: [
+        {
+          ...statement,
+          evidence: [{ ...range, retrieval_candidate_id: "invalid" }],
+        },
+      ],
+    },
+    { ...diagnostic, findings: [] },
+    { ...diagnostic, findings: Array(65).fill(finding) },
+    { ...diagnostic, findings: [{ ...finding, rule: "UNKNOWN" }] },
+    { ...diagnostic, findings: [{ ...finding, reason: " " }] },
+  ];
+  for (const invalid of invalidDiagnostics) {
+    await assert.rejects(
+      collectResearch(rejectionClient({ ...original, diagnostic: invalid })),
+      ApiProtocolError,
+    );
+  }
+  await assert.rejects(
+    collectResearch(rejectionClient({ ...original, retriable: true })),
+    ApiProtocolError,
+  );
+  await assert.rejects(
+    collectResearch(
+      rejectionClient({
+        ...original,
+        error: { ...original.error, code: "PROVIDER_UNAVAILABLE" },
+      }),
+    ),
+    ApiProtocolError,
+  );
+});
+
 test("streamResearch retains exact selected passages and accepts empty context", async () => {
   const event = contextEvent();
   assert.deepEqual(await collectResearch(contextClient(event)), [event]);
