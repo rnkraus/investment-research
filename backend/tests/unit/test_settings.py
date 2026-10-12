@@ -1140,11 +1140,36 @@ def valid_live_api_values() -> dict[str, object]:
     }
 
 
-def test_research_profile_defaults_to_m1_and_is_api_owned() -> None:
+def test_credential_free_research_profile_retains_m1_and_is_api_owned() -> None:
     assert ApiSettings().research_profile == "m1"
     assert "research_profile" not in WorkerSettings.model_fields
     assert "research_profile" not in ParserSettings.model_fields
     assert load_api_settings(env_file=None).research_profile == "m1"
+
+
+@pytest.mark.parametrize("runtime_location", ["host", "container"])
+@pytest.mark.parametrize("profile", [None, "m1", "m1-5-citable-units"])
+def test_live_api_defaults_to_citable_units_unless_explicitly_overridden(
+    monkeypatch: pytest.MonkeyPatch, runtime_location: str, profile: str | None
+) -> None:
+    file_values = {
+        "INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY": "synthetic-query-key",
+        "INVESTMENT_RESEARCH_PINECONE_QUERY_API_KEY": "synthetic-pinecone-key",
+        "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST": "synthetic-index.example.svc.pinecone.io",
+        "INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY": "synthetic-generation-key",
+        "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD": "5000000",
+    }
+    monkeypatch.setattr(settings_module, "_read_local_values", lambda _: file_values)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", runtime_location)
+    if profile is not None:
+        monkeypatch.setenv("INVESTMENT_RESEARCH_RESEARCH_PROFILE", profile)
+
+    settings = load_api_settings(env_file=None)
+
+    assert settings.research_profile == (profile or "m1-5-citable-units")
+    assert settings.processing_profile == "m1"
+    assert settings.provider_monthly_budget_micro_usd == 5_000_000
+    assert settings.local_model_failure_output is False
 
 
 @pytest.mark.parametrize("runtime_location", ["host", "container"])
