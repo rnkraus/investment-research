@@ -386,6 +386,7 @@ export function ArchiveResearch({
       </section>
       <ResearchWorkflow
         key={answerResetKey}
+        documents={documents}
         documentIds={researchDocumentIds}
         onBusyChange={setIsResearching}
       />

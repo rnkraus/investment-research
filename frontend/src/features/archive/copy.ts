@@ -5,6 +5,21 @@ export const archiveCopy = {
     "Ask a question about saved English research sources, or import a new PDF or text source to expand the archive.",
   workspaceLabel: "Evidence workspace",
   localOnly: "Local-only · Single workspace · English archive",
+  retrievalContext: {
+    heading: "Retrieved context",
+    description:
+      "Selected passages prepared for the answer model, in context order. These are not validated citations or proof that every passage was used. A failed request may stop before the model call.",
+    chunks: "chunks",
+    documents: "documents",
+    characters: "characters",
+    chunk: "Chunk",
+    document: "Document",
+    version: "Version",
+    page: "Page",
+    textSource: "Text source",
+    empty: "No eligible passages were selected for this question.",
+    openOriginal: "Open original",
+  },
   safetyNote: "M1 workflow: use public, synthetic, or non-sensitive research.",
   steps: [
     "Ask the archive",

@@ -34,6 +34,89 @@ async function collectResearch(client) {
   return events;
 }
 
+function contextEvent() {
+  return {
+    event: "research.context",
+    schema_version: "1.0",
+    research_request_id: RESEARCH_REQUEST_ID,
+    sources: [
+      {
+        retrieval_candidate_id: STATEMENT_ID,
+        chunk_id: PROCESSING_RUN_ID,
+        document_id: DOCUMENT_ID,
+        document_version_id: VERSION_ID,
+        structure_block_id: EVIDENCE_SPAN_ID,
+        source_locator_kind: "PDF_PAGE",
+        page_number: 4,
+        text: "Exact source text.\n<script>untrusted content</script> 🌍",
+      },
+    ],
+  };
+}
+
+function contextClient(event) {
+  return createApiClient(
+    async () =>
+      new Response(
+        `event: research.context\ndata: ${JSON.stringify(event)}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+}
+
+test("streamResearch retains exact selected passages and accepts empty context", async () => {
+  const event = contextEvent();
+  assert.deepEqual(await collectResearch(contextClient(event)), [event]);
+  event.sources = [];
+  assert.deepEqual(await collectResearch(contextClient(event)), [event]);
+});
+
+test("streamResearch rejects invalid, duplicate, or oversized selected context", async () => {
+  const original = contextEvent();
+  const source = original.sources[0];
+  const invalid = [
+    { ...original, sources: undefined },
+    { ...original, sources: [source, source] },
+    { ...original, sources: Array(33).fill(source) },
+    { ...original, sources: [{ ...source, chunk_id: "not-a-uuid" }] },
+    { ...original, sources: [{ ...source, text: " " }] },
+    { ...original, sources: [{ ...source, text: "x".repeat(24_001) }] },
+    { ...original, sources: [{ ...source, page_number: null }] },
+    { ...original, sources: [{ ...source, page_number: 0 }] },
+    {
+      ...original,
+      sources: [{ ...source, source_locator_kind: "TEXT_PASSAGE" }],
+    },
+    { ...original, sources: [{ ...source, internal_setting: "unexpected" }] },
+    { ...original, unexpected: true },
+    {
+      ...original,
+      sources: [
+        source,
+        {
+          ...source,
+          chunk_id: DOCUMENT_ID,
+          retrieval_candidate_id: DOCUMENT_ID,
+          text: "x".repeat(24_000),
+        },
+      ],
+    },
+  ];
+  for (const event of invalid) {
+    await assert.rejects(
+      collectResearch(contextClient(event)),
+      ApiProtocolError,
+    );
+  }
+  const unicodeContext = {
+    ...original,
+    sources: [{ ...source, text: "🌍".repeat(24_000) }],
+  };
+  assert.deepEqual(await collectResearch(contextClient(unicodeContext)), [
+    unicodeContext,
+  ]);
+});
+
 test("captureDocument sends the exact multipart API fields", async () => {
   let capturedPath;
   let capturedInit;

@@ -76,6 +76,24 @@ test.describe("M1 visible browser journey", () => {
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
 
+    const retrievedContext = page.getByTestId("retrieval-context");
+    await expect(retrievedContext).not.toHaveAttribute("open", "");
+    await retrievedContext.locator(":scope > summary").click();
+    await expect(retrievedContext).toHaveAttribute("open", "");
+    await expect(retrievedContext).toContainText(PDF_EVIDENCE);
+    const firstPassage = retrievedContext.locator("ol > li > details").first();
+    await firstPassage.locator("summary").click();
+    await expect(firstPassage.locator("summary")).toContainText(PDF_TITLE);
+    await expect(firstPassage.locator("p")).toBeVisible();
+    await expect(
+      firstPassage.getByRole("link", { name: "Open original", exact: true }),
+    ).toHaveAttribute(
+      "href",
+      /^\/documents\/[a-f0-9-]+\/versions\/[a-f0-9-]+$/,
+    );
+    await retrievedContext.locator(":scope > summary").click();
+    await expect(firstPassage.locator("p")).not.toBeVisible();
+
     const sourcePage = await openCitation(page);
     await expect(
       sourcePage.getByRole("heading", { name: "Original PDF" }),

@@ -69,6 +69,10 @@ export interface ResearchSession {
   readonly coverage?: "COMPLETE" | "PARTIAL" | "CONFLICTING";
   readonly message?: string;
   readonly statements: readonly ResearchStatement[];
+  readonly retrievalContext?: Extract<
+    ResearchStreamEvent,
+    { readonly event: "research.context" }
+  >["sources"];
 }
 
 export class ResearchSequenceError extends Error {
@@ -218,6 +222,25 @@ export function applyResearchEvent(
   const researchRequestId = requireConsistentRequest(session, event);
 
   switch (event.event) {
+    case "research.context":
+      if (
+        session.retrievalContext !== undefined ||
+        session.statements.length > 0 ||
+        session.progressStages.some((stage) =>
+          [
+            "GENERATING_ANSWER",
+            "VALIDATING_EVIDENCE",
+            "SAVING_RESULT",
+          ].includes(stage),
+        )
+      ) {
+        throw new ResearchSequenceError();
+      }
+      return {
+        ...session,
+        researchRequestId,
+        retrievalContext: event.sources,
+      };
     case "research.progress":
       if (session.statements.length > 0) {
         throw new ResearchSequenceError();

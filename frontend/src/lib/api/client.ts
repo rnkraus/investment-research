@@ -20,6 +20,8 @@ export type ResearchModel = components["schemas"]["ResearchModel"];
 export type ResearchModelOptions =
   components["schemas"]["ResearchModelOptions"];
 export type ResearchStreamEvent = components["schemas"]["ResearchStreamEvent"];
+export type RetrievalContextSource =
+  components["schemas"]["AnswerGenerationSource"];
 export type EvidenceSpanResult = components["schemas"]["EvidenceSpanResult"];
 export type ApiErrorCode = components["schemas"]["ErrorCode"];
 
@@ -107,6 +109,7 @@ const PROCESSING_STATES = new Set([
   "FAILED",
 ]);
 const RESEARCH_EVENTS = new Set([
+  "research.context",
   "research.progress",
   "answer.statement",
   "answer.citation",
@@ -333,6 +336,40 @@ function isErrorCode(value: unknown): value is ApiErrorCode {
   return typeof value === "string" && ERROR_CODES.has(value as ApiErrorCode);
 }
 
+function isRetrievalContextSource(
+  value: unknown,
+): value is RetrievalContextSource {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const fields = new Set([
+    "retrieval_candidate_id",
+    "chunk_id",
+    "document_id",
+    "document_version_id",
+    "structure_block_id",
+    "source_locator_kind",
+    "page_number",
+    "text",
+  ]);
+  return (
+    Object.keys(value).every((key) => fields.has(key)) &&
+    isUuid(value.retrieval_candidate_id) &&
+    isUuid(value.chunk_id) &&
+    isUuid(value.document_id) &&
+    isUuid(value.document_version_id) &&
+    isUuid(value.structure_block_id) &&
+    typeof value.text === "string" &&
+    value.text.trim().length > 0 &&
+    Array.from(value.text).length <= 24_000 &&
+    ((value.source_locator_kind === "PDF_PAGE" &&
+      Number.isInteger(value.page_number) &&
+      Number(value.page_number) >= 1) ||
+      (value.source_locator_kind === "TEXT_PASSAGE" &&
+        (value.page_number === null || value.page_number === undefined)))
+  );
+}
+
 function isResearchStreamEvent(value: unknown): value is ResearchStreamEvent {
   if (
     !isRecord(value) ||
@@ -345,6 +382,30 @@ function isResearchStreamEvent(value: unknown): value is ResearchStreamEvent {
   }
 
   switch (value.event) {
+    case "research.context": {
+      const sources = value.sources;
+      return (
+        Object.keys(value).every((key) =>
+          [
+            "event",
+            "schema_version",
+            "research_request_id",
+            "sources",
+          ].includes(key),
+        ) &&
+        Array.isArray(sources) &&
+        sources.length <= 32 &&
+        sources.every(isRetrievalContextSource) &&
+        sources.reduce(
+          (total, source) => total + Array.from(source.text).length,
+          0,
+        ) <= 24_000 &&
+        new Set(sources.map((source) => source.chunk_id)).size ===
+          sources.length &&
+        new Set(sources.map((source) => source.retrieval_candidate_id)).size ===
+          sources.length
+      );
+    }
     case "research.progress":
       return [
         "EMBEDDING_QUESTION",

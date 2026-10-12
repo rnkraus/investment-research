@@ -62,6 +62,91 @@ function failedEvent(requestId = REQUEST_ID) {
   };
 }
 
+function selectedContextEvent(requestId = REQUEST_ID) {
+  return {
+    event: "research.context",
+    schema_version: "1.0",
+    research_request_id: requestId,
+    sources: [
+      {
+        retrieval_candidate_id: STATEMENT_ID,
+        chunk_id: SPAN_ID,
+        document_id: DOCUMENT_ID,
+        document_version_id: VERSION_ID,
+        structure_block_id: OTHER_REQUEST_ID,
+        source_locator_kind: "TEXT_PASSAGE",
+        page_number: null,
+        text: "Revenue increased by 22.0%.\nUnchanged source text.",
+      },
+    ],
+  };
+}
+
+test("selected context survives terminal outcomes and clears for the next question", () => {
+  const event = selectedContextEvent();
+  const selected = applyResearchEvent(beginResearchSession(), event);
+  assert.deepEqual(selected.retrievalContext, event.sources);
+  assert.equal(selected.status, "RUNNING");
+  assert.equal(selected.statements.length, 0);
+  assert.deepEqual(
+    applyResearchEvent(selected, failedEvent()).retrievalContext,
+    event.sources,
+  );
+  assert.deepEqual(
+    applyResearchEvent(selected, {
+      event: "answer.insufficient",
+      schema_version: "1.0",
+      research_request_id: REQUEST_ID,
+      coverage: "INSUFFICIENT",
+      message: "No supported answer.",
+    }).retrievalContext,
+    event.sources,
+  );
+  const completed = [
+    statementEvent(),
+    citationEvent(),
+    completedEvent(),
+  ].reduce(applyResearchEvent, selected);
+  assert.deepEqual(completed.retrievalContext, event.sources);
+  assert.equal(beginResearchSession().retrievalContext, undefined);
+});
+
+test("selected context rejects duplicate, foreign-request, and late events", () => {
+  const event = selectedContextEvent();
+  const selected = applyResearchEvent(beginResearchSession(), event);
+  assert.throws(
+    () => applyResearchEvent(selected, event),
+    ResearchSequenceError,
+  );
+  const progress = applyResearchEvent(
+    beginResearchSession(),
+    progressEvent("SELECTING_PASSAGES"),
+  );
+  assert.throws(
+    () => applyResearchEvent(progress, selectedContextEvent(OTHER_REQUEST_ID)),
+    ResearchSequenceError,
+  );
+  for (const stage of [
+    "GENERATING_ANSWER",
+    "VALIDATING_EVIDENCE",
+    "SAVING_RESULT",
+  ]) {
+    const late = applyResearchEvent(
+      beginResearchSession(),
+      progressEvent(stage),
+    );
+    assert.throws(() => applyResearchEvent(late, event), ResearchSequenceError);
+  }
+  assert.throws(
+    () =>
+      applyResearchEvent(
+        applyResearchEvent(beginResearchSession(), statementEvent()),
+        event,
+      ),
+    ResearchSequenceError,
+  );
+});
+
 test("a context-limit failure stops progress and preserves the actionable website message", () => {
   const message =
     "Retrieved sources exceed the current research limits. Try a more focused question or select a single document.";
