@@ -1,0 +1,11 @@
+# Local research tuning. Restart the API after changes; never put secrets here.
+# From the repository root, apply value-only changes to an existing live Compose stack:
+# docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml restart api
+# Candidate limits apply separately before fusion; they are not final context sizes.
+[retrieval]
+lexical_candidate_limit = 20 # 1..20: keyword-search candidates
+dense_candidate_limit = 20 # 1..20: vector-search candidates
+
+[context]
+chunk_limit = 8 # 1..32: maximum unique chunks passed to the answer model
+character_limit = 24000 # 1..24000: combined Unicode code points, not tokens

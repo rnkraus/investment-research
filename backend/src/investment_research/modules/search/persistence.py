@@ -86,7 +86,7 @@ class RetrievalRunRow(Base):
             name="bounded_dense_candidate_limit",
         ),
         CheckConstraint(
-            "context_chunk_limit IS NULL OR context_chunk_limit BETWEEN 1 AND 8",
+            "context_chunk_limit IS NULL OR context_chunk_limit BETWEEN 1 AND 32",
             name="bounded_context_chunk_limit",
         ),
         CheckConstraint(

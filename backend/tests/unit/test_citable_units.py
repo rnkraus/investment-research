@@ -29,8 +29,8 @@ from investment_research.modules.research.citable_units import (
 from investment_research.modules.research.contracts import CanonicalCandidateSource
 from investment_research.modules.search.contracts import (
     M1_CONTEXT_CHARACTER_LIMIT,
-    M1_CONTEXT_CHUNK_LIMIT,
 )
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 CONTEXT = WorkspaceContext(user_id=UUID(int=1), workspace_id=UUID(int=2))
 REQUEST_ID = UUID(int=3)
@@ -331,20 +331,22 @@ def test_catalog_overflow_does_not_return_a_partial_catalog() -> None:
 
 
 def test_catalog_accepts_exact_source_and_character_limits() -> None:
-    size = M1_CONTEXT_CHARACTER_LIMIT // M1_CONTEXT_CHUNK_LIMIT
+    size = M1_CONTEXT_CHARACTER_LIMIT // MAX_CONTEXT_CHUNKS
     catalog = make_catalog(
-        *(make_source("x" * size, ordinal=index + 1) for index in range(M1_CONTEXT_CHUNK_LIMIT))
+        *(make_source("x" * size, ordinal=index + 1) for index in range(MAX_CONTEXT_CHUNKS))
     )
 
-    assert len(catalog.sources) == M1_CONTEXT_CHUNK_LIMIT
+    assert len(catalog.sources) == MAX_CONTEXT_CHUNKS
     assert sum(len(item.block.text) for item in catalog.sources) == M1_CONTEXT_CHARACTER_LIMIT
 
 
 def test_catalog_rejects_source_and_character_overflow() -> None:
     with pytest.raises(CitableUnitLimitError, match="source limit") as failure:
-        make_catalog(*(make_source("A.", ordinal=index + 1) for index in range(9)))
+        make_catalog(
+            *(make_source("A.", ordinal=index + 1) for index in range(MAX_CONTEXT_CHUNKS + 1))
+        )
     assert failure.value.details == CitableUnitLimitDetails(
-        kind="source_count", observed=9, limit=8
+        kind="source_count", observed=MAX_CONTEXT_CHUNKS + 1, limit=MAX_CONTEXT_CHUNKS
     )
     with pytest.raises(CitableUnitLimitError, match="character limit") as failure:
         make_catalog(make_source("x" * (M1_CONTEXT_CHARACTER_LIMIT + 1)))

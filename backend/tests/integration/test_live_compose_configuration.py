@@ -90,6 +90,18 @@ def test_compose_research_profile_is_api_only_and_explicitly_opt_in(
             assert f"INVESTMENT_RESEARCH_{role}_API_KEY" not in environment
     for name in ("api", "web"):
         assert all(port["host_ip"] == "127.0.0.1" for port in services[name]["ports"])
+    rag_mounts = [
+        mount for mount in services["api"]["volumes"] if mount["target"] == "/config/rag.toml"
+    ]
+    assert len(rag_mounts) == 1
+    assert rag_mounts[0]["source"] == str(REPOSITORY_ROOT / "config" / "rag.toml")
+    assert rag_mounts[0]["read_only"] is True
+    assert rag_mounts[0]["bind"]["create_host_path"] is False
+    for name, service in services.items():
+        if name != "api":
+            assert all(
+                mount["target"] != "/config/rag.toml" for mount in service.get("volumes", [])
+            )
     if live:
         assert (
             services["api"]["environment"]["INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY_FILE"]

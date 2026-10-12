@@ -12,6 +12,7 @@ from investment_research.modules.processing.contracts import (
     MAX_CONFIGURABLE_EXTRACTED_CHARACTERS,
     MAX_CONFIGURABLE_PDF_PAGES,
 )
+from investment_research.rag_settings import RagSettings
 from investment_research.settings import (
     MAX_CONFIGURABLE_PARSER_CHILD_TIMEOUT_SECONDS,
     MAX_CONFIGURABLE_PARSER_CONCURRENT_CHILDREN,
@@ -99,6 +100,9 @@ def clear_parser_forbidden_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def clear_external_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep settings tests independent of host database, queue, and S3 configuration."""
+
+    # These tests exercise environment loading, not the owner's editable RAG file.
+    monkeypatch.setattr(settings_module, "load_rag_settings", lambda _: RagSettings())
 
     for name in (
         "INVESTMENT_RESEARCH_DATABASE_URL",

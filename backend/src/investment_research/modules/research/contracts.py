@@ -27,13 +27,13 @@ from investment_research.modules.research.domain import (
 )
 from investment_research.modules.search.contracts import (
     M1_CONTEXT_CHARACTER_LIMIT,
-    M1_CONTEXT_CHUNK_LIMIT,
 )
 from investment_research.modules.search.domain import (
     QueryText,
     RetrievalCandidate,
     RetrievalRun,
 )
+from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 M1_GENERATED_STATEMENT_LIMIT = 8
 M1_STATEMENT_EVIDENCE_LIMIT = 2
@@ -228,7 +228,7 @@ class AnswerGenerationInput(ImmutableResearchContract):
 
     research_request_id: UUID
     question: QuestionText
-    sources: tuple[AnswerGenerationSource, ...] = Field(max_length=M1_CONTEXT_CHUNK_LIMIT)
+    sources: tuple[AnswerGenerationSource, ...] = Field(max_length=MAX_CONTEXT_CHUNKS)
 
     @field_validator("question")
     @classmethod

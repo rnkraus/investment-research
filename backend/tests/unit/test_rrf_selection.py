@@ -192,6 +192,17 @@ def test_context_honors_lower_chunk_limit_and_deduplicates_shared_chunks() -> No
     assert [item.candidate.hit.chunk_id.int for item in result.candidates] == [1, 2]
 
 
+def test_tuned_context_can_exceed_eight_without_exceeding_text_budget() -> None:
+    result = select_rrf_context(
+        lexical_hits=tuple(lexical(number, text="source") for number in range(1, 21)),
+        dense_hits=tuple(dense(number, text="source") for number in range(21, 41)),
+        profile=RrfSelectionProfile(context_chunk_limit=32, context_character_limit=192),
+    )
+    assert len(result.candidates) == 32
+    assert [item.selection_rank for item in result.candidates] == list(range(1, 33))
+    assert sum(len(item.candidate.hit.text) for item in result.candidates) == 192
+
+
 def test_empty_lanes_return_explicit_empty_fusion_and_context() -> None:
     assert fuse_rrf_hits(lexical_hits=(), dense_hits=()) == ()
     profile = RrfSelectionProfile()
@@ -207,7 +218,7 @@ def test_empty_lanes_return_explicit_empty_fusion_and_context() -> None:
         {"selector_config_version": "other-rrf"},
         {"rank_constant": 61},
         {"context_chunk_limit": 0},
-        {"context_chunk_limit": 9},
+        {"context_chunk_limit": 33},
         {"context_chunk_limit": True},
         {"context_character_limit": 0},
         {"context_character_limit": 24_001},

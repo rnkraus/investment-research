@@ -92,6 +92,8 @@ def test_deletion_migration_preserves_sources_costs_and_irreversible_receipts(
 
         # Migration itself is additive: it never purges existing sources or resets accounting.
         command.upgrade(config, DELETION_REVISION)
+        # Metadata comparison must use the latest schema, not the historical deletion revision.
+        command.upgrade(config, "head")
         command.check(config)
         with session_factory() as session:
             assert (

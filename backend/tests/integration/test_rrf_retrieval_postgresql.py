@@ -73,6 +73,7 @@ from investment_research.modules.search.reranking_contracts import (
     BGE_RERANK_MODEL,
     RrfRerankingProfile,
 )
+from investment_research.rag_settings import RagSettings
 from tests.integration.factories import (
     FIXTURE_TIME,
     ResearchSource,
@@ -137,9 +138,11 @@ def make_service(
     reranker: Reranker | None = None,
     quota_limit: int | None = 1,
     monthly_budget: int = 5_000_000,
+    rag: RagSettings | None = None,
 ) -> RetrieveResearchService:
     """Inject RRF explicitly while retaining real transactions and provider accounting."""
 
+    tuning = rag or RagSettings()
     session_factory = create_session_factory(engine)
     operation_factory = create_provider_operation_unit_of_work_factory(session_factory)
     executor = ExecuteProviderOperationService(
@@ -161,7 +164,7 @@ def make_service(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(session_factory),
         search_profile=LexicalSearchProfile(
             lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
-            candidate_limit=20,
+            candidate_limit=tuning.retrieval.lexical_candidate_limit,
         ),
         m1_query_retrieval=M1QueryRetrievalDependencies(
             embedding_provider=FixedEmbeddingProvider(),
@@ -169,9 +172,19 @@ def make_service(
             dense_profile=DenseRetrievalProfile(
                 embedding_config_version=M1_PROCESSING_PROFILE.embedding_config_version,
                 dense_index_config_version=M1_PROCESSING_PROFILE.dense_index_config_version,
-                candidate_limit=20,
+                candidate_limit=tuning.retrieval.dense_candidate_limit,
             ),
-            selection_profile=RrfSelectionProfile() if reranker is None else RrfRerankingProfile(),
+            selection_profile=(
+                RrfSelectionProfile(
+                    context_chunk_limit=tuning.context.chunk_limit,
+                    context_character_limit=tuning.context.character_limit,
+                )
+                if reranker is None
+                else RrfRerankingProfile(
+                    context_chunk_limit=tuning.context.chunk_limit,
+                    context_character_limit=tuning.context.character_limit,
+                )
+            ),
             provider_operation_executor=executor,
             embedding_accounting=QueryEmbeddingAccountingProfile(
                 provider="deterministic",
@@ -198,6 +211,35 @@ def make_service(
             ),
         ),
     )
+
+
+@pytest.mark.parametrize(("chunks", "characters"), [(16, 12_000), (1, 12_000), (16, 1)])
+def test_tuned_limits_are_enforced_and_preserved_in_retrieval_history(
+    integration_database_engine: Engine, chunks: int, characters: int
+) -> None:
+    source = make_source("Local RAG tuning persistence")
+    persist_research_source(integration_database_engine, source)
+    tuning = RagSettings.model_validate(
+        {
+            "retrieval": {"lexical_candidate_limit": 12, "dense_candidate_limit": 16},
+            "context": {"chunk_limit": chunks, "character_limit": characters},
+        }
+    )
+    service = make_service(
+        integration_database_engine,
+        tuple(DenseRetrievalHit(chunk_id=item.id, raw_score=0.5) for item in source.chunks),
+        rag=tuning,
+    )
+    result = service.retrieve(source.context, ResearchRetrievalInput(question="revenue"))
+    assert len(result.sources) == (0 if characters == 1 else min(chunks, 2))
+    assert sum(len(item.text) for item in result.sources) <= characters
+    with create_session_factory(integration_database_engine)() as session:
+        row = session.get(RetrievalRunRow, result.retrieval_run.id)
+        assert row is not None
+        assert row.lexical_candidate_limit == 12
+        assert row.dense_candidate_limit == 16
+        assert row.context_chunk_limit == chunks
+        assert row.context_character_limit == characters
 
 
 class RecordingReranker:

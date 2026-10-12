@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 from dotenv import dotenv_values
 
+from investment_research.rag_settings import load_rag_settings
 from investment_research.settings_models import (
     DEFAULT_DENSE_INDEX_CONFIG_VERSION,
     DEFAULT_EMBEDDING_CONFIG_VERSION,
@@ -439,9 +440,14 @@ def load_generation_provider_settings(
     return GenerationProviderSettings.model_validate(values)
 
 
-def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
+def load_api_settings(
+    *,
+    env_file: Path | None = ROOT_ENV_FILE,
+    rag_config_file: Path = PROJECT_ROOT / "config" / "rag.toml",
+) -> ApiSettings:
     """Load only values required by the FastAPI process."""
 
+    rag = load_rag_settings(rag_config_file)
     file_values = _read_local_values(env_file)
     database_values = _database_runtime_values(file_values)
     values = {
@@ -449,6 +455,7 @@ def load_api_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> ApiSettings:
         **_queue_runtime_values(file_values, database_values.get("runtime_location")),
         **_object_storage_runtime_values(file_values),
         **_provider_budget_runtime_values(file_values),
+        "rag": rag,
         "processing_profile": _configuration_value(
             "INVESTMENT_RESEARCH_PROCESSING_PROFILE",
             file_values,

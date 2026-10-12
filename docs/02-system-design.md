@@ -200,6 +200,13 @@ experimental rather than a runtime default. See
 and the [portfolio guide](./14-m1-5-portfolio.md) for the implemented no-rerank source-ID flow.
 The no-rerank path and server-side source/support validation remain intact.
 
+Normal local provider-backed M1/M1.5 research loads non-secret retrieval/context tuning from
+[`config/rag.toml`](../config/rag.toml) at API startup. Defaults remain 20 candidates per lane,
+eight final chunks, and 24,000 selected code points. Reviewed hard bounds allow up to 32 final
+chunks without raising the text, source-unit, provider, or budget limits. Retrieval history
+records the four effective numeric settings; frozen evaluation/acceptance profiles remain
+independent. See the [tuning guide](../config/README.md) for ranges and restart behavior.
+
 ### Answer contract
 
 The model returns a typed structure containing answer statements and evidence identifiers. The API then verifies that:
