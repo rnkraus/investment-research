@@ -321,7 +321,8 @@ Success requires the answerable fixture question to return its validated stateme
 page-two evidence twice. The second request must create a new research request while reusing the
 same canonical evidence span. The original endpoint must return byte-identical PDF content, and the
 unanswerable control question must return the insufficient-evidence terminal event. Live
-`research.progress` events may precede these validated terminal events. Before cleanup, the
+`research.progress` and `research.context` events may precede these validated terminal events.
+Context contains selected source passages, not generated claims or validated citations. Before cleanup, the
 verifier captures the web, API, worker, and parser logs without displaying them and rejects any
 injected credential marker, exact generated credential, or fixture evidence text. Failure
 diagnostics redact those sentinels before printing logs. The command also reports observed startup,

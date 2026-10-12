@@ -228,6 +228,12 @@ M1.5 does not satisfy M2's delivery/version/deletion gate, M3's archive/discover
 M4 routing/conversation/temporal gate. A failed experiment may be documented and declined rather
 than becoming the default merely because it was implemented.
 
+**Owner-approved local default (2026-10-12):** Use the existing M1.5 RRF/source-ID/document-attribution
+path by default in live Compose and host API startup with complete provider configuration, to avoid
+accidentally returning to model-copied quotes. Retain explicit M1 comparison selection and unchanged
+credential-free acceptance profiles. This local usability decision does not adopt reranking,
+change models or budgets, establish a new quality result, or complete the M1.5 acceptance gate.
+
 ## 7. M2 — Reliable ingestion and lifecycle
 
 The proposed backend-to-CI-to-frontend step sequence, repository delta, decisions to freeze, and

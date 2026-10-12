@@ -62,9 +62,9 @@ PostgreSQL and S3-compatible original storage are canonical; Pinecone is a deriv
 Redis holds transient queue state. The browser accesses data only through the API.
 
 The retained M1 baseline alternates lexical/dense hits and resolves model-copied quotes.
-M1.5 explicitly selects RRF and source-ID generation. Pinecone BGE cross-encoder reranking is
+M1.5 selects RRF and source-ID generation. Pinecone BGE cross-encoder reranking is
 implemented as a separate opt-in experiment, not enabled by the website's M1.5 profile.
-M1 remains the configuration default; the local command below selects M1.5 explicitly.
+M1.5 is the provider-backed local runtime default; M1 remains explicitly selectable for comparison.
 
 ## Engineering decisions
 
@@ -144,14 +144,14 @@ Pinecone credentials and approved public or synthetic documents; provider charge
 After completing that setup, run from the repository root:
 
 ```shell
-INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1-5-citable-units \
-  docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --build --detach --wait
 ```
 
 Open <http://127.0.0.1:3000>, import an approved document, wait for `SEARCHABLE`, and ask a question.
 The normal M1.5 website checker returns a Boolean support decision, without diagnostic reasons.
-Keep the explicit profile when recreating the API; an ordinary Compose invocation can restore
-M1. The [demo guide](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) gives concrete
+An old explicit `INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1` environment setting still overrides the
+default; remove it or select `m1-5-citable-units`. The
+[demo guide](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) gives concrete
 synthetic questions and citation checks. Never commit credentials or enable raw diagnostics for
 private content.
 

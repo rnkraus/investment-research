@@ -198,16 +198,17 @@ Canonical lexical + qualified dense hits → RRF ranks → whole-chunk budget �
 These pure functions make no provider calls and write no state. `RetrieveResearchService` can
 explicitly receive `RrfSelectionProfile` in its query dependency bundle, after canonical lane
 qualification. It translates the selected representatives into the existing source contract and
-persists both lane contributions with their fusion ranks. Default API composition still supplies
-`M1SelectionProfile`. The opt-in API `research_profile=m1-5-citable-units` supplies
+persists both lane contributions with their fusion ranks. Credential-free and explicit M1 API
+composition retain `M1SelectionProfile`. The provider-backed local default
+`research_profile=m1-5-citable-units` supplies
 `RrfSelectionProfile` together with the source-ID generation and document-attribution support
 path described in the [Research guide](../research/README.md#opt-in-workflow-and-evaluation-integration).
 There is no browser-facing policy switch or OpenAPI change. The live Compose overlay forwards the
-API-owned selection; manual runtime verification remains pending. The M1.5 plan records the
-remaining adoption gate.
+API-owned selection; local default adoption was owner-approved on 2026-10-12. The M1.5 plan
+records historical comparisons and remaining quality gates.
 Canonical revalidation and statement-support checks are still required before any selected text
-can become citation evidence. A same-corpus comparison against M1 must precede any default-policy
-decision. Offline service tests and `test_rrf_retrieval_postgresql.py` exercise the opt-in path,
+can become citation evidence. Local default selection is not itself a measured ranking improvement.
+Offline service tests and `test_rrf_retrieval_postgresql.py` exercise the RRF path,
 persisted ranks, budget exclusions, and canonical workspace/time/active-state boundaries.
 
 ### Standalone RRF-plus-rerank context selection

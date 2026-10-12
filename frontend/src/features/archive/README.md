@@ -18,6 +18,7 @@ PostgreSQL, or parse document content.
 | `publication-date.ts`         | Formats the user's local calendar day for the editable publication-date default.     |
 | `research-session.ts`         | Reduces validated SSE events into one ordered, fail-closed UI result.                |
 | `research-workflow.tsx`       | Loads model choices, asks a bounded question, and opens exact source evidence.       |
+| `retrieval-context.tsx`       | Displays ordered selected passages separately from validated answer citations.       |
 | `source-anchor.ts`            | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
 | `source-viewer.tsx`           | Resolves and renders an authorized immutable PDF or pasted-text source.              |
 | `original-viewer.tsx`         | Opens a complete authorized original without claiming citation validation.           |
@@ -66,6 +67,8 @@ are aborted when their component lifecycle ends.
 ```mermaid
 flowchart LR
     START[RUNNING session] --> EVENT[Validated SSE event]
+    EVENT --> CONTEXT[Retain research.context passages]
+    CONTEXT --> PANEL[Collapsed RetrievalContext panel]
     EVENT --> STATEMENT[Add unique statement]
     STATEMENT --> CITATION[Attach ordered citation reference]
     CITATION --> COMPLETE{Terminal event}
@@ -92,6 +95,14 @@ The UI groups six actual progress events into four stable, English display steps
 A step is active or complete only after its corresponding event arrives; no percentage or timed
 animation implies unobserved progress. The credential-free lexical path omits the embedding step.
 The answer and citations remain hidden until the terminal validated events arrive.
+
+The independent `research.context` event exposes the bounded final passage selection before
+generation. `research-session.ts` rejects duplicate, cross-request, and late context events.
+`retrieval-context.tsx` shows counts, original links, page numbers, IDs, and unchanged text with
+native expandable controls; source content is escaped by React, never rendered as HTML. Catalog
+titles are display labels only, with an ID fallback for unloaded entries. The current selection
+survives a failed or insufficient request and resets for a new question. It neither proves an
+answer nor records successful provider use, and is not stored in browser persistence or logs.
 
 ## Research UI flow
 
