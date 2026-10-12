@@ -201,7 +201,7 @@ def citable_answer_profile(model: ResearchModel) -> AnswerGenerationProfile:
 
     return AnswerGenerationProfile(
         generator_version=M1_5_CITABLE_ANSWER_GENERATOR_VERSION,
-        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v7",
+        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v8",
         prompt_version=M1_5_CITABLE_ANSWER_PROMPT_VERSION,
     )
 

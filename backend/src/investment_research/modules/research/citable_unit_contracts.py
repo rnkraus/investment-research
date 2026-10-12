@@ -18,7 +18,7 @@ from investment_research.modules.search.contracts import (
 )
 from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
-M1_5_CITABLE_UNIT_POLICY_VERSION: Final = "m1-5-citable-units-en-v2"
+M1_5_CITABLE_UNIT_POLICY_VERSION: Final = "m1-5-citable-units-en-v3"
 M1_5_CITABLE_UNIT_CHARACTER_LIMIT = 800
 M1_5_CITABLE_UNIT_LIMIT = 256
 
@@ -63,7 +63,7 @@ class CitableUnitKey(ImmutableCitableUnitContract):
     structure_block_id: UUID
     start_character: int = Field(ge=0, strict=True)
     end_character: int = Field(gt=0, strict=True)
-    unit_policy_version: Literal["m1-5-citable-units-en-v2"] = M1_5_CITABLE_UNIT_POLICY_VERSION
+    unit_policy_version: Literal["m1-5-citable-units-en-v3"] = M1_5_CITABLE_UNIT_POLICY_VERSION
 
     @model_validator(mode="after")
     def require_ordered_range(self) -> Self:
@@ -137,7 +137,7 @@ class CitableUnitCatalog(ImmutableCitableUnitContract):
 
     workspace_id: UUID
     research_request_id: UUID
-    unit_policy_version: Literal["m1-5-citable-units-en-v2"] = M1_5_CITABLE_UNIT_POLICY_VERSION
+    unit_policy_version: Literal["m1-5-citable-units-en-v3"] = M1_5_CITABLE_UNIT_POLICY_VERSION
     sources: tuple[CitableUnitSource, ...] = Field(max_length=MAX_CONTEXT_CHUNKS, repr=False)
     units: tuple[CitableSourceUnit, ...] = Field(max_length=M1_5_CITABLE_UNIT_LIMIT, repr=False)
 

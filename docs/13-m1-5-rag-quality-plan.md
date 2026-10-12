@@ -20,6 +20,11 @@ unchanged. Earlier dated references to opt-in use and unchanged website defaults
 those historical blocks, not the current live default. This selection prevents accidental
 quote-copying starts; it is not a new quality observation or full milestone acceptance.
 
+**Current source-unit rule (2026-10-13):** Preparation uses `m1-5-citable-units-en-v3`, which
+retains the v2 PDF-heading behavior and protects `U.S.`/`U.K.` continuations from false sentence
+boundaries. Answer configuration identifiers end in `low-citable-units-en-v8`; prompt v7 is
+unchanged. See the [abbreviation amendment](#country-abbreviation-amendment-2026-10-13).
+
 **Local rejection inspection (2026-10-13):** The existing explicit local diagnostic override
 additionally exposes rejected claims and their matching selected excerpts in a separately labeled
 website panel. Normal runs still disclose no rejected proposal, and no unvalidated claim becomes
@@ -1374,6 +1379,35 @@ remains M6, not an M1.5 deliverable.
 eligibility, citation, abstention, or provider-failure regression remains; results and limitations
 are reproducible and accurately described. This is a local RAG quality proof, not an M2 reliability
 gate or the full M4 release gate.
+
+#### Country-abbreviation amendment (2026-10-13)
+
+The local rejection diagnostic exposed a claim about data centers in the U.S. and Canada whose
+selected unit ended at `U.S.`. The following `and Canada` was present in the source but belonged
+to a separate unit. The support rejection did not justify weakening the evidence validator.
+
+Preparation now uses `m1-5-citable-units-en-v3`. Protect the final period of standalone `U.S.`
+and `U.K.` tokens, case-insensitively, when it would otherwise be the sole punctuation creating
+a sentence boundary. Keep continuations, single line wraps, and closing quotation marks in the
+same exact range. Blank-line paragraphs, question/exclamation marks, ellipses, block ends, and
+the existing 800-code-point cap still bound units. In ambiguous prose such as `in the U.S. New
+sites opened.`, conservatively retain a wider unit rather than guess whether the abbreviation
+ends a sentence. This is a narrow heuristic, not a general abbreviation dictionary or linguistic
+sentence parser; other abbreviations retain their existing behavior.
+
+Apply this rule to both PDF and pasted-text sources without rewriting original characters or
+offsets. Preserve the v2 PDF-heading rule, all source/unit/input limits, and canonical evidence
+validation. Canonical range keys and request-scoped UUIDs include v3; stale v1/v2 catalogs are
+rejected, not reinterpreted. Answer configuration identifiers end in `low-citable-units-en-v8`
+to distinguish new runs; prompt v7, models, and support configuration are unchanged. No migration,
+reupload, reprocessing, or reindexing is needed. Historical answers and evaluation outputs remain
+unchanged.
+
+Offline regression cases cover both country abbreviations and media, lowercase forms, wrapping,
+quotes, explicit paragraph/punctuation boundaries, exact Unicode offsets, selection of both
+locations in one reference, and the unchanged hard size limit. These prove the demonstrated
+segmentation correction, not guaranteed live model selection, answer support, or broader RAG
+quality. A paid live run or browser check remains separately owner-operated.
 
 #### PDF citation precision amendment — Block 1 (2026-10-09)
 

@@ -121,6 +121,87 @@ def test_ranges_preserve_every_visible_character(text: str, expected: tuple[str,
         assert unit.key.structure_block_id == source.block.id
 
 
+@pytest.mark.parametrize("pdf", [False, True])
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "Sites in the U.S. and Canada. Next sentence.",
+            ("Sites in the U.S. and Canada.", "Next sentence."),
+        ),
+        (
+            "Sites in the U.K. and Ireland. Next sentence.",
+            ("Sites in the U.K. and Ireland.", "Next sentence."),
+        ),
+        ("Sites in U.S.\nand Canada.", ("Sites in U.S.\nand Canada.",)),
+        ("Sites in U.K.\tand Ireland.", ("Sites in U.K.\tand Ireland.",)),
+        ("U.S. Cloud operations grew.", ("U.S. Cloud operations grew.",)),
+        ("Sites in u.s. and Canada.", ("Sites in u.s. and Canada.",)),
+        ("Sites in u.k. and Ireland.", ("Sites in u.k. and Ireland.",)),
+        (
+            'They wrote "U.S." and "U.K." in the report. Next.',
+            ('They wrote "U.S." and "U.K." in the report.', "Next."),
+        ),
+        ("Sites in U.S. and U.K. regions.", ("Sites in U.S. and U.K. regions.",)),
+        ("Sites in U.S. New sites opened.", ("Sites in U.S. New sites opened.",)),
+        ("Sites in U.S.\n\nNext paragraph.", ("Sites in U.S.", "Next paragraph.")),
+        ("Sites in U.K.\n \t\nNext paragraph.", ("Sites in U.K.", "Next paragraph.")),
+        ("Sites in U.S.? Yes.", ("Sites in U.S.?", "Yes.")),
+        ("Sites in U.K.! Yes.", ("Sites in U.K.!", "Yes.")),
+        ("Sites in U.S... Next.", ("Sites in U.S...", "Next.")),
+        ("Only U.S.", ("Only U.S.",)),
+        ("Only U.K.", ("Only U.K.",)),
+        ("Not a country XU.S. Next.", ("Not a country XU.S.", "Next.")),
+    ],
+)
+def test_country_abbreviations_preserve_continuations_and_explicit_boundaries(
+    text: str, expected: tuple[str, ...], pdf: bool
+) -> None:
+    catalog = make_catalog(make_source(text, pdf=pdf))
+
+    assert tuple(unit.text for unit in catalog.units) == expected
+    previous_end = 0
+    for unit in catalog.units:
+        assert not text[previous_end : unit.key.start_character].strip()
+        assert unit.text == text[unit.key.start_character : unit.key.end_character]
+        previous_end = unit.key.end_character
+    assert not text[previous_end:].strip()
+
+
+@pytest.mark.parametrize("pdf", [False, True])
+@pytest.mark.parametrize(("country", "neighbor"), [("U.S.", "Canada"), ("U.K.", "Ireland")])
+def test_country_evidence_selection_includes_both_locations_and_exact_unicode_offsets(
+    country: str, neighbor: str, pdf: bool
+) -> None:
+    prefix = "Café 😀.\n"
+    evidence = f"GridCo has data centers in the {country} and {neighbor}."
+    text = prefix + evidence + " More capacity is planned."
+    catalog = make_catalog(make_source(text, pdf=pdf))
+    selected = catalog.units[1]
+
+    assert selected.text == evidence
+    references = resolve_citable_unit_ids(
+        context=CONTEXT,
+        research_request_id=REQUEST_ID,
+        catalog=catalog,
+        source_unit_ids=(selected.source_unit_id,),
+    )
+    assert len(references) == 1
+    assert references[0].exact_text == evidence
+    assert references[0].start_character == len(prefix)
+    assert references[0].end_character == len(prefix) + len(evidence)
+    assert text[references[0].start_character : references[0].end_character] == evidence
+
+
+def test_country_abbreviation_protection_does_not_bypass_the_unit_character_limit() -> None:
+    text = "Locations in the U.S. and U.K. remain unchanged " * 30
+    catalog = make_catalog(make_source(text))
+
+    assert len(catalog.units) > 1
+    assert all(len(unit.text) <= M1_5_CITABLE_UNIT_CHARACTER_LIMIT for unit in catalog.units)
+    assert "".join(unit.text.replace(" ", "") for unit in catalog.units) == text.replace(" ", "")
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -202,10 +283,11 @@ def test_heading_splits_still_fail_closed_at_the_existing_unit_limit() -> None:
     )
 
 
-def test_unit_policy_v2_does_not_accept_a_stale_v1_catalog() -> None:
+@pytest.mark.parametrize("stale_version", ["m1-5-citable-units-en-v1", "m1-5-citable-units-en-v2"])
+def test_unit_policy_v3_does_not_accept_stale_catalogs(stale_version: str) -> None:
     payload = make_catalog(make_source("Evidence.")).model_dump(mode="json")
-    assert payload["unit_policy_version"] == "m1-5-citable-units-en-v2"
-    payload["unit_policy_version"] = "m1-5-citable-units-en-v1"
+    assert payload["unit_policy_version"] == "m1-5-citable-units-en-v3"
+    payload["unit_policy_version"] = stale_version
 
     with pytest.raises(ValidationError):
         CitableUnitCatalog.model_validate(payload)

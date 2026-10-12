@@ -223,7 +223,7 @@ def test_citable_policy_changes_only_the_frozen_answer_prompt() -> None:
         live.answer_profile_for_policy(
             "citable_units", ResearchModel.LUNA
         ).generation_config_version
-        == "m1-5-gpt-5.6-luna-low-citable-units-en-v7"
+        == "m1-5-gpt-5.6-luna-low-citable-units-en-v8"
     )
     with pytest.raises(live.LiveBaselineLimitError):
         live.answer_policy_for_prompt_version("unknown")
