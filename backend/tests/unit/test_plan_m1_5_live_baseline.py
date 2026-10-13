@@ -32,7 +32,7 @@ def test_plan_freezes_the_six_reviewed_cases_and_existing_m1_policy() -> None:
     assert plan.document_count == 3
     assert len(plan.case_ids) == len(set(plan.case_ids)) == 6
     assert plan.configuration.selector_config_version == "m1-lexical-first-round-robin-v1"
-    assert plan.configuration.answer_prompt_version == "m1-grounded-answer-prompt-v5"
+    assert plan.configuration.answer_prompt_version == "m1-grounded-answer-prompt-v6"
     assert plan.maximum_spend_micro_usd == 800_000
     assert {limit.role: limit.maximum_requests for limit in plan.role_limits} == {
         ProviderOperationKind.DOCUMENT_EMBEDDING: 64,
@@ -205,7 +205,7 @@ def test_unknown_support_policy_or_prompt_is_rejected() -> None:
 def test_citable_policy_changes_only_the_frozen_answer_prompt() -> None:
     original = live.build_plan(retrieval_policy="rrf")
     selected = live.build_plan(retrieval_policy="rrf", answer_policy="citable_units")
-    assert selected.configuration.answer_prompt_version == "m1-5-citable-units-en-answer-prompt-v7"
+    assert selected.configuration.answer_prompt_version == "m1-5-citable-units-en-answer-prompt-v8"
     assert selected.model_dump(exclude={"configuration"}) == original.model_dump(
         exclude={"configuration"}
     )

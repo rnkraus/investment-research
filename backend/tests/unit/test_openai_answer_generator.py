@@ -288,7 +288,7 @@ def test_luna_receives_versioned_verbatim_evidence_instructions() -> None:
     generator.generate(make_generation_input())
 
     instructions = cast(str, client.responses.calls[0]["instructions"])
-    assert M1_ANSWER_PROMPT_VERSION == "m1-grounded-answer-prompt-v5"
+    assert M1_ANSWER_PROMPT_VERSION == "m1-grounded-answer-prompt-v6"
     assert "COMPLETE when the supplied sources support every material part" in instructions
     assert "PARTIAL when at least one material part is supported" in instructions
     assert "CONFLICTING only when the supplied sources directly disagree" in instructions
@@ -300,6 +300,34 @@ def test_luna_receives_versioned_verbatim_evidence_instructions() -> None:
     assert (
         "If no unique verbatim substring supports a statement, omit that statement" in instructions
     )
+
+
+@pytest.mark.parametrize("model", list(ResearchModel))
+@pytest.mark.parametrize("question", ["What was the revenue?", "Wie hoch war der Umsatz?"])
+def test_prompt_requires_english_prose_without_translating_quotes(
+    model: ResearchModel, question: str
+) -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(response=StubParsedResponse(model=model.value))
+    )
+    generator = OpenAIAnswerGenerator(client=cast(OpenAI, client), model=model.value)
+    generation_input = make_generation_input().model_copy(update={"question": question})
+
+    result = generator.generate(generation_input)
+
+    call = client.responses.calls[0]
+    instructions = cast(str, call["instructions"])
+    assert (
+        "Always write rendered_text, every statement's text, and any missing_information"
+        in instructions
+    )
+    assert "in English, regardless of the question's language" in instructions
+    assert "keep exact_text unchanged in its original language" in instructions
+    assert "Never translate or rewrite source quotations" in instructions
+    payload = json.loads(cast(str, call["input"]))
+    assert payload["question"] == question
+    assert payload["sources"][0]["text"] == SOURCE_TEXT
+    assert result.answer == make_proposal()
 
 
 @pytest.mark.parametrize("model", list(ResearchModel))
