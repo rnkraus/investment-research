@@ -21,6 +21,7 @@ test("evidence rejection diagnostics are visible without expanding research deta
 }) => {
   const requestId = "10000000-0000-4000-8000-000000000001";
   const candidateId = "10000000-0000-4000-8000-000000000003";
+  const evidenceText = "Revenue increased by 22.0%.";
   const events = [
     {
       event: "research.context",
@@ -35,7 +36,7 @@ test("evidence rejection diagnostics are visible without expanding research deta
           structure_block_id: "10000000-0000-4000-8000-000000000002",
           source_locator_kind: "TEXT_PASSAGE",
           page_number: null,
-          text: "Revenue increased by 22.0%.",
+          text: evidenceText,
         },
       ],
     },
@@ -61,7 +62,7 @@ test("evidence rejection diagnostics are visible without expanding research deta
               {
                 retrieval_candidate_id: candidateId,
                 start_character: 0,
-                end_character: 25,
+                end_character: Array.from(evidenceText).length,
               },
             ],
           },
@@ -103,9 +104,7 @@ test("evidence rejection diagnostics are visible without expanding research deta
   await expect(
     failure.getByText("An unvalidated claim.", { exact: true }),
   ).toBeVisible();
-  await expect(
-    failure.getByText("Revenue increased by 22.0%.", { exact: true }),
-  ).toBeVisible();
+  await expect(failure.getByText(evidenceText, { exact: true })).toBeVisible();
   await expect(
     failure.getByText(
       "Canonical evidence does not support the complete statement.",
@@ -143,7 +142,10 @@ test("the workspace starts with research and preserves import drafts and keyboar
   await expect(
     page.locator(`[id="${await addSource.getAttribute("aria-controls")}"]`),
   ).toBeFocused();
-  await page.getByRole("radio", { name: "Paste text", exact: true }).check();
+  await page.getByText("Paste text", { exact: true }).click();
+  await expect(
+    page.getByRole("radio", { name: "Paste text", exact: true }),
+  ).toBeChecked();
   await page.getByLabel("Research text").fill("Synthetic source text.");
   await page.getByLabel("Document title").fill("Synthetic draft");
   await page.getByLabel("Publication date").fill("2026-10-13");

@@ -166,6 +166,13 @@ test("bulk deletion requires confirmation, clears stale answers, and waits for c
   await expect(
     page.getByText(/Status updates automatically every five seconds/),
   ).toBeVisible();
+  await expect(
+    page.getByRole("radio", { name: "Selected documents", exact: true }),
+  ).toBeChecked();
+  await expect(ask).toBeDisabled();
+  await page
+    .getByRole("radio", { name: "All saved documents", exact: true })
+    .check();
   await expect(ask).toBeEnabled();
   complete = true;
   await expect(
@@ -263,9 +270,11 @@ test("a Text extracted source that is still being indexed is rejected without cl
   await page
     .getByRole("button", { name: "Permanently delete", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText(
-    "Processing may still be in progress",
-  );
+  const rejection = page
+    .getByRole("alert")
+    .filter({ hasText: "The server rejected this batch." });
+  await expect(rejection).toHaveCount(1);
+  await expect(rejection).toContainText("Processing may still be in progress");
   await expect(
     page.getByRole("region", { name: "Permanent deletion", exact: true }),
   ).toHaveCount(0);
@@ -351,6 +360,15 @@ test("expired automatic tracking is explicit and a manual check refreshes the st
   await expect(
     page.getByText(/Status updates automatically every five seconds/),
   ).toBeVisible();
+  await expect(
+    page.getByRole("radio", { name: "Selected documents", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Ask the archive", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("radio", { name: "All saved documents", exact: true })
+    .check();
   await expect(
     page.getByRole("button", { name: "Ask the archive", exact: true }),
   ).toBeEnabled();
