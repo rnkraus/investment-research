@@ -447,6 +447,11 @@ The regular worker, parser, and migration containers do not need it. Missing or 
 configuration remains a startup error rather than silently selecting defaults. Compose policy
 tests accept omitted false-valued JSON fields but still reject enabled host-path creation.
 
+The M0/M1 runtime journeys validate the additive `research.context` event separately from the
+accepted answer sequence. They require scoped, schema-valid context before accepted answers,
+reject duplicate or late context and mismatched request IDs, and retain unexpected events so the
+existing strict answer/citation assertions still fail on incompatible streams.
+
 ## Update API contracts
 
 Pydantic models in `backend/src/investment_research/api/contracts.py` are the source of truth. Generated files under `frontend/src/lib/api/generated/` must not be edited manually.
