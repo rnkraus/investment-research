@@ -1,6 +1,5 @@
 """Complete M1 PDF and text journeys through the isolated container runtime."""
 
-import json
 import os
 import time
 from hashlib import sha256
@@ -20,6 +19,7 @@ from investment_research.infrastructure.generation.deterministic import (
     M0_0_FIXTURE_ANSWER_CASE,
     M0_0_INSUFFICIENT_MESSAGE,
 )
+from tests.acceptance.research_stream import parse_answer_events
 
 FIXTURE_PDF = Path("/verification-fixture.pdf")
 FIXTURE_TEXT = Path("/verification-text-fixture.txt")
@@ -39,23 +39,6 @@ pytestmark = pytest.mark.skipif(
     os.environ.get(RUNTIME_ACCEPTANCE_ENVIRONMENT) != "1",
     reason="isolated M1 runtime acceptance is not active",
 )
-
-
-def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
-    """Decode terminal server-sent events independently of live progress."""
-
-    events: list[dict[str, Any]] = []
-    for frame in body.strip().split("\n\n"):
-        lines = frame.splitlines()
-        if not lines or lines[0] == "event: research.progress":
-            continue
-        events.append(
-            {
-                "event": lines[0].removeprefix("event: "),
-                "data": json.loads(lines[1].removeprefix("data: ")),
-            }
-        )
-    return events
 
 
 def wait_for_searchable_processing(
@@ -117,7 +100,7 @@ def request_answer(
     )
     duration_seconds = time.monotonic() - started_at
     assert response.status_code == 200
-    return parse_server_sent_events(response.text), duration_seconds
+    return parse_answer_events(response.text, document_ids=document_ids), duration_seconds
 
 
 def assert_answer_and_open_evidence(

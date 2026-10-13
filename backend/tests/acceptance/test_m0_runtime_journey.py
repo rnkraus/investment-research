@@ -1,11 +1,9 @@
 """Complete M0 fixture journey through the production-shaped processing runtime."""
 
-import json
 import os
 import time
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
 
 import httpx2
 import pytest
@@ -19,6 +17,7 @@ from investment_research.infrastructure.generation.deterministic import (
     M0_0_FIXTURE_ANSWER_CASE,
     M0_0_INSUFFICIENT_MESSAGE,
 )
+from tests.acceptance.research_stream import parse_answer_events
 
 FIXTURE_PDF = Path("/verification-fixture.pdf")
 RUNTIME_ACCEPTANCE_ENVIRONMENT = "INVESTMENT_RESEARCH_M0_RUNTIME_ACCEPTANCE"
@@ -33,23 +32,6 @@ pytestmark = pytest.mark.skipif(
     os.environ.get(RUNTIME_ACCEPTANCE_ENVIRONMENT) != "1",
     reason="isolated M0 runtime acceptance is not active",
 )
-
-
-def parse_server_sent_events(body: str) -> list[dict[str, Any]]:
-    """Decode terminal server-sent events independently of live progress."""
-
-    events: list[dict[str, Any]] = []
-    for frame in body.strip().split("\n\n"):
-        lines = frame.splitlines()
-        if not lines or lines[0] == "event: research.progress":
-            continue
-        events.append(
-            {
-                "event": lines[0].removeprefix("event: "),
-                "data": json.loads(lines[1].removeprefix("data: ")),
-            }
-        )
-    return events
 
 
 def wait_for_terminal_processing(
@@ -122,7 +104,9 @@ def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
         }
         answer_response = client.post("/api/v1/research-requests", json=answer_request)
         assert answer_response.status_code == 200
-        answer_events = parse_server_sent_events(answer_response.text)
+        answer_events = parse_answer_events(
+            answer_response.text, document_ids=[capture.document_id]
+        )
         assert [event["event"] for event in answer_events] == [
             "answer.statement",
             "answer.citation",
@@ -154,7 +138,9 @@ def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
 
         repeated_response = client.post("/api/v1/research-requests", json=answer_request)
         assert repeated_response.status_code == 200
-        repeated_events = parse_server_sent_events(repeated_response.text)
+        repeated_events = parse_answer_events(
+            repeated_response.text, document_ids=[capture.document_id]
+        )
         assert [event["event"] for event in repeated_events] == [
             "answer.statement",
             "answer.citation",
@@ -174,7 +160,9 @@ def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
             },
         )
         assert insufficient_response.status_code == 200
-        insufficient_events = parse_server_sent_events(insufficient_response.text)
+        insufficient_events = parse_answer_events(
+            insufficient_response.text, document_ids=[capture.document_id]
+        )
         assert [event["event"] for event in insufficient_events] == ["answer.insufficient"]
         assert insufficient_events[0]["data"]["coverage"] == "INSUFFICIENT"
         assert insufficient_events[0]["data"]["message"] == M0_0_INSUFFICIENT_MESSAGE
