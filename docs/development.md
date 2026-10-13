@@ -452,6 +452,10 @@ accepted answer sequence. They require scoped, schema-valid context before accep
 reject duplicate or late context and mismatched request IDs, and retain unexpected events so the
 existing strict answer/citation assertions still fail on incompatible streams.
 
+Browser deletion tests require an empty focused selection to remain non-queryable after cleanup
+admission; switching back to archive-wide research must be explicit. Workspace tests operate the
+visible import labels and derive diagnostic quote offsets from Unicode code-point lengths.
+
 ## Update API contracts
 
 Pydantic models in `backend/src/investment_research/api/contracts.py` are the source of truth. Generated files under `frontend/src/lib/api/generated/` must not be edited manually.
