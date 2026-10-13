@@ -134,262 +134,285 @@ export function ArchiveResearch({
       : documentIds;
 
   return (
-    <div>
-      <section
-        aria-labelledby="catalog-heading"
-        className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
+    <div className="space-y-4">
+      <button
+        type="button"
+        aria-expanded={isListVisible}
+        aria-controls={documentListId}
+        disabled={isDeleting}
+        onClick={() => setIsListVisible((current) => !current)}
+        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold tracking-[0.2em] text-teal-700 uppercase">
-              {archiveCopy.catalog.eyebrow}
-            </p>
-            <h2
-              id="catalog-heading"
-              className="mt-3 text-2xl font-semibold tracking-tight text-slate-950"
-            >
-              {archiveCopy.catalog.heading}
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-              {archiveCopy.catalog.description}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              aria-expanded={isListVisible}
-              aria-controls={documentListId}
-              onClick={() => setIsListVisible((current) => !current)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700"
-            >
-              {isListVisible
-                ? archiveCopy.catalog.hideDocuments
-                : archiveCopy.catalog.showDocuments}
-            </button>
-            <button
-              type="button"
-              disabled={isLoading || isResearching || isDeleting}
-              onClick={() => setRefreshCount((current) => current + 1)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
-            >
-              {archiveCopy.catalog.refresh}
-            </button>
-          </div>
-        </div>
-
-        <fieldset disabled={isResearching || isDeleting} className="mt-6">
-          <legend className="text-sm font-semibold text-slate-800">
-            {archiveCopy.research.scopeLegend}
-          </legend>
-          <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-700">
-            {(["ALL", "SELECTED"] as const).map((scope) => (
-              <label
-                key={scope}
-                className="inline-flex cursor-pointer items-center gap-2"
-              >
-                <input
-                  type="radio"
-                  name={scopeName}
-                  checked={selection.scope === scope}
-                  onChange={() => {
-                    setSelection((current) => ({
-                      scope,
-                      documents: scope === "ALL" ? [] : current.documents,
-                    }));
-                    setSelectionWasReset(false);
-                  }}
-                />
-                {scope === "ALL"
-                  ? archiveCopy.research.archiveScope
-                  : archiveCopy.research.documentScope}
-              </label>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-slate-500">
-            {archiveCopy.research.scopeHint}
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            {archiveCopy.catalog.selectionHint}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={selection.documents.length === 0}
-              onClick={() => {
-                setSelection(resetDocumentSelection);
-                setSelectionWasReset(false);
-              }}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
-            >
-              {archiveCopy.catalog.clearSelection}
-            </button>
-          </div>
-        </fieldset>
-
-        <DocumentDeletionPanel
-          documents={
-            deletionDocumentIds === undefined ? [] : selection.documents
-          }
-          disabled={isLoading || failed || isResearching}
-          onBusyChange={setIsDeleting}
-          onArchiveChanged={() => {
-            setSelection(resetDocumentSelection);
-            setAnswerResetKey((current) => current + 1);
-            setRefreshCount((current) => current + 1);
-          }}
-        />
-
-        <fieldset disabled={isResearching || isDeleting}>
-          <legend className="sr-only">{archiveCopy.catalog.heading}</legend>
-
-          <div id={documentListId} hidden={!isListVisible}>
-            <ul className="mt-5 divide-y divide-slate-200">
-              {documents.map((document) => {
-                const selected = selection.documents.some(
-                  (item) => item.document_id === document.document_id,
-                );
-                const selectable = isDocumentSelectable(document);
-                const label = `${archiveCopy.catalog.selectDocument}: ${document.title}`;
-                return (
-                  <li
-                    key={document.document_id}
-                    className="flex items-start gap-3 py-4"
-                  >
-                    <input
-                      type="checkbox"
-                      id={`${documentListId}-${document.document_id}`}
-                      aria-label={label}
-                      checked={selected && selection.scope === "SELECTED"}
-                      disabled={
-                        isLoading ||
-                        !selectable ||
-                        (!selected &&
-                          selection.documents.length >=
-                            DOCUMENT_SELECTION_LIMIT)
-                      }
-                      onChange={() => {
-                        setSelection((current) =>
-                          toggleDocumentSelection(current, document),
-                        );
-                        setSelectionWasReset(false);
-                      }}
-                      className="mt-1 size-4 shrink-0 accent-teal-700"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold break-words text-slate-900">
-                        <label
-                          htmlFor={`${documentListId}-${document.document_id}`}
-                          className={selectable ? "cursor-pointer" : undefined}
-                        >
-                          {document.title}
-                        </label>
-                      </h3>
-                      <p className="mt-1 text-xs text-slate-600">
-                        {document.media_type === "application/pdf"
-                          ? "PDF"
-                          : "Text"}{" "}
-                        · {document.language} ·{" "}
-                        {document.byte_size.toLocaleString("en-US")} bytes
-                      </p>
-                      <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-                        {(
-                          [
-                            [
-                              archiveCopy.catalog.published,
-                              document.published_at,
-                            ],
-                            [
-                              archiveCopy.catalog.captured,
-                              document.captured_at,
-                            ],
-                            [
-                              archiveCopy.catalog.available,
-                              document.available_at,
-                            ],
-                          ] as const
-                        ).map(([name, value]) => (
-                          <div key={name} className="flex gap-1">
-                            <dt>{name}:</dt>
-                            <dd>{displayDate(value)}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                      <p
-                        className={`mt-2 text-xs font-semibold ${document.processing?.state === "SEARCHABLE" ? "text-emerald-700" : "text-slate-600"}`}
-                      >
-                        {document.processing === null
-                          ? archiveCopy.catalog.notProcessed
-                          : archiveCopy.catalog.statuses[
-                              document.processing.state
-                            ]}
-                      </p>
-                      {document.processing?.state === "FAILED" &&
-                      document.processing.error_summary ? (
-                        <p className="mt-1 text-xs text-rose-700">
-                          {document.processing.error_summary}
-                        </p>
-                      ) : null}
-                    </div>
-                    <a
-                      href={`/documents/${document.document_id}/versions/${document.document_version_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 text-sm font-semibold text-teal-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-teal-700"
-                      aria-label={`${archiveCopy.catalog.openOriginal}: ${document.title}`}
-                    >
-                      {archiveCopy.catalog.openOriginal}
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-            {cursor != null ? (
+        {isListVisible
+          ? archiveCopy.catalog.hideDocuments
+          : archiveCopy.catalog.showDocuments}
+      </button>
+      <div
+        className={`grid items-start gap-5 ${isListVisible ? "lg:grid-cols-[20rem_minmax(0,1fr)]" : "grid-cols-1"}`}
+      >
+        <aside
+          id={documentListId}
+          hidden={!isListVisible}
+          className="min-w-0 lg:sticky lg:top-6"
+        >
+          <section
+            aria-labelledby="catalog-heading"
+            className="rounded-2xl border border-slate-200 bg-white p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2
+                  id="catalog-heading"
+                  className="text-base font-semibold tracking-tight text-slate-950"
+                >
+                  {archiveCopy.catalog.heading}
+                </h2>
+                <p className="mt-2 text-xs leading-5 text-slate-600">
+                  {archiveCopy.catalog.description}
+                </p>
+              </div>
               <button
                 type="button"
-                disabled={isLoading}
-                onClick={() => void loadMore()}
-                className="mt-4 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
+                disabled={isLoading || isResearching || isDeleting}
+                onClick={() => setRefreshCount((current) => current + 1)}
+                className="shrink-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
               >
-                {archiveCopy.catalog.loadMore}
+                {archiveCopy.catalog.refresh}
               </button>
-            ) : null}
-          </div>
-        </fieldset>
+            </div>
 
-        <div aria-live="polite" className="mt-3 text-sm text-slate-600">
-          {isLoading ? (
-            <p role="status">{archiveCopy.catalog.loading}</p>
-          ) : null}
-          {failed ? (
-            <p role="alert" className="text-rose-700">
-              {archiveCopy.catalog.unavailable}
-            </p>
-          ) : null}
-          {!isLoading && !failed && documents.length === 0 ? (
-            <p>{archiveCopy.catalog.empty}</p>
-          ) : null}
-          {selection.scope === "SELECTED" ? (
-            <p className="mt-2">
-              {archiveCopy.catalog.selected}: {selection.documents.length}.{" "}
-              {documentIds === undefined
-                ? archiveCopy.catalog.selectionRequired
-                : ""}
-            </p>
-          ) : null}
-          {selectionWasReset && selection.scope === "SELECTED" ? (
-            <p className="mt-2">{archiveCopy.catalog.selectionReset}</p>
-          ) : null}
-          {selection.documents.length >= DOCUMENT_SELECTION_LIMIT ? (
-            <p className="mt-2">{archiveCopy.catalog.selectionLimit}</p>
-          ) : null}
+            <DocumentDeletionPanel
+              documents={
+                deletionDocumentIds === undefined ? [] : selection.documents
+              }
+              disabled={isLoading || failed || isResearching}
+              onBusyChange={setIsDeleting}
+              onArchiveChanged={() => {
+                setSelection(resetDocumentSelection);
+                setAnswerResetKey((current) => current + 1);
+                setRefreshCount((current) => current + 1);
+              }}
+            />
+
+            <fieldset disabled={isResearching || isDeleting}>
+              <legend className="sr-only">{archiveCopy.catalog.heading}</legend>
+
+              <div className="mt-4 max-h-[60dvh] overflow-y-auto overscroll-contain">
+                <ul className="divide-y divide-slate-200">
+                  {documents.map((document) => {
+                    const selected = selection.documents.some(
+                      (item) => item.document_id === document.document_id,
+                    );
+                    const selectable = isDocumentSelectable(document);
+                    const label = `${archiveCopy.catalog.selectDocument}: ${document.title}`;
+                    return (
+                      <li
+                        key={document.document_id}
+                        className="flex items-start gap-2 py-4"
+                      >
+                        <input
+                          type="checkbox"
+                          id={`${documentListId}-${document.document_id}`}
+                          aria-label={label}
+                          checked={selected && selection.scope === "SELECTED"}
+                          disabled={
+                            isLoading ||
+                            !selectable ||
+                            (!selected &&
+                              selection.documents.length >=
+                                DOCUMENT_SELECTION_LIMIT)
+                          }
+                          onChange={() => {
+                            setSelection((current) =>
+                              toggleDocumentSelection(current, document),
+                            );
+                            setSelectionWasReset(false);
+                          }}
+                          className="mt-1 size-4 shrink-0 accent-teal-700"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-sm font-semibold break-words text-slate-900">
+                            <label
+                              htmlFor={`${documentListId}-${document.document_id}`}
+                              className={
+                                selectable ? "cursor-pointer" : undefined
+                              }
+                            >
+                              {document.title}
+                            </label>
+                          </h3>
+                          <p className="mt-2 text-xs text-slate-600">
+                            {archiveCopy.catalog.published}:{" "}
+                            {displayDate(document.published_at)}
+                          </p>
+                          <p
+                            className={`mt-2 text-xs font-semibold ${document.processing?.state === "SEARCHABLE" ? "text-emerald-700" : "text-slate-600"}`}
+                          >
+                            {document.processing === null
+                              ? archiveCopy.catalog.notProcessed
+                              : archiveCopy.catalog.statuses[
+                                  document.processing.state
+                                ]}
+                          </p>
+                          <a
+                            href={`/documents/${document.document_id}/versions/${document.document_version_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-block text-xs font-semibold text-teal-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-teal-700"
+                            aria-label={`${archiveCopy.catalog.openOriginal}: ${document.title}`}
+                          >
+                            {archiveCopy.catalog.openOriginal}
+                          </a>
+                          <details className="mt-2 text-xs text-slate-500">
+                            <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-teal-700">
+                              {archiveCopy.catalog.metadataDetails}
+                            </summary>
+                            <p className="mt-2 text-xs text-slate-600">
+                              {document.media_type === "application/pdf"
+                                ? "PDF"
+                                : "Text"}{" "}
+                              · {document.language} ·{" "}
+                              {document.byte_size.toLocaleString("en-US")} bytes
+                            </p>
+                            <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                              {(
+                                [
+                                  [
+                                    archiveCopy.catalog.captured,
+                                    document.captured_at,
+                                  ],
+                                  [
+                                    archiveCopy.catalog.available,
+                                    document.available_at,
+                                  ],
+                                ] as const
+                              ).map(([name, value]) => (
+                                <div key={name} className="flex gap-1">
+                                  <dt>{name}:</dt>
+                                  <dd>{displayDate(value)}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </details>
+                          {document.processing?.state === "FAILED" &&
+                          document.processing.error_summary ? (
+                            <p className="mt-1 text-xs text-rose-700">
+                              {document.processing.error_summary}
+                            </p>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {cursor != null ? (
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => void loadMore()}
+                    className="mt-4 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
+                  >
+                    {archiveCopy.catalog.loadMore}
+                  </button>
+                ) : null}
+              </div>
+            </fieldset>
+
+            <div aria-live="polite" className="mt-3 text-sm text-slate-600">
+              {isLoading ? (
+                <p role="status">{archiveCopy.catalog.loading}</p>
+              ) : null}
+              {failed ? (
+                <p role="alert" className="text-rose-700">
+                  {archiveCopy.catalog.unavailable}
+                </p>
+              ) : null}
+              {!isLoading && !failed && documents.length === 0 ? (
+                <p>{archiveCopy.catalog.empty}</p>
+              ) : null}
+              {selection.documents.length >= DOCUMENT_SELECTION_LIMIT ? (
+                <p className="mt-2">{archiveCopy.catalog.selectionLimit}</p>
+              ) : null}
+            </div>
+            <details className="mt-4 text-xs text-slate-500">
+              <summary className="cursor-pointer font-semibold focus-visible:outline-2 focus-visible:outline-teal-700">
+                {archiveCopy.catalog.selectionHelp}
+              </summary>
+              <p className="mt-2 leading-5">
+                {archiveCopy.catalog.selectionHint}
+              </p>
+            </details>
+          </section>
+        </aside>
+        <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 sm:p-7">
+          <fieldset
+            disabled={isResearching || isDeleting}
+            className="border-b border-slate-200 pb-5"
+          >
+            <legend className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              {archiveCopy.research.scopeLegend}
+            </legend>
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-slate-700">
+              {(["ALL", "SELECTED"] as const).map((scope) => (
+                <label
+                  key={scope}
+                  className="inline-flex cursor-pointer items-center gap-2"
+                >
+                  <input
+                    type="radio"
+                    name={scopeName}
+                    checked={selection.scope === scope}
+                    onChange={() => {
+                      setSelection((current) => ({
+                        scope,
+                        documents: scope === "ALL" ? [] : current.documents,
+                      }));
+                      setSelectionWasReset(false);
+                    }}
+                    className="accent-teal-700"
+                  />
+                  {scope === "ALL"
+                    ? archiveCopy.research.archiveScope
+                    : archiveCopy.research.documentScope}
+                </label>
+              ))}
+              <button
+                type="button"
+                disabled={selection.documents.length === 0}
+                onClick={() => {
+                  setSelection(resetDocumentSelection);
+                  setSelectionWasReset(false);
+                }}
+                className="text-xs font-semibold text-teal-800 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:text-slate-400"
+              >
+                {archiveCopy.catalog.clearSelection}
+              </button>
+            </div>
+            <div
+              aria-live="polite"
+              className="mt-2 text-xs leading-5 text-slate-600"
+            >
+              {selection.scope === "SELECTED" ? (
+                <p>
+                  {archiveCopy.catalog.selected}: {selection.documents.length}.{" "}
+                  {documentIds === undefined
+                    ? archiveCopy.catalog.selectionRequired
+                    : ""}
+                </p>
+              ) : null}
+              {selectionWasReset && selection.scope === "SELECTED" ? (
+                <p>{archiveCopy.catalog.selectionReset}</p>
+              ) : null}
+            </div>
+          </fieldset>
+          <ResearchWorkflow
+            key={answerResetKey}
+            documents={documents}
+            documentIds={researchDocumentIds}
+            onBusyChange={setIsResearching}
+          />
         </div>
-      </section>
-      <ResearchWorkflow
-        key={answerResetKey}
-        documents={documents}
-        documentIds={researchDocumentIds}
-        onBusyChange={setIsResearching}
-      />
+      </div>
     </div>
   );
 }

@@ -210,26 +210,21 @@ export function ResearchWorkflow({
   }
 
   return (
-    <section
-      aria-labelledby="research-heading"
-      className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70 sm:p-8"
-    >
-      <p className="text-xs font-bold tracking-[0.2em] text-teal-700 uppercase">
-        {archiveCopy.research.eyebrow}
-      </p>
+    <section aria-labelledby="research-heading" className="pt-6">
       <h2
-        className="mt-3 text-2xl font-semibold tracking-tight text-slate-950"
+        className="text-2xl font-semibold tracking-tight text-slate-950"
         id="research-heading"
+        tabIndex={-1}
       >
         {archiveCopy.research.heading}
       </h2>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
         {archiveCopy.research.description}
       </p>
 
-      <form className="mt-7" onSubmit={handleSubmit}>
+      <form className="mt-5" onSubmit={handleSubmit}>
         <label
-          className="mt-6 block text-sm font-semibold text-slate-800"
+          className="block text-sm font-semibold text-slate-800"
           htmlFor={questionInputId}
         >
           {archiveCopy.research.questionLabel}
@@ -240,6 +235,7 @@ export function ResearchWorkflow({
           id={questionInputId}
           maxLength={2_000}
           onChange={(event) => setQuestion(event.target.value)}
+          placeholder={archiveCopy.research.questionPlaceholder}
           required
           value={question}
         />
@@ -266,75 +262,86 @@ export function ResearchWorkflow({
           </p>
         ) : null}
         {modelOptions?.provider_enabled === true ? (
-          <fieldset className="mt-6 rounded-2xl border border-slate-200 p-4 sm:p-5">
-            <legend className="px-1 text-sm font-semibold text-slate-900">
+          <details
+            className="mt-4 rounded-xl border border-slate-200 p-4"
+            data-testid="model-settings"
+          >
+            <summary className="cursor-pointer text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-teal-700">
               {archiveCopy.research.modelSettingsLabel}
-            </legend>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <label
-                  className="block text-sm font-semibold text-slate-800"
-                  htmlFor={generationModelId}
-                >
-                  {archiveCopy.research.generationModelLabel}
-                </label>
-                <p className="mt-1 text-xs text-slate-600">
-                  {archiveCopy.research.generationModelHint}
-                </p>
-                <select
-                  className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 disabled:opacity-50"
-                  disabled={isBusy}
-                  id={generationModelId}
-                  onChange={(event) => {
-                    const selected = modelOptions.generation_models.find(
-                      (model) => model === event.target.value,
-                    );
-                    if (selected !== undefined) {
-                      setGenerationModel(selected);
-                    }
-                  }}
-                  value={generationModel}
-                >
-                  {modelOptions.generation_models.map((model) => (
-                    <option key={model} value={model}>
-                      {modelLabel(model)}
-                    </option>
-                  ))}
-                </select>
+              <span className="ml-2 text-xs font-normal text-slate-500">
+                {modelLabel(generationModel)} / {modelLabel(supportModel)}
+              </span>
+            </summary>
+            <fieldset className="mt-4" disabled={isBusy}>
+              <legend className="sr-only">
+                {archiveCopy.research.modelSettingsLabel}
+              </legend>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label
+                    className="block text-sm font-semibold text-slate-800"
+                    htmlFor={generationModelId}
+                  >
+                    {archiveCopy.research.generationModelLabel}
+                  </label>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {archiveCopy.research.generationModelHint}
+                  </p>
+                  <select
+                    className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 disabled:opacity-50"
+                    disabled={isBusy}
+                    id={generationModelId}
+                    onChange={(event) => {
+                      const selected = modelOptions.generation_models.find(
+                        (model) => model === event.target.value,
+                      );
+                      if (selected !== undefined) {
+                        setGenerationModel(selected);
+                      }
+                    }}
+                    value={generationModel}
+                  >
+                    {modelOptions.generation_models.map((model) => (
+                      <option key={model} value={model}>
+                        {modelLabel(model)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label
+                    className="block text-sm font-semibold text-slate-800"
+                    htmlFor={supportModelId}
+                  >
+                    {archiveCopy.research.supportModelLabel}
+                  </label>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {archiveCopy.research.supportModelHint}
+                  </p>
+                  <select
+                    className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 disabled:opacity-50"
+                    disabled={isBusy}
+                    id={supportModelId}
+                    onChange={(event) => {
+                      const selected = modelOptions.support_models.find(
+                        (model) => model === event.target.value,
+                      );
+                      if (selected !== undefined) {
+                        setSupportModel(selected);
+                      }
+                    }}
+                    value={supportModel}
+                  >
+                    {modelOptions.support_models.map((model) => (
+                      <option key={model} value={model}>
+                        {modelLabel(model)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label
-                  className="block text-sm font-semibold text-slate-800"
-                  htmlFor={supportModelId}
-                >
-                  {archiveCopy.research.supportModelLabel}
-                </label>
-                <p className="mt-1 text-xs text-slate-600">
-                  {archiveCopy.research.supportModelHint}
-                </p>
-                <select
-                  className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 disabled:opacity-50"
-                  disabled={isBusy}
-                  id={supportModelId}
-                  onChange={(event) => {
-                    const selected = modelOptions.support_models.find(
-                      (model) => model === event.target.value,
-                    );
-                    if (selected !== undefined) {
-                      setSupportModel(selected);
-                    }
-                  }}
-                  value={supportModel}
-                >
-                  {modelOptions.support_models.map((model) => (
-                    <option key={model} value={model}>
-                      {modelLabel(model)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </fieldset>
+            </fieldset>
+          </details>
         ) : null}
         <button
           className="mt-5 inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 disabled:cursor-wait disabled:bg-slate-400"
@@ -346,14 +353,6 @@ export function ResearchWorkflow({
             : archiveCopy.research.submitIdle}
         </button>
       </form>
-
-      {session.retrievalContext !== undefined ? (
-        <RetrievalContext
-          key={session.researchRequestId}
-          sources={session.retrievalContext}
-          documents={documents}
-        />
-      ) : null}
 
       <div aria-live="polite" className="mt-7">
         {session.status === "RUNNING" ? (
@@ -417,6 +416,7 @@ export function ResearchWorkflow({
             <p className="mt-2 text-sm leading-6">{session.message}</p>
             {session.rejectionDiagnostic !== undefined ? (
               <RejectionDiagnostic
+                key={session.researchRequestId}
                 diagnostic={session.rejectionDiagnostic}
                 sources={session.retrievalContext ?? []}
                 documents={documents}
@@ -453,7 +453,6 @@ export function ResearchWorkflow({
                         key={`${statement.statementId}-${citation.evidenceSpanId}`}
                       >
                         <p className="text-xs font-bold tracking-wide text-teal-700 uppercase">
-                          {archiveCopy.citation.eyebrow} ·{" "}
                           {citation.relationship === "SUPPORTS"
                             ? archiveCopy.citation.supports
                             : archiveCopy.citation.conflicts}
@@ -520,6 +519,21 @@ export function ResearchWorkflow({
           </article>
         ) : null}
       </div>
+      {session.retrievalContext !== undefined ? (
+        <details
+          key={session.researchRequestId}
+          className="mt-6 border-t border-slate-200 pt-4"
+          data-testid="research-details"
+        >
+          <summary className="cursor-pointer text-sm font-semibold text-slate-600 focus-visible:outline-2 focus-visible:outline-teal-700">
+            {archiveCopy.research.detailsLabel}
+          </summary>
+          <RetrievalContext
+            sources={session.retrievalContext}
+            documents={documents}
+          />
+        </details>
+      ) : null}
     </section>
   );
 }

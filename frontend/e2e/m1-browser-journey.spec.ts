@@ -62,6 +62,7 @@ test.describe("M1 visible browser journey", () => {
     page,
   }) => {
     await page.goto("/");
+    await page.getByRole("button", { name: "Add source", exact: true }).click();
     await page.getByLabel("PDF document").setInputFiles(PDF_FIXTURE);
     await page.getByLabel("Document title").fill(PDF_TITLE);
     await page.getByRole("button", { name: "Import document" }).click();
@@ -76,6 +77,9 @@ test.describe("M1 visible browser journey", () => {
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
 
+    const researchDetails = page.getByTestId("research-details");
+    await expect(researchDetails).not.toHaveAttribute("open", "");
+    await researchDetails.locator(":scope > summary").click();
     const retrievedContext = page.getByTestId("retrieval-context");
     await expect(retrievedContext).not.toHaveAttribute("open", "");
     await retrievedContext.locator(":scope > summary").click();
@@ -147,6 +151,7 @@ test.describe("M1 visible browser journey", () => {
     const sourceText = await readFile(TEXT_FIXTURE, "utf8");
 
     await page.goto("/");
+    await page.getByRole("button", { name: "Add source", exact: true }).click();
     await page.getByText("Paste text", { exact: true }).click();
     await expect(page.getByLabel("Paste text")).toBeChecked();
     await page.getByLabel("Research text").fill(sourceText);
@@ -269,6 +274,9 @@ test.describe("M1 visible browser journey", () => {
       name: "Ask the archive",
       exact: true,
     });
+    await page
+      .getByLabel("Research question")
+      .fill("What do these saved sources say?");
     await expect(submit).toBeDisabled();
     await page
       .getByRole("checkbox", {
