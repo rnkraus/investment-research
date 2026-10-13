@@ -1,6 +1,6 @@
 # M1.5 — Evidence-grounded RAG portfolio guide
 
-**Snapshot:** 2026-10-10; local implementation and recorded evaluation, not milestone acceptance.
+**Snapshot:** 2026-10-13; local implementation and recorded evaluation, not milestone acceptance.
 
 Investment Research Archive answers questions over saved PDF and pasted-text documents with
 verifiable original-source citations. The application owns retrieval, source selection,
@@ -17,7 +17,7 @@ versioned chunks, obtain embeddings, and populate the derived Pinecone index. Re
 transient queue state, not the only copy of product records. Research can use eligible saved
 documents without another upload.
 
-The opt-in `m1-5-citable-units` API profile follows this bounded research path:
+The default provider-backed local `m1-5-citable-units` API profile follows this bounded research path:
 
 ```mermaid
 flowchart TD
@@ -68,7 +68,7 @@ read as a claim that routed queries, conversation, or all lifecycle workflows ex
 
 ## 2. Profiles and concrete changes from M1
 
-| Aspect | Retained M1 baseline | Implemented M1.5 option |
+| Aspect | Retained M1 baseline | Current M1.5 default |
 | --- | --- | --- |
 | Hybrid selection | Alternating lexical/dense hits, deduplicated by chunk | Unweighted RRF with recorded lane contributions |
 | Citation selection | Model supplies candidate ID and copied exact substring | Model selects source-unit IDs; server supplies exact original text and ranges |
@@ -93,6 +93,12 @@ contains only `supported: true/false`; a separate local evaluation option reques
 and changes the support prompt/schema. Raw failure logging is another opt-in diagnostic, not a
 normal product feature. Local default adoption was owner-approved on 2026-10-12; it does not
 change the historical evaluation results, models, diagnostic settings, or milestone acceptance.
+
+In the current workspace, choose the document scope above the question and select individual
+documents in the collapsible sidebar. Answer/support model choices are under `Model settings`;
+selected context passages are under `Research details`. When explicitly enabled, local rejection
+diagnostics appear directly with the failure, outside that collapsed details section. They are
+unvalidated debugging material, not accepted answers or citations.
 
 ## 3. Recorded evaluation, not a general accuracy claim
 
@@ -126,7 +132,7 @@ Earlier small M1-versus-RRF and RRF-versus-reranker comparisons did not establis
 benefit justifying default adoption. Their protocols and limitations remain in the
 [M1.5 plan](./13-m1-5-rag-quality-plan.md). Catalog v2 corrected one question's unsupported fiscal
 period, so its results are not an unchanged paired comparison with v1. The twelve-case result
-does not measure the normal Boolean-only support prompt, current Terra-v6 quality, or reliability
+does not measure the normal Boolean-only support prompt, current answer-prompt-v8 quality, or reliability
 on varied real documents. Costs use repository price policies, exclude Pinecone billing, and
 are not provider invoices; maximum reservations must not be presented as token charges.
 
@@ -151,16 +157,17 @@ Open `http://127.0.0.1:3000` yourself. Choose answer/support models explicitly; 
 the recorded answer-model pair, but not its diagnostic support prompt. A demo observation is a
 new live result, not an automatic repeat of the saved scores.
 
-1. Import the approved FY2025 PDF if absent and wait for `SEARCHABLE`. Select
-   `Current processed document`; ask “What were Northstar's FY2025 revenue and year-over-year
-   growth?” Inspect the validated facts and open the citation at physical PDF page 2.
-2. Paste the approved capacity update if absent and wait for `SEARCHABLE`. In the same document
-   scope, ask “What is the primary constraint on new customer deployments?” Expect a supported
+1. Import the approved FY2025 PDF if absent and wait for `SEARCHABLE`. Restrict the question to
+   selected documents and select only that PDF in the sidebar. Ask “What were Northstar's FY2025
+   revenue and year-over-year growth?” Inspect the validated facts and open the citation at
+   physical PDF page 2.
+2. Paste the approved capacity update if absent and wait for `SEARCHABLE`. Select only that
+   document and ask “What is the primary constraint on new customer deployments?” Expect a supported
    transformer-shortage answer; open the exact text highlight.
 3. With that document still selected, ask “What is the European pilot budget?” Expect
    `INSUFFICIENT`: a budget in another document must not fill the selected document's gap.
-4. For a multi-document example, first import the approved operations note, then select
-   `All saved documents` and ask “What do the reports say is the primary constraint on
+4. For a multi-document example, first import the approved operations note, then select only
+   the capacity update and operations note. Ask “What do the reports say is the primary constraint on
    new customer deployments?” Inspect both conflicting claims and their separate original
    citations. Do not resolve the disagreement from general model knowledge.
 5. Record profile, model pair, question, coverage, citation-opening result, and any safe error.
@@ -191,7 +198,7 @@ omit it when measuring the normal website support contract. See the
 ## 5. What this demonstrates, and what remains
 
 A defensible portfolio description is: “Built an application-owned local RAG pipeline with
-PostgreSQL lexical and Pinecone dense retrieval, optional RRF and cross-encoder reranking,
+PostgreSQL lexical and Pinecone dense retrieval, RRF and optional cross-encoder reranking,
 structured source-ID generation, canonical citation validation, model-based statement support,
 and bounded provider-usage accounting. Recorded a versioned twelve-question synthetic evaluation
 with explicit abstention, conflict, latency, cost, and citation-precision limitations.”
