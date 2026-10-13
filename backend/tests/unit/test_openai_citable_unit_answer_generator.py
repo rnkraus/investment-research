@@ -322,7 +322,7 @@ def test_json_escaping_overflow_fails_before_provider_call() -> None:
 
 
 def test_short_handles_fit_a_catalog_whose_uuid_transport_exceeds_the_reservation() -> None:
-    generation_input = make_input(text=" ".join(f"Sentence {index:03}." for index in range(120)))
+    generation_input = make_input(text=" ".join(f"Sentence {index:03}." for index in range(110)))
     generator, client = make_generator(generation_input)
     serialized = generator._serialize_input(generation_input)
     schema = adapter.citable_answer_schema(generation_input.catalog).model_json_schema()
@@ -358,7 +358,7 @@ def test_short_handles_fit_a_catalog_whose_uuid_transport_exceeds_the_reservatio
     assert len(client.responses.calls) == 1
     assert (
         generator.generate(generation_input).answer.statements[0].evidence[0].exact_text
-        == "Sentence 119."
+        == generation_input.catalog.units[-1].text
     )
 
 
@@ -419,6 +419,32 @@ def test_focused_prompt_preserves_qualifications_and_needed_attribution(
     assert "cite both sides" in instructions
     assert "Every material fact and qualification" in instructions
     assert len(client.responses.calls) == 1
+
+
+@pytest.mark.parametrize("model", list(ResearchModel))
+@pytest.mark.parametrize("question", ["What is the pilot budget?", "Wie hoch ist das Pilotbudget?"])
+def test_prompt_requires_english_prose_without_translating_source_units(
+    model: ResearchModel, question: str
+) -> None:
+    generation_input = CitableAnswerGenerationInput.from_catalog(
+        context=CONTEXT, question=question, catalog=make_input().catalog
+    )
+    generator, client = make_generator(generation_input, model=model)
+    client.responses.overrides["model"] = model.value
+
+    result = generator.generate(generation_input)
+
+    instructions = cast(str, client.responses.calls[0]["instructions"])
+    assert (
+        "Always write rendered_text, every statement's text, and any missing_information"
+        in instructions
+    )
+    assert "in English, regardless of the question's language" in instructions
+    assert "keep source text unchanged in its original language" in instructions
+    assert "Never translate or rewrite source quotations" in instructions
+    assert "Return the IDs only: do not copy evidence text" in instructions
+    for reference in result.answer.statements[0].evidence:
+        assert reference.exact_text == STATEMENT
 
 
 @pytest.mark.parametrize("model", list(ResearchModel))
@@ -713,7 +739,7 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v3"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v7"
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v8"
     assert "citable-units-en-v8" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v3"
 
