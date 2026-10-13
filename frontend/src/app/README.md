@@ -7,7 +7,7 @@ This directory owns the Next.js route tree, shared document layout, and global p
 | File                                                           | Responsibility                                                                       |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `layout.tsx`                                                   | Defines English document metadata, imports global styles, and renders route content. |
-| `page.tsx`                                                     | Composes the local M1 archive shell and implemented research workflow.               |
+| `page.tsx`                                                     | Renders the compact research workspace and shared safety footer.                     |
 | `sources/[evidenceSpanId]/page.tsx`                            | Delegates one opaque stable source route to the verified source viewer.              |
 | `documents/[documentId]/versions/[documentVersionId]/page.tsx` | Opens a complete authorized original independently of a research citation.           |
 | `globals.css`                                                  | Defines Tailwind CSS integration and global visual defaults.                         |
@@ -22,7 +22,9 @@ flowchart TD
     LAYOUT --> SOURCE[Stable evidence source page]
     LAYOUT --> DOCUMENT[Saved original page]
     PAGE --> COPY[Shared and feature copy]
-    PAGE --> WORKFLOW[DocumentWorkflow client component]
+    PAGE --> WORKSPACE[ResearchWorkspace client component]
+    WORKSPACE --> IMPORT[Collapsible DocumentWorkflow]
+    WORKSPACE --> ARCHIVE[ArchiveResearch sidebar and research area]
     SOURCE --> VIEWER[SourceViewer client component]
     DOCUMENT --> ORIGINAL[OriginalViewer client component]
 ```
@@ -32,6 +34,10 @@ status polling, and evidence-grounded research to the archive feature. Future do
 pages are added here only when their backend path is ready. Route components may call typed frontend
 feature or API functions, but they must not contain backend persistence logic or independently
 redefine API payloads.
+
+The home route no longer renders a large landing-page introduction or numbered demo steps.
+The workspace owns the compact header and Add source control; the archive feature owns import,
+selection, model controls, and answer state. These remain client concerns, not server-route logic.
 
 The dynamic source route receives only an evidence-span identifier. It does not expose exact text,
 object-storage keys, or a direct provider URL. `SourceViewer` resolves the authorized evidence and

@@ -6,22 +6,67 @@ PostgreSQL, or parse document content.
 
 ## Current files
 
-| File                          | Responsibility                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------ |
-| `copy.ts`                     | Centralizes English feature text and defaults for later localization.                |
-| `archive-research.tsx`        | Loads the saved-document catalog and coordinates explicit research scope.            |
-| `document-selection.ts`       | Keeps bounded selection and empty-scope admission independent of React.              |
-| `document-deletion.ts`        | Tracks explicit deletion IDs and bounded, cancellation-aware receipt reads.          |
-| `document-deletion-panel.tsx` | Confirms permanent deletion and displays pending, uncertain, and completed cleanup.  |
-| `document-workflow.tsx`       | Captures one PDF or pasted-text original and polls its background-processing status. |
-| `processing-state.ts`         | Defines polling completion and fail-closed research admission.                       |
-| `publication-date.ts`         | Formats the user's local calendar day for the editable publication-date default.     |
-| `research-session.ts`         | Reduces validated SSE events into one ordered, fail-closed UI result.                |
-| `research-workflow.tsx`       | Loads model choices, asks a bounded question, and opens exact source evidence.       |
-| `retrieval-context.tsx`       | Displays ordered selected passages separately from validated answer citations.       |
-| `source-anchor.ts`            | Verifies exact pasted-text ranges and checksums using Unicode code points.           |
-| `source-viewer.tsx`           | Resolves and renders an authorized immutable PDF or pasted-text source.              |
-| `original-viewer.tsx`         | Opens a complete authorized original without claiming citation validation.           |
+| File                          | Responsibility                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| `copy.ts`                     | Centralizes English feature text and defaults for later localization.                  |
+| `research-workspace.tsx`      | Composes the compact header, collapsible import panel, and archive research workspace. |
+| `archive-research.tsx`        | Loads the saved-document catalog and coordinates explicit research scope.              |
+| `document-selection.ts`       | Keeps bounded selection and empty-scope admission independent of React.                |
+| `document-deletion.ts`        | Tracks explicit deletion IDs and bounded, cancellation-aware receipt reads.            |
+| `document-deletion-panel.tsx` | Confirms permanent deletion and displays pending, uncertain, and completed cleanup.    |
+| `document-workflow.tsx`       | Captures one PDF or pasted-text original and polls its background-processing status.   |
+| `processing-state.ts`         | Defines polling completion and fail-closed research admission.                         |
+| `publication-date.ts`         | Formats the user's local calendar day for the editable publication-date default.       |
+| `research-session.ts`         | Reduces validated SSE events into one ordered, fail-closed UI result.                  |
+| `research-workflow.tsx`       | Loads model choices, asks a bounded question, and opens exact source evidence.         |
+| `retrieval-context.tsx`       | Displays ordered selected passages separately from validated answer citations.         |
+| `source-anchor.ts`            | Verifies exact pasted-text ranges and checksums using Unicode code points.             |
+| `source-viewer.tsx`           | Resolves and renders an authorized immutable PDF or pasted-text source.                |
+| `original-viewer.tsx`         | Opens a complete authorized original without claiming citation validation.             |
+
+## Workspace presentation
+
+The home page is a research workspace rather than a numbered demonstration. Its compact header
+offers **Add source**, which opens an inline import panel and moves keyboard focus to it. Closing
+returns focus to the trigger. The panel stays mounted while hidden: import drafts, selected dates,
+active requests, and processing polls are preserved. The stable workspace callback refreshes the
+catalog after capture and observed processing-state transitions.
+
+On desktop, a collapsible document sidebar sits beside the question and answer area. On narrow
+screens, the areas stack and the document toggle remains available. Hiding documents expands the
+research area without remounting research, losing selection, or fetching another catalog page.
+Search scope and the selected count stay above the question even when documents are hidden.
+The sidebar shows titles, publication dates, processing status, and original links; other metadata
+and selection help are expandable. It cannot be hidden while deletion confirmation or submission
+locks selection. Permanent deletion controls remain at the top of the sidebar.
+
+Answer and evidence-check model choices are independent under collapsed **Model settings**;
+their current pair is visible in the summary. Progress, validated results, and safe failures remain
+in the main area. Optional local rejection diagnostics appear expanded directly inside the failure
+card, separately labeled as unvalidated. The collapsed **Research details** section below the result
+contains retrieved context, not rejection diagnostics; both remain separate from validated citations.
+Neither collapsing controls nor the layout changes authorization, provider choices, or validation.
+
+```mermaid
+flowchart TD
+    PAGE[Home page] --> WORKSPACE[ResearchWorkspace]
+    WORKSPACE --> HEADER[Compact header and Add source]
+    HEADER --> IMPORT[Collapsible DocumentWorkflow]
+    IMPORT -->|Capture and processing changes| CATALOG[Refresh scoped catalog]
+    WORKSPACE --> ARCHIVE[ArchiveResearch]
+    ARCHIVE --> SIDEBAR[Collapsible document selection and deletion]
+    ARCHIVE --> RESEARCH[Scope, question, progress, and validated answer]
+    SIDEBAR -->|Explicit selected IDs| RESEARCH
+    RESEARCH --> MODELS[Collapsed independent model settings]
+    RESEARCH --> DETAILS[Collapsed research details]
+    DETAILS --> CONTEXT[Retrieved context]
+    RESEARCH --> FAILURE[Safe failure card]
+    FAILURE --> DIAGNOSTIC[Expanded optional unvalidated rejection diagnostics]
+```
+
+Deterministic tests cover copy, contracts, and state transitions. The Playwright suite includes
+workspace visibility, draft/model retention, focus, and responsive-layout assertions; running it
+and confirming a production build are separate verification steps, not implied by static checks.
 
 ## Capture and processing flow
 
@@ -149,8 +194,9 @@ flowchart LR
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
 
-`document-workflow.tsx` always mounts `ArchiveResearch`, including after a page reload with no new
-upload. It refreshes the catalog after capture and each observed processing-state transition.
+`research-workspace.tsx` always mounts `ArchiveResearch`, including after a page reload with no new
+upload, and keeps `DocumentWorkflow` mounted behind the import toggle. Capture and each observed
+processing-state transition notify the workspace to refresh the catalog.
 The catalog loads 20 entries per request and appends pages using the server's unmodified cursor.
 Titles, media, language, byte size, publication, capture, and availability dates are shown alongside
 the latest processing snapshot. Unknown dates remain unknown; displayed dates use UTC.
@@ -171,7 +217,8 @@ The server rechecks eligibility; neither the status snapshot nor possession of a
 
 ## Permanent local deletion
 
-Delete selected appears above the document rows, even when the rows are hidden. All-source scope,
+Delete selected appears at the top of the document sidebar. Collapsing the sidebar also hides its
+controls without cancelling accepted cleanup; reopening restores its tracked status. All-source scope,
 empty selection, failed catalog reads, and ongoing research disable deletion. A second explicit
 confirmation lists the frozen selection and explains irreversible source/dependent-answer removal
 and the backup/provider/export boundaries in ADR-0019. Cancel sends no request. Selection and
