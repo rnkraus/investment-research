@@ -113,6 +113,9 @@ test("bulk deletion requires confirmation, clears stale answers, and waits for c
     exact: true,
   });
   await expect(ask).toBeEnabled();
+  await page
+    .getByLabel("Research question")
+    .fill("What do these synthetic sources say?");
   await ask.click();
   const oldAnswer = page.getByRole("heading", {
     name: "Insufficient evidence",
@@ -137,6 +140,9 @@ test("bulk deletion requires confirmation, clears stale answers, and waits for c
     .check();
   await expect(ask).toBeDisabled();
   await deleteSelected.click();
+  await expect(
+    page.getByRole("button", { name: "Hide documents", exact: true }),
+  ).toBeDisabled();
   await expect(
     page.getByRole("heading", {
       name: "Permanently delete selected documents?",

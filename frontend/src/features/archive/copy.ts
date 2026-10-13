@@ -1,10 +1,11 @@
 export const archiveCopy = {
-  eyebrow: "M1 local research slice",
-  heading: "Research answers should open back to the source.",
-  introduction:
-    "Ask a question about saved English research sources, or import a new PDF or text source to expand the archive.",
-  workspaceLabel: "Evidence workspace",
-  localOnly: "Local-only · Single workspace · English archive",
+  workspaceLabel: "Research workspace",
+  localOnly: "Local workspace",
+  workspace: {
+    addSource: "Add source",
+    closeImport: "Close import",
+    skipToResearch: "Skip to research",
+  },
   rejectionDiagnostic: {
     heading: "Rejected answer diagnostics",
     warning:
@@ -34,18 +35,11 @@ export const archiveCopy = {
     empty: "No eligible passages were selected for this question.",
     openOriginal: "Open original",
   },
-  safetyNote: "M1 workflow: use public, synthetic, or non-sensitive research.",
-  steps: [
-    "Ask the archive",
-    "Import evidence",
-    "Process evidence",
-    "Open citation",
-  ],
+  safetyNote: "Use only public, synthetic, or non-sensitive research.",
   upload: {
-    eyebrow: "Step 1",
-    heading: "Import research evidence",
+    heading: "Add a source",
     description:
-      "The PDF or pasted text is preserved as an immutable original before background processing creates searchable evidence.",
+      "Import a PDF or paste text. Originals are preserved, and processing runs automatically in the background.",
     modeLegend: "Source type",
     pdfMode: "Upload PDF",
     textMode: "Paste text",
@@ -63,8 +57,7 @@ export const archiveCopy = {
     submitBusy: "Importing…",
   },
   processing: {
-    eyebrow: "Step 2",
-    heading: "Process the captured document",
+    heading: "Import status",
     idle: "Import a document to create a processing run.",
     waiting:
       "Processing continues automatically in the background. This status updates while the worker handles the document.",
@@ -80,10 +73,10 @@ export const archiveCopy = {
     failed: "Processing stopped safely.",
   },
   catalog: {
-    eyebrow: "Saved evidence",
-    heading: "Documents in your archive",
-    description:
-      "Open any saved original, or select searchable documents to focus your next question.",
+    heading: "Documents",
+    description: "Open originals or select sources for your next question.",
+    selectionHelp: "Selection help",
+    metadataDetails: "Document details",
     loading: "Loading saved documents…",
     refresh: "Refresh documents",
     hideDocuments: "Hide documents",
@@ -94,7 +87,7 @@ export const archiveCopy = {
       "Delete only explicitly selected documents. Permanent deletion also removes complete saved answers that used them. There is no restore.",
     loadMore: "Load more documents",
     empty:
-      "No documents saved yet. Import a PDF or paste text below to get started.",
+      "No documents saved yet. Choose Add source to import a PDF or paste text.",
     unavailable:
       "Saved documents could not be loaded. Try refreshing the list.",
     openOriginal: "Open original",
@@ -164,17 +157,18 @@ export const archiveCopy = {
       "The previous answer view was cleared because deletion can invalidate its sources.",
   },
   research: {
-    eyebrow: "Research saved evidence",
     heading: "Ask the archive",
     description:
-      "Search already saved PDFs and text without importing again. Answers use only validated evidence from eligible sources in this workspace.",
+      "Ask across your saved sources. Every accepted statement links back to verified evidence.",
     scopeLegend: "Search scope",
     archiveScope: "All saved documents",
     documentScope: "Selected documents",
     scopeHint:
       "Only current, eligible evidence in this workspace is searched. The server checks source eligibility again for every question.",
     questionLabel: "Research question",
-    modelSettingsLabel: "AI models",
+    questionPlaceholder: "What would you like to know about your sources?",
+    modelSettingsLabel: "Model settings",
+    detailsLabel: "Research details",
     generationModelLabel: "Answer model",
     generationModelHint: "Drafts the answer from selected source passages.",
     supportModelLabel: "Evidence-check model",
@@ -205,7 +199,6 @@ export const archiveCopy = {
     failedLabel: "Research stopped safely",
   },
   citation: {
-    eyebrow: "Step 4",
     supports: "Supporting evidence",
     conflicts: "Conflicting evidence",
     resolving: "Resolving exact source…",

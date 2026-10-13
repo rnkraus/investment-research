@@ -31,3 +31,13 @@ test("partial coverage copy explains that the answer remains incomplete", () => 
     /does not fully answer/i,
   );
 });
+
+test("workspace copy names tasks and optional details instead of numbered demo steps", () => {
+  assert.equal(archiveCopy.workspace.addSource, "Add source");
+  assert.equal(archiveCopy.research.modelSettingsLabel, "Model settings");
+  assert.equal(archiveCopy.research.detailsLabel, "Research details");
+  assert.doesNotMatch(
+    JSON.stringify(archiveCopy),
+    /Step [1-4]|M1 workflow|M1 local research slice/,
+  );
+});
