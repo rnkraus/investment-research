@@ -389,6 +389,9 @@ def run_api_contract_test(
                 "--pids-limit=128",
                 "--memory=512m",
                 "--cpus=1",
+                "--mount",
+                f"type=bind,source={REPOSITORY_ROOT / 'config' / 'rag.toml'},"
+                "target=/config/rag.toml,readonly",
                 *environment_arguments,
                 image,
                 "-p",

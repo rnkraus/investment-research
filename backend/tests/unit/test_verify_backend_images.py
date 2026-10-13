@@ -217,6 +217,10 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
     assert api_command.count("--env") == 6
     assert "INVESTMENT_RESEARCH_REDIS_URL" in api_command
     assert any(argument.endswith("12345678_backend") for argument in api_command)
+    assert api_command[api_command.index("--mount") + 1] == (
+        f"type=bind,source={verify_backend_images.REPOSITORY_ROOT / 'config' / 'rag.toml'},"
+        "target=/config/rag.toml,readonly"
+    )
 
     migration_command = next(
         command
@@ -224,6 +228,7 @@ def test_api_runtime_verification_migrates_checks_and_cleans(
         if label == "Migrate the isolated database to Alembic head"
     )
     assert migration_command[-1] == "investment-research-backend-check-migration:test"
+    assert not any("rag.toml" in argument for argument in migration_command)
     assert "disposable-password" not in migration_command
     assert not any("postgresql+psycopg" in argument for argument in migration_command)
     assert migration_command.count("--env") == 6
