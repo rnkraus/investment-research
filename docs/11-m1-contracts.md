@@ -39,26 +39,26 @@ Question and source bytes remain separately reserved; the support reservation an
 are unchanged. This numeric allowance is not a token measurement or a retrieval-history field.
 Provider operations continue to record the resulting reserved cost and reconciled usage.
 
-| Concern                    | M1 value                                                                  |
-| -------------------------- | ------------------------------------------------------------------------- |
-| Pasted-text maximum        | 100,000 Unicode code points and the existing configured byte limit        |
-| Structure-block maximum    | 4,000 Unicode code points                                                 |
-| Chunk mapping              | Exactly one chunk per structure block; chunk text equals block text       |
-| Embedding model            | OpenAI `text-embedding-3-small`, 1536 dimensions                          |
-| Lexical config version     | `m1-english-lexical-v1`                                                   |
-| Embedding config version   | `openai-text-embedding-3-small-1536-v1`                                   |
-| Embedding batch            | At most 16 inputs and 32,000 total Unicode code points                    |
-| Lane candidates            | At most 20 lexical and 20 dense candidates                                |
-| Selected context           | At most 8 unique chunks and 24,000 total Unicode code points              |
+| Concern                    | M1 value                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Pasted-text maximum        | 100,000 Unicode code points and the existing configured byte limit                                     |
+| Structure-block maximum    | 4,000 Unicode code points                                                                              |
+| Chunk mapping              | Exactly one chunk per structure block; chunk text equals block text                                    |
+| Embedding model            | OpenAI `text-embedding-3-small`, 1536 dimensions                                                       |
+| Lexical config version     | `m1-english-lexical-v1`                                                                                |
+| Embedding config version   | `openai-text-embedding-3-small-1536-v1`                                                                |
+| Embedding batch            | At most 16 inputs and 32,000 total Unicode code points                                                 |
+| Lane candidates            | At most 20 lexical and 20 dense candidates                                                             |
+| Selected context           | At most 8 unique chunks and 24,000 total Unicode code points                                           |
 | Generator                  | OpenAI `gpt-5.6-terra` by default or `gpt-5.6-luna`, low reasoning, strict structured output, no tools |
-| Statement-support model    | Independently selected `gpt-5.6-terra` by default or `gpt-5.6-luna`       |
-| Generated answer           | At most 8 statements and 2 evidence references per statement              |
-| Dense index                | Pinecone Serverless BYOV, cosine, 1536 dimensions, `aws/us-east-1`        |
-| Dense-index config version | `pinecone-serverless-cosine-1536-aws-us-east-1-v1`                        |
-| M1 selector                | Deterministic lexical-first round-robin with chunk-ID deduplication       |
-| Selector config version    | `m1-lexical-first-round-robin-v1`                                         |
-| Normal CI                  | Deterministic adapters, no provider network, credentials, or spend        |
-| Live smoke                 | Explicit opt-in and bounded by `fixtures/m1/manifest.yaml`                |
+| Statement-support model    | Independently selected `gpt-5.6-terra` by default or `gpt-5.6-luna`                                    |
+| Generated answer           | At most 8 statements and 2 evidence references per statement                                           |
+| Dense index                | Pinecone Serverless BYOV, cosine, 1536 dimensions, `aws/us-east-1`                                     |
+| Dense-index config version | `pinecone-serverless-cosine-1536-aws-us-east-1-v1`                                                     |
+| M1 selector                | Deterministic lexical-first round-robin with chunk-ID deduplication                                    |
+| Selector config version    | `m1-lexical-first-round-robin-v1`                                                                      |
+| Normal CI                  | Deterministic adapters, no provider network, credentials, or spend                                     |
+| Live smoke                 | Explicit opt-in and bounded by `fixtures/m1/manifest.yaml`                                             |
 
 Each value is carried by an immutable application configuration version. Changing a value creates a
 new version; it never silently changes the meaning of an existing processing or retrieval record.
@@ -136,11 +136,11 @@ routes remain unchanged. The website catalog consumes this contract through the 
 
 Query parameters:
 
-| Parameter | Contract |
-| --- | --- |
-| `page_size` | Integer 1–100; default 20 |
-| `after_created_at` | Optional timezone-aware timestamp from `next_cursor.created_at` |
-| `after_document_id` | Optional UUID from `next_cursor.document_id` |
+| Parameter           | Contract                                                        |
+| ------------------- | --------------------------------------------------------------- |
+| `page_size`         | Integer 1–100; default 20                                       |
+| `after_created_at`  | Optional timezone-aware timestamp from `next_cursor.created_at` |
+| `after_document_id` | Optional UUID from `next_cursor.document_id`                    |
 
 Supply both continuation fields together or neither. The cursor is an exclusive descending
 `Document.created_at`/UUID position, not authorization or a multi-request snapshot. Unknown query
@@ -497,13 +497,20 @@ Each application reference names only a supplied retrieval-candidate ID and a bl
 half-open range. An insufficient proposal contains no statements or citations and names the missing
 information.
 
-The current M1 answer prompt, `m1-grounded-answer-prompt-v5`, requires one independently
+The current M1 answer prompt, `m1-grounded-answer-prompt-v6`, requires one independently
 verifiable factual claim per statement, supported in full by that statement's own references.
 Distinct capabilities, activities, or plans must not be bundled with unsupported additions.
 Necessary subject, conditions, uncertainty, and time scope remain part of each self-contained
 claim. The rendering may summarize only those supported claims; the eight-statement ceiling
 requires prioritization, not packing unrelated claims together. This is a generation instruction,
 not a replacement for server-side support validation or a guarantee of live model compliance.
+
+Both answer profiles explicitly require English generated prose regardless of the question's
+language: `rendered_text`, each statement's `text`, and any `missing_information` explanation.
+The M1 prompt v6 preserves verbatim `exact_text`; the M1.5 source-unit prompt
+`m1-5-citable-units-en-answer-prompt-v8` preserves ID selection and server-resolved original text.
+Neither profile translates quotations or changes canonical source text. This instruction applies
+to Terra and Luna alike; it is not a deterministic language validator or a new quality result.
 
 The versioned M1 answer prompt defines the four coverage choices for the question as a whole:
 `COMPLETE` when every material part is supported, `PARTIAL` when at least one material part is
@@ -687,6 +694,15 @@ without relying on the currently loaded catalog page. Authorization and source e
 remain unchanged.
 
 ### 11.3 Research stream
+
+The local website presents this workflow as a compact research workspace, not numbered demo steps.
+The collapsible document sidebar retains selection; search scope remains above the question.
+Add source opens an inline import panel that stays mounted while hidden, preserving drafts and
+processing polls. Independent answer/support choices are under Model settings. Retrieved context
+is grouped under collapsed Research details. Optional local rejection diagnostics appear expanded
+directly inside the safe failure card, separate from validated answers. Safe failure messages and
+actual progress remain directly visible. This
+presentation change does not alter the request, stream, eligibility, or evidence contracts.
 
 The research SSE stream reports actual application stages while the request is running:
 

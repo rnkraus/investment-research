@@ -1920,6 +1920,17 @@ support evaluation, and fail-closed evidence validation remain unchanged. Earlie
 reviewed observations retain their recorded versions. Offline tests verify instruction delivery
 for Terra and Luna; quality improvement still requires a separate opt-in live evaluation.
 
+#### Owner-requested English answer prose (2026-10-13)
+
+Both answer adapters now explicitly require English `rendered_text`, statement text, and
+`missing_information`, regardless of the question's language. The retained M1 prompt is
+`m1-grounded-answer-prompt-v6`; the source-unit prompt is
+`m1-5-citable-units-en-answer-prompt-v8`. Existing model-specific generation configurations,
+source-unit boundaries, retrieval, support evaluation, and budgets remain unchanged. Verbatim
+quotes stay in their original language; source-unit IDs still resolve to unchanged canonical text.
+Offline regression tests verify that Terra and Luna receive these instructions for English and
+German questions. They do not prove live language adherence or supersede historical evaluations.
+
 #### Owner-requested generation overhead tuning (2026-10-12)
 
 A broad local question produced 17,272 conservative input-metadata units against the fixed 16,000
