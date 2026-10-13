@@ -5,38 +5,101 @@ English · [Deutsch](README.de.md)
 Evidence-grounded document research with hybrid retrieval and verifiable original-source citations.
 
 Import PDFs or paste text, ask questions over saved documents, and inspect the evidence behind
-each accepted statement. The application combines lexical and vector retrieval with structured
-generation, server-resolved source references, and a separate statement-support check.
+each accepted statement. Built as a local, single-user Applied AI application: hybrid search finds
+passages, a model proposes an answer, and the server checks its original-source evidence before
+publishing it. This is a research archive, not a trading system or an investment-advice service.
+
+**Status: In active development.** The core RAG workflow is implemented; broader evaluation
+and remaining product milestones are still pending.
+
+## Tech stack
+
+| Area                  | Technologies and role                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| Frontend              | Next.js, React, TypeScript, Tailwind CSS; research workspace and original-source viewing              |
+| Backend               | Python, FastAPI, Pydantic; typed API and application-owned orchestration                              |
+| Canonical data        | PostgreSQL, SQLAlchemy, Alembic; records, lexical search, and migrations                              |
+| Original storage      | S3-compatible storage through Boto3; SeaweedFS in local Compose                                       |
+| Background processing | Celery, Redis, pypdf; queued ingestion and bounded text-PDF parsing                                   |
+| AI and retrieval      | OpenAI embeddings and structured generation/support; Pinecone dense search; RRF; opt-in BGE reranking |
+| Quality and delivery  | pytest, Ruff, Mypy, Playwright, GitHub Actions, Docker Compose; uv and pnpm                           |
+
+LangChain, LlamaIndex, and LangGraph are not the orchestration core. Hosted LangSmith evaluation
+is not part of the implemented quality evidence. The [system design](docs/02-system-design.md)
+separates current behavior from the broader target architecture.
 
 [Architecture](docs/14-m1-5-portfolio.md#1-implemented-architecture) ·
 [Evaluation evidence](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim) ·
 [Local demo](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) ·
 [Developer setup](docs/development.md)
 
-For local retrieval, context, and generation-overhead experiments, edit [config/rag.toml](config/rag.toml);
-the [tuning guide](config/README.md) explains the five settings, bounds, and API restart.
+![Research workspace showing saved documents, independent model selection, and an answer with original-source citations](docs/assets/screenshots/01-research-workspace.png)
 
-This is a local, single-user Applied AI project. It is a research archive, not a trading system
-or an investment-advice service.
+_Local research workspace: saved documents, model selection, and a validated answer with
+document, publication-date, and page references._
 
 ## What you can do
 
-- **Build a searchable archive:** import text-based PDFs or pasted text and follow automatic
-  parsing, embedding, and indexing progress.
-- **Browse saved sources:** view a paginated document list with processing status and open
-  complete PDF or text originals without first asking a question.
-- **Ask saved evidence:** research existing documents without another upload, or restrict a
-  question to one or more selected searchable documents.
-- **Inspect the source:** open a cited original PDF at its physical page or highlight the exact
-  range in a pasted-text original.
-- **See evidence limits:** distinguish complete, partial, conflicting, and insufficient
-  answers instead of silently filling gaps from general model knowledge.
-- **Choose models independently:** select the answer model and the statement-support model
-  separately, with live progress and safe failure messages.
+### Build a searchable archive
+
+Import text-based PDFs or pasted text and follow automatic parsing, embedding, and indexing progress.
+
+<details open>
+<summary>View the document import form</summary>
+
+![Document import form with PDF upload and pasted-text options, a selected file, and publication-date input](docs/assets/screenshots/05-document-import.png)
+
+The form before submission: choose a PDF or pasted text and enter document metadata.
+This screenshot does not show processing completion.
+
+</details>
+
+### Browse saved sources
+
+View a paginated document list with processing status and open complete PDF or text originals
+without first asking a question. Hide the sidebar or open the Add source panel without losing
+the current question or selection.
+
+### Ask saved evidence
+
+Research existing documents without another upload, or restrict a question to one or more
+selected searchable documents.
+
+### Inspect the source
+
+Open a cited original PDF at its physical page or highlight the exact range in a pasted-text
+original. Citations include document titles and publication dates when known; selected retrieval
+passages are inspectable separately.
+
+### See evidence limits
+
+Distinguish complete, partial, conflicting, and insufficient answers instead of silently filling
+gaps from general model knowledge.
+
+### Choose models independently
+
+Select the answer model and the statement-support model separately, with live progress and safe
+failure messages. Generated prose is instructed to remain English; quotations retain their
+original text.
+
+### Remove saved documents
+
+Select an explicit batch for permanent deletion and track cleanup receipts. This implemented
+flow does not imply that the full lifecycle milestone is complete.
+
+### Inspect rejected answers locally
+
+Opt-in diagnostics show rejected statements, selected source excerpts, and failed checks directly
+with the error, never as accepted answers.
 
 The [synthetic demo walkthrough](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration)
-shows PDF research, exact text citations, scoped abstention, and conflicting reports. All example
-documents are fictional; no private research data is needed to demonstrate the system.
+shows PDF research, exact text citations, scoped abstention, and conflicting reports. That
+walkthrough uses fictional documents; no private research data is needed to demonstrate the system.
+
+![Original-source view showing the exact cited excerpt above the corresponding physical PDF page](docs/assets/screenshots/02-original-source.png)
+
+_Verify the evidence against the original: the cited excerpt and physical PDF page 2 are visible
+together. PDF citations open the page; exact range highlighting is available for pasted-text originals._
 
 ## How the RAG pipeline works
 
@@ -44,27 +107,74 @@ The M1.5 profile runs an application-owned pipeline. Retrieval finds candidate p
 generation proposes claims; validation determines what can be published.
 
 ```mermaid
-flowchart TD
-    Q[Question and document scope] --> L[PostgreSQL lexical retrieval]
-    Q --> D[OpenAI query embedding and Pinecone dense retrieval]
-    L --> C[Canonical workspace and eligibility checks]
-    D --> C
-    C --> F[RRF fusion and bounded context selection]
-    F --> U[Exact source units with request-local IDs]
-    U --> G[Structured answer proposal selecting source IDs]
-    G --> V[Resolve original spans and check statement support]
-    V --> R[Recheck canonical state and persist accepted answer]
-    R --> A[Stream validated statements and original-source citations]
+flowchart TB
+    Q([Question and document scope]) --> L
+    Q --> E
+
+    subgraph RET["1 · RETRIEVAL"]
+        L["Lexical search<br/>PostgreSQL"] --> F["Canonical eligibility checks<br/>and RRF fusion"]
+        E["Semantic search<br/>OpenAI Embeddings · Pinecone"] --> F
+        F --> U["Bounded context<br/>Exact source units with IDs"]
+    end
+
+    subgraph GEN["2 · ANSWER GENERATION"]
+        G["Structured answer proposal<br/>OpenAI LLM API"] --> S["Server-side source resolution<br/>Selected IDs → original spans"]
+    end
+
+    subgraph VAL["3 · EVIDENCE VALIDATION"]
+        V["Statement Support Evaluation<br/>OpenAI LLM API · separate call per statement"] --> R{"Server-side acceptance gate<br/>Evidence and canonical checks"}
+    end
+
+    U --> G
+    S --> V
+    R -->|Accepted| A([Persist and stream validated answer with citations])
+    R -->|Rejected| X([Stop safely · rejected answer not published])
+
+    classDef retrieval fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef generation fill:#ede9fe,stroke:#7c3aed,color:#2e1065
+    classDef validation fill:#ccfbf1,stroke:#0d9488,color:#134e4a
+    classDef server fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef rejected fill:#fff7ed,stroke:#ea580c,color:#7c2d12
+    class L,E,F,U retrieval
+    class G generation
+    class V,A validation
+    class Q,S,R server
+    class X rejected
+    style RET fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#172554
+    style GEN fill:#f5f3ff,stroke:#7c3aed,stroke-width:2px,color:#2e1065
+    style VAL fill:#f0fdfa,stroke:#0d9488,stroke-width:2px,color:#134e4a
 ```
+
+### 1. Retrieval
+
+Finds and ranks passages, then prepares bounded context for generation. The embedding API
+converts the question into a vector; it does not write or validate an answer.
+
+### 2. Answer Generation — LLM API
+
+Receives the question and selected source units. It proposes answer statements and chooses
+their source IDs; the server, not the model, supplies the exact original quotations.
+
+### 3. Evidence Validation — LLM API and server checks
+
+Receives each proposed statement, its resolved original quotations, and restricted document
+attribution context. It assesses whether the evidence supports the complete statement. Both
+roles can use the same model, but run as separate calls with different instructions. The server
+also enforces schema, workspace, eligibility, and citation rules; the statement-support model alone cannot
+authorize publication.
 
 Ingestion runs separately through Celery workers and a credential-free parser boundary.
 PostgreSQL and S3-compatible original storage are canonical; Pinecone is a derived index and
 Redis holds transient queue state. The browser accesses data only through the API.
 
-The retained M1 baseline alternates lexical/dense hits and resolves model-copied quotes.
-M1.5 selects RRF and source-ID generation. Pinecone BGE cross-encoder reranking is
-implemented as a separate opt-in experiment, not enabled by the website's M1.5 profile.
-M1.5 is the provider-backed local runtime default; M1 remains explicitly selectable for comparison.
+Lexical search uses PostgreSQL full-text search (`tsvector`, GIN, `ts_rank_cd`), not BM25.
+Dense search uses OpenAI embeddings and Pinecone; RRF combines rank positions, not incompatible
+raw scores. Context is bounded, not an exhaustive reading of every document.
+
+The provider-backed local default is the M1.5 RRF/source-ID path. Pinecone BGE cross-encoder
+reranking is implemented as a separate opt-in experiment, not enabled by that website profile.
+The retained M1 baseline remains available for comparison; details are in the
+[profile guide](docs/14-m1-5-portfolio.md#2-profiles-and-concrete-changes-from-m1).
 
 ## Engineering decisions
 
@@ -87,22 +197,55 @@ M1.5 is the provider-backed local runtime default; M1 remains explicitly selecta
 The [architecture decisions](docs/adr/README.md) and
 [code map](docs/14-m1-5-portfolio.md#1-implemented-architecture) explain these boundaries in detail.
 
-## Tech stack
+<details open>
+<summary>View a multi-document answer with supporting evidence</summary>
 
-| Area | Technologies and role |
-| --- | --- |
-| Web | Next.js, React, TypeScript, Tailwind CSS; same-origin API access and source viewing |
-| API and domain | Python, FastAPI, Pydantic; typed contracts and application services |
-| Canonical data | PostgreSQL, SQLAlchemy, Alembic; records, lexical search, and migrations |
-| Original storage | S3-compatible storage through Boto3; SeaweedFS in local Compose |
-| Background processing | Celery, Redis, pypdf; queued processing and bounded text-PDF parsing |
-| AI and retrieval | OpenAI embeddings and structured generation/support; Pinecone dense index; RRF; optional BGE reranking |
-| Quality and delivery | pytest, Ruff, Mypy, frontend checks, Playwright, GitHub Actions, Docker Compose |
-| Tooling and tracing | uv, pnpm, OpenTelemetry trace context; canonical usage accounting in PostgreSQL |
+![Validated answer with separate claims and supporting excerpts from two IREN reports, each with document, date, page, and original-source links](docs/assets/screenshots/04-validated-answer.png)
 
-LangChain, LlamaIndex, and LangGraph are not the orchestration core. Hosted LangSmith evaluation
-is not part of the implemented quality evidence. The [system design](docs/02-system-design.md)
-separates current behavior from the broader target architecture.
+Each accepted statement has its own evidence card. This example combines sources from two
+reports; it is a UI demonstration, not proof that retrieval found every relevant agreement.
+
+</details>
+
+<details open>
+<summary>Inspect the selected retrieval context</summary>
+
+![Research details listing eight selected context chunks from two documents, with document titles and page references](docs/assets/screenshots/03-retrieval-context.png)
+
+The ordered context overview lists eight chunks from two documents. Individual passages are
+collapsed in this screenshot and can be expanded in the application. These are selected context
+passages, not all pre-fusion candidates, validated citations, or proof that every passage was used.
+
+</details>
+
+<details open>
+<summary>Case study: abbreviation-aware evidence segmentation — before and after</summary>
+
+### Before — incomplete evidence correctly rejected
+
+![Rejected statement about IREN data centers in the United States and Canada, with selected evidence ending at U.S. and failed statement-support and coverage checks](docs/assets/screenshots/06-evidence-rejection-before.png)
+
+Sentence segmentation split the source after `U.S.`, leaving `and Canada` outside the selected
+source unit. The proposed statement mentioned both countries, but its selected evidence did not.
+Evidence validation rejected the answer rather than publishing the incompletely supported claim.
+
+### After — complete source passage preserved
+
+![Validated answer with a complete source passage naming IREN data centers in the U.S. and Canada](docs/assets/screenshots/07-evidence-validation-after.png)
+
+Abbreviation-aware segmentation preserves `U.S. and Canada` in one exact source unit. The
+subsequent local example includes the complete supporting passage and an accepted statement.
+The fix changes source preparation, not the requirement for every statement to pass validation.
+
+The [source-unit regression tests](backend/tests/unit/test_citable_units.py) cover `U.S.` and
+`U.K.`, continuation text, explicit paragraph boundaries, exact Unicode offsets, and source-unit
+size limits. The screenshots illustrate the observed failure and later successful output;
+they are not a controlled comparison of model quality or a guarantee of future answers.
+
+</details>
+
+The screenshots show owner-provided local UI examples with company reports. They are separate
+from the synthetic evaluation corpus below and are not additional quality measurements.
 
 ## Evaluation evidence
 
@@ -114,19 +257,19 @@ The 2026-10-09 observation used RRF, source-unit prompt v6, Luna for both model 
 and the local **support-reason diagnostic variant**. It is not an evaluation of the normal
 Boolean-only website support prompt or a representative real-world benchmark.
 
-| Measurement | Recorded observation |
-| --- | --- |
-| Execution failures / cleanup | 0 of 12; verified cleanup |
-| Expected coverage states | 12 of 12 |
-| Strict citation target matching | 10 of 12 |
-| Correct uncited abstentions | 2 of 2 |
-| Median / maximum question latency | 4.895 s / 10.411 s |
-| Estimated total OpenAI cost, including preparation | USD 0.010813 |
+| Measurement                     | Recorded observation      |
+| ------------------------------- | ------------------------- |
+| Execution failures / cleanup    | 0 of 12; verified cleanup |
+| Expected coverage states        | 12 of 12                  |
+| Strict citation target matching | 10 of 12                  |
+| Correct uncited abstentions     | 2 of 2                    |
 
 Exact citation validity was 10/10 checked answers; the stricter target score penalized three
 additional genuine attribution links across two answers. These are distinct metrics, not a
-single accuracy percentage. Cost is a repository-price estimate, excludes Pinecone billing,
-and is not an invoice or the maximum reserved budget.
+single accuracy percentage. The current source-unit answer prompt is v8; the historical v6 run
+does not establish its quality or reliability on IREN, Nebius, or other real-document archives.
+Latency and estimated-cost measurements, configuration, and review limitations remain in the
+[detailed evaluation guide](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim).
 
 Earlier small ranking comparisons did not establish a quality advantage justifying automatic
 adoption of RRF or reranking. The
@@ -155,6 +298,9 @@ default; remove it or select `m1-5-citable-units`. The
 synthetic questions and citation checks. Never commit credentials or enable raw diagnostics for
 private content.
 
+For bounded retrieval and context experiments, edit [config/rag.toml](config/rag.toml);
+the [tuning guide](config/README.md) explains the five settings, bounds, and API restart.
+
 ## Development and testing
 
 Frontend checks run through pnpm; backend checks through uv. The
@@ -166,23 +312,6 @@ live-provider quality tests are separate and opt-in.
 See [CI configuration](.github/workflows/ci.yml) and the
 [evaluation corpus](fixtures/m1_5/README.md) for reproducible checks rather than relying on a
 badge or a one-off demo alone.
-
-## Scope and limitations
-
-- Local single-user operation uses a fixed server-owned identity and loopback access, not
-  production authentication or public hosting. Only approved non-sensitive documents may
-  reach external providers.
-- PDF support extracts existing text; scanned image pages have no OCR path. Complex layouts,
-  line-break word splitting, and retrieval ranking can cause missed evidence.
-- Generation receives bounded selected context, not a guaranteed exhaustive reading of every
-  PDF page. Source IDs prevent copying errors, not all retrieval or model-reasoning failures.
-- The evaluation is small, synthetic, and developer-informed. Broader held-out quality testing,
-  full ingestion/lifecycle reliability, archive discovery, and conversational/routed RAG remain
-  later work. M1.5 final acceptance is tracked separately from implemented capabilities.
-
-The next stages address ingestion/version/deletion reliability, archive discovery and broader
-evaluation, then the remaining routed/conversational RAG work. See the
-[delivery plan](docs/05-delivery-plan.md) for scope and gates.
 
 ## Documentation
 
