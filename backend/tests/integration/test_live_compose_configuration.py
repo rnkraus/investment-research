@@ -96,7 +96,8 @@ def test_compose_live_defaults_to_citable_units_and_keeps_profile_api_only(
     assert len(rag_mounts) == 1
     assert rag_mounts[0]["source"] == str(REPOSITORY_ROOT / "config" / "rag.toml")
     assert rag_mounts[0]["read_only"] is True
-    assert rag_mounts[0]["bind"]["create_host_path"] is False
+    # Compose versions may omit false-valued fields when serializing the model as JSON.
+    assert rag_mounts[0].get("bind", {}).get("create_host_path", False) is False
     for name, service in services.items():
         if name != "api":
             assert all(
@@ -112,3 +113,39 @@ def test_compose_live_defaults_to_citable_units_and_keeps_profile_api_only(
             == "/run/secrets/openai_document_api_key"
         )
         assert not any("API_KEY" in name for name in services["parser"]["environment"])
+
+
+@pytest.mark.parametrize("bind", [{}, {"create_host_path": False}, {"create_host_path": True}])
+def test_compose_mount_policy_handles_omitted_false_and_rejects_host_path_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bind: dict[str, bool]
+) -> None:
+    """Keep serialization compatibility without accepting automatic host-path creation."""
+
+    services = {
+        "api": {
+            "environment": {},
+            "ports": [{"host_ip": "127.0.0.1"}],
+            "volumes": [
+                {
+                    "source": str(REPOSITORY_ROOT / "config" / "rag.toml"),
+                    "target": "/config/rag.toml",
+                    "read_only": True,
+                    "bind": bind,
+                }
+            ],
+        },
+        "web": {"ports": [{"host_ip": "127.0.0.1"}]},
+    }
+    monkeypatch.setattr(
+        "tests.integration.test_live_compose_configuration.render_configuration",
+        lambda *_args, **_kwargs: {"services": services},
+    )
+    if bind.get("create_host_path", False):
+        with pytest.raises(AssertionError):
+            test_compose_live_defaults_to_citable_units_and_keeps_profile_api_only(
+                tmp_path, live=False, profile="m1-5-citable-units", expected=None
+            )
+    else:
+        test_compose_live_defaults_to_citable_units_and_keeps_profile_api_only(
+            tmp_path, live=False, profile="m1-5-citable-units", expected=None
+        )

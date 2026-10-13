@@ -440,6 +440,13 @@ journey scans captured application logs for injected credentials and fixture evi
 acceptance image remains. Configure the stable `Complete M0 runtime` check as required in branch
 protection; workflow YAML cannot enforce that repository setting.
 
+API startup requires the repository-owned `config/rag.toml`. Compose mounts it read-only at
+`/config/rag.toml`; standalone API image checks, object-storage API contract containers, and the
+one-off queue-recovery capture/deletion probes must provide the same read-only configuration.
+The regular worker, parser, and migration containers do not need it. Missing or invalid
+configuration remains a startup error rather than silently selecting defaults. Compose policy
+tests accept omitted false-valued JSON fields but still reject enabled host-path creation.
+
 ## Update API contracts
 
 Pydantic models in `backend/src/investment_research/api/contracts.py` are the source of truth. Generated files under `frontend/src/lib/api/generated/` must not be edited manually.

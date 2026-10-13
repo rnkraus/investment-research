@@ -412,6 +412,9 @@ def verify_api_against_migrated_postgres(
                     "INVESTMENT_RESEARCH_OBJECT_STORAGE_ROOT",
                     "--tmpfs",
                     "/tmp:rw,nosuid,nodev,noexec,size=16m",
+                    "--mount",
+                    f"type=bind,source={REPOSITORY_ROOT / 'config' / 'rag.toml'},"
+                    "target=/config/rag.toml,readonly",
                     api_image,
                 ],
                 capture_output=True,

@@ -129,6 +129,18 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert str(verify_queue_recovery.COMPOSE_FILE) in calls[0][1]
     assert str(verify_queue_recovery.COMPOSE_TEST_FILE) in calls[0][1]
+    rag_mount = (
+        f"{verify_queue_recovery.REPOSITORY_ROOT / 'config' / 'rag.toml'}:/config/rag.toml:ro"
+    )
+    for label, command, _ in calls:
+        if label in {
+            "Capture fixture and publish one real Celery job",
+            "Publish permanent deletion for the isolated synthetic document",
+        }:
+            assert rag_mount in command
+            assert command[command.index(rag_mount) - 1] == "--volume"
+        else:
+            assert rag_mount not in command
     assert all("POSTGRES_PASSWORD" not in environment for _, _, environment in calls)
     assert secret_paths and all(not path.exists() for path in secret_paths)
     engine.dispose.assert_called_once_with()

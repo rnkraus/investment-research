@@ -311,6 +311,10 @@ def test_api_contract_container_uses_both_data_networks_and_is_removed(
     assert "isolated-project_storage-data" in calls[0][1]
     assert "INVESTMENT_RESEARCH_DATABASE_URL" in calls[0][1]
     assert "INVESTMENT_RESEARCH_REDIS_URL" in calls[0][1]
+    assert calls[0][1][calls[0][1].index("--mount") + 1] == (
+        f"type=bind,source={verify_object_storage.REPOSITORY_ROOT / 'config' / 'rag.toml'},"
+        "target=/config/rag.toml,readonly"
+    )
     assert calls[1][1][-2:] == (
         "isolated-project_backend",
         "isolated-project-api-contract",
