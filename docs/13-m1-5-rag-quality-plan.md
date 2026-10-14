@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Accepted for the bounded local portfolio scope on 2026-10-14; M2 contract review next
+**Status:** Accepted for the bounded local portfolio scope on 2026-10-14; M2 Step 0 accepted, Step 1 next
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -1996,6 +1996,8 @@ indefinitely to chase every model failure or metric. Record unsupported or incon
 and hand off to M2; expand the corpus and discovery measurements in M3; finish routing,
 conversation, temporal modes, tracing/export decisions, and the full direct-RAG gate in M4.
 
-M1.5 is closed for the bounded scope above. Review the unresolved contracts and inherited baseline
-in [M2 Step 0](./12-m2-implementation-plan.md#step-0--freeze-contracts-and-compatibility-documentation-gate)
-before beginning M2 runtime implementation. A fresh ranking or model dependency is not the next step.
+M1.5 is closed for the bounded scope above. The owner subsequently accepted
+[M2 Step 0](./12-m2-implementation-plan.md#step-0--freeze-contracts-and-compatibility-documentation-gate)
+and the additive lifecycle contracts. Step 1 durable-delivery implementation is next; a fresh
+ranking/model dependency or a new paid evaluation is not the next step. Historical observations
+and the dated M1.5 closeout decision above remain unchanged.
