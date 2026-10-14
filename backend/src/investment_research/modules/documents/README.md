@@ -7,11 +7,11 @@ This module owns logical archive documents, immutable content versions, and immu
 | File             | Responsibility                                                                                       |
 | ---------------- | ---------------------------------------------------------------------------------------------------- |
 | `contracts.py`   | Defines validated capture metadata, bounded catalog pages, and stable application results.           |
-| `application.py` | Captures bounded PDFs and resolves verified current originals for downloads or processing.           |
+| `application.py` | Captures bounded PDF/text originals and resolves verified current originals.                         |
 | `listing.py`     | Lists a workspace's current document metadata through a short-lived read unit of work.               |
 | `domain.py`      | Defines validated document, version, artifact, lifecycle, media, hash, language, and storage values. |
 | `ports.py`       | Defines object storage, repository, binary-stream, and write/read unit-of-work contracts.            |
-| `persistence.py` | Maps the three PostgreSQL tables and implements scoped capture and eligible-read behavior.           |
+| `persistence.py` | Maps document/deletion metadata and implements scoped capture and eligible reads.                    |
 
 ## Entity ownership
 
@@ -38,14 +38,17 @@ flowchart TD
     BUILD --> UOW[CaptureUnitOfWork]
     UOW --> DOCS[DocumentRepository]
     UOW --> PROCESSING[ProcessingRepository]
+    UOW --> OUTBOX[OutboxRepository]
     DOCS --> PG[(PostgreSQL transaction)]
     PROCESSING --> PG
+    OUTBOX --> PG
     PG -->|commit succeeds| JOB[Build versioned ProcessingJobV1]
     JOB --> DISPATCH[ProcessingDispatcher]
     DISPATCH -->|publish succeeds| RESULT[Return stable capture identifiers]
     DISPATCH -->|broker failure| LOG[Record safe operational event]
     LOG --> CAPTURED[Return identifiers; run remains CAPTURED]
-    PG -->|commit fails| DISCARD[Discard only the uncommitted stored object]
+    PG -->|write fails or commit rejected| DISCARD[Discard only the uncommitted stored object]
+    PG -->|commit outcome uncertain| KEEP[Preserve original; return safe failure]
 ```
 
 The PDF path accepts only a declared `application/pdf` with a `.pdf` filename and a supported
@@ -55,7 +58,17 @@ to `LF`, performs no trimming or Unicode normalization, and encodes strict UTF-8
 mark. Both paths enforce the configured byte limit before publishing an object, calculate SHA-256
 over the exact stored bytes, and verify the storage adapter's returned key, size, and checksum.
 
-`add_capture` rejects mismatched workspace or entity relationships before staging rows. It never commits. The capture unit of work binds both module repositories to one caller-owned SQLAlchemy session, so document metadata and the processing intent commit or roll back together. Because object storage cannot participate in the PostgreSQL transaction, a failed canonical transaction invokes the narrowly scoped `discard_uncommitted` compensation. It is not a general deletion path for committed originals.
+`add_capture` rejects mismatched workspace or entity relationships before staging rows. It never
+commits. The capture unit of work binds document, processing, and outbox repositories to one
+caller-owned SQLAlchemy session, so all metadata and delivery intent commit or roll back together.
+Because object storage cannot participate in PostgreSQL's transaction, failures before commit or
+a definitive integrity rejection invoke narrowly scoped `discard_uncommitted` compensation.
+An uncertain commit outcome preserves the potentially canonical original and returns a safe
+error; it must not be mistaken for proven rollback or deletion permission.
+
+The [delivery module](../delivery/README.md) documents the durable intent and migration boundary.
+The current block does not enable an outbox dispatcher or automatic repair; the post-commit
+fast path below remains active and does not yet write outbox publication receipts.
 
 After the canonical transaction closes successfully, the service creates the strict versioned
 `ProcessingJobV1` and calls the application-owned `ProcessingDispatcher`. An expected broker

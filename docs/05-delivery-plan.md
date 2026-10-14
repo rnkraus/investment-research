@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.5 — local M1.5 and M2 Step 0 accepted on 2026-10-14; M2 Step 1 next
+**Status:** Active v1.6 — M2 Step 1 storage block verified on 2026-10-14; bounded dispatch/repair next
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -260,6 +260,13 @@ freeze technical contracts, limits, migration ownership, and expected failure ca
 documentation gate is accepted; no M2 runtime implementation or lifecycle exit-gate completion is
 claimed. The first implementation block is Step 1's scoped outbox persistence and capture transaction.
 
+**Step 1 storage block (2026-10-14):** Durable processing intent now commits with PDF/text capture;
+workspace-scoped constraints, migration `0013_processing_outbox`, unknown-commit original protection,
+and content-free purge detachment are implemented and locally verified. The existing direct
+publication path remains active. Automatic outbox dispatch and repair, the scheduler, and the full
+Redis-outage exit gate are not complete. Verification and the next bounded work block are recorded
+in the [M2 implementation plan](./12-m2-implementation-plan.md).
+
 ### Build
 
 - Multiple PDF upload and pasted-text versioning.
@@ -429,11 +436,11 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Begin M2 Step 1's scoped delivery contracts, outbox persistence, and capture-unit-of-work block
-   under accepted `15-m2-contracts.md` and ADR-0010. Prove rollback atomicity, workspace isolation,
-   and duplicate-intent behavior with focused offline tests before continuing to dispatch.
-2. Add bounded publication, the separate scheduler/repair trigger, and the required offline
-   CI/Compose failure gates. A stored outbox row alone does not complete the Redis-outage gate.
+1. Continue M2 Step 1 with bounded outbox claiming/publication and fenced receipts under accepted
+   `15-m2-contracts.md` and ADR-0010. Preserve the verified atomic storage, workspace isolation,
+   duplicate-intent, and purge-compatibility behavior.
+2. Then add the separate scheduler/repair trigger and required offline CI/Compose failure gates.
+   A stored outbox row alone does not complete the Redis-outage gate.
 3. Preserve the existing catalog, multi-document selection, permanent deletion, and frontend capture
    contract. Continue backend → CI → frontend compatibility in the documented work blocks;
    later version/history/purge extensions belong to their owning M2 steps and accepted ADRs.
