@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.4 — M1.5 accepted for the bounded local scope on 2026-10-14; M2 contract review next
+**Status:** Active v1.5 — local M1.5 and M2 Step 0 accepted on 2026-10-14; M2 Step 1 next
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -248,9 +248,17 @@ M2/M3/M4 acceptance follows from this closeout.
 
 ## 7. M2 — Reliable ingestion and lifecycle
 
-The proposed backend-to-CI-to-frontend step sequence, repository delta, decisions to freeze, and
-failure gates are in [12-m2-implementation-plan.md](./12-m2-implementation-plan.md). That draft
-does not approve an unresolved source-access or purge-retention decision by itself.
+The backend-to-CI-to-frontend step sequence, repository delta, accepted contracts, and failure
+gates are in [12-m2-implementation-plan.md](./12-m2-implementation-plan.md). Contract acceptance
+does not itself implement or activate runtime changes.
+
+**Step 0 review (2026-10-14):** The owner approved candidate-version activation, replay versus
+intentional duplicates, per-item batch results, answer-bound historical citations, and a separate
+repair scheduler, followed by the initial limits and content-free replay protection after purge.
+[15-m2-contracts.md](./15-m2-contracts.md), accepted ADR-0010/ADR-0020/ADR-0021, and `fixtures/m2/`
+freeze technical contracts, limits, migration ownership, and expected failure cases. Step 0's
+documentation gate is accepted; no M2 runtime implementation or lifecycle exit-gate completion is
+claimed. The first implementation block is Step 1's scoped outbox persistence and capture transaction.
 
 ### Build
 
@@ -421,13 +429,14 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Review M2 Step 0 in `12-m2-implementation-plan.md` against the accepted M1/M1.5 baseline and
-   ADR-0019. Preserve the existing catalog, multi-document selection, and permanent deletion;
-   do not count them as missing features or as the full lifecycle gate.
-2. Freeze the outstanding version, replay/duplicate, batch, historical-source access, and periodic
-   repair contracts before changing schemas, public APIs, or process topology.
-3. Begin M2 Step 1 with durable outbox delivery for the existing processing job, its offline failure
-   tests, required CI, and unchanged frontend compatibility. Continue in the documented work blocks.
+1. Begin M2 Step 1's scoped delivery contracts, outbox persistence, and capture-unit-of-work block
+   under accepted `15-m2-contracts.md` and ADR-0010. Prove rollback atomicity, workspace isolation,
+   and duplicate-intent behavior with focused offline tests before continuing to dispatch.
+2. Add bounded publication, the separate scheduler/repair trigger, and the required offline
+   CI/Compose failure gates. A stored outbox row alone does not complete the Redis-outage gate.
+3. Preserve the existing catalog, multi-document selection, permanent deletion, and frontend capture
+   contract. Continue backend → CI → frontend compatibility in the documented work blocks;
+   later version/history/purge extensions belong to their owning M2 steps and accepted ADRs.
 4. Keep the accepted local RAG profile, evaluation history, fixed local owner, and loopback-only
    boundary. Provider checks remain separately approved, bounded, and public/synthetic only;
    publishing source code does not authorize a public application deployment.

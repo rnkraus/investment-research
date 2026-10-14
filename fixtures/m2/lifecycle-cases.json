@@ -1,0 +1,143 @@
+{
+  "schema_version": "m2-lifecycle-fixtures.v1",
+  "status": "contract_specification",
+  "contract_accepted_on": "2026-10-14",
+  "expected_outcomes_executed": false,
+  "data_classification": "public_synthetic",
+  "runtime_import": false,
+  "shared_pdf_fixture": "../m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf",
+  "documents": [
+    {
+      "id": "cedar-vale-v1",
+      "logical_document": "cedar-vale-operations",
+      "version_number": 1,
+      "media_type": "text/plain",
+      "published_at": "2026-04-01T00:00:00Z",
+      "original_text": "Cedar Vale Systems Ltd. - FY2026 Operations Update\nResearch marker: 🌍.\nRevenue was USD 12 million.\nThe rollout is constrained by a shortage of high-voltage transformers.\n",
+      "evidence_text": "Revenue was USD 12 million."
+    },
+    {
+      "id": "cedar-vale-v2",
+      "logical_document": "cedar-vale-operations",
+      "version_number": 2,
+      "media_type": "text/plain",
+      "published_at": "2026-04-02T00:00:00Z",
+      "original_text": "Cedar Vale Systems Ltd. - FY2026 Corrected Operations Update\nResearch marker: 🌍.\nRevenue was USD 14 million.\nThe rollout is constrained by a shortage of high-voltage transformers.\n",
+      "evidence_text": "Revenue was USD 14 million."
+    }
+  ],
+  "cases": [
+    {
+      "id": "same-key-replay",
+      "source_ids": ["cedar-vale-v1"],
+      "arrangement": "Two concurrent captures in one workspace use the same request key and canonical input.",
+      "action": "Retry after one accepted response is lost.",
+      "expected": [
+        "One committed capture, original owner, processing run, and initial outbox event.",
+        "Every successful replay returns the same capture identifiers.",
+        "An uncertain commit never causes compensation of a committed original."
+      ]
+    },
+    {
+      "id": "changed-input-key-conflict",
+      "source_ids": ["cedar-vale-v1", "cedar-vale-v2"],
+      "arrangement": "Version-1 bytes were captured under a committed request key.",
+      "action": "Submit version-2 bytes under the same scoped operation and key.",
+      "expected": ["409 CONFLICT; no second capture or event; original remains unchanged."]
+    },
+    {
+      "id": "intentional-exact-duplicate",
+      "source_ids": ["cedar-vale-v1"],
+      "arrangement": "Version-1 original already exists in the workspace.",
+      "action": "Import the identical canonical bytes using a separate key and document identity.",
+      "expected": [
+        "Two independent originals and archive items; one scoped duplicate relation.",
+        "The same bytes in another workspace expose no duplicate or shared object."
+      ]
+    },
+    {
+      "id": "replacement-activation-and-history",
+      "source_ids": ["cedar-vale-v1", "cedar-vale-v2"],
+      "arrangement": "Version 1 is active and has a retained accepted answer citing its revenue sentence.",
+      "action": "Capture version 2, delay indexing, then promote its complete derived output.",
+      "expected": [
+        "New research uses version 1 while version 2 is pending.",
+        "A failed candidate cannot change the active version or chunk set.",
+        "Successful promotion exposes version 2 without mixed old/new context.",
+        "The old answer-bound historical view opens exactly the version-1 sentence and bytes.",
+        "Ordinary current-source endpoints still refuse inactive version 1."
+      ]
+    },
+    {
+      "id": "partial-upload-batch",
+      "source_ids": ["cedar-vale-v1"],
+      "arrangement": "One manifest contains two valid fixture PDF parts and one invalid-signature part, within global limits.",
+      "action": "Admit items, lose the response, and retry each item with its original key.",
+      "expected": [
+        "Two accepted item results and one safe rejected result; accepted siblings remain.",
+        "Retry does not multiply the two accepted captures.",
+        "A separate globally oversized or malformed envelope commits no item."
+      ]
+    },
+    {
+      "id": "broker-loss-before-and-after-receipt",
+      "source_ids": ["cedar-vale-v1"],
+      "arrangement": "Capture committed its processing run and outbox event while Redis is unavailable.",
+      "action": "Restore Redis; separately lose a published task before any worker claim and run due repair.",
+      "expected": [
+        "Known broker unavailability leaves durable intent and consumes no processing attempt.",
+        "A later tick recovers ordinary outage and the published-but-lost task within policy.",
+        "Repeated publication has one canonical effect; receipts do not imply readiness.",
+        "Exhausted delivery allowance becomes visible blocked work, never success or a reset loop."
+      ]
+    },
+    {
+      "id": "worker-loss-and-stale-fence",
+      "source_ids": ["cedar-vale-v1"],
+      "arrangement": "One attempt claimed parse/lexical work and stopped before committing its output.",
+      "action": "Reject a competing live claim; reclaim after expiry; let the stale worker try to finish.",
+      "expected": [
+        "Only the current owner can commit blocks, chunks, and stage completion.",
+        "Completed parse/lexical output is not repeated when indexing alone retries.",
+        "Attempt ceilings and paid-call reservations survive redelivery and manual recovery."
+      ]
+    },
+    {
+      "id": "partial-index-and-stale-hit",
+      "source_ids": ["cedar-vale-v1", "cedar-vale-v2"],
+      "arrangement": "Only part of the candidate vector set is visible; an old or foreign vector also matches the query.",
+      "action": "Reconcile desired vectors and retry outstanding intent before candidate promotion.",
+      "expected": [
+        "Incomplete candidate output cannot displace the active set.",
+        "Retained pending candidate vectors are not treated as orphans.",
+        "Canonical eligibility rejects inactive, deleted, or foreign hits before generation.",
+        "Exact-ID receipts distinguish acknowledged writes from verified visibility."
+      ]
+    },
+    {
+      "id": "interrupted-permanent-purge",
+      "source_ids": ["cedar-vale-v1", "cedar-vale-v2"],
+      "arrangement": "Both versions and a complete multi-document answer exist; deletion is admitted with no active processing.",
+      "action": "Interrupt exact-object/vector cleanup, redeliver, and race a historical-source read.",
+      "expected": [
+        "PURGE_PENDING immediately denies catalog, new research, and historical-source access.",
+        "Interrupted cleanup remains pending and can only target the selected document's exact resources.",
+        "Completion requires verified external absence and atomic canonical purge.",
+        "Complete affected answers are removed, unrelated documents preserved, and costs stay counted.",
+        "A used-key content-free tombstone conflicts with replay after purge and cannot recreate content."
+      ]
+    },
+    {
+      "id": "legacy-upgrade-and-isolation",
+      "source_ids": ["cedar-vale-v1"],
+      "arrangement": "An inherited schema contains captured, leased, completed, failed, and deletion-pending runs plus a known citation.",
+      "action": "Upgrade, then query/retry using correct, unknown, and foreign workspace identities.",
+      "expected": [
+        "Only eligible unclaimed CAPTURED work receives initial outbox intent.",
+        "No fabricated per-stage attempts, revived failed work, or cleared live leases.",
+        "Citation IDs, exact bytes, Unicode offsets, source dates, and costs are unchanged.",
+        "Unknown and foreign public results are indistinguishable."
+      ]
+    }
+  ]
+}

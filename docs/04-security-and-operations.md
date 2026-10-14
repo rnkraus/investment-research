@@ -248,6 +248,15 @@ Later LangGraph workflows require separate approval criteria, tool allowlists, s
   reload limitation are visible. Manual UI/build and live Pinecone purge verification remain open.
   This local policy does not approve public or multi-user retention; review it before such deployment.
 
+**Accepted M2 retention supplement (2026-10-14; not yet implemented):**
+[ADR-0021](./adr/0021-content-free-capture-replay-retention.md) retains only scoped operation/request
+identity and tombstone time after purge, for as long as deletion receipts are retained. The marker
+prevents an old capture retry from recreating deleted content; a new intentional request remains
+subject to normal admission. No capture response, content fingerprint, title, original, answer,
+or provider output is retained in that marker. ADR-0019 source/answer removal and detached cost
+accounting remain unchanged. Migration and purge tests must verify this supplement before activation;
+it is not a new recovery period, a backup-erasure claim, or approval for public hosting.
+
 ### Local runtime
 
 - Docker volumes are development convenience, not a sufficient backup strategy.

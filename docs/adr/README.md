@@ -31,18 +31,22 @@ Write the ADR immediately before the decision becomes an implementation constrai
 | [ADR-0007](./0007-local-s3-provider.md) | SeaweedFS for local S3-compatible storage and managed S3 for public deployment | Accepted |
 | [ADR-0008](./0008-application-owned-ai-and-vector-adapters.md) | Application-owned OpenAI, Pinecone, and OpenTelemetry adapters for the first dense RAG slice | Accepted |
 | [ADR-0009](./0009-stable-source-anchors.md) | Discriminated, immutable PDF-page and pasted-text passage anchors | Accepted |
+| [ADR-0010](./0010-transactional-outbox-and-reconciliation.md) | Transactional outbox, bounded repair, and separate scheduler | Accepted for M2 implementation; runtime gates outstanding |
 | [ADR-0018](./0018-pinecone-reranking-experiment.md) | Bounded opt-in Pinecone BGE reranking and its public/synthetic inference boundary | Accepted for M1.5 experiment; implementation/adoption pending |
 | [ADR-0019](./0019-permanent-local-document-deletion.md) | Permanent scoped local document/answer deletion with durable cleanup intent and preserved cost accounting | Accepted; implementation in progress |
+| [ADR-0020](./0020-retained-answer-historical-source-access.md) | Answer-bound historical source access without changing new-answer eligibility | Accepted for M2 implementation; runtime gates outstanding |
+| [ADR-0021](./0021-content-free-capture-replay-retention.md) | Minimal scoped replay protection after permanent purge | Accepted for M2 implementation; runtime gates outstanding |
 
 ## 3. Proposed ADRs
 
-No ADR is currently proposed.
+No ADR is currently proposed. Accepted M2 decisions are linked from
+[M2 contracts](../15-m2-contracts.md); acceptance freezes implementation constraints, not a claim
+that their runtime changes or tests already exist.
 
 ## 4. Planned ADR backlog
 
 | Proposed ID | Decision | Trigger | Expected stage |
 |---|---|---|---|
-| ADR-0010 | Transactional outbox and vector-index reconciliation | Reliable reprocessing and deletion are implemented | M2 |
 | ADR-0011 | Hybrid retrieval with RRF and multilingual reranking | Direct-RAG retrieval baseline is finalized | M4 |
 | ADR-0012 | Typed answers with server-side evidence validation | Answer contract becomes production behavior | M4 |
 | ADR-0013 | LangSmith for AI observability with canonical audit in PostgreSQL | Tracing and evaluation integration is finalized | M4 |

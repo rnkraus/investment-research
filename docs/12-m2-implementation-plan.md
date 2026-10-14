@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Draft for Step 0 contract review after accepted local M1.5; no new runtime behavior is approved by this update
+**Status:** Step 0 accepted on 2026-10-14; Step 1 durable-delivery implementation next, runtime changes not started
 
 **Date:** 2026-10-01
 
@@ -13,14 +13,14 @@
 removal and detached cost retention. Its no-restoration policy supersedes every older restore or
 30-day recovery proposal in this draft. The local schema, API, worker purge, and confirmed bulk
 deletion UI are now implemented. M2 extends their durable delivery and repair; this does not accept
-the full lifecycle gate or replace the still-pending live Pinecone purge verification. The remaining
-non-deletion decisions below still require their normal review.
+the full lifecycle gate or replace the still-pending live Pinecone purge verification. ADR-0021
+adds the owner-approved content-free replay marker without retaining deleted source metadata.
 
 **Accepted starting point (2026-10-14):** The
 [M1.5 closeout](./13-m1-5-rag-quality-plan.md#local-acceptance-and-m2-handoff-2026-10-14)
 records successful hosted project CI, the owner-confirmed working website, and the bounded local
 RAG profile disposition. Preserve those contracts and their quality limits. This document updates
-the inherited baseline only; Step 0 must still freeze the unresolved decisions before Step 1.
+the inherited baseline. Step 0 has now frozen the additive contracts and bounded Step 1 ownership.
 
 **Sources of truth:** [Delivery plan](./05-delivery-plan.md),
 [M1-to-M2 handoff](./10-m1-implementation-plan.md#81-m1-to-m2-handoff),
@@ -28,6 +28,8 @@ the inherited baseline only; Step 0 must still freeze the unresolved decisions b
 [domain model](./03-domain-model.md), [security and operations](./04-security-and-operations.md),
 and accepted [ADRs](./adr/README.md). M1's frozen contracts remain in
 [11-m1-contracts.md](./11-m1-contracts.md); this plan extends them rather than rewriting them.
+The accepted additive technical contracts are in [15-m2-contracts.md](./15-m2-contracts.md).
+They define implementation requirements, not endpoints or settings already available at runtime.
 
 ## 1. Outcome and boundaries
 
@@ -67,7 +69,7 @@ The intended flow is:
 ```mermaid
 flowchart LR
     A[PDF or text capture] --> B[Immutable original]
-    B --> C[PostgreSQL: version, run, job, outbox event]
+    B --> C[PostgreSQL: version, run and outbox event]
     C --> D[Outbox dispatcher]
     D --> E[Celery delivery]
     E --> F[Retryable processing stages]
@@ -84,10 +86,13 @@ rebuildable. A queue acknowledgement, vector match, or receipt is never authoriz
 External calls and parsing occur outside database transactions. Workspace, current-version,
 active-output, deletion, and temporal eligibility are rechecked before a result becomes evidence.
 
-## 3. Decisions to freeze before implementation
+## 3. Approved product policies and technical freeze
 
-These are recommended M2 contract choices, not claims about implemented behavior. Review them in
-the first work block; record an ADR only if a final choice changes an accepted cross-cutting rule.
+The owner approved the five proposed product/operational policies on 2026-10-14; permanent
+deletion was already accepted in ADR-0019. These are target M2 rules, not claims of implemented
+behavior. The owner subsequently approved the initial limits and content-free replay protection.
+`15-m2-contracts.md` and accepted ADR-0010/ADR-0020/ADR-0021 freeze the technical boundaries for
+implementation. Runtime activation still requires each owning step's verification gate.
 
 1. **Version activation.** Keep `Document.current_version_id` as the active version for new
    research. Capturing version 2 records a pending immutable version without moving that pointer.
@@ -101,25 +106,122 @@ the first work block; record an ADR only if a final choice changes an accepted c
    original. Do not deduplicate physical originals across workspaces.
 3. **Batch behavior.** Bound both per-file and total request size/count. Treat each accepted PDF as
    its own capture transaction and return a result for each item; one rejected file must not hide
-   successfully captured siblings. Freeze the API's partial-success shape and retry behavior before
-   changing the frontend.
+   successfully captured siblings. Use the frozen partial-success shape and replay behavior in
+   `15-m2-contracts.md` before changing the frontend.
 4. **Historical citation access.** Old `EvidenceSpan` identities, source offsets, and immutable
    versions must survive reprocessing and version promotion. Current M1 source opening rejects an
-   inactive version. Decide explicitly whether an authorized historical-answer view may open a
-   retained inactive version; keep it separate from _new-answer_ eligibility. Do not loosen the
+   inactive version. The owner approved a separate authorized historical-answer view of retained
+   evidence; keep it separate from _new-answer_ eligibility. Do not loosen the
    existing endpoint silently. Pending-deletion and purged content must never be exposed through it.
 5. **Purge retention matrix.** ADR-0019 freezes source-bound answer removal, exact-target cleanup,
    content-free receipts/accounting, and backup-expiry boundaries for the local path. There is no
-   application restoration period. M2 must extend and verify delivery/reconciliation without
-   weakening those decisions; a public or multi-user retention policy needs separate review.
-6. **Periodic repair trigger.** Prefer one separately run Celery Beat scheduler using the existing
+   application restoration period. ADR-0021 additionally retains only content-free request identity
+   to prevent replay resurrection. M2 must verify delivery/reconciliation without weakening source
+   removal; a public or multi-user retention policy needs separate review.
+6. **Periodic repair trigger.** The owner approved one separately run Celery Beat scheduler using the existing
    broker and worker image, not an embedded worker `-B` or a new backing service. PostgreSQL remains
    the work authority, so duplicate or missed ticks are harmless; a bounded operator command can
    drain due work if the scheduler is unavailable. Validate the Compose and CI topology before
-   accepting this process addition.
+   activating this process addition. Approval does not authorize deployment or credential changes.
 
 No new production dependency is approved by this plan. If implementation needs one, follow the
 repository's version, security, release-age, compatibility, and explicit-approval rules first.
+
+### 3.1 Step 0 policy review — owner-approved (2026-10-14)
+
+The first Step 0 work block compared these choices with accepted ADRs and current implementation.
+The owner then approved the five proposed policies and, after the technical draft, accepted the
+initial limits and content-free replay protection. Section 3.3 records Step 0 completion. That
+acceptance does not activate public schemas or scheduler wiring. No runtime code, migration,
+provider call, or existing archive data changed in this review.
+
+| Decision | Recommended user-visible or operational behavior | Approval boundary |
+| --- | --- | --- |
+| Version activation | Keep the old searchable version available while its replacement is pending. Switch the current version and active derived output together only after required processing succeeds. A failed replacement does not hide the old version. | Policy approved; preserve expected-state checks and reject promotion after deletion admission. |
+| Replay versus intentional duplicates | Repeating the same scoped request key and input returns the original capture result; changed input conflicts. A separately submitted import remains a separate archive item and receives exact-duplicate provenance. | Accepted, including ADR-0021 content-free protection after purge; no silent merge, cross-workspace hash lookup, or shared physical original. |
+| Multiple uploads | Give each accepted PDF its own result and processing run. Item-level validation failure does not roll back accepted siblings; whole-request size/count violations are rejected before any capture. Retry identities belong to individual items. | Additive envelope, limits, and status codes accepted in `15-m2-contracts.md`, not implemented. |
+| Historical citations | Allow an explicitly historical, workspace-authorized view of evidence used by a retained accepted answer, even after a newer version becomes current. Label the old version; do not admit it to new retrieval. Pending or completed deletion denies access immediately. | Accepted ADR-0020 narrowly extends ADR-0009 for the new view; source-access tests remain required before activation. |
+| Permanent deletion | Keep immediate exclusion, exact scoped cleanup, removal of complete affected answers, detached accounting, and no restoration. | ADR-0019 remains in force with the explicit ADR-0021 replay-record supplement. Durable delivery, repair, and live Pinecone absence verification remain M2 work. |
+| Periodic repair | Run one separate Celery Beat scheduler using the existing Celery dependency and worker image. It triggers bounded repair; PostgreSQL decides which work is due. No embedded worker scheduler or new backing service. | Accepted ADR-0010 and `15-m2-contracts.md` define the technical bounds and activation gates before changing Compose. |
+
+The historical-view decision is not permission to browse arbitrary inactive versions or to use
+old model output as evidence. Resolve the retained answer-to-span-to-original relationship under
+the trusted workspace, retain exact checksums and offsets, and recheck document lifecycle. A
+separate contract must cover both evidence metadata and the immutable original download; opening
+only the evidence metadata would leave the PDF/text viewer unable to complete the journey.
+
+### 3.2 Compatibility findings and verified existing bounds
+
+These findings are from source inspection, not a new runtime or provider test:
+
+- `modules/documents/application.py` stores an immutable object, commits document/version/run
+  metadata, and then calls `_dispatch_processing`. A broker failure is logged and leaves the run
+  captured. Step 1 must commit an outbox event with the run, not claim that Redis publication and
+  PostgreSQL commit are atomic. Preserve the existing object-first capture boundary.
+- `OpenOriginalService.open_for_processing` currently uses
+  `DocumentRepository.get_original_artifact_by_version_id`; its shared query requires
+  `Document.current_version_id` to match. Pending-version processing therefore needs a separate
+  internal read authorized by its canonical processing run, lifecycle, and workspace. Do not
+  remove the current-version predicate from shared public reads to make a candidate processable.
+- Public original access also uses the current-version query. The evidence route documents a
+  current citation view, and ADR-0009 explicitly fails closed for inactive versions. Historical
+  answer access must be separately designed and tested, not inferred from immutable storage.
+- `ProcessingJobV1` contains only the schema version, workspace ID, run ID, and deterministic
+  idempotency key. Reuse that payload in Step 1; an outbox publication receipt is not proof of
+  processing completion or exactly-once delivery. Reconciliation must detect lost messages even
+  after a successful publication receipt.
+- Both existing processing profiles allow three claimed attempts with a 360-second lease.
+  `queue/tasks.py` schedules at most two transient retries with backoff capped at 30 seconds and
+  jitter. The broker visibility timeout is 420 seconds. These are inherited run/delivery values,
+  not automatically valid defaults for new stage leases or outbox attempts.
+- Current setting defaults are 25 MiB per original, 250 PDF pages, and 2,000,000 extracted
+  characters; pasted-text capture also has a 100,000-character input ceiling. They are not a
+  multi-upload total-size/count policy. Keep the existing single-upload paths compatible and
+  explicitly freeze additional batch limits rather than inventing environment keys here.
+- Preserve the Alembic history through `0012_rag_context_bounds`, existing catalog/selection,
+  ID-only purge jobs, and ADR-0019 guards. In particular, an expired processing lease alone does
+  not make a document deletable or authorize competing source writes.
+
+Source locations above are relative to `backend/src/investment_research/`. Processing limits are
+defined in `modules/processing/application.py`, queue policies in `infrastructure/queue/`, upload
+defaults in `settings_models.py`, and the text ceiling in `modules/documents/contracts.py`.
+
+### 3.3 Step 0 acceptance and first implementation boundary (2026-10-14)
+
+The owner approved the product policies, then accepted the proposed initial limits and content-free
+replay marker. `15-m2-contracts.md` version 1 and ADR-0010/ADR-0020/ADR-0021 now govern M2
+implementation. The fixture catalog defines two immutable source versions and ten offline failure
+scenarios; structural verification does not claim the runtime scenarios have passed.
+
+The contract freezes additive HTTP/error shapes, replay scopes, activation expectations, stage/event
+states, attempt and lease bounds, source-access/deletion boundaries, and migration/backfill ownership.
+Existing `ProcessingRun` remains Step 1's business-work authority. Preserve the Alembic chain through
+`0012_rag_context_bounds`, existing evidence and costs, and legacy attempt counts without inventing
+per-stage history. No runtime feature or broad M2 acceptance follows from this documentation gate.
+
+The first runtime work block is Step 1's scoped outbox persistence and
+capture transaction with focused rollback, workspace-isolation, and duplicate-intent tests. Keep
+the existing capture response and frontend unchanged. Subsequent Step 1 blocks add bounded
+dispatch/repair, required offline CI and Compose verification, and frontend compatibility checks;
+the persistence block alone does not satisfy the Redis-outage recovery gate.
+
+**Contract-draft verification (2026-10-14):** Local checks passed balanced Markdown fences and 55
+relative links/anchors across seven documents, valid JSON with two distinct canonical originals,
+ten unique lifecycle scenarios, source references, and supplementary-plane Unicode evidence ranges.
+`git diff --check`, `pnpm format`, `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed; the latter
+includes generated-contract checking and 95 deterministic tests. These checks validate the draft's
+structure and unchanged frontend compatibility, not M2 runtime behavior. No application code,
+generated OpenAPI schema, migration, dependency, browser, Docker runtime, real archive, secret file,
+or paid provider was changed or exercised. That draft verification preceded the owner acceptance
+recorded above; it is not a new frontend or runtime execution during closeout.
+
+**Step 0 closeout verification (2026-10-14):** Rechecked ten Markdown documents, 122 relative
+links/anchors, all three accepted M2 ADR statuses, the contract fixture metadata, two distinct
+canonical originals, ten unique scenario references, and exact Unicode evidence ranges.
+`git diff --check` passed. M1.5 changes are limited to current status/handoff wording; historical
+quality observations are unchanged. The preceding frontend checks and 95-test result remain
+applicable to unchanged frontend sources; they were not rerun in this documentation-only closeout.
+No backend, browser, Docker, live provider, or actual purge behavior is claimed verified by Step 0.
 
 ## 4. Planned repository delta
 
@@ -130,7 +232,7 @@ confirmed against the frozen Step 0 contracts before a migration is written.
 | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `modules/documents/`               | New-version capture, duplicate provenance, lifecycle transitions, and the existing separate deletion contracts/services/ports. Preserve the original-storage port and ADR-0019 policy. |
 | `modules/processing/{domain,contracts,ports,application,persistence}.py`              | Stage state, attempt history, bounded retry/lease ownership, and existing `ProcessingRun` compatibility. Keep parser and provider work outside transactions.                                 |
-| `modules/delivery/` (new, if Step 0 confirms ownership)                               | Typed `Job` and `OutboxEvent` contracts, scoped repositories, due-event claiming, dispatch, and safe retry policy. Application modules use declared ports, not another module's persistence. |
+| `modules/delivery/` (new, confirmed by Step 0)                                       | Typed `OutboxEvent` contracts, scoped repositories, due-event claiming, dispatch, and safe retry policy. `Job` is a later projection, not a second state authority. Application modules use declared ports, not another module's persistence. |
 | `modules/search/{ports,indexing,persistence}.py` and `modules/processing/indexing.py` | Durable index intent, receipts, desired-versus-observed reconciliation, and active-output promotion. Pinecone SDK behavior stays behind `infrastructure/search/`.                            |
 | `infrastructure/database/{unit_of_work,metadata}.py`                                  | Compose capture, stage, outbox, receipt, and promotion writes in short PostgreSQL transactions. Repositories never commit independently.                                                     |
 | `infrastructure/queue/`, `bootstrap.py`, `compose.yaml`                               | Thin event/task adapters, one repair trigger, process wiring, and health checks without another business service.                                                                            |
@@ -167,6 +269,10 @@ UI files. Pause between coherent work blocks for review as required by `AGENTS.m
 
 **Gate:** Contracts, migration ownership, security implications, and the first implementation work
 block are reviewable without any M2 runtime code. Resolve conflicts with accepted ADRs before Step 1.
+
+**Accepted on 2026-10-14:** Section 3.3 records the owner decision, frozen contracts, synthetic
+fixture boundary, and first work block. Runtime checks remain attached to Steps 1–6, not claimed
+as completed Step 0 tests.
 
 ### Step 1 — Durable outbox delivery for the existing M1 job
 
@@ -278,6 +384,8 @@ intent together; perform exact
 object/vector cleanup outside transactions, then remove source rows and complete affected research
 history in a short transaction. Preserve detached content-free provider accounting and the minimal
 receipt. No restoration, recovery deadline, broad filesystem, bucket, namespace, or database delete.
+Convert capture replay outcomes to ADR-0021's minimal used-key markers in the canonical purge
+transaction; remove fingerprints and old response data rather than retaining them as replay state.
 Integrate deletion publication with M2's durable outbox and periodic repair. Recover pending cleanup
 after publication failure, worker loss, or exhausted delivery without restoring source eligibility
 or treating a broker acknowledgement as completion.
