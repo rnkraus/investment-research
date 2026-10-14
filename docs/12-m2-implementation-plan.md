@@ -1,14 +1,26 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Draft for review — scheduled after M1.5; no M2 behavior is implemented by this document  
-**Date:** 2026-10-01  
+**Status:** Draft for Step 0 contract review after accepted local M1.5; no new runtime behavior is approved by this update
+
+**Date:** 2026-10-01
+
+**Baseline updated:** 2026-10-14
+
 **Milestone:** M2 — Reliable ingestion and lifecycle
 
 **Deletion-policy update (2026-10-12):** The owner approved the local permanent-deletion path in
 [ADR-0019](./adr/0019-permanent-local-document-deletion.md), including complete dependent-answer
 removal and detached cost retention. Its no-restoration policy supersedes every older restore or
-30-day recovery proposal in this draft. Schema work is in progress; this does not accept the full
-M2 lifecycle gate. The remaining non-deletion decisions below still require their normal review.
+30-day recovery proposal in this draft. The local schema, API, worker purge, and confirmed bulk
+deletion UI are now implemented. M2 extends their durable delivery and repair; this does not accept
+the full lifecycle gate or replace the still-pending live Pinecone purge verification. The remaining
+non-deletion decisions below still require their normal review.
+
+**Accepted starting point (2026-10-14):** The
+[M1.5 closeout](./13-m1-5-rag-quality-plan.md#local-acceptance-and-m2-handoff-2026-10-14)
+records successful hosted project CI, the owner-confirmed working website, and the bounded local
+RAG profile disposition. Preserve those contracts and their quality limits. This document updates
+the inherited baseline only; Step 0 must still freeze the unresolved decisions before Step 1.
 
 **Sources of truth:** [Delivery plan](./05-delivery-plan.md),
 [M1-to-M2 handoff](./10-m1-implementation-plan.md#81-m1-to-m2-handoff),
@@ -21,31 +33,34 @@ and accepted [ADRs](./adr/README.md). M1's frozen contracts remain in
 
 M1 already captures one PDF or pasted-text original, processes it asynchronously, searches the
 current eligible content, and produces a validated answer with an exact source location. The local
-research form can ask about saved eligible documents without another upload. M1.5 may improve the
-retrieval and citation-selection policy before M2 begins, but does not change M2's lifecycle
-responsibilities. M2 makes the path reliable when imports, workers, providers, versions, and
-deletion do not proceed perfectly.
+research form can ask about saved eligible documents without another upload. Accepted local M1.5
+adds the default RRF/source-ID/document-attribution path. Its approved usability follow-ups provide
+a bounded catalog, original views, multi-document selection, and permanent deletion. They do not
+complete M2's lifecycle responsibilities. M2 makes the path reliable when imports, workers,
+providers, versions, and deletion do not proceed perfectly.
 
 The M2 exit gate is the one in the delivery plan: replaying any job or outbox event produces the
 same final canonical state, while deleted or inactive content cannot become evidence even if stale
 vectors remain. The existing PDF, pasted-text, citation, insufficient-answer, workspace-isolation,
 provider-failure, recovery, and cleanup gates must keep passing.
 
-M2 does **not** add archive browsing, companies, watchlists, metadata filters, RRF, reranking,
-conversation memory, authentication, public hosting, or agent workflows. RRF and reranking belong
-to M1.5 experiments; the remaining features retain their M3–M9 owners. M2 must preserve whichever
-retrieval policy M1.5 accepts. The fixed local owner and loopback-only runtime remain in force;
-only approved public or non-sensitive material may reach external AI providers.
+M2 does **not** add broader archive discovery, companies, watchlists, metadata filters, new RRF or
+reranking behavior, conversation memory, authentication, public hosting, or agent workflows. Preserve
+the existing catalog rather than rebuild it. RRF/source IDs are the accepted M1.5 local default;
+reranking remains an opt-in experiment. The remaining features retain their M3–M9 owners. The
+fixed local owner and loopback-only runtime remain in force; only approved public or non-sensitive
+material may reach external AI providers.
 
 ## 2. Existing contracts and the M2 delta
 
-| Boundary    | M1 today                                                                                                                      | M2 extension                                                                                                                               |
+| Boundary    | Inherited local baseline                                                                                                      | M2 extension                                                                                                                               |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Capture     | A new `Document`, version 1, immutable original, and `ProcessingRun` are recorded together; queue publication follows commit. | Multiple PDFs, later immutable versions, exact-duplicate provenance, and a durable dispatch event in the capture transaction.              |
 | Processing  | One leased `ProcessingRun` resumes parsing or indexing after redelivery.                                                      | A durable `Job` view and independently retryable `ProcessingStage` attempts expose safe failure and repair history.                        |
 | Dense index | Deterministic vector IDs and bounded visibility checks precede `SEARCHABLE`.                                                  | Durable index intent and receipts explain partial writes; reconciliation repairs missing, stale, and orphaned vectors.                     |
 | Activation  | One current document version and active chunk set are used for new retrieval.                                                 | A candidate version or reprocessing run stays inactive until its complete derived output is ready; one PostgreSQL transaction promotes it. |
-| Deletion    | No user-facing lifecycle operation.                                                                                           | Immediate irreversible canonical exclusion, exact scoped purge, dependent-answer removal, and preserved content-free costs under ADR-0019. |
+| Catalog     | Bounded current-document listing, original views, and explicit multi-document research selection.                              | Preserve these contracts while adding the owning steps' version, stage, and retry controls; no broader M3 discovery work.                    |
+| Deletion    | Confirmed batch admission, immediate exclusion, exact scoped purge, dependent-answer removal, detached accounting, and bounded worker retries under ADR-0019. | Add durable publication and periodic reconciliation, and verify interrupted cleanup and live Pinecone absence without changing the retention policy. |
 
 The intended flow is:
 
@@ -120,7 +135,7 @@ confirmed against the frozen Step 0 contracts before a migration is written.
 | `infrastructure/database/{unit_of_work,metadata}.py`                                  | Compose capture, stage, outbox, receipt, and promotion writes in short PostgreSQL transactions. Repositories never commit independently.                                                     |
 | `infrastructure/queue/`, `bootstrap.py`, `compose.yaml`                               | Thin event/task adapters, one repair trigger, process wiring, and health checks without another business service.                                                                            |
 | `api/routes/{documents,processing}.py`                                                | Version/batch capture, status/history, retry, reprocess, and permanent-deletion contracts. Preserve the separately approved local catalog; no broad company discovery API. |
-| `backend/migrations/versions/`                                                        | Sequential Alembic revisions after M1 head `0008`; each work block includes constraints, backfill/compatibility, indexes, and an upgrade test. No `create_all()` in application code.        |
+| `backend/migrations/versions/`                                                        | Sequential Alembic revisions after the current inherited head `0012_rag_context_bounds`; preserve `0009` reranking, `0010`/`0011` deletion, and `0012` context-tuning history. Each work block includes constraints, backfill/compatibility, indexes, and an upgrade test. No `create_all()` in application code. |
 | `frontend/src/features/archive/`                                                      | Minimal batch/version, stage/error/retry, reprocess, and permanent-deletion controls in their owning steps. Preserve the approved local catalog; M3 owns broader archive discovery. |
 | `backend/tests/`, `frontend/`, `.github/workflows/ci.yml`, runtime verifiers          | Offline correctness and PostgreSQL/Compose failure gates; live providers remain bounded, optional, and public-synthetic only.                                                                |
 
@@ -144,6 +159,9 @@ UI files. Pause between coherent work blocks for review as required by `AGENTS.m
   do not invent unverified configuration names or numeric values in documentation.
 - Specify migration/backfill behavior for M1 runs and answers. Do not invent historical stage
   attempts that never occurred; mark legacy state honestly.
+- Preserve the already implemented catalog/selection and ADR-0019 deletion contracts, detached
+  accounting, and the Alembic chain through `0012_rag_context_bounds`. Extend durable delivery and
+  repair instead of introducing a second deletion workflow or rewriting historical migrations.
 - Add synthetic fixtures for two versions, exact duplicates, partial index visibility, stale
   vectors, worker loss, interrupted permanent deletion, and a known historical citation.
 
@@ -254,11 +272,15 @@ and a failed candidate cannot displace it.
 
 ### Step 6 — Permanent local deletion and bounded purge
 
-**Backend:** Follow ADR-0019: `ACTIVE → PURGE_PENDING`, then physical content removal and a
-`COMPLETED` deletion receipt. Commit canonical exclusion and scoped intent together; perform exact
+**Backend:** Retain and extend the implemented ADR-0019 path: `ACTIVE → PURGE_PENDING`, then
+physical content removal and a `COMPLETED` deletion receipt. Commit canonical exclusion and scoped
+intent together; perform exact
 object/vector cleanup outside transactions, then remove source rows and complete affected research
 history in a short transaction. Preserve detached content-free provider accounting and the minimal
 receipt. No restoration, recovery deadline, broad filesystem, bucket, namespace, or database delete.
+Integrate deletion publication with M2's durable outbox and periodic repair. Recover pending cleanup
+after publication failure, worker loss, or exhausted delivery without restoring source eligibility
+or treating a broker acknowledgement as completion.
 
 **CI:** Test research and citation denial immediately after canonical exclusion, stale-vector rejection,
 no restoration path, repeated and interrupted purge, object/provider failure,
@@ -266,9 +288,10 @@ cross-workspace non-disclosure, and retention/FK behavior. Document the required
 expiry boundary; M5 owns the later full backup-and-restore exercise. Use isolated synthetic
 resources only; never purge the user's normal local archive during verification.
 
-**Frontend:** The separately approved catalog follow-up places confirmed Delete selected above the
-document list and supports explicit bounded multi-selection. Distinguish pending cleanup from
-completed deletion; do not offer restore or claim cross-store completion before it is verified.
+**Frontend:** Preserve the existing above-catalog Delete selected confirmation and bounded
+multi-selection. Extend status/recovery controls only where the frozen M2 contract requires them.
+Distinguish pending cleanup from completed deletion; do not offer restore or claim cross-store
+completion before it is verified.
 
 **Gate:** Deleted content cannot enter a new answer even with stale vectors; no restore operation
 exists; repeated purge has the same content-free terminal result and does not reset cost accounting.
@@ -278,9 +301,10 @@ migration `0011_document_purge_guards`, and bounded Celery purge delivery are im
 isolated queue-recovery gate verifies PostgreSQL and unversioned SeaweedFS cleanup. Confirmed
 batch admission and scoped receipt reads are exposed through the HTTP API. The website implements
 confirmed bulk deletion and honest pending/completed status, including bounded reads and explicit
-same-batch retry. Manual browser/build and live Pinecone deletion verification remain pending.
-Page-reload discovery of older deletion batches is not implemented. This does not complete
-M2's durable outbox or periodic reconciliation work.
+same-batch retry. The owner confirms working website compatibility at M1.5 closeout; live Pinecone
+deletion verification remains pending. Page-reload discovery of older deletion batches is not
+implemented. The general website confirmation is not an independent deletion-store verification.
+This does not complete M2's durable outbox or periodic reconciliation work.
 
 ## 6. Final M2 acceptance and review
 

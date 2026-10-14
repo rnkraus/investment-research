@@ -1,12 +1,13 @@
 # M1.5 — Evidence-grounded RAG portfolio guide
 
-**Snapshot:** 2026-10-13; local implementation and recorded evaluation, not milestone acceptance.
+**Snapshot:** 2026-10-14; M1.5 accepted as a bounded local portfolio proof, with recorded evaluation limits.
 
 Investment Research Archive answers questions over saved PDF and pasted-text documents with
 verifiable original-source citations. The application owns retrieval, source selection,
 validation, and usage accounting; models propose answers but cannot authorize evidence.
 This guide explains the implemented M1.5 path, its measured limits, and an owner-run local demo.
-The [M1.5 plan](./13-m1-5-rag-quality-plan.md) remains the source of truth for completion gates;
+The [M1.5 acceptance record](./13-m1-5-rag-quality-plan.md#local-acceptance-and-m2-handoff-2026-10-14)
+is the source of truth for closeout scope and evidence;
 the [source review](../fixtures/m1_5/closeout-review.md) records the evaluation evidence.
 
 ## 1. Implemented architecture
@@ -91,8 +92,9 @@ M1.5 is the provider-backed local runtime default; M1 remains explicitly selecta
 Switching profiles requires no migrations or reindexing. The normal website support response
 contains only `supported: true/false`; a separate local evaluation option requests a short reason
 and changes the support prompt/schema. Raw failure logging is another opt-in diagnostic, not a
-normal product feature. Local default adoption was owner-approved on 2026-10-12; it does not
-change the historical evaluation results, models, diagnostic settings, or milestone acceptance.
+normal product feature. Local default adoption was owner-approved on 2026-10-12; bounded milestone
+acceptance followed on 2026-10-14. Neither decision changes historical evaluation results, models,
+or diagnostic settings or establishes a new normal-checker/model-pair quality measurement.
 
 In the current workspace, choose the document scope above the question and select individual
 documents in the collapsible sidebar. Answer/support model choices are under `Model settings`;
@@ -209,9 +211,13 @@ loopback access, bounded English source-unit heuristics, and public/synthetic-on
 remain constraints. Provider outages, limits, and semantic-support errors can still stop a
 request safely; source IDs prevent copying mistakes, not every reasoning or retrieval error.
 
-Backend and PostgreSQL checks, frontend checks, and owner-reported M1 runtime/build results are
-recorded in the [plan](./13-m1-5-rag-quality-plan.md). The credential-free M1 runtime gate does not
-establish live M1.5 profile quality. Final hosted-CI confirmation, explicit profile/disposition
-decisions, and milestone acceptance remain separate; this documentation closes none silently.
+Backend and PostgreSQL checks, frontend checks, owner-reported runtime/build evidence, and the
+successful project CI result on `main` are recorded in the
+[acceptance record](./13-m1-5-rag-quality-plan.md#local-acceptance-and-m2-handoff-2026-10-14).
+The owner confirmed the merged green CI and working website and approved closing the bounded
+local milestone. The credential-free runtime gate and general website confirmation do not establish
+representative live M1.5 quality, diagnostic/normal-checker parity, or every model-pair result.
+Structured independent-review fields in historical reports remain unchanged. The public source
+repository is not a publicly hosted or authenticated application.
 M2 owns ingestion/lifecycle reliability, M3 archive/discovery and broader corpus measurements,
 and remaining M4 work owns routing, conversation, temporal modes, and the full direct-RAG gate.

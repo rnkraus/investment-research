@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.3 — M1 accepted on 2026-09-28; M1.5 RAG quality proof next
+**Status:** Active v1.4 — M1.5 accepted for the bounded local scope on 2026-10-14; M2 contract review next
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -192,9 +192,10 @@ stable cursor pagination and `GET /api/v1/documents`, composing the latest scope
 and an authorized original link for each current version. Contract/CI checks cover that read-only
 surface. The website now implements the paginated list, independent PDF/text original views, and
 explicit multi-document selection; focused scope never silently expands to all documents.
-Frontend format, lint, type, contract, and deterministic tests pass. The updated browser journey
-and local production build still require separate verification before this follow-up is accepted.
-This follow-up does not complete M3 or change the M1.5 evaluation/default-adoption gates.
+Frontend format, lint, type, contract, and deterministic tests pass. At M1.5 closeout on
+2026-10-14, the owner confirmed the merged green CI and working local website; the existing
+build/runtime evidence and successful hosted journey are recorded in the M1.5 plan. This local
+catalog is inherited by M2/M3 rather than implemented again. It does not complete M3.
 
 **Owner-approved permanent-deletion follow-up (2026-10-12):** Separately extend the local catalog
 with explicit multi-document deletion, without restoration, including complete stored answers that
@@ -205,9 +206,10 @@ implemented. Confirmed HTTP admission and scoped receipt reads are available; th
 `docs/11-m1-contracts.md` Section 3.4. The isolated queue gate verifies PostgreSQL/SeaweedFS cleanup.
 The website implements confirmed multi-document deletion above the catalog, bounded receipt
 tracking, uncertain-outcome handling, and explicit same-batch retry. Tracking lasts for the current
-page; reload does not stop cleanup but does not rediscover older batches. Manual browser/build
-verification and live Pinecone deletion verification remain pending. M2 still owns
-durable outbox delivery and periodic reconciliation.
+page; reload does not stop cleanup but does not rediscover older batches. The owner confirms
+working website compatibility at M1.5 closeout; that is not a separate live Pinecone purge
+verification. Live Pinecone deletion verification remains pending. M2 still owns durable outbox
+delivery and periodic reconciliation.
 The owner-requested waiting-source extension permits deletion of unclaimed queued sources and
 selection of completed Text extracted sources; started parsing/indexing remains protected,
 including expired leases. It does not add worker cancellation or orphaned-run recovery.
@@ -233,6 +235,16 @@ path by default in live Compose and host API startup with complete provider conf
 accidentally returning to model-copied quotes. Retain explicit M1 comparison selection and unchanged
 credential-free acceptance profiles. This local usability decision does not adopt reranking,
 change models or budgets, establish a new quality result, or complete the M1.5 acceptance gate.
+
+**Local acceptance and M2 handoff (2026-10-14):** The owner confirmed M1.5 is merged, required CI
+is green, and the website works, and approved the closeout. The
+[M1.5 acceptance record](./13-m1-5-rag-quality-plan.md#local-acceptance-and-m2-handoff-2026-10-14)
+links the successful project CI result on `main` and preserves the owner-reported local evidence.
+Accept the bounded local portfolio proof with RRF/source IDs and normal document-attribution
+support as the runtime default; reranking remains opt-in. Keep the historical twelve-case
+observation, strict 10/12 citation target score, and all independent-review/model-quality limits
+unchanged. M2 contract review is next; no new paid run, public application deployment, or broader
+M2/M3/M4 acceptance follows from this closeout.
 
 ## 7. M2 — Reliable ingestion and lifecycle
 
@@ -409,12 +421,13 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Review the proposed M1.5 contracts in `13-m1-5-rag-quality-plan.md`; freeze reviewed cases,
-   expected evidence, metrics, and the current M1 baseline before changing retrieval behavior.
-2. Implement and compare RRF, citable source units, and a bounded reranking experiment while
-   preserving the M1 citation, workspace, provider-failure, and runtime gates.
-3. Record reproducible local quality, latency, cost, and limitations for a portfolio explanation;
-   keep live provider checks opt-in, bounded, and limited to approved public/synthetic data.
-4. Then review the M2 draft in `12-m2-implementation-plan.md` against the accepted M1-to-M2
-   handoff and begin its lifecycle reliability steps. Keep the fixed local owner and loopback-only
-   boundary until the authentication milestone.
+1. Review M2 Step 0 in `12-m2-implementation-plan.md` against the accepted M1/M1.5 baseline and
+   ADR-0019. Preserve the existing catalog, multi-document selection, and permanent deletion;
+   do not count them as missing features or as the full lifecycle gate.
+2. Freeze the outstanding version, replay/duplicate, batch, historical-source access, and periodic
+   repair contracts before changing schemas, public APIs, or process topology.
+3. Begin M2 Step 1 with durable outbox delivery for the existing processing job, its offline failure
+   tests, required CI, and unchanged frontend compatibility. Continue in the documented work blocks.
+4. Keep the accepted local RAG profile, evaluation history, fixed local owner, and loopback-only
+   boundary. Provider checks remain separately approved, bounded, and public/synthetic only;
+   publishing source code does not authorize a public application deployment.

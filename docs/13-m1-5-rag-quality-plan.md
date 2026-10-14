@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Active — Step 4 source review accepted, local compatibility owner confirmed, portfolio documented, and local M1.5 default owner approved; hosted CI and milestone acceptance pending
+**Status:** Accepted for the bounded local portfolio scope on 2026-10-14; M2 contract review next
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -9,6 +9,10 @@
 [domain model](./03-domain-model.md), [security and operations](./04-security-and-operations.md),
 and accepted [ADRs](./adr/README.md). This plan advances selected M4 RAG work without claiming
 that the full M4 gate is complete.
+
+The [local acceptance and M2 handoff](#local-acceptance-and-m2-handoff-2026-10-14) records the
+current closeout decision. Earlier dated references to pending checks describe their historical
+work blocks, not the current milestone status. Historical reports and quality scores remain unchanged.
 
 ## 1. Outcome and boundary
 
@@ -39,9 +43,10 @@ original-source citations. M1.5 makes that path more robust and measurable for a
 demonstration. It does not turn the application into a public or production service.
 
 The implementation order is M1 → M1.5 → M2 → M3 → remaining M4 work. M2 still owns durable
-delivery, versions, reprocessing, deletion, and index reconciliation. M3 still owns archive
-browsing, company metadata, filters, and a broader discovery/evaluation core. M4 still owns the
-complete routed, conversational, temporal, and production-shaped direct-RAG gate.
+delivery, versions, reprocessing, deletion repair, and index reconciliation. The separately approved
+local catalog and permanent-deletion follow-ups are inherited, not evidence that M2 or M3 is complete.
+M3 still owns broader archive discovery, company metadata, filters, and a broader evaluation core.
+M4 still owns the complete routed, conversational, temporal, and production-shaped direct-RAG gate.
 
 Only approved public, synthetic, openly licensed, or otherwise approved non-sensitive material
 may reach external providers. Fixed local identity and loopback-only access remain in force. No
@@ -1948,11 +1953,49 @@ their frozen defaults. No new paid comparison is authorized by this configuratio
 
 ## 4. Handoff and stop rule
 
+### Local acceptance and M2 handoff (2026-10-14)
+
+The owner confirmed that M1.5 is merged, all required CI checks are green, and the local website
+works, then approved recording the closeout and proceeding to M2. Accept M1.5 as a bounded local
+RAG portfolio proof, not as production readiness or a representative accuracy benchmark.
+
+- **Hosted verification:** Read-only GitHub metadata confirms the project
+  [CI run on main](https://github.com/rnkraus/investment-research/actions/runs/38341109338)
+  completed successfully for commit `5437c016f314e13f8071dbf7c15eb833531b4229` on 2026-10-13.
+  This is verification of an existing result, not a new test execution. Dependabot maintenance
+  runs are separate from this project CI result.
+- **Local compatibility:** The owner confirms the working website after the merge. Earlier
+  owner-reported build and runtime/source-opening checks remain dated evidence in Step 4.
+  No browser, production build, or paid provider test was rerun for this documentation block;
+  the general website confirmation is not a new per-media live-provider measurement.
+- **Profile disposition:** Retain the owner-approved `m1-5-citable-units` local default:
+  RRF, server-resolved source IDs, and document-attribution support with the normal Boolean-only
+  checker. Preserve explicit M1 comparison and credential-free acceptance profiles. Pinecone BGE
+  reranking remains opt-in because its small comparison did not establish a quality benefit.
+- **Evaluation evidence:** Retain the reviewed twelve-case prompt-v6 diagnostic-support observation:
+  zero execution failures, 12/12 expected coverage, 10/12 strict citation target matching,
+  latency/cost estimates, and the accepted qualitative source review. Do not rescore historical
+  reports, convert reservations into actual spend, or change pending structured independent-review
+  fields. This result does not establish current-prompt, normal-checker, or every model-pair quality.
+- **Portfolio and boundary:** The README, screenshots, and portfolio guide provide the implemented
+  architecture, examples, measurements, and limitations. Publishing the source repository is not
+  approval to host the fixed-identity application or to process private documents externally.
+
+The next work block is M2 Step 0 contract and compatibility review. Preserve the already implemented
+local catalog, multi-document selection, permanent deletion, immutable originals, accounting,
+and accepted RAG default. M2 must add durable delivery, retry/stage history, versions, atomic
+activation, and index/deletion reconciliation rather than rebuild those local features.
+Live Pinecone purge verification and broader lifecycle guarantees remain separate M2 concerns;
+broader corpus, model/support-policy comparisons, routing, conversation, and temporal behavior
+retain their M3/M4 owners. No dependency, budget, runtime default, or new paid execution is approved
+by this closeout.
+
 Stop M1.5 when its reviewed correctness gates pass and the chosen retrieval/citation approach has
 one reproducible baseline comparison with quality, latency, and cost. Do not extend the phase
 indefinitely to chase every model failure or metric. Record unsupported or inconclusive variants
 and hand off to M2; expand the corpus and discovery measurements in M3; finish routing,
 conversation, temporal modes, tracing/export decisions, and the full direct-RAG gate in M4.
 
-The first implementation block after this plan is the evaluation contract and baseline. No new
-ranking or model dependency should be introduced before those cases are reviewed.
+M1.5 is closed for the bounded scope above. Review the unresolved contracts and inherited baseline
+in [M2 Step 0](./12-m2-implementation-plan.md#step-0--freeze-contracts-and-compatibility-documentation-gate)
+before beginning M2 runtime implementation. A fresh ranking or model dependency is not the next step.
