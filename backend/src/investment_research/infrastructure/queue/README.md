@@ -16,6 +16,13 @@ canonical source of `ProcessingRun` state, derived output, and deletion receipts
 
 ## Publication flow
 
+**M2 storage block:** Capture now commits durable outbox intent together with the processing run.
+The direct post-commit path shown below remains active; the outbox dispatcher, publication receipts,
+scheduler, and periodic repair are not enabled yet. Pending outbox state is therefore not proof
+that this legacy path never delivered the job. See the
+[delivery guide](../../modules/delivery/README.md) for the staged replacement boundary. Current
+purge delivery remains unchanged; only canonical purge detachment of outbox history is added.
+
 ```mermaid
 flowchart LR
     CAPTURE[Document capture service] --> JOB[ProcessingJobV1]

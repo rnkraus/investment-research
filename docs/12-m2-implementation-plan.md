@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted on 2026-10-14; Step 1 durable-delivery implementation next, runtime changes not started
+**Status:** Step 0 accepted; Step 1 outbox storage block verified on 2026-10-14, dispatcher/repair pending
 
 **Date:** 2026-10-01
 
@@ -296,6 +296,33 @@ Verify the scheduler boundary without a live paid provider.
 
 **Gate:** Capture succeeds with Redis down; after Redis returns, the run advances without manual
 database repair and without duplicate canonical output. The M1 runtime gate still passes.
+
+**Storage work block (2026-10-14):** Implemented the Delivery value/port/table boundary and
+cross-module infrastructure repository. PDF/text capture commits one deterministic generation-zero
+event with document/version/original metadata and the processing run. Duplicate scoped intent is
+idempotent; unknown/foreign reads share absence. Migration `0013_processing_outbox` backfills only
+eligible unclaimed captured runs, preserves legacy state/leases, and refuses a downgrade that would
+discard intent/history. PostgreSQL readiness now requires that revision.
+
+Canonical document purge cancels and detaches delivery rows before removing runs, preserving only
+content-free IDs/counts/error categories/publication times. An uncertain capture commit preserves
+its possibly canonical original and produces the existing safe API failure; definitive pre-commit
+rollback retains narrow object compensation. Request-key replay and tombstones are not implemented
+by this block. Module boundaries remain enforced by the unchanged architecture tests.
+
+Verification: `scripts.verify_backend` passed format/lint/type checks and 2,241 unit tests.
+`scripts.verify_postgres` passed empty migration cycling, schema drift checks, legacy-upgrade and
+transaction/purge/isolation tests: 247 passed and seven separate SeaweedFS tests skipped.
+`pnpm format`, `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed, including generated contracts
+and 95 frontend tests. Existing verifier discovery includes the new tests; no paid CI gate is added.
+Only isolated PostgreSQL resources were created/removed. No normal archive, browser, production
+build, live provider, or full M0/M1/queue runtime journey was exercised in this block.
+
+The existing post-commit Celery fast path remains active; it does not write outbox publication
+receipts. No dispatcher, claim/drain command, scheduler, or periodic repair is enabled yet. Pending
+intent does not prove the legacy fast path never delivered. Step 1's full Redis-outage/recovery gate
+is still open. The next work block adds bounded claiming/publication and receipt fencing before
+the separate scheduler/repair and complete runtime gates.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 

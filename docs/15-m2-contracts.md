@@ -195,6 +195,20 @@ time. Desired vectors include active output and retained unfinished candidates. 
 output is never new evidence, even before stale vectors are removed. Reconciliation uses exact
 scoped IDs and bounded pagination; candidate vectors are not orphans merely because not active.
 
+### Implemented storage boundary (2026-10-14)
+
+The first Step 1 block implements generation-zero processing intent, its strict value/port/table
+contract, atomic capture storage, safe original preservation after uncertain commit, and
+content-free cancellation/detachment during canonical purge. Migration `0013_processing_outbox`
+and the readiness check are implemented; see the
+[delivery guide](../backend/src/investment_research/modules/delivery/README.md).
+
+Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
+belongs to Step 6. The existing direct Celery publication still runs after commit and does not
+record outbox receipts. Claiming, publication receipt writing, scheduler, periodic repair, stage
+retry APIs, request replay/tombstones, and new version/history endpoints are not enabled by this
+storage block. The remaining text describes accepted target behavior, not currently active features.
+
 ## 6. Initial numeric policy — accepted, not yet runtime settings
 
 The following values derive from current upload/parser, processing, queue, provider, and
