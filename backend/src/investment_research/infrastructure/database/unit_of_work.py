@@ -4,8 +4,10 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from investment_research.infrastructure.database.outbox import SqlAlchemyOutboxRepository
 from investment_research.infrastructure.database.session import (
     SessionFactory,
     transactional_session,
@@ -18,8 +20,10 @@ from investment_research.infrastructure.search.postgresql import (
     PostgresDenseCandidateQualifier,
     PostgresLexicalSearch,
 )
+from investment_research.modules.delivery.ports import OutboxRepository
 from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.documents.ports import (
+    CaptureCommitUncertainError,
     CaptureUnitOfWork,
     CaptureUnitOfWorkFactory,
     DocumentReadUnitOfWork,
@@ -78,6 +82,7 @@ class SqlAlchemyCaptureRepositories:
 
     documents: DocumentRepository
     processing: ProcessingRepository
+    outbox: OutboxRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,11 +179,19 @@ def sqlalchemy_capture_unit_of_work(
 ) -> Iterator[CaptureUnitOfWork]:
     """Commit all canonical capture records together or roll them all back."""
 
-    with transactional_session(session_factory) as session:
-        yield SqlAlchemyCaptureRepositories(
-            documents=SqlAlchemyDocumentRepository(session),
-            processing=SqlAlchemyProcessingRepository(session),
-        )
+    body_completed = False
+    try:
+        with transactional_session(session_factory) as session:
+            yield SqlAlchemyCaptureRepositories(
+                documents=SqlAlchemyDocumentRepository(session),
+                processing=SqlAlchemyProcessingRepository(session),
+                outbox=SqlAlchemyOutboxRepository(session),
+            )
+            body_completed = True
+    except BaseException as error:
+        if body_completed and not isinstance(error, IntegrityError):
+            raise CaptureCommitUncertainError("capture commit outcome is uncertain") from None
+        raise
 
 
 @contextmanager

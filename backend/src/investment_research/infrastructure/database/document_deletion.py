@@ -10,10 +10,12 @@ from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from investment_research.infrastructure.database.outbox import SqlAlchemyOutboxRepository
 from investment_research.infrastructure.database.session import (
     SessionFactory,
     transactional_session,
 )
+from investment_research.modules.delivery.ports import OutboxRepository
 from investment_research.modules.documents.deletion_contracts import (
     DeleteDocumentsCommand,
     DocumentDeletionReceipt,
@@ -64,6 +66,7 @@ class PostgresDocumentDeletionRepository:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._outbox: OutboxRepository = SqlAlchemyOutboxRepository(session)
 
     def request(
         self, context: WorkspaceContext, command: DeleteDocumentsCommand, requested_at: datetime
@@ -257,6 +260,7 @@ class PostgresDocumentDeletionRepository:
             )
         )
         self._remove_affected_research(context, document_id, version_ids)
+        self._outbox.cancel_processing_events(context, run_ids)
         self._session.execute(
             update(ProviderOperationRow)
             .where(
