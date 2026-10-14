@@ -45,6 +45,7 @@ from investment_research.modules.documents.contracts import (
     PdfCaptureInput,
 )
 from investment_research.modules.documents.ports import (
+    CaptureCommitUncertainError,
     ObjectAlreadyExistsError,
     ObjectStorageError,
 )
@@ -199,7 +200,7 @@ def capture_document(
             code=ErrorCode.CONFLICT,
             message="immutable original already exists",
         ) from error
-    except (ObjectStorageError, SQLAlchemyError) as error:
+    except (ObjectStorageError, SQLAlchemyError, CaptureCommitUncertainError) as error:
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code=ErrorCode.INTERNAL_ERROR,
@@ -267,7 +268,7 @@ def capture_pasted_text(
             code=ErrorCode.CONFLICT,
             message="immutable original already exists",
         ) from error
-    except (ObjectStorageError, SQLAlchemyError) as error:
+    except (ObjectStorageError, SQLAlchemyError, CaptureCommitUncertainError) as error:
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code=ErrorCode.INTERNAL_ERROR,

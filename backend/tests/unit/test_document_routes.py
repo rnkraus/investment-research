@@ -36,6 +36,7 @@ from investment_research.modules.documents.contracts import (
 from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.ports import (
     BinaryReadable,
+    CaptureCommitUncertainError,
     ObjectAlreadyExistsError,
     ObjectStorageError,
 )
@@ -362,6 +363,7 @@ def test_invalid_form_returns_stable_error_without_echoing_input(
             id="signature",
         ),
         pytest.param(ObjectAlreadyExistsError(), 409, "CONFLICT", id="immutable-conflict"),
+        pytest.param(CaptureCommitUncertainError(), 500, "INTERNAL_ERROR", id="uncertain-commit"),
         pytest.param(ObjectStorageError(), 500, "INTERNAL_ERROR", id="storage"),
         pytest.param(SQLAlchemyError("private database detail"), 500, "INTERNAL_ERROR", id="db"),
     ],
@@ -392,6 +394,7 @@ def test_capture_route_translates_known_failures(
         pytest.param(InvalidPastedTextError(), 422, "INVALID_REQUEST", id="invalid-text"),
         pytest.param(UploadTooLargeError(), 413, "PAYLOAD_TOO_LARGE", id="byte-limit"),
         pytest.param(ObjectAlreadyExistsError(), 409, "CONFLICT", id="immutable-conflict"),
+        pytest.param(CaptureCommitUncertainError(), 500, "INTERNAL_ERROR", id="uncertain-commit"),
         pytest.param(ObjectStorageError(), 500, "INTERNAL_ERROR", id="storage"),
         pytest.param(SQLAlchemyError("private database detail"), 500, "INTERNAL_ERROR", id="db"),
     ],

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
+from investment_research.modules.delivery.ports import OutboxRepository
 from investment_research.modules.documents.contracts import DocumentListPage, DocumentListQuery
 from investment_research.modules.documents.domain import (
     Document,
@@ -32,6 +33,10 @@ class ObjectNotFoundError(ObjectStorageError):
 
 class ObjectStorageScopeError(ObjectStorageError):
     """Raised before a write whose key is outside the active workspace."""
+
+
+class CaptureCommitUncertainError(Exception):
+    """A commit may have succeeded; never compensate its possibly canonical original."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +141,10 @@ class CaptureUnitOfWork(Protocol):
     @property
     def processing(self) -> ProcessingRepository:
         """Return the repository that stages the associated processing intent."""
+
+    @property
+    def outbox(self) -> OutboxRepository:
+        """Stage durable publication intent in the same capture transaction."""
 
 
 class DocumentReadUnitOfWork(Protocol):

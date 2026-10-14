@@ -15,6 +15,8 @@ import pytest
 from pydantic import ValidationError
 
 from investment_research.infrastructure.object_storage.local import LocalObjectStorage
+from investment_research.modules.delivery.domain import OutboxEvent
+from investment_research.modules.delivery.ports import OutboxRepository
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     InvalidPastedTextError,
@@ -29,6 +31,7 @@ from investment_research.modules.documents.contracts import (
 )
 from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.ports import (
+    CaptureCommitUncertainError,
     CaptureUnitOfWork,
     CaptureUnitOfWorkFactory,
     DocumentRepository,
@@ -63,8 +66,10 @@ class RecordingUnitOfWork:
     def __init__(self) -> None:
         self.document_mock = create_autospec(DocumentRepository, instance=True)
         self.processing_mock = create_autospec(ProcessingRepository, instance=True)
+        self.outbox_mock = create_autospec(OutboxRepository, instance=True)
         self.documents = cast(DocumentRepository, self.document_mock)
         self.processing = cast(ProcessingRepository, self.processing_mock)
+        self.outbox = cast(OutboxRepository, self.outbox_mock)
         self.enter_count = 0
         self.is_open = False
 
@@ -195,6 +200,14 @@ def test_capture_preserves_pdf_and_stages_consistent_canonical_records(tmp_path:
     assert processing_run.document_version_id == VERSION_ID
     assert processing_run.state is ProcessingState.CAPTURED
     assert processing_run.created_at == CAPTURED_AT
+    unit_of_work.outbox_mock.add_processing_event.assert_called_once_with(
+        make_context(),
+        OutboxEvent.for_processing(
+            workspace_id=WORKSPACE_ID,
+            processing_run_id=PROCESSING_RUN_ID,
+            created_at=CAPTURED_AT,
+        ),
+    )
     assert dispatcher.jobs == [
         ProcessingJobV1.create(
             workspace_id=WORKSPACE_ID,
@@ -237,6 +250,49 @@ def test_capture_discards_stored_object_when_canonical_transaction_fails(
         pytest.fail("a failed capture must not leave a published object")
 
 
+@pytest.mark.parametrize("pasted_text", [False, True])
+def test_outbox_failure_prevents_publication_and_compensates_only_uncommitted_original(
+    tmp_path: Path, pasted_text: bool
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    unit_of_work.outbox_mock.add_processing_event.side_effect = RuntimeError("outbox write failed")
+    dispatcher = RecordingProcessingDispatcher(unit_of_work)
+    service = make_service(tmp_path, unit_of_work, processing_dispatcher=dispatcher)
+    with pytest.raises(RuntimeError, match="outbox write failed"):
+        if pasted_text:
+            service.capture_text(make_context(), make_text_input())
+        else:
+            service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
+    assert dispatcher.jobs == []
+    assert not list((tmp_path / "objects").rglob("*.pdf"))
+    assert not list((tmp_path / "objects").rglob("*.txt"))
+
+
+def test_uncertain_commit_does_not_discard_possibly_canonical_original(tmp_path: Path) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    dispatcher = RecordingProcessingDispatcher(unit_of_work)
+
+    @contextmanager
+    def uncertain_commit() -> Iterator[CaptureUnitOfWork]:
+        with unit_of_work.open() as repositories:
+            yield repositories
+        raise CaptureCommitUncertainError("capture commit outcome is uncertain")
+
+    identifiers = iter((DOCUMENT_ID, VERSION_ID, ORIGINAL_ID, PROCESSING_RUN_ID))
+    service = CaptureDocumentService(
+        object_storage=LocalObjectStorage(tmp_path / "objects"),
+        unit_of_work_factory=uncertain_commit,
+        max_upload_bytes=1024,
+        processing_dispatcher=dispatcher,
+        clock=lambda: CAPTURED_AT,
+        identifier_factory=identifiers.__next__,
+    )
+    with pytest.raises(CaptureCommitUncertainError):
+        service.capture_pdf(make_context(), make_input(), BytesIO(PDF_CONTENT))
+    assert dispatcher.jobs == []
+    assert len(list((tmp_path / "objects").rglob("*.pdf"))) == 1
+
+
 def test_capture_preserves_committed_state_when_dispatch_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -261,6 +317,7 @@ def test_capture_preserves_committed_state_when_dispatch_fails(
 
     assert result.state is ProcessingState.CAPTURED
     assert dispatcher.transaction_states == [False]
+    unit_of_work.outbox_mock.add_processing_event.assert_called_once()
     logger.warning.assert_called_once_with(
         "processing.dispatch.failed",
         extra={"workspace_id": WORKSPACE_ID, "job_id": PROCESSING_RUN_ID},

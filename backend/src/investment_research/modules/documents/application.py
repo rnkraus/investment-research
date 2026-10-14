@@ -11,6 +11,7 @@ from tempfile import SpooledTemporaryFile
 from typing import BinaryIO, Final, cast
 from uuid import UUID, uuid4
 
+from investment_research.modules.delivery.domain import OutboxEvent
 from investment_research.modules.documents.contracts import (
     CaptureDocumentResult,
     CaptureMetadata,
@@ -26,6 +27,7 @@ from investment_research.modules.documents.domain import (
 )
 from investment_research.modules.documents.ports import (
     BinaryReadable,
+    CaptureCommitUncertainError,
     CaptureUnitOfWorkFactory,
     DocumentReadUnitOfWorkFactory,
     ObjectNotFoundError,
@@ -376,6 +378,9 @@ class CaptureDocumentService:
                 byte_size=prepared.byte_size,
                 checksum=prepared.checksum_sha256,
             )
+        except CaptureCommitUncertainError:
+            # A successful server commit can lose its acknowledgement. Never remove its original.
+            raise
         except BaseException as capture_error:
             try:
                 self._object_storage.discard_uncommitted(context, storage_key)
@@ -468,6 +473,14 @@ class CaptureDocumentService:
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.documents.add_capture(context, document, version, original)
             unit_of_work.processing.add_run(context, processing_run)
+            unit_of_work.outbox.add_processing_event(
+                context,
+                OutboxEvent.for_processing(
+                    workspace_id=context.workspace_id,
+                    processing_run_id=processing_run_id,
+                    created_at=captured_at,
+                ),
+            )
 
         return CaptureDocumentResult(
             document_id=document_id,
