@@ -13,6 +13,7 @@ EXPECTED_TABLE_NAMES = {
     "documents",
     "evidence_spans",
     "original_artifacts",
+    "outbox_events",
     "processing_runs",
     "provider_operations",
     "research_requests",
