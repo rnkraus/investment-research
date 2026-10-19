@@ -8,10 +8,27 @@ from uuid import UUID
 
 from investment_research.modules.delivery.domain import DeliveryErrorCategory, OutboxEvent
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.contracts import ProcessingJobV1
 
 
 class OutboxScopeError(ValueError):
     """Reject an unavailable or incompatible target without exposing identifiers."""
+
+
+class OutboxPublicationUnavailableError(Exception):
+    """A bounded broker operation failed or its outcome is uncertain."""
+
+
+class OutboxPublicationInvalidError(Exception):
+    """The configured publication path or typed job is not usable without correction."""
+
+
+class OutboxPublisher(Protocol):
+    def is_ready(self, *, timeout_seconds: float) -> bool:
+        """Check the broker before consuming an attempt, within one wall-clock budget."""
+
+    def publish(self, job: ProcessingJobV1, *, timeout_seconds: float) -> None:
+        """Publish once without hidden retries, or raise a safe application-owned error."""
 
 
 class OutboxRepository(Protocol):
