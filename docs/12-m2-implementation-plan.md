@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted; Step 1 storage verified; claim/receipt primitives implemented, runtime dispatch/repair pending
+**Status:** Step 0 accepted; Step 1 storage, claims, and bounded drain implemented; runtime activation/repair pending
 
 **Date:** 2026-10-01
 
@@ -353,6 +353,44 @@ tokens, retry/exhaustion, legacy worker start, and purge cancellation. `pnpm for
 The isolated PostgreSQL container, networks, and volume were removed. No paid provider, browser,
 normal archive, production build, or full M0/M1/queue runtime journey was exercised. Hosted CI has
 not been run or claimed by this local work block.
+
+**Bounded broker/drain work block (2026-10-19):** Added a typed publisher boundary and
+`DrainOutboxService`: broker readiness precedes each individual claim; a committed claim is
+published outside a database transaction and acknowledged in a separate fenced transaction.
+The monotonic sweep inspects at most 20 returned targets in 30 seconds. Each broker operation is
+capped at two seconds and the smaller remaining sweep/lease allowance. Known broker unavailability
+before claim consumes no attempt; uncertainty after claim records a bounded jittered retry and
+stops the sweep. Invalid publication blocks the owned event, while unexpected programming/database
+failures propagate instead of silently retrying.
+
+The synchronous Celery adapter runs a disposable Python helper from the existing runtime/dependencies.
+Startup and connection/write/read work share the parent-enforced deadline; late success is rejected
+and timed-out children are killed/reaped. OS scheduling/reaping can add cleanup latency. A bounded
+private stdin pipe contains only broker configuration and the ID-only job; no credentials in argv,
+inherited database/storage/provider environment, raw helper output, or environment-file loading.
+The helper disables Celery/Kombu hidden retries. Redis authentication errors are configuration errors.
+This is an internal adapter, not a new service, dependency, or parser sandbox.
+
+CI coverage extends the existing queue-recovery verifier: its synthetic capture defers legacy direct
+dispatch, explicitly drains canonical intent through the bounded adapter, then exercises real worker
+loss/recovery and exact permanent cleanup. Normal application capture/bootstrap and purge dispatch
+remain unchanged. The operator command, bounded repair generations, scheduler, Redis-loss-before/after-
+receipt scenarios, and complete M1 runtime gate still belong to subsequent Step 1 work blocks.
+
+Verification: `scripts.verify_backend` passed formatting, linting, typing, and 2,287 unit tests,
+including a real timed-out helper termination and safe failure-output checks.
+`scripts.verify_postgres` passed migration cycling, schema drift checks, and 261 integration tests;
+seven separate SeaweedFS-only tests were skipped. Drain integration proves claim commit/lock release
+before publication, preserved intent after lost acknowledgement, and no attempt consumed on a known
+broker outage. `scripts.verify_queue_recovery` passed real Redis publication through the new adapter,
+safe rejection of deliberately invalid disposable broker credentials, worker-loss recovery with one
+canonical output, and canonical/original purge. The first successful queue run preceded the final
+authentication classification; the verifier was repeated with that final path and negative probe.
+`pnpm format`, `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed, including generated-contract
+checking and 95 frontend tests. No frontend source, dependency, Compose topology, public schema,
+provider budget, or normal archive changed. No browser, production frontend build, paid provider,
+full M0/M1 journey, or hosted CI execution is claimed. This is still not Step 1's complete
+Redis-outage/automatic-repair gate.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 

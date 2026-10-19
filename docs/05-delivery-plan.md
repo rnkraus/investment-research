@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.6 — M2 Step 1 storage verified; claim/receipt primitives implemented, runtime dispatch/repair next
+**Status:** Active v1.6 — M2 Step 1 bounded drain implemented; automatic repair and runtime activation next
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -273,6 +273,12 @@ fenced receipts without touching processing attempts. These primitives are not y
 the runtime. The bounded broker adapter/drain, periodic repair, scheduler, and full recovery gate
 remain pending; see the M2 plan for implementation and verification details.
 
+**Step 1 bounded drain block (2026-10-19):** Added scoped readiness-before-claim orchestration and
+a deadline-enforced Celery adapter with safe error categories. The isolated queue verifier explicitly
+uses canonical outbox intent before its real worker-loss/recovery and purge checks. Normal application
+dispatch remains unchanged; automatic repair generations, scheduler, and complete Redis-loss/M1
+runtime gates are not accepted by this block. Details and local evidence are in the M2 plan.
+
 ### Build
 
 - Multiple PDF upload and pasted-text versioning.
@@ -442,10 +448,11 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 ## 15. Immediate next actions
 
-1. Continue M2 Step 1 with the bounded broker adapter and drain orchestration under accepted
-   `15-m2-contracts.md` and ADR-0010. Use the verified single-row claim/fenced-receipt primitives;
-   preserve atomic storage, workspace isolation, duplicate intent, and purge compatibility.
-2. Then add the separate scheduler/repair trigger and required offline CI/Compose failure gates.
+1. Continue M2 Step 1 with bounded repair generations for lost publications and safely expired
+   processing work under `15-m2-contracts.md` and ADR-0010. Reuse the scoped drain and fenced receipts;
+   do not reset execution/provider attempts or revive excluded sources.
+2. Then add the separate scheduler/repair trigger, operator command, and required offline CI/Compose
+   failure gates before normal runtime activation.
    A stored outbox row alone does not complete the Redis-outage gate.
 3. Preserve the existing catalog, multi-document selection, permanent deletion, and frontend capture
    contract. Continue backend → CI → frontend compatibility in the documented work blocks;

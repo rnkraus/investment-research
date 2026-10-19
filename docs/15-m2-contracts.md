@@ -209,11 +209,27 @@ three-attempt ceiling, bounded retry delay, and terminal cancellation/blocking. 
 work is requalified against active/current canonical sources. Intent already handled by the legacy
 fast path is cancelled without resetting execution attempts. A publication receipt allows a worker
 that has already started, but rejects a wrong/expired token or deletion-pending source. These
-primitives are not yet invoked by runtime dispatch; tests do not satisfy broker-outage recovery.
+primitives are not yet invoked by normal application dispatch; tests do not satisfy broker-outage
+recovery.
+
+**Bounded drain/adapter (2026-10-19):** `DrainOutboxService` now checks readiness before each
+individual claim, publishes outside the transaction, and records a fenced outcome separately.
+Its monotonic sweep is bounded to 20 returned rows and 30 seconds. Broker operations receive at
+most two seconds and no more than the remaining sweep/lease time. Transient publication uncertainty
+stops the sweep after recording a bounded retry; invalid publication blocks the owned event.
+
+The synchronous Celery adapter uses a disposable broker-only helper process and a bounded private
+stdin pipe, with no credentials in argv or inherited database/storage/provider environment. Startup,
+connection/write/read, and acknowledgement share one parent-enforced deadline. Late success is not
+accepted; timeout kills/reaps the helper. OS scheduling/reaping can add cleanup latency, so this is
+not a real-time guarantee. Helper stdout/stderr are discarded and no settings files are loaded.
+Celery/Kombu retries are disabled for this path. The existing queue verifier explicitly exercises
+it with synthetic content, followed by worker-loss recovery and purge. This does not activate
+normal automatic dispatch, scheduler, published-message-loss repair, or the full Step 1 exit gate.
 
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
-record outbox receipts. The real broker adapter, automatic dispatch, scheduler, periodic repair,
+record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,
 stage retry APIs, request replay/tombstones, and new version/history endpoints remain pending.
 The remaining text describes accepted target behavior, not currently active features.
 
