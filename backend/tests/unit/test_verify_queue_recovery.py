@@ -24,6 +24,9 @@ def test_capture_probe_uses_current_pdf_capture_contract() -> None:
     assert "PdfCaptureInput" in verify_queue_recovery.CAPTURE_PROBE_CODE
     assert ".capture_pdf(" in verify_queue_recovery.CAPTURE_PROBE_CODE
     assert "CaptureDocumentInput" not in verify_queue_recovery.CAPTURE_PROBE_CODE
+    assert "BoundedCeleryOutboxPublisher" in verify_queue_recovery.CAPTURE_PROBE_CODE
+    assert "processing_dispatcher=DeferredDispatcher()" in verify_queue_recovery.CAPTURE_PROBE_CODE
+    assert "drained.claimed == drained.published == 1" in verify_queue_recovery.CAPTURE_PROBE_CODE
 
 
 def prepare_deterministic_runtime(
