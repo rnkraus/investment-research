@@ -1,7 +1,8 @@
 """Content-free, deterministic outbox intent and bounded delivery metadata."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from math import isfinite
 from typing import Literal, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -10,6 +11,12 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 OUTBOX_SCHEMA_VERSION = "outbox-event.v1"
 OUTBOX_MAX_GENERATIONS = 3
 OUTBOX_MAX_ATTEMPTS = 3
+OUTBOX_CLAIM_SECONDS = 30
+OUTBOX_MAX_RETRY_DELAY_SECONDS = 30
+
+
+class OutboxTransitionError(ValueError):
+    """Reject a premature, exhausted, or no-longer-owned delivery transition."""
 
 
 class OutboxKind(StrEnum):
@@ -130,3 +137,123 @@ class OutboxEvent(BaseModel):
             created_at=created_at,
             next_attempt_at=created_at,
         )
+
+    def claim(self, *, lease_id: UUID, claimed_at: datetime) -> Self:
+        """Consume one publication attempt, reclaiming only an expired delivery fence."""
+
+        claimed_at = self._aware_time(claimed_at)
+        due_at = (
+            self.lease_expires_at if self.state is OutboxState.CLAIMED else self.next_attempt_at
+        )
+        if (
+            self.state not in {OutboxState.PENDING, OutboxState.RETRY_WAIT, OutboxState.CLAIMED}
+            or due_at is None
+            or due_at > claimed_at
+            or self.attempt_count >= OUTBOX_MAX_ATTEMPTS
+        ):
+            raise OutboxTransitionError("delivery intent is not claimable")
+        return self._replace(
+            state=OutboxState.CLAIMED,
+            attempt_count=self.attempt_count + 1,
+            next_attempt_at=None,
+            lease_id=lease_id,
+            lease_expires_at=claimed_at + timedelta(seconds=OUTBOX_CLAIM_SECONDS),
+        )
+
+    def record_publication(self, *, lease_id: UUID, completed_at: datetime) -> Self:
+        """Acknowledge publication, never processing success, under an unexpired fence."""
+
+        completed_at = self._require_owner(lease_id, completed_at)
+        return self._replace(
+            state=OutboxState.PUBLISHED,
+            lease_id=None,
+            lease_expires_at=None,
+            published_at=completed_at,
+            last_error_category=None,
+        )
+
+    def record_failure(
+        self,
+        *,
+        lease_id: UUID,
+        completed_at: datetime,
+        category: DeliveryErrorCategory,
+        retry_delay_seconds: float,
+    ) -> Self:
+        """Persist a safe failure without resetting any delivery or execution allowance."""
+
+        completed_at = self._require_owner(lease_id, completed_at)
+        if (
+            not isfinite(retry_delay_seconds)
+            or not 0 <= retry_delay_seconds <= OUTBOX_MAX_RETRY_DELAY_SECONDS
+        ):
+            raise OutboxTransitionError("delivery retry delay is outside its bound")
+        if category is DeliveryErrorCategory.SOURCE_INELIGIBLE:
+            return self.cancel()
+        retryable = (
+            category is DeliveryErrorCategory.DEPENDENCY_UNAVAILABLE
+            and self.attempt_count < OUTBOX_MAX_ATTEMPTS
+        )
+        return self._replace(
+            state=OutboxState.RETRY_WAIT if retryable else OutboxState.BLOCKED,
+            lease_id=None,
+            lease_expires_at=None,
+            next_attempt_at=(
+                completed_at + timedelta(seconds=retry_delay_seconds) if retryable else None
+            ),
+            last_error_category=(
+                DeliveryErrorCategory.ATTEMPTS_EXHAUSTED
+                if category is DeliveryErrorCategory.DEPENDENCY_UNAVAILABLE and not retryable
+                else category
+            ),
+        )
+
+    def block_expired_final_claim(self, *, now: datetime) -> Self:
+        """Retain the last consumed attempt after a publisher disappears."""
+
+        now = self._aware_time(now)
+        if (
+            self.state is not OutboxState.CLAIMED
+            or self.lease_expires_at is None
+            or self.lease_expires_at > now
+            or self.attempt_count != OUTBOX_MAX_ATTEMPTS
+        ):
+            raise OutboxTransitionError("delivery intent is not exhausted")
+        return self._replace(
+            state=OutboxState.BLOCKED,
+            lease_id=None,
+            lease_expires_at=None,
+            last_error_category=DeliveryErrorCategory.ATTEMPTS_EXHAUSTED,
+        )
+
+    def cancel(self) -> Self:
+        """Close redundant or ineligible publication intent without altering the run."""
+
+        return self._replace(
+            state=OutboxState.CANCELLED,
+            lease_id=None,
+            lease_expires_at=None,
+            next_attempt_at=None,
+            last_error_category=DeliveryErrorCategory.SOURCE_INELIGIBLE,
+        )
+
+    def _require_owner(self, lease_id: UUID, completed_at: datetime) -> datetime:
+        completed_at = self._aware_time(completed_at)
+        if (
+            self.state is not OutboxState.CLAIMED
+            or self.lease_id != lease_id
+            or self.lease_expires_at is None
+            or completed_at >= self.lease_expires_at
+            or completed_at < self.lease_expires_at - timedelta(seconds=OUTBOX_CLAIM_SECONDS)
+        ):
+            raise OutboxTransitionError("delivery claim is no longer owned")
+        return completed_at
+
+    @staticmethod
+    def _aware_time(value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise OutboxTransitionError("delivery time must be timezone-aware")
+        return value.astimezone(UTC)
+
+    def _replace(self, **changes: object) -> Self:
+        return self.model_validate(self.model_dump() | changes)
