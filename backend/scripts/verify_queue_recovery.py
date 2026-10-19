@@ -53,10 +53,29 @@ CAPTURE_PROBE_CODE = """\
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pydantic import SecretStr
+
 from investment_research.bootstrap import build_api_container
+from investment_research.infrastructure.database.outbox_unit_of_work import (
+    create_outbox_delivery_unit_of_work_factory,
+)
+from investment_research.infrastructure.database.unit_of_work import (
+    create_capture_unit_of_work_factory,
+)
+from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
+from investment_research.modules.delivery.application import DrainOutboxService
+from investment_research.modules.delivery.ports import OutboxPublicationInvalidError
+from investment_research.modules.documents.application import CaptureDocumentService
 from investment_research.modules.documents.contracts import PdfCaptureInput
+from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.settings import load_api_settings
+from investment_research.settings_models import QueueSettings
+
+
+class DeferredDispatcher:
+    def dispatch(self, job: ProcessingJobV1) -> None:
+        pass
 
 container = build_api_container(load_api_settings(env_file=None))
 try:
@@ -69,9 +88,33 @@ try:
         published_at=datetime(2026, 2, 20, 12, tzinfo=UTC),
         available_at=datetime(2026, 2, 20, 12, tzinfo=UTC),
     )
+    capture_service = CaptureDocumentService(
+        object_storage=container.object_storage,
+        unit_of_work_factory=create_capture_unit_of_work_factory(container.session_factory),
+        max_upload_bytes=container.settings.max_upload_bytes,
+        processing_dispatcher=DeferredDispatcher(),
+    )
     with Path("/verification-fixture.pdf").open("rb") as content:
-        result = container.capture_document_service.capture_pdf(context, capture_input, content)
+        result = capture_service.capture_pdf(context, capture_input, content)
     assert result.state is ProcessingState.CAPTURED
+    publisher = BoundedCeleryOutboxPublisher(QueueSettings(
+        runtime_location=container.settings.runtime_location,
+        redis_url=container.settings.redis_url,
+    ))
+    drained = DrainOutboxService(
+        create_outbox_delivery_unit_of_work_factory(container.session_factory), publisher
+    ).drain(context)
+    assert drained.claimed == drained.published == 1, "bounded outbox publication failed"
+    invalid_publisher = BoundedCeleryOutboxPublisher(QueueSettings(
+        runtime_location="container",
+        redis_url=SecretStr("redis://:synthetic-invalid-probe@redis:6379/0"),
+    ))
+    try:
+        invalid_publisher.is_ready(timeout_seconds=2)
+    except OutboxPublicationInvalidError:
+        pass
+    else:
+        raise AssertionError("broker authentication failure was not classified safely")
 finally:
     container.close()
 """
