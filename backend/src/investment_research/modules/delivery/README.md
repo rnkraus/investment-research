@@ -5,10 +5,12 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 
 | Location | Responsibility |
 | --- | --- |
-| `domain.py` | Strict versioned event, bounded delivery metadata, and deterministic identity |
-| `ports.py` | Scoped persistence interface; no independent commits or broker operations |
+| `domain.py` | Strict versioned event, deterministic identity, fenced transitions, and retry ceilings |
+| `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
 | `persistence.py` | Module-owned `outbox_events` mapping, constraints, and due-work indexes |
 | `../../infrastructure/database/outbox.py` | Cross-module canonical target qualification and PostgreSQL repository |
+| `../../infrastructure/database/outbox_delivery.py` | Single-row due claims, canonical eligibility, and fenced receipts |
+| `../../infrastructure/database/outbox_unit_of_work.py` | Short claim/receipt transactions returning detached immutable values |
 | `../../infrastructure/database/unit_of_work.py` | One transaction for document/version/original metadata, processing run, and outbox intent |
 
 ## Implemented storage boundary
@@ -38,10 +40,42 @@ Migration `0013_processing_outbox` backfills only active-current, unclaimed `CAP
 does not reset leases, revive failed work, or manufacture execution attempts. Downgrade refuses to
 discard any retained delivery intent/history; the empty-schema migration cycle remains supported.
 
+## Implemented claim and receipt boundary (2026-10-19)
+
+`claim_next_due` inspects at most one due event in the trusted workspace, ordered by due time
+then event ID, with `FOR UPDATE SKIP LOCKED`. It claims individually, not twenty leases ahead
+of publication. Concurrent dispatchers skip locked rows. Only a returned `CLAIMED` event may
+be published; a returned `CANCELLED`/`BLOCKED` event still consumes one of the future caller's
+twenty scan slots. `None` means no unlocked due event, not proof that all work is complete.
+
+The event must reference an active current document and an untouched `CAPTURED` run. Intent for
+a run already started by the legacy fast path is cancelled as redundant without changing its
+processing state or execution allowance. This also applies to ineligible/deletion-pending sources.
+Recovery of expired execution leases belongs to the later reconciliation block, not this claim.
+
+Each claim increments only the event's publication count and receives a fresh 30-second token.
+Only expired delivery claims can be reclaimed. A third expired claim becomes `BLOCKED` rather
+than receiving a fourth attempt. A transient publication failure schedules a bounded retry
+(caller-selected delay/jitter at most 30 seconds); its third attempt also blocks. Invalid jobs
+block immediately. Cancellation preserves prior publication history and never resets a run.
+
+Receipt writes require the same workspace, event, token, and unexpired lease; a receipt exactly
+at expiry is rejected even before another dispatcher takes over. Deletion cancellation wins over
+late receipts. Receipts recheck source lifecycle/current version but allow an already-started
+worker: a successful publish may start processing before its receipt is recorded. Publication
+acknowledgement is never processing completion. The worker remains the execution authority,
+including eligibility checks for publication/deletion races.
+
+Repositories never commit. The typed delivery unit of work commits and closes each claim before
+the future broker adapter receives its detached value, and opens a separate receipt transaction.
+No broker call is part of these database operations. The future caller must check broker readiness
+before claiming and enforce the sweep, publication deadline, and scan bounds.
+
 ## Deliberately pending
 
-The existing post-commit Celery fast path is still active. No outbox dispatcher, claim operation,
-scheduler, periodic repair, or publication receipt writer is enabled in this storage block.
+The existing post-commit Celery fast path is still active. Claim/receipt primitives are tested
+but not wired into capture, worker bootstrap, a command, or a scheduler. No outbox broker adapter,
+automatic dispatcher, scheduler, or periodic repair is enabled by these storage/claim blocks.
 Consequently `PENDING` means no outbox-owned publication receipt, not proof the legacy fast path
 never published or the worker never ran. The later dispatcher must recheck canonical readiness
 and lifecycle before claiming or publishing this intent. Duplicate delivery remains safe under the

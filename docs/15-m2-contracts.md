@@ -203,11 +203,19 @@ content-free cancellation/detachment during canonical purge. Migration `0013_pro
 and the readiness check are implemented; see the
 [delivery guide](../backend/src/investment_research/modules/delivery/README.md).
 
+**Claim/receipt primitives (2026-10-19):** Single-row scoped `SKIP LOCKED` claims and separately
+fenced receipt transactions are implemented. Domain transitions enforce the 30-second lease,
+three-attempt ceiling, bounded retry delay, and terminal cancellation/blocking. Untouched captured
+work is requalified against active/current canonical sources. Intent already handled by the legacy
+fast path is cancelled without resetting execution attempts. A publication receipt allows a worker
+that has already started, but rejects a wrong/expired token or deletion-pending source. These
+primitives are not yet invoked by runtime dispatch; tests do not satisfy broker-outage recovery.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
-record outbox receipts. Claiming, publication receipt writing, scheduler, periodic repair, stage
-retry APIs, request replay/tombstones, and new version/history endpoints are not enabled by this
-storage block. The remaining text describes accepted target behavior, not currently active features.
+record outbox receipts. The real broker adapter, automatic dispatch, scheduler, periodic repair,
+stage retry APIs, request replay/tombstones, and new version/history endpoints remain pending.
+The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings
 
