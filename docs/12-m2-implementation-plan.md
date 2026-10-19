@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted; Step 1 outbox storage block verified on 2026-10-14, dispatcher/repair pending
+**Status:** Step 0 accepted; Step 1 storage verified; claim/receipt primitives implemented, runtime dispatch/repair pending
 
 **Date:** 2026-10-01
 
@@ -323,6 +323,36 @@ receipts. No dispatcher, claim/drain command, scheduler, or periodic repair is e
 intent does not prove the legacy fast path never delivered. Step 1's full Redis-outage/recovery gate
 is still open. The next work block adds bounded claiming/publication and receipt fencing before
 the separate scheduler/repair and complete runtime gates.
+
+**Claim/receipt work block (2026-10-19):** Added domain-owned fenced transitions, a separate typed
+delivery repository/unit of work, and PostgreSQL single-row `FOR UPDATE SKIP LOCKED` claims ordered
+by due time/event ID. A claim checks the trusted workspace, active/current document, and untouched
+captured run, consumes one publication attempt, and assigns a fresh 30-second token. Started or
+terminal legacy work is cancelled as redundant; processing state/attempts are not reset. Expired
+delivery claims can be reclaimed up to three total claims; final expiry or transient-attempt
+exhaustion is retained as `BLOCKED`. Permanent job failures do not auto-retry.
+
+Separate receipt transactions require the matching unexpired token and recheck source eligibility.
+They allow a worker to have started after publication, but cannot overwrite purge cancellation or
+a newer claim. No transaction includes a broker call. The new functions are not wired into runtime
+dispatch, and no schema, capture response, frontend, provider budget, or scheduler changes here.
+The future caller still owns readiness-before-claim, capped backoff/jitter, the 20-target/30-second
+sweep, the shared two-second publication deadline, and runtime activation tests.
+
+Existing CI discovery includes the new deterministic transition and PostgreSQL concurrency/fencing
+tests. The next block implements the bounded broker adapter and drain orchestration, followed by
+repair generations, the separate scheduler, and the complete Redis-loss/M1 runtime gates. Do not
+interpret tested receipt primitives as an already-running publication or recovery service.
+
+Verification: `scripts.verify_backend` passed formatting, linting, typing, and 2,256 unit tests.
+`scripts.verify_postgres` passed migration cycling, schema drift checks, and 258 integration tests;
+seven SeaweedFS-only tests were skipped because their separate verifier was not active. The new
+tests cover competing open transactions, rollback, foreign/unknown scope, expired and replaced
+tokens, retry/exhaustion, legacy worker start, and purge cancellation. `pnpm format`, `pnpm lint`,
+`pnpm typecheck`, and `pnpm test` passed, including contract checking and 95 frontend tests.
+The isolated PostgreSQL container, networks, and volume were removed. No paid provider, browser,
+normal archive, production build, or full M0/M1/queue runtime journey was exercised. Hosted CI has
+not been run or claimed by this local work block.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
