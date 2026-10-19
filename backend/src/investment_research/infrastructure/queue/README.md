@@ -10,6 +10,8 @@ canonical source of `ProcessingRun` state, derived output, and deletion receipts
 | --- | --- |
 | `__init__.py` | Declares the infrastructure package without import-time side effects. |
 | `celery.py` | Builds the broker-only Celery application and publishes processing and purge jobs. |
+| `outbox.py` | Enforces the shared broker-operation deadline in a disposable subprocess. |
+| `outbox_transport.py` | Private bounded stdin protocol and retry-disabled Celery publication. |
 | `tasks.py` | Validates broker payloads, defers active redeliveries, and invokes the application-owned job executor. |
 | `deletion_tasks.py` | Validates purge payloads and invokes canonical cleanup with bounded retries and per-attempt time limits. |
 | `../../worker.py` | Composes the Celery entry point and owns lazy process-local worker resources. |
@@ -22,6 +24,12 @@ scheduler, and periodic repair are not enabled yet. Pending outbox state is ther
 that this legacy path never delivered the job. See the
 [delivery guide](../../modules/delivery/README.md) for the staged replacement boundary. Current
 purge delivery remains unchanged; only canonical purge detachment of outbox history is added.
+
+**M2 bounded dispatch block:** The explicit `DrainOutboxService` and outbox publisher are implemented
+and used by `scripts.verify_queue_recovery` for its disposable synthetic capture. They are not yet
+wired into normal capture, worker bootstrap, an operator command, or periodic scheduling. The
+legacy diagram below still describes the normal application path; automatic repair and runtime
+activation remain separate Step 1 gates.
 
 ```mermaid
 flowchart LR
@@ -51,6 +59,29 @@ canonical execution lease provide idempotency; a Celery task identifier alone is
 boundary.
 
 ## Acknowledgement and retry policy
+
+### Bounded outbox publication
+
+The outbox path checks broker readiness before claiming a single canonical event. Claim and receipt
+transactions are separate; no connection or lock is retained during publication. The application
+drain limits a sweep to 20 inspected rows and 30 seconds, with each broker operation capped at two
+seconds or the smaller remaining sweep/lease budget. Lost acknowledgements remain uncertain delivery.
+
+The synchronous Celery operation runs in a disposable Python subprocess using the existing worker
+image/dependencies, not a separate service or `multiprocessing` child of a daemon worker. The parent
+deadline covers process startup and all connection/write/read work; it kills/reaps the helper on
+timeout and rejects late success. OS scheduling/cleanup can exceed the nominal response deadline;
+this is not a real-time latency guarantee. Celery/Kombu hidden publication/connection retries are
+disabled. The domain's bounded retry count and jitter, not SDK retries, own subsequent attempts.
+
+Only broker configuration and the existing ID-only payload cross a bounded private stdin pipe.
+No credential is placed in argv; no database/storage/provider environment variables are inherited.
+The helper does not load environment or secret files and its stdout/stderr are discarded. Safe
+exit categories distinguish transient uncertainty, invalid configuration/job, and unexpected faults.
+Authentication failure is a configuration error, not a transient retry. Source access and execution
+fences remain enforced by the normal worker, including duplicates after an uncertain publication.
+
+### Existing processing delivery
 
 The worker reserves one message at a time and acknowledges it only after task execution. Redis may
 redeliver an unacknowledged message after 420 seconds. This exceeds the 360-second canonical

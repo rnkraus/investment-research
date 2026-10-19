@@ -7,6 +7,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | --- | --- |
 | `domain.py` | Strict versioned event, deterministic identity, fenced transitions, and retry ceilings |
 | `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
+| `application.py` | Scoped drain, readiness-before-claim, scan/time bounds, jitter, and safe outcomes |
 | `persistence.py` | Module-owned `outbox_events` mapping, constraints, and due-work indexes |
 | `../../infrastructure/database/outbox.py` | Cross-module canonical target qualification and PostgreSQL repository |
 | `../../infrastructure/database/outbox_delivery.py` | Single-row due claims, canonical eligibility, and fenced receipts |
@@ -68,14 +69,46 @@ including eligibility checks for publication/deletion races.
 
 Repositories never commit. The typed delivery unit of work commits and closes each claim before
 the future broker adapter receives its detached value, and opens a separate receipt transaction.
-No broker call is part of these database operations. The future caller must check broker readiness
-before claiming and enforce the sweep, publication deadline, and scan bounds.
+No broker call is part of these database operations. The drain checks broker readiness before
+claiming and enforces the sweep, publication deadline, and scan bounds.
+
+## Implemented bounded publication boundary (2026-10-19)
+
+`DrainOutboxService` checks readiness before each claim, then commits/closes the claim transaction,
+publishes the existing ID-only `ProcessingJobV1`, and records the outcome in a separate transaction.
+It inspects at most 20 returned rows in a 30-second monotonic sweep; cancelled/blocked rows count
+toward that limit. The next publication receives the minimum of the two-second broker cap, sweep
+time remaining, and delivery-lease time remaining. It never claims a batch ahead of sending.
+
+A known broker outage before claiming consumes no attempt. A timeout/lost acknowledgement after
+claiming is uncertain delivery: persist a safe transient failure and stop this sweep, rather than
+burning the rest of the workspace's attempts. Retry delay uses capped exponential full jitter;
+the existing per-generation ceiling still applies. Invalid publication blocks the owned event;
+unexpected programming/database errors propagate instead of being mislabeled as broker outages.
+An expired or cancelled receipt is counted separately, not reported as acknowledged publication.
+
+`infrastructure/queue/outbox.py` enforces one wall-clock broker budget using a disposable subprocess,
+including helper startup, Celery connection/write/read, and acknowledgement. It kills/reaps a timed
+out helper and rejects a late success. OS scheduling/reaping can add cleanup latency; the deadline
+is not a real-time latency guarantee. This is an internal adapter, not a new service or a parser
+sandbox. It works from prefork workers without Python's daemon-child multiprocessing restriction.
+
+The helper receives only broker URL, runtime location, deadline, and optional typed ID-only job
+through a bounded private stdin pipe. Credentials never appear in argv. Database/storage/provider
+environment variables are not inherited; standard output/error are discarded. No settings loader
+or environment/secret file is read in the helper. Its result is a safe exit category, not a raw
+SDK exception. Celery/Kombu connection and publication retries are disabled for this path. A killed
+publisher may already have queued its message; at-least-once execution fences remain authoritative.
+
+The queue-recovery verifier defers the synthetic capture's legacy dispatch and drains its canonical
+intent through this adapter before the existing worker-loss/recovery checks. This is provider-free
+CI coverage of real Redis delivery, not production activation or full periodic repair.
 
 ## Deliberately pending
 
-The existing post-commit Celery fast path is still active. Claim/receipt primitives are tested
-but not wired into capture, worker bootstrap, a command, or a scheduler. No outbox broker adapter,
-automatic dispatcher, scheduler, or periodic repair is enabled by these storage/claim blocks.
+The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
+are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator
+command, or a scheduler. Automatic dispatch, scheduler, and periodic repair remain pending.
 Consequently `PENDING` means no outbox-owned publication receipt, not proof the legacy fast path
 never published or the worker never ran. The later dispatcher must recheck canonical readiness
 and lifecycle before claiming or publishing this intent. Duplicate delivery remains safe under the
