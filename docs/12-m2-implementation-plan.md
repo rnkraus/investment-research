@@ -418,6 +418,24 @@ Verification: `scripts.verify_backend` passed formatting, linting, typing, and 2
 networks, and volume were removed. Existing CI discovery includes the tests. No broker, frontend,
 browser, live provider, normal archive, or full runtime journey was exercised by this block.
 
+**Bounded recovery scan block (2026-10-21):** Added a content-free, workspace-scoped snapshot
+of at most twenty eligible latest published events after the 420-second grace period. Started,
+excluded/non-current, exhausted, and superseded work is excluded before the limit; receipt time
+and event ID give stable ordering. `RecoverUnstartedOutboxService` closes the snapshot transaction
+and requalifies each target through `recover_unstarted` in a separate transaction. Skipped targets
+consume a slot. A cooperative thirty-second deadline prevents starting further recovery work, not
+an in-flight SQL cancellation guarantee. Prepared counts include idempotently reused successors;
+they do not assert new execution or broker delivery. Existing CI discovery includes the new unit
+and PostgreSQL tests without another workflow. The normal app, scheduler, operator command,
+expired-execution recovery, exhausted-work status, and shared-budget repair/drain coordinator
+remain outside this block. Step 1 is still incomplete.
+Verification: all seven focused scan unit tests passed. `scripts.verify_backend` passed formatting,
+linting, typing, and 2,306 unit tests. `scripts.verify_postgres` passed migration cycling, schema
+drift checks, and 278 integration tests, including six new scan cases and extended eligibility
+checks; seven separate SeaweedFS-only tests were skipped. The isolated database, volume, and
+networks were removed. No frontend/browser, broker, live-provider, normal archive, or full runtime
+journey checks were rerun for this internal recovery block.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

@@ -51,6 +51,14 @@ def test_recovery_is_scoped_due_idempotent_and_preserves_existing_successors(
     factory = create_outbox_delivery_unit_of_work_factory(create_session_factory(engine))
     other = create_workspace(engine)
     with factory() as work:
+        assert work.delivery.list_unstarted_candidates(other, now=RECOVER_AT) == ()
+        assert (
+            work.delivery.list_unstarted_candidates(context, now=RECOVER_AT - timedelta(seconds=1))
+            == ()
+        )
+        assert work.delivery.list_unstarted_candidates(context, now=RECOVER_AT) == (
+            original.event_id,
+        )
         for scope, identifier in ((other, original.event_id), (context, uuid4())):
             assert (
                 work.delivery.recover_unstarted(scope, event_id=identifier, now=RECOVER_AT) is None
@@ -66,8 +74,12 @@ def test_recovery_is_scoped_due_idempotent_and_preserves_existing_successors(
         )
         assert next_event is not None and next_event.generation == 1
         assert next_event.state is OutboxState.PENDING
+        assert work.delivery.list_unstarted_candidates(context, now=RECOVER_AT) == ()
     published_next = publish_event(engine, context)
     with factory() as work:
+        assert work.delivery.list_unstarted_candidates(
+            context, now=RECOVER_AT + timedelta(seconds=420)
+        ) == (published_next.event_id,)
         assert (
             work.delivery.recover_unstarted(
                 context, event_id=original.event_id, now=RECOVER_AT + timedelta(seconds=1)
@@ -92,6 +104,12 @@ def test_recovery_is_scoped_due_idempotent_and_preserves_existing_successors(
             event_id=final_claim.event_id,
             lease_id=final_claim.lease_id,
             now=RECOVER_AT + timedelta(seconds=420),
+        )
+        assert (
+            work.delivery.list_unstarted_candidates(
+                context, now=RECOVER_AT + timedelta(seconds=840)
+            )
+            == ()
         )
         assert (
             work.delivery.recover_unstarted(
@@ -216,6 +234,7 @@ def test_canonical_ineligibility_never_creates_a_generation(
                 .values(current_version_id=replacement.id)
             )
     with create_outbox_delivery_unit_of_work_factory(sessions)() as work:
+        assert work.delivery.list_unstarted_candidates(context, now=RECOVER_AT) == ()
         assert (
             work.delivery.recover_unstarted(context, event_id=original.event_id, now=RECOVER_AT)
             is None
