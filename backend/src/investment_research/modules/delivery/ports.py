@@ -47,6 +47,16 @@ class OutboxRepository(Protocol):
 class OutboxDeliveryRepository(Protocol):
     """Short delivery transactions, separate from broker readiness and publication."""
 
+    def recover_unstarted(
+        self, context: WorkspaceContext, *, event_id: UUID, now: datetime
+    ) -> OutboxEvent | None:
+        """Insert one next generation after canonical eligibility and latest-event checks.
+
+        A repeat may return its existing direct successor without resetting it. Unknown,
+        foreign, locked, ineligible, premature, exhausted, or superseded targets return None.
+        The caller owns this short transaction; this operation never publishes.
+        """
+
     def claim_next_due(self, context: WorkspaceContext, *, now: datetime) -> OutboxEvent | None:
         """Inspect at most one unlocked due row after the caller checks broker readiness.
 

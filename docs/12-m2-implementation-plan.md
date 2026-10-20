@@ -403,6 +403,21 @@ Verification: all 12 focused recovery-rule tests passed; `scripts.verify_backend
 linting, typing, and 2,299 unit tests. Existing CI discovery includes the new test file. No database,
 Docker, frontend, browser, or live-provider checks were rerun for this pure value-rule change.
 
+**Targeted recovery repository block (2026-10-21):** Added a single-event `recover_unstarted`
+operation to the existing delivery transaction. It checks workspace and active/current source,
+holds a document SHARE lock compatible with processing's source-write guard, and locks only an
+untouched captured run and its exact latest event. Locked rows are skipped without falling back to
+older generations. A scoped unique insert retains the previous receipt; repeats return the existing
+direct successor without resetting its state/attempts. Superseded, foreign/unknown, premature,
+started/terminal, excluded, or exhausted targets do not create intent. The operation neither commits
+nor publishes and is not wired to a scanner, scheduler, operator command, or normal capture. Recovery
+of expired execution work and full automatic-repair activation remain pending.
+Verification: `scripts.verify_backend` passed formatting, linting, typing, and 2,299 unit tests.
+`scripts.verify_postgres` passed migration cycling, drift checks, and 272 integration tests, including
+11 new recovery cases; seven separate SeaweedFS-only tests were skipped. The disposable database,
+networks, and volume were removed. Existing CI discovery includes the tests. No broker, frontend,
+browser, live provider, normal archive, or full runtime journey was exercised by this block.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
