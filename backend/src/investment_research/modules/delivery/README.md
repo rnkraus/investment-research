@@ -109,10 +109,20 @@ CI coverage of real Redis delivery, not production activation or full periodic r
 **Recovery value rule (2026-10-20):** `OutboxEvent.redeliver_unstarted` can derive the next
 deterministic generation only from `PUBLISHED`, at least 420 seconds after its receipt, and below
 the three-generation ceiling. The previous immutable event/receipt is unchanged. This pure rule
-does not inspect or authorize canonical work. A future repository must lock/recheck the scoped
+does not inspect or authorize canonical work. Persistence must lock/recheck the scoped
 active/current, unstarted run and latest event, retain prior rows, and insert idempotently under
 scoped uniqueness; repeated scans must not overwrite an existing generation's attempts or receipts.
-It is not yet connected to persistence or automatic recovery and cannot revive blocked work.
+It cannot revive blocked work or authorize a source merely from the passage of time.
+
+**Targeted recovery persistence (2026-10-21):** `recover_unstarted` applies that rule in the
+caller's transaction. It checks trusted workspace and active/current source under a document SHARE
+lock, locks only an unstarted captured run, then locks its exact latest event. Locked targets are
+skipped, never replaced by an older unlocked generation. SHARE is compatible with processing's
+source-write guard; it still fences deletion/promotion. A repeat can return its existing direct
+successor without resetting attempts/receipts. Older superseded requests, foreign/unknown IDs,
+started/terminal work, premature receipts, and exhausted generations return absence. The scoped
+unique insert retains previous events. No broker call, scan, scheduler, or automatic recovery is
+enabled; expired execution recovery remains a separate work block.
 
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator

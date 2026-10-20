@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from investment_research.modules.delivery.domain import (
@@ -26,6 +27,109 @@ class SqlAlchemyOutboxDeliveryRepository:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def recover_unstarted(
+        self, context: WorkspaceContext, *, event_id: UUID, now: datetime
+    ) -> OutboxEvent | None:
+        """Retain receipts and serialize recovery with processing, deletion, and promotion."""
+
+        now = self._aware_time(now)
+        target = self._session.execute(
+            select(OutboxEventRow.target_id, OutboxEventRow.kind, OutboxEventRow.generation).where(
+                OutboxEventRow.workspace_id == context.workspace_id,
+                OutboxEventRow.event_id == event_id,
+            )
+        ).one_or_none()
+        if target is None:
+            return None
+        document = self._session.scalar(
+            select(DocumentRow.id)
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == DocumentRow.workspace_id,
+                    DocumentVersionRow.document_id == DocumentRow.id,
+                    DocumentVersionRow.id == DocumentRow.current_version_id,
+                ),
+            )
+            .join(
+                ProcessingRunRow,
+                and_(
+                    ProcessingRunRow.workspace_id == DocumentVersionRow.workspace_id,
+                    ProcessingRunRow.document_version_id == DocumentVersionRow.id,
+                ),
+            )
+            .where(
+                DocumentRow.workspace_id == context.workspace_id,
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                ProcessingRunRow.id == target.target_id,
+            )
+            # SHARE fences deletion/promotion but remains compatible with processing's
+            # source-write guard. Skip a locked run instead of reversing its lock order.
+            .with_for_update(read=True, skip_locked=True, of=DocumentRow)
+        )
+        if document is None:
+            return None
+        run_id = self._session.scalar(
+            select(ProcessingRunRow.id)
+            .where(
+                ProcessingRunRow.workspace_id == context.workspace_id,
+                ProcessingRunRow.id == target.target_id,
+                ProcessingRunRow.state == ProcessingState.CAPTURED,
+            )
+            .with_for_update(skip_locked=True, of=ProcessingRunRow)
+        )
+        if run_id is None:
+            return None
+        latest_id = (
+            select(OutboxEventRow.event_id)
+            .where(
+                OutboxEventRow.workspace_id == context.workspace_id,
+                OutboxEventRow.kind == target.kind,
+                OutboxEventRow.target_id == target.target_id,
+            )
+            .order_by(OutboxEventRow.generation.desc())
+            .limit(1)
+            .correlate(None)
+            .scalar_subquery()
+        )
+        latest = self._session.scalar(
+            select(OutboxEventRow)
+            .where(
+                OutboxEventRow.workspace_id == context.workspace_id,
+                OutboxEventRow.event_id == latest_id,
+            )
+            .with_for_update(skip_locked=True, of=OutboxEventRow)
+            .execution_options(populate_existing=True)
+        )
+        if latest is None:
+            return None
+        if latest.generation == target.generation + 1:
+            return latest.to_domain()
+        if latest.event_id != event_id:
+            return None
+        try:
+            successor = latest.to_domain().redeliver_unstarted(now=now)
+        except OutboxTransitionError:
+            return None
+        row = self._session.scalar(
+            insert(OutboxEventRow)
+            .values(**successor.model_dump(), processing_run_id=run_id)
+            .on_conflict_do_nothing(
+                index_elements=["workspace_id", "kind", "target_id", "generation"]
+            )
+            .returning(OutboxEventRow)
+        )
+        if row is None:
+            row = self._session.scalar(
+                select(OutboxEventRow)
+                .where(
+                    OutboxEventRow.workspace_id == context.workspace_id,
+                    OutboxEventRow.event_id == successor.event_id,
+                )
+                .execution_options(populate_existing=True)
+            )
+        return None if row is None else row.to_domain()
 
     def claim_next_due(self, context: WorkspaceContext, *, now: datetime) -> OutboxEvent | None:
         """Lock at most one due row; cancelled/blocked outcomes also consume one scan slot."""
