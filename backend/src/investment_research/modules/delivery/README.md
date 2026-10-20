@@ -8,6 +8,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | `domain.py` | Strict versioned event, deterministic identity, fenced transitions, and retry ceilings |
 | `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
 | `application.py` | Scoped drain, readiness-before-claim, scan/time bounds, jitter, and safe outcomes |
+| `recovery.py` | Bounded snapshot and separately fenced preparation of unstarted redelivery intent |
 | `persistence.py` | Module-owned `outbox_events` mapping, constraints, and due-work indexes |
 | `../../infrastructure/database/outbox.py` | Cross-module canonical target qualification and PostgreSQL repository |
 | `../../infrastructure/database/outbox_delivery.py` | Single-row due claims, canonical eligibility, and fenced receipts |
@@ -121,8 +122,20 @@ skipped, never replaced by an older unlocked generation. SHARE is compatible wit
 source-write guard; it still fences deletion/promotion. A repeat can return its existing direct
 successor without resetting attempts/receipts. Older superseded requests, foreign/unknown IDs,
 started/terminal work, premature receipts, and exhausted generations return absence. The scoped
-unique insert retains previous events. No broker call, scan, scheduler, or automatic recovery is
-enabled; expired execution recovery remains a separate work block.
+unique insert retains previous events. No broker call or normal runtime activation follows from
+this operation; expired execution recovery remains a separate work block.
+
+**Bounded recovery scan (2026-10-21):** `RecoverUnstartedOutboxService` reads at most twenty
+eligible latest published event IDs, ordered by receipt time and event ID. The scoped query
+excludes newer intent in any state, exhausted generations, started work, and inactive/non-current
+sources. It waits the same 420 seconds from publication. The snapshot transaction closes before
+each separate `recover_unstarted` transaction rechecks eligibility and locks. Skipped candidates
+consume a scan slot; repeats never reset attempts or receipts. Content-free results count scanned
+targets and prepared successors, including an idempotently reused successor, not new executions.
+The thirty-second cooperative deadline stops further transactions; it is not an SQL cancellation
+guarantee. This service neither publishes nor combines two independent thirty-second budgets into
+one scheduler tick. A shared-budget runtime coordinator, expired-execution recovery, exhausted-work
+status, operator command, and scheduler activation remain pending.
 
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator

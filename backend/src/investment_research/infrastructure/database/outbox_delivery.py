@@ -1,20 +1,24 @@
 """Single-row outbox claims and fenced receipts in caller-owned transactions."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from investment_research.modules.delivery.domain import (
     OUTBOX_MAX_ATTEMPTS,
+    OUTBOX_MAX_GENERATIONS,
+    OUTBOX_UNSTARTED_GRACE_SECONDS,
     DeliveryErrorCategory,
     OutboxEvent,
+    OutboxKind,
     OutboxState,
     OutboxTransitionError,
 )
 from investment_research.modules.delivery.persistence import OutboxEventRow
+from investment_research.modules.delivery.ports import OUTBOX_RECOVERY_MAX_TARGETS
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -27,6 +31,65 @@ class SqlAlchemyOutboxDeliveryRepository:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def list_unstarted_candidates(
+        self, context: WorkspaceContext, *, now: datetime
+    ) -> tuple[UUID, ...]:
+        """Read a bounded snapshot; the targeted operation owns all mutation fences."""
+
+        now = self._aware_time(now)
+        newer = aliased(OutboxEventRow)
+        has_newer = (
+            select(newer.event_id)
+            .where(
+                newer.workspace_id == OutboxEventRow.workspace_id,
+                newer.kind == OutboxEventRow.kind,
+                newer.target_id == OutboxEventRow.target_id,
+                newer.generation > OutboxEventRow.generation,
+            )
+            .exists()
+        )
+        return tuple(
+            self._session.scalars(
+                select(OutboxEventRow.event_id)
+                .join(
+                    ProcessingRunRow,
+                    and_(
+                        ProcessingRunRow.workspace_id == OutboxEventRow.workspace_id,
+                        ProcessingRunRow.id == OutboxEventRow.processing_run_id,
+                        ProcessingRunRow.id == OutboxEventRow.target_id,
+                    ),
+                )
+                .join(
+                    DocumentVersionRow,
+                    and_(
+                        DocumentVersionRow.workspace_id == ProcessingRunRow.workspace_id,
+                        DocumentVersionRow.id == ProcessingRunRow.document_version_id,
+                    ),
+                )
+                .join(
+                    DocumentRow,
+                    and_(
+                        DocumentRow.workspace_id == DocumentVersionRow.workspace_id,
+                        DocumentRow.id == DocumentVersionRow.document_id,
+                        DocumentRow.current_version_id == DocumentVersionRow.id,
+                    ),
+                )
+                .where(
+                    OutboxEventRow.workspace_id == context.workspace_id,
+                    OutboxEventRow.kind == OutboxKind.PROCESS_DOCUMENT,
+                    OutboxEventRow.state == OutboxState.PUBLISHED,
+                    OutboxEventRow.published_at
+                    <= now - timedelta(seconds=OUTBOX_UNSTARTED_GRACE_SECONDS),
+                    OutboxEventRow.generation < OUTBOX_MAX_GENERATIONS - 1,
+                    ProcessingRunRow.state == ProcessingState.CAPTURED,
+                    DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                    ~has_newer,
+                )
+                .order_by(OutboxEventRow.published_at, OutboxEventRow.event_id)
+                .limit(OUTBOX_RECOVERY_MAX_TARGETS)
+            )
+        )
 
     def recover_unstarted(
         self, context: WorkspaceContext, *, event_id: UUID, now: datetime

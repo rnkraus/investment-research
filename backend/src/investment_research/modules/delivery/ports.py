@@ -10,6 +10,8 @@ from investment_research.modules.delivery.domain import DeliveryErrorCategory, O
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import ProcessingJobV1
 
+OUTBOX_RECOVERY_MAX_TARGETS = 20
+
 
 class OutboxScopeError(ValueError):
     """Reject an unavailable or incompatible target without exposing identifiers."""
@@ -46,6 +48,15 @@ class OutboxRepository(Protocol):
 
 class OutboxDeliveryRepository(Protocol):
     """Short delivery transactions, separate from broker readiness and publication."""
+
+    def list_unstarted_candidates(
+        self, context: WorkspaceContext, *, now: datetime
+    ) -> tuple[UUID, ...]:
+        """Snapshot at most twenty due latest published events for eligible captured runs.
+
+        Exclude exhausted generations and newer intent. This read does not lock or authorize
+        recovery; recover_unstarted must recheck each candidate in a separate transaction.
+        """
 
     def recover_unstarted(
         self, context: WorkspaceContext, *, event_id: UUID, now: datetime
