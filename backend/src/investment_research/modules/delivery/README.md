@@ -106,6 +106,14 @@ CI coverage of real Redis delivery, not production activation or full periodic r
 
 ## Deliberately pending
 
+**Recovery value rule (2026-10-20):** `OutboxEvent.redeliver_unstarted` can derive the next
+deterministic generation only from `PUBLISHED`, at least 420 seconds after its receipt, and below
+the three-generation ceiling. The previous immutable event/receipt is unchanged. This pure rule
+does not inspect or authorize canonical work. A future repository must lock/recheck the scoped
+active/current, unstarted run and latest event, retain prior rows, and insert idempotently under
+scoped uniqueness; repeated scans must not overwrite an existing generation's attempts or receipts.
+It is not yet connected to persistence or automatic recovery and cannot revive blocked work.
+
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator
 command, or a scheduler. Automatic dispatch, scheduler, and periodic repair remain pending.

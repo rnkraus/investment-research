@@ -13,6 +13,7 @@ OUTBOX_MAX_GENERATIONS = 3
 OUTBOX_MAX_ATTEMPTS = 3
 OUTBOX_CLAIM_SECONDS = 30
 OUTBOX_MAX_RETRY_DELAY_SECONDS = 30
+OUTBOX_UNSTARTED_GRACE_SECONDS = 420
 
 
 class OutboxTransitionError(ValueError):
@@ -158,6 +159,33 @@ class OutboxEvent(BaseModel):
             next_attempt_at=None,
             lease_id=lease_id,
             lease_expires_at=claimed_at + timedelta(seconds=OUTBOX_CLAIM_SECONDS),
+        )
+
+    def redeliver_unstarted(self, *, now: datetime) -> Self:
+        """Derive new intent; the caller must first prove canonical unstarted eligibility.
+
+        Persist this separately under scoped uniqueness, retaining this event unchanged.
+        This value transition cannot authorize source access or reset execution attempts.
+        """
+
+        now = self._aware_time(now)
+        if (
+            self.state is not OutboxState.PUBLISHED
+            or self.published_at is None
+            or now < self.published_at + timedelta(seconds=OUTBOX_UNSTARTED_GRACE_SECONDS)
+            or self.generation + 1 >= OUTBOX_MAX_GENERATIONS
+        ):
+            raise OutboxTransitionError("published delivery is not eligible for a new generation")
+        return type(self)(
+            event_id=outbox_event_id(
+                self.workspace_id, self.kind, self.target_id, self.generation + 1
+            ),
+            workspace_id=self.workspace_id,
+            kind=self.kind,
+            target_id=self.target_id,
+            generation=self.generation + 1,
+            created_at=now,
+            next_attempt_at=now,
         )
 
     def record_publication(self, *, lease_id: UUID, completed_at: datetime) -> Self:
