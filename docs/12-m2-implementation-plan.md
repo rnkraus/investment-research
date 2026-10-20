@@ -392,6 +392,17 @@ provider budget, or normal archive changed. No browser, production frontend buil
 full M0/M1 journey, or hosted CI execution is claimed. This is still not Step 1's complete
 Redis-outage/automatic-repair gate.
 
+**Recovery value-rule block (2026-10-21):** Added only the pure next-generation rule for a
+published-but-unstarted delivery candidate. It preserves the old immutable receipt, waits at least
+420 seconds from publication, derives the next scoped deterministic identity, and refuses a fourth
+generation or non-published/blocked/cancelled intent. This is not canonical eligibility or automatic
+repair: the next repository block must lock/recheck active/current unstarted work and the latest
+event, retain history, and insert under scoped uniqueness without resetting an existing generation.
+No database, broker, scheduler, frontend, public API, or execution-attempt behavior changes here.
+Verification: all 12 focused recovery-rule tests passed; `scripts.verify_backend` passed formatting,
+linting, typing, and 2,299 unit tests. Existing CI discovery includes the new test file. No database,
+Docker, frontend, browser, or live-provider checks were rerun for this pure value-rule change.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
