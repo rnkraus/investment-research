@@ -363,6 +363,23 @@ network/resources/tmpfs isolation, the single-scheduler topology gate, normal ca
 activation, and the complete Step 1 runtime gate remain pending. No paid provider is called by the
 schedule/send phase; worker processing retains its existing provider budget/attempt controls.
 
+**Opt-in scheduler Compose boundary (2026-10-22):** `compose.m2-repair.yaml` adds exactly one
+separate scheduler from the existing worker image, with the dedicated Python entry point and
+inherited worker health check disabled. It receives only the existing Redis secret, five
+runtime/broker environment values, no ports, and no source/database/storage/provider mounts.
+The dedicated internal `repair` network contains the scheduler and Redis; Redis retains `backend`
+as well. Non-root/read-only/capability controls, private 16 MiB `/tmp`, and
+256 MiB/0.5 CPU/64-PID ceilings are enforced. The override is not part of normal Compose or M1 live
+startup; using it intentionally enables canonical repair scans and can enqueue eligible work.
+Do not scale beyond one. Running-container state is not a health guarantee for periodic publication
+or business processing. The queue verifier starts it only after synthetic purges and checks actual
+confinement/secret/network controls, two autonomous publications, safe failure while Redis is
+stopped, and a fresh publication after Redis returns without scheduler restart/replacement.
+Each event wait is bounded to ninety seconds and captured log reads to five seconds. No normal
+archive, private provider data, or paid operation is needed for this control-path test. Normal
+capture outbox activation, default scheduler startup, complete M0/M1 compatibility, and automatic
+recovery of an HTTP-captured document still belong to the full Step 1 activation gate.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings

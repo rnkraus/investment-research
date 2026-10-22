@@ -13,6 +13,7 @@ from sqlalchemy import Engine
 from investment_research.infrastructure.queue.celery import REPAIR_OUTBOX_TASK_NAME
 from investment_research.modules.processing.domain import ProcessingState
 from scripts import verify_queue_recovery
+from scripts.repair_scheduler_probe import SchedulerVerificationError
 
 RUN_UUID = UUID("12345678-1234-4000-8000-123456789abc")
 PROCESSING_RUN_ID = UUID("10000000-0000-4000-8000-000000000004")
@@ -127,6 +128,11 @@ def prepare_deterministic_runtime(
         "wait_for_repair_tick",
         lambda *_, **__: events.append("verify-repair-tick"),
     )
+    monkeypatch.setattr(
+        verify_queue_recovery,
+        "verify_periodic_scheduler",
+        lambda *_, **__: events.append("verify-periodic-scheduler"),
+    )
     return engine, states, events
 
 
@@ -180,6 +186,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Publish one explicit repair tick after synthetic cleanup",
         "Verify one due scheduler step through the bounded broker sender",
         "Run one manual repair pass after synthetic cleanup",
+        "Start opt-in isolated repair scheduler",
         "Remove isolated queue-recovery project and its volumes",
     ]
     assert states == [
@@ -195,6 +202,9 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "verify-purge",
         "verify-repair-tick",
         "verify-purge",
+        "verify-purge",
+        "verify-purge",
+        "verify-periodic-scheduler",
         "verify-purge",
         "verify-purge",
     ]
@@ -226,6 +236,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert str(verify_queue_recovery.COMPOSE_FILE) in calls[0][1]
     assert str(verify_queue_recovery.COMPOSE_TEST_FILE) in calls[0][1]
+    assert str(verify_queue_recovery.COMPOSE_REPAIR_FILE) in calls[0][1]
     rag_mount = (
         f"{verify_queue_recovery.REPOSITORY_ROOT / 'config' / 'rag.toml'}:/config/rag.toml:ro"
     )
@@ -271,6 +282,7 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
         ("Publish one explicit repair tick after synthetic cleanup", False, False),
         ("Verify one due scheduler step through the bounded broker sender", False, False),
         ("Run one manual repair pass after synthetic cleanup", False, False),
+        ("Start opt-in isolated repair scheduler", False, False),
     ],
 )
 def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
@@ -307,6 +319,22 @@ def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
     expected_cleanup.append("Remove isolated queue-recovery project and its volumes")
     assert labels[-len(expected_cleanup) :] == expected_cleanup
     engine.dispose.assert_called_once_with()
+
+
+def test_periodic_scheduler_failure_is_reported_and_project_is_removed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, _, _ = prepare_deterministic_runtime(monkeypatch)
+    command = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(verify_queue_recovery, "run_command", command)
+    monkeypatch.setattr(
+        verify_queue_recovery,
+        "verify_periodic_scheduler",
+        Mock(side_effect=SchedulerVerificationError("synthetic periodic failure")),
+    )
+    assert verify_queue_recovery.verify_queue_recovery() == 1
+    assert command.call_args.args[0] == "Remove isolated queue-recovery project and its volumes"
+    engine.dispose.assert_called_once()
 
 
 def test_scheduler_probe_changes_only_disposable_schedule_and_requires_real_send() -> None:

@@ -298,9 +298,34 @@ The queue verifier exercises one due Beat step with disposable schedule state an
 Redis sender, checks no immediate repeat, and retains canonical absence after synthetic purges.
 It does not prove a separately running periodic process or automatic outage recovery end to end.
 
+## Opt-in Compose scheduler (2026-10-22)
+
+`compose.m2-repair.yaml` explicitly adds one scheduler using the existing worker image with the
+dedicated Python entry point and the inherited worker health check disabled. It receives only the
+Redis password secret and five runtime/broker environment values, with no ports, source/config
+mounts, database/storage/provider credentials, or Docker socket. A dedicated internal `repair`
+network connects only the scheduler and Redis; Redis also retains its existing backend network.
+The service runs as `65532:65532`, with read-only root, all capabilities dropped,
+`no-new-privileges`, a private 16 MiB non-executable `/tmp`, and 256 MiB/0.5 CPU/64-PID limits.
+Do not scale it above one. There is no worker-style ping health check: running-container state
+does not prove periodic publication, worker availability, or completed business work.
+
+The queue verifier adds this override but starts the scheduler only after its synthetic-source
+purges. It checks actual container controls/secret mounts, internal networking, blocked PostgreSQL
+IP/parser/storage/external connections, and permitted authenticated Redis access. It waits for two
+autonomous publications at the unchanged interval, stops Redis, requires a safe unavailable event,
+restarts Redis even when the outage observation fails, and requires a new successful publication.
+The same scheduler container/restart count must remain; canonical source absence is checked again.
+Logs/inspection JSON are captured rather than printed. The shared project is removed on failure too.
+
+Adding this override deliberately starts canonical repair scans and may enqueue existing eligible
+processing work; live workers retain their normal provider/budget rules. It is opt-in, not included
+by the normal Compose files or M1 live start. This block verifies an empty-archive periodic control
+path, not automatic recovery of an HTTP-captured document. No new secrets or provider keys are needed.
+
 The existing post-commit Celery fast path is still active in the normal app. Bounded repair is now
-available through the explicitly delivered worker task and manual command, but no capture outbox
-dispatch, scheduler, or periodic sender is enabled. Automatic dispatch and periodic repair remain pending.
+available through the explicitly delivered worker task, manual command, and opt-in scheduler. Normal
+capture outbox dispatch, default scheduler activation, and the complete Step 1 runtime gate remain pending.
 Consequently `PENDING` means no outbox-owned publication receipt, not proof the legacy fast path
 never published or the worker never ran. The later dispatcher must recheck canonical readiness
 and lifecycle before claiming or publishing this intent. Duplicate delivery remains safe under the
