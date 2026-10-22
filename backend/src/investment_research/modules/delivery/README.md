@@ -8,7 +8,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | `domain.py` | Strict versioned event, deterministic identity, fenced transitions, and retry ceilings |
 | `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
 | `application.py` | Scoped drain, readiness-before-claim, scan/time bounds, jitter, and safe outcomes |
-| `recovery.py` | Bounded snapshot and separately fenced preparation of unstarted redelivery intent |
+| `recovery.py` | Bounded snapshots and separately fenced preparation of unstarted/expired redelivery intent |
 | `persistence.py` | Module-owned `outbox_events` mapping, constraints, and due-work indexes |
 | `../../infrastructure/database/outbox.py` | Cross-module canonical target qualification and PostgreSQL repository |
 | `../../infrastructure/database/outbox_delivery.py` | Single-row due claims, canonical eligibility, and fenced receipts |
@@ -146,9 +146,23 @@ retained in addition to execution expiry, preventing consecutive scans from imme
 all generations while a newly published message waits for a worker. Previous receipts remain
 immutable; repeats can reuse the direct successor without resetting it. The operation never
 changes execution state, counters, tokens, or outputs and never publishes. This is preparation
-only: the existing captured-only drain cannot yet dispatch this intent. Expired-work scanning,
-appropriate drain qualification, shared-budget orchestration, and automatic activation remain
+only: the existing captured-only drain cannot yet dispatch this intent. Appropriate drain
+qualification, shared-budget orchestration, and automatic activation remain
 pending. Do not invoke this operation as a complete recovery workflow.
+
+**Bounded expired-execution scan (2026-10-22):** `list_expired_candidates` shares the scoped
+source/latest-event qualification, 420-second grace, receipt/ID ordering, and twenty-target bound
+with the unstarted query. It additionally requires unfinished leased parsing/indexing work, an
+expired execution fence, and remaining attempts under the caller's existing profile. Completed
+lexical work, including historical M1 completion, is not unfinished indexing. Each content-free
+candidate carries the observed event and execution lease IDs. `RecoverExpiredOutboxService`
+closes that read transaction before rechecking each observed token through `recover_expired` in
+its own transaction. Changed/skipped targets consume a slot. The cooperative thirty-second limit
+prevents starting further recovery, not in-flight SQL cancellation. Prepared includes idempotent
+successor reuse, not broker delivery or execution. These remain independent preparation services;
+the shared-budget runtime coordinator must not concatenate their full budgets into one tick.
+Expired-run dispatch qualification, exhaustion status, operator/scheduler wiring, and normal
+runtime activation remain pending.
 
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator

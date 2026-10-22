@@ -18,6 +18,7 @@ from investment_research.infrastructure.database.outbox_unit_of_work import (
 from investment_research.infrastructure.database.session import create_session_factory
 from investment_research.modules.delivery.domain import OutboxEvent, OutboxState
 from investment_research.modules.delivery.persistence import OutboxEventRow
+from investment_research.modules.delivery.ports import ExpiredOutboxCandidate
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -67,6 +68,9 @@ def test_expired_recovery_preserves_execution_and_is_idempotent(
     assert run.lease_id is not None
     factory = create_outbox_delivery_unit_of_work_factory(create_session_factory(engine))
     with factory() as work:
+        assert work.delivery.list_expired_candidates(
+            context, now=RECOVER_AT, maximum_attempts=3
+        ) == (ExpiredOutboxCandidate(original.event_id, run.lease_id),)
         successor = work.delivery.recover_expired(
             context,
             event_id=original.event_id,
@@ -76,6 +80,9 @@ def test_expired_recovery_preserves_execution_and_is_idempotent(
         )
         assert successor is not None and successor.generation == 1
         assert successor.state is OutboxState.PENDING and successor.attempt_count == 0
+        assert (
+            work.delivery.list_expired_candidates(context, now=RECOVER_AT, maximum_attempts=3) == ()
+        )
     with factory() as work:
         assert (
             work.delivery.recover_expired(
@@ -102,6 +109,15 @@ def test_expired_recovery_hides_foreign_unknown_and_changed_fences(
     other = create_workspace(engine)
     factory = create_outbox_delivery_unit_of_work_factory(create_session_factory(engine))
     with factory() as work:
+        assert (
+            work.delivery.list_expired_candidates(other, now=RECOVER_AT, maximum_attempts=3) == ()
+        )
+        assert (
+            work.delivery.list_expired_candidates(
+                context, now=RECOVER_AT - timedelta(seconds=1), maximum_attempts=3
+            )
+            == ()
+        )
         for scope, event_id, lease_id in (
             (other, original.event_id, run.lease_id),
             (context, uuid4(), run.lease_id),
@@ -165,6 +181,14 @@ def test_expired_recovery_rechecks_canonical_eligibility(
                 .values(current_version_id=replacement.id)
             )
     with create_outbox_delivery_unit_of_work_factory(sessions)() as work:
+        candidates = work.delivery.list_expired_candidates(
+            context, now=RECOVER_AT, maximum_attempts=3
+        )
+        if condition == "renewed":
+            assert len(candidates) == 1 and candidates[0].event_id == original.event_id
+            assert candidates[0].execution_lease_id != run.lease_id
+        else:
+            assert candidates == ()
         assert (
             work.delivery.recover_expired(
                 context,
