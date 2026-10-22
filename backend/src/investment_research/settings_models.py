@@ -228,6 +228,12 @@ class QueueSettings(DatabaseSettings):
         return self.redis_url.get_secret_value()
 
 
+class OutboxRepairSettings(QueueSettings):
+    """Database/broker maintenance scope, without storage, parser, or AI configuration."""
+
+    processing_profile: ProcessingProfileName = "m1"
+
+
 class S3Settings(BaseModel):
     """Validated S3 data-plane configuration shared by API and worker processes."""
 

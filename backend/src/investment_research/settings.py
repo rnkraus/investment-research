@@ -47,6 +47,7 @@ from investment_research.settings_models import (
     LogLevel,
     ObjectStorageProvider,
     ObjectStorageSettings,
+    OutboxRepairSettings,
     ParserSettings,
     PineconeProviderSettings,
     ProcessingProfileName,
@@ -99,6 +100,7 @@ __all__ = (
     "LogLevel",
     "ObjectStorageProvider",
     "ObjectStorageSettings",
+    "OutboxRepairSettings",
     "ParserSettings",
     "PineconeProviderSettings",
     "ProcessingProfileName",
@@ -116,6 +118,7 @@ __all__ = (
     "load_api_settings",
     "load_database_settings",
     "load_generation_provider_settings",
+    "load_outbox_repair_settings",
     "load_parser_settings",
     "load_worker_settings",
 )
@@ -426,6 +429,22 @@ def load_database_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Database
     """Load only values required for a direct PostgreSQL maintenance process."""
 
     return DatabaseSettings.model_validate(_database_runtime_values(_read_local_values(env_file)))
+
+
+def load_outbox_repair_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> OutboxRepairSettings:
+    """Load only canonical database, broker, runtime, and processing-profile configuration."""
+
+    file_values = _read_local_values(env_file)
+    database_values = _database_runtime_values(file_values)
+    return OutboxRepairSettings.model_validate(
+        {
+            **database_values,
+            **_queue_runtime_values(file_values, database_values.get("runtime_location")),
+            "processing_profile": _configuration_value(
+                "INVESTMENT_RESEARCH_PROCESSING_PROFILE", file_values, "m1"
+            ),
+        }
+    )
 
 
 def load_generation_provider_settings(

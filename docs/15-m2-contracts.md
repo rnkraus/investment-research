@@ -330,6 +330,22 @@ belongs to Step 6. The existing direct Celery publication still runs after commi
 record outbox receipts. Explicit repair ticks are registered in the worker; normal automatic
 dispatch, scheduler, periodic repair, stage retry APIs, request replay/tombstones, and new
 version/history endpoints remain pending.
+
+**Explicit operator repair command (2026-10-22):**
+`python -m investment_research.repair_outbox` runs one existing bounded coordinator pass directly.
+It loads only runtime/database/broker/profile settings, requires current schema readiness, resolves
+the fixed server-owned local identity, and closes its engine on every exit. Recovery and delivery
+share the configured worker profile's attempt ceiling; the publisher receives only broker settings.
+No scope/force/reset/loop/limit override is accepted. The command initializes no parser, storage,
+or AI client, but queued processing may use the live worker's approved providers/budget as usual.
+Its content-free JSON contains phase counts and stop reasons only. Exit `0` means a completed
+bounded pass, not global queue health or document completion; `TARGET_LIMIT` may leave due work.
+Exit `1` covers execution/configuration/readiness/cleanup failure or observed deadline, unavailable
+or invalid publication, rejected receipt, or exhausted blocked work. It does not automatically
+repeat or inventory previously blocked rows. Details and connection strings remain withheld.
+The existing queue verifier runs this command after both synthetic purges and rechecks absence.
+The separate scheduler, normal capture outbox activation, and full Step 1 gate remain pending.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings

@@ -851,6 +851,20 @@ def verify_queue_recovery() -> int:
             print(
                 "The registered worker executed one explicit content-free repair tick.", flush=True
             )
+            run_command(
+                "Run one manual repair pass after synthetic cleanup",
+                [
+                    "docker",
+                    "exec",
+                    worker_container_id,
+                    "/app/.venv/bin/python",
+                    "-m",
+                    "investment_research.repair_outbox",
+                ],
+                environment=compose_environment,
+            )
+            wait_for_document_purge(engine, document_id)
+            wait_for_document_purge(engine, expired_document_id)
         except (QueueRecoveryVerificationError, subprocess.CalledProcessError) as error:
             if isinstance(error, QueueRecoveryVerificationError):
                 print(f"Queue recovery verification failed: {error}", file=sys.stderr)
