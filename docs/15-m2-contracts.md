@@ -227,6 +227,14 @@ Celery/Kombu retries are disabled for this path. The existing queue verifier exp
 it with synthetic content, followed by worker-loss recovery and purge. This does not activate
 normal automatic dispatch, scheduler, published-message-loss repair, or the full Step 1 exit gate.
 
+**Targeted expired-execution preparation (2026-10-22):** `recover_expired` now requalifies an
+active/current source, the same expected execution lease, remaining profile attempts, and latest
+published intent under short canonical locks. It retains the 420-second publication grace as
+well as requiring execution expiry; it cannot use old publication age to bypass a live fence.
+It prepares a bounded next generation without changing execution state/counters, prior receipts,
+or outputs. Snapshot and database tests do not activate dispatch: expired-work scanning, the drain's
+expired-run qualification, and the complete automatic recovery gate remain pending.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
 record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,

@@ -22,7 +22,7 @@ from investment_research.modules.delivery.ports import OUTBOX_RECOVERY_MAX_TARGE
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
 from investment_research.modules.processing.persistence import ProcessingRunRow
 
 
@@ -97,6 +97,62 @@ class SqlAlchemyOutboxDeliveryRepository:
         """Retain receipts and serialize recovery with processing, deletion, and promotion."""
 
         now = self._aware_time(now)
+        target = self._lock_recovery_target(context, event_id=event_id)
+        if target is None:
+            return None
+        run, latest, requested_generation = target
+        if run.state is not ProcessingState.CAPTURED:
+            return None
+        if latest.generation == requested_generation + 1:
+            return latest
+        if latest.event_id != event_id:
+            return None
+        try:
+            successor = latest.redeliver_unstarted(now=now)
+        except OutboxTransitionError:
+            return None
+        return self._insert_recovery_successor(context, run_id=run.id, successor=successor)
+
+    def recover_expired(
+        self,
+        context: WorkspaceContext,
+        *,
+        event_id: UUID,
+        execution_lease_id: UUID,
+        now: datetime,
+        maximum_attempts: int,
+    ) -> OutboxEvent | None:
+        """Prepare intent under the same expired execution fence, without editing the run."""
+
+        now = self._aware_time(now)
+        if maximum_attempts < 1:
+            raise ValueError("maximum_attempts must be positive")
+        target = self._lock_recovery_target(context, event_id=event_id)
+        if target is None:
+            return None
+        run, latest, requested_generation = target
+        if run.lease_id != execution_lease_id or not run.can_reclaim_expired(
+            now=now, maximum_attempts=maximum_attempts
+        ):
+            return None
+        if latest.generation == requested_generation + 1:
+            return latest
+        if latest.event_id != event_id:
+            return None
+        assert run.lease_expires_at is not None
+        try:
+            successor = latest.redeliver_expired(
+                now=now, execution_lease_expires_at=run.lease_expires_at
+            )
+        except OutboxTransitionError:
+            return None
+        return self._insert_recovery_successor(context, run_id=run.id, successor=successor)
+
+    def _lock_recovery_target(
+        self, context: WorkspaceContext, *, event_id: UUID
+    ) -> tuple[ProcessingRun, OutboxEvent, int] | None:
+        """Skip locked work and refresh snapshots before either recovery policy is applied."""
+
         target = self._session.execute(
             select(OutboxEventRow.target_id, OutboxEventRow.kind, OutboxEventRow.generation).where(
                 OutboxEventRow.workspace_id == context.workspace_id,
@@ -133,16 +189,16 @@ class SqlAlchemyOutboxDeliveryRepository:
         )
         if document is None:
             return None
-        run_id = self._session.scalar(
-            select(ProcessingRunRow.id)
+        run = self._session.scalar(
+            select(ProcessingRunRow)
             .where(
                 ProcessingRunRow.workspace_id == context.workspace_id,
                 ProcessingRunRow.id == target.target_id,
-                ProcessingRunRow.state == ProcessingState.CAPTURED,
             )
             .with_for_update(skip_locked=True, of=ProcessingRunRow)
+            .execution_options(populate_existing=True)
         )
-        if run_id is None:
+        if run is None:
             return None
         latest_id = (
             select(OutboxEventRow.event_id)
@@ -167,14 +223,11 @@ class SqlAlchemyOutboxDeliveryRepository:
         )
         if latest is None:
             return None
-        if latest.generation == target.generation + 1:
-            return latest.to_domain()
-        if latest.event_id != event_id:
-            return None
-        try:
-            successor = latest.to_domain().redeliver_unstarted(now=now)
-        except OutboxTransitionError:
-            return None
+        return run.to_domain(), latest.to_domain(), target.generation
+
+    def _insert_recovery_successor(
+        self, context: WorkspaceContext, *, run_id: UUID, successor: OutboxEvent
+    ) -> OutboxEvent | None:
         row = self._session.scalar(
             insert(OutboxEventRow)
             .values(**successor.model_dump(), processing_run_id=run_id)

@@ -68,6 +68,23 @@ class OutboxDeliveryRepository(Protocol):
         The caller owns this short transaction; this operation never publishes.
         """
 
+    def recover_expired(
+        self,
+        context: WorkspaceContext,
+        *,
+        event_id: UUID,
+        execution_lease_id: UUID,
+        now: datetime,
+        maximum_attempts: int,
+    ) -> OutboxEvent | None:
+        """Prepare a bounded successor only for the same expired canonical execution fence.
+
+        Lock/reload the active/current source, run, and exact latest intent. Preserve all
+        execution metadata and previous receipts; never claim work or contact the broker.
+        Unknown, foreign, changed/live/locked, terminal, or exhausted targets return None.
+        The caller supplies its existing processing profile's attempt ceiling.
+        """
+
     def claim_next_due(self, context: WorkspaceContext, *, now: datetime) -> OutboxEvent | None:
         """Inspect at most one unlocked due row after the caller checks broker readiness.
 

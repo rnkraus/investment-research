@@ -168,6 +168,24 @@ class OutboxEvent(BaseModel):
         This value transition cannot authorize source access or reset execution attempts.
         """
 
+        return self._next_published_generation(now=now)
+
+    def redeliver_expired(self, *, now: datetime, execution_lease_expires_at: datetime) -> Self:
+        """Require an expired execution fence as well as the publication grace period.
+
+        Canonical workspace/source eligibility, remaining execution attempts, latest intent,
+        and unchanged execution ownership must be checked under repository locks first.
+        """
+
+        now = self._aware_time(now)
+        execution_lease_expires_at = self._aware_time(execution_lease_expires_at)
+        if execution_lease_expires_at > now:
+            raise OutboxTransitionError("processing execution still has a live lease")
+        return self._next_published_generation(now=now)
+
+    def _next_published_generation(self, *, now: datetime) -> Self:
+        """Keep grace and generation bounds identical for both recovery paths."""
+
         now = self._aware_time(now)
         if (
             self.state is not OutboxState.PUBLISHED

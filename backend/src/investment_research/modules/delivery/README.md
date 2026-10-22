@@ -137,6 +137,19 @@ guarantee. This service neither publishes nor combines two independent thirty-se
 one scheduler tick. A shared-budget runtime coordinator, expired-execution recovery, exhausted-work
 status, operator command, and scheduler activation remain pending.
 
+**Targeted expired-execution preparation (2026-10-22):** `recover_expired` additionally accepts
+the expected execution lease ID and the existing processing profile's attempt ceiling. Under the
+same source SHARE/run/latest-event locks, it refreshes the run and applies
+`ProcessingRun.can_reclaim_expired`. A changed lease, live lease, completed/exhausted run, excluded
+source, or unavailable lock returns absence. The published-event grace period of 420 seconds is
+retained in addition to execution expiry, preventing consecutive scans from immediately spending
+all generations while a newly published message waits for a worker. Previous receipts remain
+immutable; repeats can reuse the direct successor without resetting it. The operation never
+changes execution state, counters, tokens, or outputs and never publishes. This is preparation
+only: the existing captured-only drain cannot yet dispatch this intent. Expired-work scanning,
+appropriate drain qualification, shared-budget orchestration, and automatic activation remain
+pending. Do not invoke this operation as a complete recovery workflow.
+
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator
 command, or a scheduler. Automatic dispatch, scheduler, and periodic repair remain pending.

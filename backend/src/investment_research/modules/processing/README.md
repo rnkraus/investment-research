@@ -85,7 +85,9 @@ work (including historical M1), `SEARCHABLE`, and `FAILED` return false. The rul
 leases, increment/reset attempts, create delivery intent, or authorize source access. A database
 recovery operation must lock/reload the canonical run, recheck workspace and active/current source,
 and preserve existing execution claims. A stale snapshot cannot authorize a newly leased attempt.
-Database reconciliation and normal runtime activation remain pending in M2 Step 1.
+Delivery's targeted `recover_expired` database operation now uses this check under canonical
+source/run locks and compares the expected execution lease ID. Expired-work scanning, dispatch,
+and normal runtime activation remain pending in M2 Step 1.
 
 `IndexProcessingRunService` owns the database boundary around derived indexing. Its first short
 transaction locks the run, verifies or reclaims the lease, advances `LEXICAL_READY` to `INDEXING`,
