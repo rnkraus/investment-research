@@ -120,6 +120,7 @@ __all__ = (
     "load_generation_provider_settings",
     "load_outbox_repair_settings",
     "load_parser_settings",
+    "load_scheduler_settings",
     "load_worker_settings",
 )
 
@@ -429,6 +430,15 @@ def load_database_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Database
     """Load only values required for a direct PostgreSQL maintenance process."""
 
     return DatabaseSettings.model_validate(_database_runtime_values(_read_local_values(env_file)))
+
+
+def load_scheduler_settings() -> QueueSettings:
+    """Read only runtime/broker process values; never load local files or other secret groups."""
+
+    values = _runtime_values({})
+    return QueueSettings.model_validate(
+        {**values, **_queue_runtime_values({}, values.get("runtime_location"))}
+    )
 
 
 def load_outbox_repair_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> OutboxRepairSettings:

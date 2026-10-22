@@ -49,7 +49,7 @@ class BoundedCeleryOutboxPublisher:
 
     def _operate(
         self,
-        operation: Literal["probe", "publish"],
+        operation: Literal["probe", "publish", "repair_tick"],
         job: ProcessingJobV1 | None,
         *,
         timeout_seconds: float,
@@ -111,3 +111,8 @@ class BoundedCeleryOutboxPublisher:
             raise OutboxPublicationInvalidError("broker publication configuration is invalid")
         if process.returncode != 0:
             raise RuntimeError("outbox broker helper failed unexpectedly")
+
+    def publish_repair_tick(self, *, timeout_seconds: float) -> None:
+        """Send only the fixed wake-up signal through the same private bounded transport."""
+
+        self._operate("repair_tick", None, timeout_seconds=timeout_seconds)

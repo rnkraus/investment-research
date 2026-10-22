@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted; Step 1 storage, claims, and bounded drain implemented; runtime activation/repair pending
+**Status:** Step 0 accepted; Step 1 bounded repair and explicit controls implemented; scheduler/runtime activation pending
 
 **Date:** 2026-10-01
 
@@ -697,6 +697,31 @@ and explicit worker-task gates, plus the new empty-archive operator-command smok
 purged sources remained canonically absent; the test project's containers, networks, and volumes
 were removed successfully. No normal archive, paid provider, frontend/browser,
 hosted CI, separate PostgreSQL integration suite, or complete M0/M1 runtime journey was exercised.
+
+**Separate scheduler implementation block (2026-10-22):** A dedicated Celery Beat entry point and
+runtime/broker-only process-settings loader now install exactly one thirty-second repair schedule,
+without importing worker bootstrap or resolving database/storage/provider settings or local files.
+The narrow persistent scheduler bypasses Beat's normal producer and raw send-error reporting,
+validates its fixed content-free entry, and publishes through the existing two-second private
+subprocess helper without hidden retries. The helper generates the fixed repair signal and expires
+unstarted ticks after one interval; canonical business intent and running-task deadlines are
+unchanged. Unavailable/invalid publication produces a static event and waits until a later interval;
+unexpected failures stop through a sanitized boundary. Beat state remains disposable under `/tmp`,
+and SIGTERM uses its shutdown/sync path. The application closes on exit. No Compose service,
+automatic normal-runtime sender, schema, dependency, paid call, or frontend behavior is activated.
+The next block must provide broker-only Compose secrets, restricted networking/resources and bounded
+writable state, then verify the single separately running periodic process. Normal capture outbox
+activation and full runtime compatibility/outage recovery gates remain pending; Step 1 is incomplete.
+Verification: 213 focused scheduler, publisher, and settings tests passed. After correcting a test
+lint rule, `scripts.verify_backend` passed formatting, linting, typing, and 2,483 unit tests.
+`scripts.verify_queue_recovery` passed existing broker-outage, lost-publication, worker-crash,
+expired-execution, single-output, two-source purge, explicit worker-task, and manual-command checks.
+Its new real Beat-step probe makes only disposable schedule state due, requires successful bounded
+Redis publication, and rejects immediate repetition. The test project's containers, networks, and
+volumes were removed successfully. This is not a separately running periodic
+process or normal automatic recovery. No canonical timestamps or system clock were changed. No
+normal archive, paid provider, frontend/browser, hosted CI, separate PostgreSQL integration suite,
+or complete M0/M1 runtime journey was exercised in this block.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 

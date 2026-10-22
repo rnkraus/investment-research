@@ -346,6 +346,23 @@ repeat or inventory previously blocked rows. Details and connection strings rema
 The existing queue verifier runs this command after both synthetic purges and rechecks absence.
 The separate scheduler, normal capture outbox activation, and full Step 1 gate remain pending.
 
+**Separate scheduler implementation (2026-10-22):** The dedicated
+`investment_research.scheduler` entry point and broker-only settings loader are implemented without
+normal Compose activation. Its factory installs exactly one thirty-second repair schedule and
+imports no worker entry point. A narrow Celery Beat scheduler keeps disposable state at
+`/tmp/investment-research-beat-schedule`, bypasses Beat's default producer/error reporting, and
+uses the existing private two-second broker helper with hidden retries disabled. Only the exact
+content-free repair entry is accepted. The helper generates the fixed payload and expires unstarted
+ticks after one interval; this changes no canonical intent or running-task deadline. Unavailable or
+invalid publication reports a static event and waits until a later interval; unexpected failures
+stop through a sanitized boundary. SIGTERM uses Beat's state-sync/shutdown path. The Celery
+application closes on exit. The queue verifier proves one due Beat step through real Redis and no
+immediate repetition with disposable schedule state, not an actual periodic process or automatic
+outage recovery. Existing CI discovers the new unit/probe coverage. Broker-only Compose secrets,
+network/resources/tmpfs isolation, the single-scheduler topology gate, normal capture outbox
+activation, and the complete Step 1 runtime gate remain pending. No paid provider is called by the
+schedule/send phase; worker processing retains its existing provider budget/attempt controls.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings

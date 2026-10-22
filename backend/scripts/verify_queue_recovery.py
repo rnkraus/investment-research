@@ -291,6 +291,37 @@ finally:
     container.close()
 """
 
+SCHEDULER_PROBE_CODE = """\
+from datetime import timedelta
+from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from investment_research.infrastructure.logging import configure_logging
+from investment_research.infrastructure.queue.scheduler import (
+    OutboxRepairScheduler, REPAIR_SCHEDULE_NAME, create_scheduler_application,
+)
+from investment_research.settings import load_scheduler_settings
+
+output = StringIO()
+configure_logging(process_name="scheduler-verification", level="INFO", stream=output)
+with create_scheduler_application(load_scheduler_settings()) as application:
+    with TemporaryDirectory(prefix="outbox-schedule-probe-") as directory:
+        scheduler = OutboxRepairScheduler(
+            app=application, schedule_filename=str(Path(directory) / "schedule"),
+        )
+        try:
+            # Only disposable Beat state is made due; canonical rows and system clocks stay intact.
+            scheduler.schedule[REPAIR_SCHEDULE_NAME].last_run_at -= timedelta(seconds=31)
+            assert scheduler.tick() == 0
+            assert output.getvalue().count('"event":"delivery.repair_tick.published"') == 1
+            assert scheduler.tick() > 0
+            assert output.getvalue().count('"event":"delivery.repair_tick.published"') == 1
+        finally:
+            scheduler.close()
+print("One due Beat step published a bounded repair tick without immediate repetition.", flush=True)
+"""
+
 REPAIR_TICK_PROBE_CODE = """\
 import sys
 
@@ -850,6 +881,18 @@ def verify_queue_recovery() -> int:
             wait_for_document_purge(engine, expired_document_id)
             print(
                 "The registered worker executed one explicit content-free repair tick.", flush=True
+            )
+            run_command(
+                "Verify one due scheduler step through the bounded broker sender",
+                [
+                    "docker",
+                    "exec",
+                    worker_container_id,
+                    "/app/.venv/bin/python",
+                    "-c",
+                    SCHEDULER_PROBE_CODE,
+                ],
+                environment=compose_environment,
             )
             run_command(
                 "Run one manual repair pass after synthetic cleanup",

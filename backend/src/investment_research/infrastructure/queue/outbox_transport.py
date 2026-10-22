@@ -12,7 +12,12 @@ from redis.exceptions import AuthenticationError, AuthorizationError, RedisError
 from investment_research.infrastructure.queue.celery import (
     PROCESS_DOCUMENT_TASK_NAME,
     PROCESSING_QUEUE_NAME,
+    REPAIR_OUTBOX_TASK_NAME,
     create_celery_app,
+)
+from investment_research.modules.delivery.contracts import (
+    OUTBOX_REPAIR_INTERVAL_SECONDS,
+    OutboxRepairTickV1,
 )
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.settings_models import QueueSettings
@@ -26,7 +31,7 @@ TRANSPORT_UNEXPECTED = 3
 class BrokerOperation(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
-    operation: Literal["probe", "publish"]
+    operation: Literal["probe", "publish", "repair_tick"]
     broker_url: SecretStr
     runtime_location: Literal["host", "container"]
     deadline: float = Field(gt=0, allow_inf_nan=False)
@@ -74,6 +79,19 @@ def execute_operation(request: BrokerOperation) -> int:
                     connection=connection,
                     retry=False,
                     retry_policy={"max_retries": 0},
+                )
+            elif request.operation == "repair_tick":
+                application.send_task(
+                    REPAIR_OUTBOX_TASK_NAME,
+                    kwargs={"payload": OutboxRepairTickV1.create().model_dump(mode="json")},
+                    queue=PROCESSING_QUEUE_NAME,
+                    serializer="json",
+                    ignore_result=True,
+                    add_to_parent=False,
+                    connection=connection,
+                    retry=False,
+                    retry_policy={"max_retries": 0},
+                    expires=OUTBOX_REPAIR_INTERVAL_SECONDS,
                 )
         return 0 if monotonic() < request.deadline else TRANSPORT_UNAVAILABLE
 
