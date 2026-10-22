@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from random import uniform
 from time import monotonic
+from uuid import UUID
 
 from investment_research.modules.delivery.budget import (
     OUTBOX_SWEEP_MAX_TARGETS,
@@ -70,6 +71,21 @@ class DrainOutboxService:
     ) -> OutboxDrainResult:
         """Drain at most twenty rows in thirty seconds; never claim ahead of publication."""
 
+        return self._drain(context, budget=budget, max_targets=max_targets)
+
+    def deliver_event(self, context: WorkspaceContext, *, event_id: UUID) -> OutboxDrainResult:
+        """Attempt exactly one event; retain the sweep's readiness, deadline, and receipt rules."""
+
+        return self._drain(context, budget=None, max_targets=1, event_id=event_id)
+
+    def _drain(
+        self,
+        context: WorkspaceContext,
+        *,
+        budget: OutboxSweepBudget | None,
+        max_targets: int,
+        event_id: UUID | None = None,
+    ) -> OutboxDrainResult:
         validate_target_limit(max_targets)
         budget = budget if budget is not None else OutboxSweepBudget(self.monotonic_clock)
         scanned = claimed = published = rejected = 0
@@ -93,7 +109,11 @@ class DrainOutboxService:
                 reason = DrainStopReason.DEADLINE
                 break
             with self.unit_of_work_factory() as work:
-                event = work.delivery.claim_next_due(context, now=self.clock())
+                event = (
+                    work.delivery.claim_next_due(context, now=self.clock())
+                    if event_id is None
+                    else work.delivery.claim_due_event(context, event_id=event_id, now=self.clock())
+                )
             if event is None:
                 reason = DrainStopReason.EMPTY
                 break
