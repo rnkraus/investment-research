@@ -17,14 +17,16 @@ from investment_research.modules.delivery.recovery import (
     RecoverExpiredOutboxService,
     RecoverUnstartedOutboxService,
 )
+from investment_research.modules.delivery.repair import RepairOutboxService
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.persistence import ProcessingRunRow
 from tests.integration.test_outbox_delivery_postgresql import NOW, capture_events, read_event
 from tests.integration.test_outbox_recovery_postgresql import RECOVER_AT, publish_event
 
 
+@pytest.mark.parametrize("coordinated", [False, True])
 def test_one_budget_bounds_mixed_recovery_and_delivery_across_real_transactions(
-    integration_database_engine: Engine, tmp_path: Path
+    integration_database_engine: Engine, tmp_path: Path, coordinated: bool
 ) -> None:
     engine = integration_database_engine
     context, _ = capture_events(engine, tmp_path, count=20)
@@ -78,14 +80,26 @@ def test_one_budget_bounds_mixed_recovery_and_delivery_across_real_transactions(
             )
             == 1
         )
-    first = unstarted.recover(context, budget=budget, max_targets=4)
-    second = expired.recover(context, budget=budget, max_targets=4)
-    sent = delivery.drain(context, budget=budget)
+    if coordinated:
+        result = RepairOutboxService(
+            factory,
+            Publisher(),
+            maximum_attempts=3,
+            clock=lambda: RECOVER_AT,
+            monotonic_clock=lambda: 0.0,
+        ).repair(context)
+        first, second, sent = result.unstarted, result.expired, result.delivery
+        assert result.used_targets == 20
+    else:
+        first = unstarted.recover(context, budget=budget, max_targets=4)
+        second = expired.recover(context, budget=budget, max_targets=4)
+        sent = delivery.drain(context, budget=budget)
     assert (first.prepared, second.prepared, sent.published) == (4, 4, 12)
-    assert budget.used_targets == 20 and budget.remaining_targets == 0
-    assert delivery.drain(context, budget=budget).scanned == 0
-    assert unstarted.recover(context, budget=budget).scanned == 0
-    assert expired.recover(context, budget=budget).scanned == 0
+    if not coordinated:
+        assert budget.used_targets == 20 and budget.remaining_targets == 0
+        assert delivery.drain(context, budget=budget).scanned == 0
+        assert unstarted.recover(context, budget=budget).scanned == 0
+        assert expired.recover(context, budget=budget).scanned == 0
     # Deferred prepared intent survives for a distinct invocation with a new allowance.
     following = OutboxSweepBudget(lambda: 0.0)
     assert delivery.drain(context, budget=following).published == 8
@@ -103,6 +117,44 @@ def test_one_budget_bounds_mixed_recovery_and_delivery_across_real_transactions(
             )
         }
     assert before == after
+
+
+def test_coordinator_does_not_prepare_or_publish_another_workspaces_intent(
+    integration_database_engine: Engine, tmp_path: Path
+) -> None:
+    engine = integration_database_engine
+    foreign, _ = capture_events(engine, tmp_path / "foreign")
+    original = publish_event(engine, foreign, first=True)
+    context, own = capture_events(engine, tmp_path / "own")
+    factory = create_outbox_delivery_unit_of_work_factory(
+        create_session_factory(engine), maximum_processing_attempts=3
+    )
+    jobs: list[ProcessingJobV1] = []
+
+    class Publisher:
+        def is_ready(self, *, timeout_seconds: float) -> bool:
+            return True
+
+        def publish(self, job: ProcessingJobV1, *, timeout_seconds: float) -> None:
+            jobs.append(job)
+
+    result = RepairOutboxService(
+        factory,
+        Publisher(),
+        maximum_attempts=3,
+        clock=lambda: RECOVER_AT,
+        monotonic_clock=lambda: 0.0,
+    ).repair(context)
+    assert result.unstarted.scanned == result.expired.scanned == 0
+    assert result.delivery.published == result.used_targets == 1
+    assert len(jobs) == 1
+    assert jobs[0].workspace_id == context.workspace_id
+    assert jobs[0].processing_run_id == own[0].target_id
+    assert read_event(engine, foreign, original) == original
+    with factory() as work:
+        assert work.delivery.list_unstarted_candidates(foreign, now=RECOVER_AT) == (
+            original.event_id,
+        )
 
 
 @pytest.mark.parametrize("limit", [0, -1, 21])
