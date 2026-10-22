@@ -87,8 +87,10 @@ recovery operation must lock/reload the canonical run, recheck workspace and act
 and preserve existing execution claims. A stale snapshot cannot authorize a newly leased attempt.
 Delivery's targeted `recover_expired` database operation now uses this check under canonical
 source/run locks and compares the expected execution lease ID. Delivery's bounded expired-work
-scan now carries those observed tokens into separate requalification transactions. Expired-run
-dispatch and normal runtime activation remain pending in M2 Step 1.
+scan now carries those observed tokens into separate requalification transactions. Delivery's
+opt-in drain can requalify and publish prepared later-generation intent when explicitly given the
+existing profile's attempt ceiling; it never increments execution counts itself. Normal runtime
+activation and complete recovery gates remain pending in M2 Step 1.
 
 `IndexProcessingRunService` owns the database boundary around derived indexing. Its first short
 transaction locks the run, verifies or reclaims the lease, advances `LEXICAL_READY` to `INDEXING`,
