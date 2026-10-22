@@ -293,6 +293,21 @@ pass is a no-op, and the resumed real worker must reclaim once and produce one c
 output before purge. This supplements the first fixture's actual worker-child crash, not an
 additional actual crash or production lease change. Automatic runtime activation remains pending.
 
+**Recovery exhaustion closure (2026-10-22):** Existing bounded recovery snapshots include
+mature final-generation and exhausted-execution publications for closure. Targeted operations
+recheck the active/current source, latest event, run, and same expired execution token under
+existing locks. Exhaustion marks the latest event `BLOCKED` / `ATTEMPTS_EXHAUSTED` without changing
+publication receipts/counts, processing state/counts/fences, or earlier history. Live, changed,
+foreign, excluded, and superseded targets cannot be closed. Blocked intent leaves future recovery
+snapshots; repeated repair consumes no new allowance. The result's additive `blocked` count is
+separate from `prepared`, not a successful delivery or processing result, and uses existing slots.
+This supersedes the earlier exhausted-target absence behavior. A previous message can still have
+been delivered; outbox exhaustion alone is not processing failure.
+
+Migration `0014_outbox_exhaustion_receipts` narrowly permits retained exhausted blocked receipts;
+readiness requires it. No rows or counters are rewritten. Downgrade refuses incompatible retained
+receipts. HTTP/UI changes, operator/scheduler wiring, and full Step 1 activation remain pending.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
 record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,

@@ -79,7 +79,6 @@ class SqlAlchemyOutboxDeliveryRepository:
                 ProcessingRunRow.completed_at.is_(None),
                 ProcessingRunRow.lease_id.is_not(None),
                 ProcessingRunRow.lease_expires_at <= now,
-                ProcessingRunRow.attempt_count < maximum_attempts,
             )
         )
         candidates = []
@@ -137,7 +136,6 @@ class SqlAlchemyOutboxDeliveryRepository:
                 OutboxEventRow.state == OutboxState.PUBLISHED,
                 OutboxEventRow.published_at
                 <= now - timedelta(seconds=OUTBOX_UNSTARTED_GRACE_SECONDS),
-                OutboxEventRow.generation < OUTBOX_MAX_GENERATIONS - 1,
                 DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
                 ~has_newer,
             )
@@ -162,6 +160,10 @@ class SqlAlchemyOutboxDeliveryRepository:
         if latest.event_id != event_id:
             return None
         try:
+            if latest.generation == OUTBOX_MAX_GENERATIONS - 1:
+                blocked = latest.block_exhausted_recovery(now=now)
+                self._store_recovery_block(blocked)
+                return blocked
             successor = latest.redeliver_unstarted(now=now)
         except OutboxTransitionError:
             return None
@@ -185,8 +187,17 @@ class SqlAlchemyOutboxDeliveryRepository:
         if target is None:
             return None
         run, latest, requested_generation = target
-        if run.lease_id != execution_lease_id or not run.can_reclaim_expired(
-            now=now, maximum_attempts=maximum_attempts
+        if (
+            run.lease_id != execution_lease_id
+            or run.state
+            not in {
+                ProcessingState.PARSING,
+                ProcessingState.LEXICAL_READY,
+                ProcessingState.INDEXING,
+            }
+            or run.completed_at is not None
+            or run.lease_expires_at is None
+            or run.lease_expires_at > now
         ):
             return None
         if latest.generation == requested_generation + 1:
@@ -195,12 +206,28 @@ class SqlAlchemyOutboxDeliveryRepository:
             return None
         assert run.lease_expires_at is not None
         try:
+            if (
+                latest.generation == OUTBOX_MAX_GENERATIONS - 1
+                or run.attempt_count >= maximum_attempts
+            ):
+                blocked = latest.block_exhausted_recovery(now=now)
+                self._store_recovery_block(blocked)
+                return blocked
+            if not run.can_reclaim_expired(now=now, maximum_attempts=maximum_attempts):
+                return None
             successor = latest.redeliver_expired(
                 now=now, execution_lease_expires_at=run.lease_expires_at
             )
         except OutboxTransitionError:
             return None
         return self._insert_recovery_successor(context, run_id=run.id, successor=successor)
+
+    def _store_recovery_block(self, event: OutboxEvent) -> None:
+        """The exact latest event is already locked by _lock_recovery_target."""
+
+        row = self._session.get(OutboxEventRow, event.event_id)
+        assert row is not None
+        self._store(row, event)
 
     def _lock_recovery_target(
         self, context: WorkspaceContext, *, event_id: UUID

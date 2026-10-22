@@ -70,7 +70,10 @@ OUTBOX_CHECKS = (
     ),
     (
         "(state = 'PUBLISHED' AND published_at IS NOT NULL AND attempt_count > 0) OR "
-        "state = 'CANCELLED' OR (state <> 'PUBLISHED' AND published_at IS NULL)",
+        "state = 'CANCELLED' OR "
+        "(state = 'BLOCKED' AND published_at IS NOT NULL AND attempt_count > 0 "
+        "AND last_error_category = 'ATTEMPTS_EXHAUSTED') OR "
+        "(state <> 'PUBLISHED' AND published_at IS NULL)",
         "consistent_publication",
     ),
     ("state <> 'BLOCKED' OR last_error_category IS NOT NULL", "blocked_reason"),

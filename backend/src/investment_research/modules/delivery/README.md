@@ -124,13 +124,14 @@ lock, locks only an unstarted captured run, then locks its exact latest event. L
 skipped, never replaced by an older unlocked generation. SHARE is compatible with processing's
 source-write guard; it still fences deletion/promotion. A repeat can return its existing direct
 successor without resetting attempts/receipts. Older superseded requests, foreign/unknown IDs,
-started/terminal work, premature receipts, and exhausted generations return absence. The scoped
+started/terminal work and premature receipts return absence. Exhausted mature publications close
+as described in the exhaustion section below. The scoped
 unique insert retains previous events. No broker call or normal runtime activation follows from
 this operation; expired execution recovery remains a separate work block.
 
 **Bounded recovery scan (2026-10-21):** `RecoverUnstartedOutboxService` reads at most twenty
 eligible latest published event IDs, ordered by receipt time and event ID. The scoped query
-excludes newer intent in any state, exhausted generations, started work, and inactive/non-current
+excludes newer intent in any state, started work, and inactive/non-current
 sources. It waits the same 420 seconds from publication. The snapshot transaction closes before
 each separate `recover_unstarted` transaction rechecks eligibility and locks. Skipped candidates
 consume a scan slot; repeats never reset attempts or receipts. Content-free results count scanned
@@ -143,7 +144,7 @@ status, operator command, and scheduler activation remain pending.
 **Targeted expired-execution preparation (2026-10-22):** `recover_expired` additionally accepts
 the expected execution lease ID and the existing processing profile's attempt ceiling. Under the
 same source SHARE/run/latest-event locks, it refreshes the run and applies
-`ProcessingRun.can_reclaim_expired`. A changed lease, live lease, completed/exhausted run, excluded
+`ProcessingRun.can_reclaim_expired`. A changed lease, live lease, completed run, excluded
 source, or unavailable lock returns absence. The published-event grace period of 420 seconds is
 retained in addition to execution expiry, preventing consecutive scans from immediately spending
 all generations while a newly published message waits for a worker. Previous receipts remain
@@ -156,7 +157,7 @@ as a complete recovery workflow.
 **Bounded expired-execution scan (2026-10-22):** `list_expired_candidates` shares the scoped
 source/latest-event qualification, 420-second grace, receipt/ID ordering, and twenty-target bound
 with the unstarted query. It additionally requires unfinished leased parsing/indexing work, an
-expired execution fence, and remaining attempts under the caller's existing profile. Completed
+expired execution fence. Exhausted attempts/generations are included for closure only. Completed
 lexical work, including historical M1 completion, is not unfinished indexing. Each content-free
 candidate carries the observed event and execution lease IDs. `RecoverExpiredOutboxService`
 closes that read transaction before rechecking each observed token through `recover_expired` in
@@ -204,6 +205,22 @@ and stop reasons, not completed processing. Unexpected errors propagate. The tru
 root must bind the same processing-profile attempt ceiling in the coordinator and delivery
 transaction factory. Unit and isolated PostgreSQL tests cover the combined pass and workspace
 isolation; no scheduler, command, normal worker wiring, or automatic activation is introduced.
+
+**Recovery exhaustion closure (2026-10-22):** The existing bounded preparation snapshots now
+include mature final-generation and execution-exhausted publications for closure, not another
+delivery allowance. Under the same active/current source, run, latest-event, and expected execution
+fences, targeted recovery marks them `BLOCKED` / `ATTEMPTS_EXHAUSTED`. It preserves the publication
+receipt, event identity, generation, publication count, all processing metadata, and older events.
+A live execution cannot be closed. Already closed intent leaves later snapshots; repeated repair
+does not create new generations or reset attempts. `OutboxRecoveryResult.blocked` counts these
+outcomes separately from `prepared`; both consume the existing shared budget. This supersedes
+the earlier exhausted-target absence behavior above. Blocked delivery is not proof that an earlier
+message was never delivered or that the processing run is terminal.
+
+Migration `0014_outbox_exhaustion_receipts` changes only the publication constraint to permit
+an exhausted blocked receipt, retaining all rows/counters. Readiness requires that revision.
+Downgrade refuses to discard or mislabel such receipts. No HTTP status/UI, operator command,
+scheduler, normal runtime activation, paid call, or new attempt allowance is introduced.
 
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator

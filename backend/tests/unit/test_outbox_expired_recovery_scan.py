@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from investment_research.modules.delivery.domain import OutboxEvent
 from investment_research.modules.delivery.ports import ExpiredOutboxCandidate
 from investment_research.modules.delivery.recovery import (
     RecoverExpiredOutboxService,
@@ -34,7 +35,9 @@ class ExpiredHarness(Harness):
 
 def test_observed_fences_and_profile_limits_are_forwarded_in_separate_transactions() -> None:
     harness = ExpiredHarness(3)
-    harness.repository.recover_expired.return_value = object()
+    harness.repository.recover_expired.return_value = OutboxEvent.for_processing(
+        workspace_id=harness.context.workspace_id, processing_run_id=uuid4(), created_at=NOW
+    )
     result = harness.expired_service.recover(harness.context)
     assert (result.scanned, result.prepared) == (3, 3)
     assert result.stop_reason is RecoveryStopReason.SNAPSHOT_EXHAUSTED

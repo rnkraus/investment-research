@@ -114,9 +114,20 @@ class OutboxEvent(BaseModel):
             self.published_at is None or self.attempt_count < 1
         ):
             raise ValueError("published intent requires an acknowledged attempt")
-        if self.state not in {OutboxState.PUBLISHED, OutboxState.CANCELLED} and (
-            self.published_at is not None
+        if (
+            self.state is OutboxState.BLOCKED
+            and self.published_at is not None
+            and (
+                self.attempt_count < 1
+                or self.last_error_category is not DeliveryErrorCategory.ATTEMPTS_EXHAUSTED
+            )
         ):
+            raise ValueError("blocked publication requires an exhausted acknowledged attempt")
+        if self.state not in {
+            OutboxState.PUBLISHED,
+            OutboxState.CANCELLED,
+            OutboxState.BLOCKED,
+        } and (self.published_at is not None):
             raise ValueError("unpublished intent must not carry a publication receipt")
         if self.state is OutboxState.BLOCKED and self.last_error_category is None:
             raise ValueError("blocked intent requires a safe error category")
@@ -272,6 +283,25 @@ class OutboxEvent(BaseModel):
             next_attempt_at=None,
             lease_id=None,
             lease_expires_at=None,
+            last_error_category=DeliveryErrorCategory.ATTEMPTS_EXHAUSTED,
+        )
+
+    def block_exhausted_recovery(self, *, now: datetime) -> Self:
+        """Retain a mature receipt after the caller proves canonical recovery exhaustion.
+
+        The repository must lock/recheck the latest event, active source, and unstarted or
+        same expired execution before proving generation or processing-attempt exhaustion.
+        """
+
+        now = self._aware_time(now)
+        if (
+            self.state is not OutboxState.PUBLISHED
+            or self.published_at is None
+            or now < self.published_at + timedelta(seconds=OUTBOX_UNSTARTED_GRACE_SECONDS)
+        ):
+            raise OutboxTransitionError("published intent is not due for recovery exhaustion")
+        return self._replace(
+            state=OutboxState.BLOCKED,
             last_error_category=DeliveryErrorCategory.ATTEMPTS_EXHAUSTED,
         )
 
