@@ -36,11 +36,13 @@ from scripts.docker_secrets import (
     COMPOSE_SECRET_FILES,
     disposable_compose_secret_environment,
 )
+from scripts.repair_scheduler_probe import SchedulerVerificationError, verify_periodic_scheduler
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
 COMPOSE_TEST_FILE = REPOSITORY_ROOT / "compose.test.yaml"
+COMPOSE_REPAIR_FILE = REPOSITORY_ROOT / "compose.m2-repair.yaml"
 FIXTURE_PDF = (
     REPOSITORY_ROOT / "fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf"
 )
@@ -632,6 +634,8 @@ def verify_queue_recovery() -> int:
         str(COMPOSE_FILE),
         "--file",
         str(COMPOSE_TEST_FILE),
+        "--file",
+        str(COMPOSE_REPAIR_FILE),
     ]
     python_command = [sys.executable, "-m"]
     parser_container_id: str | None = None
@@ -908,8 +912,22 @@ def verify_queue_recovery() -> int:
             )
             wait_for_document_purge(engine, document_id)
             wait_for_document_purge(engine, expired_document_id)
-        except (QueueRecoveryVerificationError, subprocess.CalledProcessError) as error:
-            if isinstance(error, QueueRecoveryVerificationError):
+            run_command(
+                "Start opt-in isolated repair scheduler",
+                [*compose_command, "up", "--build", "--detach", "--wait", "scheduler"],
+                environment=compose_environment,
+            )
+            verify_periodic_scheduler(
+                compose_command, project_name=project_name, environment=compose_environment
+            )
+            wait_for_document_purge(engine, document_id)
+            wait_for_document_purge(engine, expired_document_id)
+        except (
+            QueueRecoveryVerificationError,
+            SchedulerVerificationError,
+            subprocess.CalledProcessError,
+        ) as error:
+            if isinstance(error, (QueueRecoveryVerificationError, SchedulerVerificationError)):
                 print(f"Queue recovery verification failed: {error}", file=sys.stderr)
                 exit_code = 1
             else:

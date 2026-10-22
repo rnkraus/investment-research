@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted; Step 1 bounded repair and explicit controls implemented; scheduler/runtime activation pending
+**Status:** Step 0 accepted; Step 1 opt-in scheduler verified; normal capture/runtime activation pending
 
 **Date:** 2026-10-01
 
@@ -722,6 +722,30 @@ volumes were removed successfully. This is not a separately running periodic
 process or normal automatic recovery. No canonical timestamps or system clock were changed. No
 normal archive, paid provider, frontend/browser, hosted CI, separate PostgreSQL integration suite,
 or complete M0/M1 runtime journey was exercised in this block.
+
+**Opt-in scheduler Compose block (2026-10-22):** `compose.m2-repair.yaml` adds one separate scheduler
+using the existing worker image and dedicated Python entry point, with its inherited worker health
+check disabled. Only the Redis secret and five runtime/broker values reach it. It has no published
+ports, source/config mounts, database/storage/provider credentials, or Docker socket. A dedicated
+internal network joins only scheduler/Redis; Redis retains backend membership. Non-root, read-only,
+capability/no-new-privileges, private 16 MiB temporary storage, and 256 MiB/0.5 CPU/64-PID limits
+are checked against actual runtime metadata and active filesystem/network probes. Existing normal
+Compose/M1 live commands are unchanged; adding the override intentionally starts repair scans and
+can enqueue eligible work under existing provider budgets/attempt ceilings. No capture dispatch,
+dependency, schema, frontend, paid call, or normal-archive change is introduced. Step 1 remains
+incomplete pending normal capture/default scheduler activation and complete runtime/outage gates.
+Verification: 51 focused verifier/confinement/orchestration tests passed. After correcting two
+test-only lint/import issues, `scripts.verify_backend` passed formatting, linting, typing, and
+2,512 unit tests. `scripts.verify_queue_recovery` passed the existing broker-loss, execution,
+single-output, purge, worker-task, Beat-step, and manual-command checks, then started exactly one
+opt-in scheduler. It required two autonomous publications at the unchanged thirty-second interval,
+a safe failure event while Redis was stopped, and a fresh successful publication after Redis
+returned with the same scheduler container/restart count. Active checks admitted Redis and denied
+PostgreSQL IP/parser/storage/external targets; both synthetic sources remained absent. All test
+containers, networks, and volumes were removed successfully. This proves
+periodic control on an empty archive, not automatic processing of an HTTP-captured document.
+No normal archive, paid provider, frontend/browser, hosted CI, separate PostgreSQL suite, or
+complete M0/M1 runtime journey was exercised.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
