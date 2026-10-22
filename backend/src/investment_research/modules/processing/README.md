@@ -77,6 +77,16 @@ the maximum configurable 300-second processing timeout plus shutdown grace. The 
 `expire_lease_for_retry` only for classified transient infrastructure failures; permanent parser
 and protocol failures become terminal `FAILED` states.
 
+**M2 expired-execution eligibility (2026-10-22):** `ProcessingRun.can_reclaim_expired` is a
+read-only snapshot rule for leased `PARSING`, active `LEXICAL_READY`, and `INDEXING` work. It
+requires the execution lease to expire and an attempt to remain under the caller's existing
+profile; publication age cannot substitute for expiry. Untouched `CAPTURED`, completed lexical
+work (including historical M1), `SEARCHABLE`, and `FAILED` return false. The rule does not clear
+leases, increment/reset attempts, create delivery intent, or authorize source access. A database
+recovery operation must lock/reload the canonical run, recheck workspace and active/current source,
+and preserve existing execution claims. A stale snapshot cannot authorize a newly leased attempt.
+Database reconciliation and normal runtime activation remain pending in M2 Step 1.
+
 `IndexProcessingRunService` owns the database boundary around derived indexing. Its first short
 transaction locks the run, verifies or reclaims the lease, advances `LEXICAL_READY` to `INDEXING`,
 and loads the active canonical chunks. It then closes the transaction before invoking Search's
