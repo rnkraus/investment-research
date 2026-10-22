@@ -538,6 +538,29 @@ The disposable database, volume, and networks were removed. Publication used a r
 adapter; no Redis, live-provider, frontend/browser, normal archive, hosted CI, or full runtime
 journey was exercised by this block.
 
+**Opt-in repair-coordinator block (2026-10-22):** Added one application-owned pass that composes
+unstarted recovery, expired-execution recovery, and delivery with the same twenty-slot/thirty-second
+budget. Each preparation category is capped at five; the drain receives the remaining slots,
+reserving at least ten for returned claims when both categories fill their allowances. Empty
+categories leave more publication capacity. This is not a guarantee of successful publication,
+hard SQL cancellation, or end-to-end queue fairness. Slow preparation can exhaust the shared
+deadline. Broker outages may leave prepared pending intent, but readiness still precedes every
+publication claim. Existing source eligibility, execution fences, publication ceilings, short
+transactions, and separate receipts remain authoritative. Results report safe phase observations,
+not processing completion; unexpected failures propagate. The trusted composition root must bind
+the existing processing-profile ceiling consistently in the coordinator and delivery transaction
+factory. Existing unit/PostgreSQL CI discovery covers the new orchestration and isolation tests.
+No schema, dependency, environment key, frontend, paid call, normal-runtime wiring, scheduler, or
+operator command is added. Full exhaustion status, actual Redis-loss gates, and the complete
+Step 1 activation gate remain pending.
+Verification: 50 focused delivery tests passed, including nine new coordinator cases.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,390 unit tests.
+`scripts.verify_postgres` passed migration cycling, schema drift checks, and 317 integration tests,
+including the coordinator variant of the mixed-phase budget test and a workspace-isolation case.
+Seven separate SeaweedFS-only tests were skipped. The disposable database, volume, and networks
+were removed. Publication used a recording adapter; no Redis, live provider, frontend/browser,
+normal archive, hosted CI, or complete runtime journey was exercised in this block.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

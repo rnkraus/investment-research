@@ -254,6 +254,18 @@ while in-flight SQL and mandatory fenced bookkeeping may finish. Standalone call
 own existing limits. Runtime coordination must explicitly pass the same budget and allocate
 capacity across phases; scheduler/operator wiring and the full activation gate remain pending.
 
+**Opt-in repair coordination (2026-10-22):** The application coordinator now passes one budget
+through unstarted preparation (at most five), expired preparation (at most five), then delivery
+using all remaining slots. The conservative allocation reserves at least ten work slots for
+returned claims, not ten successful publications or a separate time allowance. Empty preparation
+categories leave capacity for delivery; slow SQL can consume the shared deadline. Preparation may
+retain pending intent during a broker outage without consuming publication attempts. Broker
+readiness, canonical qualification, leases, and receipts remain owned by the existing phases.
+Results contain phase counts/stop reasons and total used slots, not processing completion.
+The trusted composition root must configure the coordinator and delivery transaction factory
+with the same existing processing-profile ceiling. No normal runtime, scheduler, or operator
+command is activated by this internal service; the full Step 1 gate remains pending.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
 record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,

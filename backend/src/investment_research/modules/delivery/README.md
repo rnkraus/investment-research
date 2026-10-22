@@ -10,6 +10,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
 | `application.py` | Scoped drain, readiness-before-claim, scan/time bounds, jitter, and safe outcomes |
 | `recovery.py` | Bounded snapshots and separately fenced preparation of unstarted/expired redelivery intent |
+| `repair.py` | Opt-in preparation/delivery coordinator with one shared budget and reserved publication capacity |
 | `persistence.py` | Module-owned `outbox_events` mapping, constraints, and due-work indexes |
 | `../../infrastructure/database/outbox.py` | Cross-module canonical target qualification and PostgreSQL repository |
 | `../../infrastructure/database/outbox_delivery.py` | Single-row due claims, canonical eligibility, and fenced receipts |
@@ -190,8 +191,19 @@ while empty lookups do not. Candidate queries receive the remaining, capped `lim
 SQL. Exhausted budget prevents later snapshots, claims, or readiness probes. Broker operations use
 its remaining time, not a phase-local reset; in-flight SQL and necessary fenced receipt/failure
 cleanup may finish after the deadline. A phase without an explicit budget retains its standalone
-limits. The future coordinator must pass the same instance and allocate phase capacity so pending
-publication cannot starve behind preparation; no automatic coordinator or scheduler is activated.
+limits.
+
+**Opt-in repair coordinator (2026-10-22):** `RepairOutboxService.repair(context)` creates one
+budget, prepares at most five unstarted and five expired targets, and drains the remaining slots.
+This reserves at least ten work slots for returned delivery claims when both preparations fill
+their allowances; empty categories leave more slots available. It does not promise ten successful
+publications, hard SQL cancellation, or end-to-end queue fairness. Slow preparation can exhaust
+the time budget. Pending preparation during a broker outage consumes no publication attempt;
+the drain still checks readiness before claiming. Phase results report only content-free counts
+and stop reasons, not completed processing. Unexpected errors propagate. The trusted composition
+root must bind the same processing-profile attempt ceiling in the coordinator and delivery
+transaction factory. Unit and isolated PostgreSQL tests cover the combined pass and workspace
+isolation; no scheduler, command, normal worker wiring, or automatic activation is introduced.
 
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator
