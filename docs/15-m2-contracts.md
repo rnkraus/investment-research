@@ -276,6 +276,14 @@ production policy, the system clock, or broker deadlines. Existing worker-loss r
 produce exactly one fixture output before synthetic-source purge. This separate explicit gate is
 not a scheduler, actual publisher crash, stopped-broker test, or normal-runtime activation.
 
+**Stopped-broker verification extension (2026-10-22):** The same isolated queue gate now also
+stops Redis before synthetic capture with deferred legacy dispatch. Two explicit coordinator
+passes must leave canonical pending intent and processing unchanged without consuming publication
+or execution attempts. After a healthy Redis restart, the same scoped captured run continues into
+the publication-loss and worker-loss tests, with no recapture or manual database repair. This
+extends the earlier broker test; it does not prove automatic scheduler recovery or the HTTP
+capture path while Redis is down, and does not activate normal dispatch.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
 record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,

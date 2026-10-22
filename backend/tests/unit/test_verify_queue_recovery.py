@@ -53,6 +53,19 @@ def test_outbox_probe_preserves_receipts_fences_and_production_grace() -> None:
     assert "run == initial_run" in code
 
 
+def test_outage_probe_requires_pending_intent_without_consuming_attempts() -> None:
+    code = verify_queue_recovery.CAPTURE_PROBE_CODE
+    assert 'phase == "capture-outage"' in code
+    assert "initial_events[0].state is OutboxState.PENDING" in code
+    assert "initial_events[0].attempt_count == 0" in code
+    assert "for _ in range(2):" in code
+    assert "unavailable.delivery.stop_reason is DrainStopReason.BROKER_UNAVAILABLE" in code
+    assert "unavailable.used_targets == unavailable.delivery.claimed == 0" in code
+    assert "snapshot() == (initial_run, initial_events)" in code
+    assert code.count("capture_service.capture_pdf(") == 1
+    assert "ProcessingRunRow.state == ProcessingState.CAPTURED" in code
+
+
 def prepare_deterministic_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Mock, list[ProcessingState], list[str]]:
@@ -145,7 +158,10 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Seed isolated PostgreSQL workspaces",
         "Pause parser before publishing the recovery probe",
         "Pause isolated worker before removing test publications",
-        "Capture fixture and recover lost outbox publications",
+        "Stop isolated Redis before fixture capture",
+        "Capture fixture while isolated Redis is stopped",
+        "Restart isolated Redis before outbox recovery",
+        "Recover retained fixture and lost outbox publications",
         "Resume isolated worker after outbox recovery probes",
         "Kill the active Celery pool worker after its canonical claim",
         "Resume parser for the reclaimed delivery",
@@ -154,6 +170,15 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     ]
     assert states == [ProcessingState.PARSING, ProcessingState.LEXICAL_READY]
     assert events == ["shorten-lease", "verify-output", "verify-purge"]
+    commands = {label: command for label, command, _ in calls}
+    assert commands["Stop isolated Redis before fixture capture"][-2:] == ("stop", "redis")
+    assert commands["Restart isolated Redis before outbox recovery"][-3:] == (
+        "start",
+        "--wait",
+        "redis",
+    )
+    assert commands["Capture fixture while isolated Redis is stopped"][-1] == "capture-outage"
+    assert commands["Recover retained fixture and lost outbox publications"][-1] == "recover-loss"
     assert all(TEST_CREDENTIAL not in argument for _, command, _ in calls for argument in command)
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert str(verify_queue_recovery.COMPOSE_FILE) in calls[0][1]
@@ -163,7 +188,8 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     )
     for label, command, _ in calls:
         if label in {
-            "Capture fixture and recover lost outbox publications",
+            "Capture fixture while isolated Redis is stopped",
+            "Recover retained fixture and lost outbox publications",
             "Publish permanent deletion for the isolated synthetic document",
         }:
             assert rag_mount in command
@@ -188,7 +214,10 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
     ("failure_label", "worker_needs_resume"),
     [
         ("Pause isolated worker before removing test publications", False),
-        ("Capture fixture and recover lost outbox publications", True),
+        ("Stop isolated Redis before fixture capture", True),
+        ("Capture fixture while isolated Redis is stopped", True),
+        ("Restart isolated Redis before outbox recovery", True),
+        ("Recover retained fixture and lost outbox publications", True),
         ("Resume isolated worker after outbox recovery probes", True),
     ],
 )
