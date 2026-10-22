@@ -18,6 +18,9 @@ from investment_research.bootstrap import (
     build_api_container,
     build_worker_container,
 )
+from investment_research.infrastructure.database.outbox_unit_of_work import (
+    create_outbox_delivery_unit_of_work_factory,
+)
 from investment_research.infrastructure.database.unit_of_work import (
     create_answer_validation_unit_of_work_factory,
 )
@@ -60,6 +63,7 @@ from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
     CeleryProcessingDispatcher,
 )
+from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
 from investment_research.infrastructure.search.deterministic_index import (
     DeterministicSqliteDenseIndex,
 )
@@ -974,6 +978,40 @@ def test_build_worker_container_supports_credential_free_m0_regression(
         assert container.execute_processing_job_service.indexing_service is None
         assert container.purge_document_service.vectors is None
         assert container.process_document_service._profile is M0_0_PROCESSING_PROFILE
+    finally:
+        container.close()
+
+
+@pytest.mark.parametrize("regression", [False, True])
+def test_worker_repair_uses_the_existing_identity_and_matching_processing_ceiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, regression: bool
+) -> None:
+    settings = make_m1_acceptance_worker_settings(tmp_path / "objects", tmp_path / "dense.sqlite3")
+    if regression:
+        settings = WorkerSettings.model_validate(
+            {
+                "environment": "test",
+                "database_url": LOCAL_DATABASE_URL,
+                "object_storage_root": tmp_path / "objects",
+                "parser_endpoint_url": "http://127.0.0.1:8100",
+                "processing_profile": "m0-regression",
+            }
+        )
+    factory = Mock(wraps=create_outbox_delivery_unit_of_work_factory)
+    monkeypatch.setattr(bootstrap_module, "create_outbox_delivery_unit_of_work_factory", factory)
+    container = build_worker_container(settings)
+    try:
+        service = container.execute_outbox_repair_service
+        profile = container.process_document_service._profile
+        assert service.identity_context_provider is container.identity_context_provider
+        assert service.repair_service.maximum_attempts == profile.maximum_attempts
+        factory.assert_called_once_with(
+            container.session_factory, maximum_processing_attempts=profile.maximum_attempts
+        )
+        publisher = service.repair_service.publisher
+        assert isinstance(publisher, BoundedCeleryOutboxPublisher)
+        assert publisher.settings.redis_url == settings.redis_url
+        assert not hasattr(publisher.settings, "indexing_providers")
     finally:
         container.close()
 

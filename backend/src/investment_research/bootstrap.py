@@ -21,6 +21,9 @@ from investment_research.infrastructure.database.document_deletion import (
     create_document_deletion_unit_of_work_factory,
 )
 from investment_research.infrastructure.database.metadata import get_model_metadata
+from investment_research.infrastructure.database.outbox_unit_of_work import (
+    create_outbox_delivery_unit_of_work_factory,
+)
 from investment_research.infrastructure.database.session import (
     SessionFactory,
     create_database_engine,
@@ -101,6 +104,7 @@ from investment_research.infrastructure.queue.celery import (
     CeleryProcessingDispatcher,
     create_celery_app,
 )
+from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
 from investment_research.infrastructure.search.deterministic_index import (
     DeterministicSqliteDenseIndex,
 )
@@ -114,6 +118,10 @@ from investment_research.infrastructure.search.pinecone import (
     PineconeDenseRetriever,
     create_pinecone_dense_index_writer,
     create_pinecone_dense_retriever,
+)
+from investment_research.modules.delivery.repair import (
+    ExecuteOutboxRepairService,
+    RepairOutboxService,
 )
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
@@ -195,6 +203,7 @@ from investment_research.settings import (
     ApiSettings,
     DatabaseSettings,
     ObjectStorageSettings,
+    QueueSettings,
     WorkerSettings,
 )
 
@@ -417,6 +426,7 @@ class WorkerContainer:
     execute_processing_job_service: ExecuteProcessingJobService
     purge_document_service: PurgeDocumentService
     execute_document_purge_job_service: ExecuteDocumentPurgeJobService
+    execute_outbox_repair_service: ExecuteOutboxRepairService
 
     def close(self) -> None:
         """Release process-wide resources owned by the worker container."""
@@ -1099,6 +1109,22 @@ def build_worker_container(
             purge_document_service=purge_document_service,
             execute_document_purge_job_service=ExecuteDocumentPurgeJobService(
                 purge_service=purge_document_service,
+                identity_context_provider=identity_context_provider,
+            ),
+            execute_outbox_repair_service=ExecuteOutboxRepairService(
+                repair_service=RepairOutboxService(
+                    unit_of_work_factory=create_outbox_delivery_unit_of_work_factory(
+                        database.session_factory,
+                        maximum_processing_attempts=processing_profile.maximum_attempts,
+                    ),
+                    publisher=BoundedCeleryOutboxPublisher(
+                        QueueSettings(
+                            runtime_location=settings.runtime_location,
+                            redis_url=settings.redis_url,
+                        )
+                    ),
+                    maximum_attempts=processing_profile.maximum_attempts,
+                ),
                 identity_context_provider=identity_context_provider,
             ),
         )

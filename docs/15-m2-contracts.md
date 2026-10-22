@@ -308,10 +308,28 @@ Migration `0014_outbox_exhaustion_receipts` narrowly permits retained exhausted 
 readiness requires it. No rows or counters are rewritten. Downgrade refuses incompatible retained
 receipts. HTTP/UI changes, operator/scheduler wiring, and full Step 1 activation remain pending.
 
+**Explicit worker repair adapter (2026-10-22):** Internal `outbox-repair-tick.v1` contains only
+required `schema_version: "outbox-repair-tick.v1"`; extra fields, including workspace IDs,
+document content, or policy overrides, are rejected without reproducing input. The registered
+task `investment_research.delivery.repair_outbox.v1` uses the existing processing queue and
+resolves the worker's server-owned local identity through `ExecuteOutboxRepairService`. Worker
+composition binds the same processing-profile attempt ceiling to recovery and delivery. It
+reuses child-owned resources and the bounded broker-only publisher; repair invokes no parser,
+indexing, purge, or paid provider operation. Registration sends no tick and creates no schedule.
+Automatic task retries are disabled and results ignored; duplicate delivered ticks remain separate
+bounded passes under canonical target claims/ceilings, not exactly-once execution.
+
+The queue verifier explicitly sends one tick after synthetic cleanup and observes completion of
+that exact task ID, followed by unchanged canonical absence. This proves adapter execution only,
+not scheduled recovery or business-work completion. Existing cooperative work/time bounds and SQL
+bookkeeping rules are unchanged. A broker-only scheduler, operator command, normal capture outbox
+activation, full Step 1 gate, and public application deployment remain outside this block.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
-record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,
-stage retry APIs, request replay/tombstones, and new version/history endpoints remain pending.
+record outbox receipts. Explicit repair ticks are registered in the worker; normal automatic
+dispatch, scheduler, periodic repair, stage retry APIs, request replay/tombstones, and new
+version/history endpoints remain pending.
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings

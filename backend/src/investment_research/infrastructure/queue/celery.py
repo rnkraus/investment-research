@@ -20,6 +20,7 @@ CELERY_APPLICATION_NAME: Final = "investment-research"
 PROCESSING_QUEUE_NAME: Final = "document-processing"
 PROCESS_DOCUMENT_TASK_NAME: Final = "investment_research.processing.process_document.v1"
 PURGE_DOCUMENT_TASK_NAME: Final = "investment_research.documents.purge_document.v1"
+REPAIR_OUTBOX_TASK_NAME: Final = "investment_research.delivery.repair_outbox.v1"
 BROKER_VISIBILITY_TIMEOUT_SECONDS: Final = 420
 BROKER_READINESS_TIMEOUT_SECONDS: Final = 2
 
@@ -63,6 +64,7 @@ def create_celery_app(settings: QueueSettings) -> Celery:
         task_routes={
             PROCESS_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
             PURGE_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
+            REPAIR_OUTBOX_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
         },
         task_serializer="json",
         task_store_errors_even_if_ignored=False,

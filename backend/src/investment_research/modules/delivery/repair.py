@@ -21,6 +21,7 @@ from investment_research.modules.delivery.recovery import (
     RecoverExpiredOutboxService,
     RecoverUnstartedOutboxService,
 )
+from investment_research.modules.identity.application import IdentityContextProvider
 from investment_research.modules.identity.domain import WorkspaceContext
 
 # Each preparation category gets one quarter; at least half remains for returned claims.
@@ -79,3 +80,14 @@ class RepairOutboxService:
             jitter=self.jitter,
         ).drain(context, budget=budget)
         return OutboxRepairResult(unstarted, expired, delivery, budget.used_targets)
+
+
+@dataclass(frozen=True, slots=True)
+class ExecuteOutboxRepairService:
+    """Resolve the local worker's trusted scope; broker input cannot select a workspace."""
+
+    repair_service: RepairOutboxService
+    identity_context_provider: IdentityContextProvider
+
+    def execute_repair(self) -> None:
+        self.repair_service.repair(self.identity_context_provider.resolve())
