@@ -40,7 +40,7 @@ def test_observed_fences_and_profile_limits_are_forwarded_in_separate_transactio
     assert result.stop_reason is RecoveryStopReason.SNAPSHOT_EXHAUSTED
     assert harness.transactions == 4 and harness.active_transactions == 0
     harness.repository.list_expired_candidates.assert_called_once_with(
-        harness.context, now=NOW, maximum_attempts=3
+        harness.context, now=NOW, maximum_attempts=3, limit=20
     )
     assert harness.repository.recover_expired.call_args_list == [
         call(

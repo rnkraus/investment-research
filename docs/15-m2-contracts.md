@@ -245,6 +245,15 @@ Broker publication remains outside transactions; receipts still permit a newly s
 This internal opt-in is not normal worker/scheduler wiring. Shared-budget tick orchestration,
 honest complete exhaustion status, real Redis-loss recovery, and the full Step 1 gate remain pending.
 
+**Shared phase-budget primitives (2026-10-22):** Recovery and drain can now receive one shared
+in-process budget for sequential phases, without restarting the thirty-second deadline or
+twenty-slot allowance. Preparation and publication claims count separately, conservatively even
+for the same target. Smaller phase limits and remaining-budget SQL limits cannot expand the
+accepted bound. Exhaustion prevents starting further work; broker timeouts use remaining time,
+while in-flight SQL and mandatory fenced bookkeeping may finish. Standalone calls retain their
+own existing limits. Runtime coordination must explicitly pass the same budget and allocate
+capacity across phases; scheduler/operator wiring and the full activation gate remain pending.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
 record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,

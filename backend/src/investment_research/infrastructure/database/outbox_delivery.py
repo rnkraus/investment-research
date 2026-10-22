@@ -7,6 +7,7 @@ from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, aliased
 
+from investment_research.modules.delivery.budget import validate_target_limit
 from investment_research.modules.delivery.domain import (
     OUTBOX_MAX_ATTEMPTS,
     OUTBOX_MAX_GENERATIONS,
@@ -39,20 +40,25 @@ class SqlAlchemyOutboxDeliveryRepository:
         self._maximum_processing_attempts = maximum_processing_attempts
 
     def list_unstarted_candidates(
-        self, context: WorkspaceContext, *, now: datetime
+        self, context: WorkspaceContext, *, now: datetime, limit: int = OUTBOX_RECOVERY_MAX_TARGETS
     ) -> tuple[UUID, ...]:
         """Read a bounded snapshot; the targeted operation owns all mutation fences."""
 
         return tuple(
             self._session.scalars(
-                self._recovery_candidates(context, now=now).where(
+                self._recovery_candidates(context, now=now, limit=limit).where(
                     ProcessingRunRow.state == ProcessingState.CAPTURED
                 )
             )
         )
 
     def list_expired_candidates(
-        self, context: WorkspaceContext, *, now: datetime, maximum_attempts: int
+        self,
+        context: WorkspaceContext,
+        *,
+        now: datetime,
+        maximum_attempts: int,
+        limit: int = OUTBOX_RECOVERY_MAX_TARGETS,
     ) -> tuple[ExpiredOutboxCandidate, ...]:
         """Observe execution tokens without locking or authorizing their later recovery."""
 
@@ -60,7 +66,7 @@ class SqlAlchemyOutboxDeliveryRepository:
             raise ValueError("maximum_attempts must be positive")
         now = self._aware_time(now)
         rows = self._session.execute(
-            self._recovery_candidates(context, now=now)
+            self._recovery_candidates(context, now=now, limit=limit)
             .add_columns(ProcessingRunRow.lease_id)
             .where(
                 ProcessingRunRow.state.in_(
@@ -83,10 +89,11 @@ class SqlAlchemyOutboxDeliveryRepository:
         return tuple(candidates)
 
     def _recovery_candidates(
-        self, context: WorkspaceContext, *, now: datetime
+        self, context: WorkspaceContext, *, now: datetime, limit: int
     ) -> Select[tuple[UUID]]:
         """Apply shared source, history, grace, ordering, and twenty-target bounds in SQL."""
 
+        validate_target_limit(limit)
         now = self._aware_time(now)
         newer = aliased(OutboxEventRow)
         has_newer = (
@@ -135,7 +142,7 @@ class SqlAlchemyOutboxDeliveryRepository:
                 ~has_newer,
             )
             .order_by(OutboxEventRow.published_at, OutboxEventRow.event_id)
-            .limit(OUTBOX_RECOVERY_MAX_TARGETS)
+            .limit(limit)
         )
 
     def recover_unstarted(

@@ -6,6 +6,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | Location | Responsibility |
 | --- | --- |
 | `domain.py` | Strict versioned event, deterministic identity, fenced transitions, and retry ceilings |
+| `budget.py` | Shared twenty-slot/thirty-second budget for sequential preparation and publication phases |
 | `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
 | `application.py` | Scoped drain, readiness-before-claim, scan/time bounds, jitter, and safe outcomes |
 | `recovery.py` | Bounded snapshots and separately fenced preparation of unstarted/expired redelivery intent |
@@ -178,7 +179,19 @@ attempt/lease limits still apply. The unchanged `DrainOutboxService` publishes o
 claim commits/closes; receipts may accept a worker that has already claimed a new execution fence.
 This is not an environment option or normal worker wiring. Tests use a recording publisher and
 fake consumer against disposable PostgreSQL; real Redis recovery and full runtime gates remain
-pending, as do shared tick bounds and scheduler/operator activation.
+pending, as do shared-budget tick orchestration and scheduler/operator activation.
+
+**Shared phase budget (2026-10-22):** Both recovery services and the drain accept the same
+`OutboxSweepBudget` plus an optional smaller per-call `max_targets` (1–20). The budget is local to
+one sequential invocation, not persisted, thread-shared, or authorization. It owns one monotonic
+thirty-second deadline and twenty work slots across phases. Preparing and claiming the same target
+consume separate slots conservatively; skipped preparations and cancelled/blocked claims count,
+while empty lookups do not. Candidate queries receive the remaining, capped `limit` directly in
+SQL. Exhausted budget prevents later snapshots, claims, or readiness probes. Broker operations use
+its remaining time, not a phase-local reset; in-flight SQL and necessary fenced receipt/failure
+cleanup may finish after the deadline. A phase without an explicit budget retains its standalone
+limits. The future coordinator must pass the same instance and allocate phase capacity so pending
+publication cannot starve behind preparation; no automatic coordinator or scheduler is activated.
 
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator
