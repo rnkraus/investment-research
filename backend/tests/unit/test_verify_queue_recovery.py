@@ -26,7 +26,31 @@ def test_capture_probe_uses_current_pdf_capture_contract() -> None:
     assert "CaptureDocumentInput" not in verify_queue_recovery.CAPTURE_PROBE_CODE
     assert "BoundedCeleryOutboxPublisher" in verify_queue_recovery.CAPTURE_PROBE_CODE
     assert "processing_dispatcher=DeferredDispatcher()" in verify_queue_recovery.CAPTURE_PROBE_CODE
-    assert "drained.claimed == drained.published == 1" in verify_queue_recovery.CAPTURE_PROBE_CODE
+    compile(verify_queue_recovery.CAPTURE_PROBE_CODE, "synthetic-capture-probe", "exec")
+    assert "RepairOutboxService" in verify_queue_recovery.CAPTURE_PROBE_CODE
+
+
+def test_outbox_probe_preserves_receipts_fences_and_production_grace() -> None:
+    code = verify_queue_recovery.CAPTURE_PROBE_CODE
+    assert "publisher.publish(job, timeout_seconds=timeout_seconds)" in code
+    assert code.index("publisher.publish(job,") < code.index(
+        'raise OutboxPublicationUnavailableError("synthetic lost publication acknowledgement")'
+    )
+    assert "uncertain.published == 0" in code
+    assert "events[0].state is OutboxState.RETRY_WAIT" in code
+    assert "events[0].attempt_count == 2" in code
+    assert "events[1].attempt_count == 1" in code
+    assert "events[0] == published" in code
+    assert "premature.unstarted.prepared == premature.delivery.published == 0" in code
+    assert "repeated.used_targets == repeated.delivery.published == 0" in code
+    assert "clock=lambda: repair_time" in code
+    assert "OUTBOX_UNSTARTED_GRACE_SECONDS + 1" in code
+    assert "maximum_processing_attempts=maximum_attempts" in code
+    assert code.count("lose_one_message()\n") == 2
+    assert "broker.lpop(PROCESSING_QUEUE_NAME)" in code
+    assert "flushall" not in code.lower() and "flushdb" not in code.lower()
+    assert "update(" not in code and "time.sleep" not in code
+    assert "run == initial_run" in code
 
 
 def prepare_deterministic_runtime(
@@ -120,7 +144,9 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Migrate isolated PostgreSQL database",
         "Seed isolated PostgreSQL workspaces",
         "Pause parser before publishing the recovery probe",
-        "Capture fixture and publish one real Celery job",
+        "Pause isolated worker before removing test publications",
+        "Capture fixture and recover lost outbox publications",
+        "Resume isolated worker after outbox recovery probes",
         "Kill the active Celery pool worker after its canonical claim",
         "Resume parser for the reclaimed delivery",
         "Publish permanent deletion for the isolated synthetic document",
@@ -137,7 +163,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     )
     for label, command, _ in calls:
         if label in {
-            "Capture fixture and publish one real Celery job",
+            "Capture fixture and recover lost outbox publications",
             "Publish permanent deletion for the isolated synthetic document",
         }:
             assert rag_mount in command
@@ -158,8 +184,16 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
     assert code.count("dispatcher.dispatch(job)") == 2
 
 
-def test_verification_resumes_parser_and_cleans_up_after_capture_failure(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("failure_label", "worker_needs_resume"),
+    [
+        ("Pause isolated worker before removing test publications", False),
+        ("Capture fixture and recover lost outbox publications", True),
+        ("Resume isolated worker after outbox recovery probes", True),
+    ],
+)
+def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
+    monkeypatch: pytest.MonkeyPatch, failure_label: str, worker_needs_resume: bool
 ) -> None:
     engine, _, _ = prepare_deterministic_runtime(monkeypatch)
     labels: list[str] = []
@@ -174,16 +208,18 @@ def test_verification_resumes_parser_and_cleans_up_after_capture_failure(
     ) -> subprocess.CompletedProcess[bytes]:
         del working_directory, environment, check
         labels.append(label)
-        if label == "Capture fixture and publish one real Celery job":
+        if label == failure_label:
             raise subprocess.CalledProcessError(7, command)
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(verify_queue_recovery, "run_command", fail_capture)
 
     assert verify_queue_recovery.verify_queue_recovery() == 7
-    assert labels[-3:] == [
-        "Show isolated worker logs after verification failure",
-        "Resume parser before cleanup",
-        "Remove isolated queue-recovery project and its volumes",
-    ]
+    expected_cleanup = ["Show isolated worker logs after verification failure"]
+    if worker_needs_resume:
+        expected_cleanup.append("Resume isolated worker before cleanup")
+    expected_cleanup.extend(
+        ["Resume parser before cleanup", "Remove isolated queue-recovery project and its volumes"]
+    )
+    assert labels[-len(expected_cleanup) :] == expected_cleanup
     engine.dispose.assert_called_once_with()

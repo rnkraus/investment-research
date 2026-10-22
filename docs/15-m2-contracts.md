@@ -266,6 +266,16 @@ The trusted composition root must configure the coordinator and delivery transac
 with the same existing processing-profile ceiling. No normal runtime, scheduler, or operator
 command is activated by this internal service; the full Step 1 gate remains pending.
 
+**Offline real-broker verification (2026-10-22):** The existing queue verifier exercises message
+loss before a canonical publication receipt (accepted Redis publication followed by a synthetic
+uncertain acknowledgement) and after a receipt. Only one message at a time is removed from the
+paused disposable worker's exact queue. Recovery preserves generation-zero publication attempts,
+the prior receipt, and the unchanged processing snapshot; premature and repeated repair are no-ops.
+An injected application UTC clock covers the 420-second grace without modifying database history,
+production policy, the system clock, or broker deadlines. Existing worker-loss recovery must then
+produce exactly one fixture output before synthetic-source purge. This separate explicit gate is
+not a scheduler, actual publisher crash, stopped-broker test, or normal-runtime activation.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
 record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,
