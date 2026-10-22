@@ -29,7 +29,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_parser_isolation.py`  | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`             | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`          | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
-| `verify_queue_recovery.py`    | Proves live worker-loss recovery and scoped permanent cleanup of its synthetic source.  |
+| `verify_queue_recovery.py`    | Proves lost outbox publication recovery, worker-loss recovery, and synthetic-source cleanup. |
 | `verify_runtime_cleanup.py`   | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                |
 
 The M1.5 evaluation commands, fixture provenance, output schema, and opt-in boundaries are
@@ -251,8 +251,14 @@ secrets are removed even when a check fails.
 ```mermaid
 flowchart LR
     COMMAND[verify_queue_recovery.py] --> STACK[Start isolated worker runtime]
-    STACK --> CAPTURE[Capture fixture and publish task]
-    CAPTURE --> CLAIM[Wait for PARSING claim]
+    STACK --> PAUSE[Pause isolated worker and parser]
+    PAUSE --> CAPTURE[Capture fixture with deferred legacy dispatch]
+    CAPTURE --> LOST[Drop accepted job before receipt and retry through outbox]
+    LOST --> RECEIPT[Drop acknowledged job and require publication grace]
+    RECEIPT --> REPAIR[Prepare and publish one recovery generation]
+    REPAIR --> REPEAT[Require repeated repair to be a no-op]
+    REPEAT --> RESUME[Resume isolated worker]
+    RESUME --> CLAIM[Wait for PARSING claim]
     CLAIM --> KILL[Kill Celery pool worker]
     KILL --> REDELIVER[Broker redelivery]
     REDELIVER --> RECLAIM[Reclaim after lease expiry]
@@ -263,16 +269,28 @@ flowchart LR
     VERIFY --> CLEANUP[Remove project and volumes]
 ```
 
-Run the live worker-loss and deletion gate from `backend/` with Docker running:
+Run the live outbox-loss, worker-loss, and deletion gate from `backend/` with Docker running:
 
 ```shell
 uv run --locked python -m scripts.verify_queue_recovery
 ```
 
 The command creates a unique Compose project with generated disposable credentials and does not
-load repository `.env` values. It pauses the isolated parser, captures the frozen PDF through the
-real application container, and waits until the Celery pool worker owns the canonical processing
-lease. It then asks Celery for the exact pool-process identifier and kills only that child process,
+load repository `.env` values. It pauses the isolated worker and parser and captures the frozen PDF
+through the real application container, explicitly deferring the legacy post-commit dispatcher.
+A test publisher first sends a real Redis job and then reports an uncertain acknowledgement before
+a canonical receipt. The probe removes exactly one message from the isolated processing queue,
+then uses `RepairOutboxService` to republish generation zero under its remaining attempt allowance.
+It removes that acknowledged message too, requires a premature repair to do nothing, and advances
+only an injected UTC clock past the unchanged 420-second grace. One bounded recovery generation
+must publish while retaining the prior receipt and leaving processing state/counts unchanged.
+Repeated repair is a no-op. No database timestamps, production policy, system clock, or monotonic
+broker deadlines are changed; test retry jitter is zero. This simulates publication uncertainty,
+not an actual publisher-process crash, and does not test a stopped Redis server or scheduler ticks.
+Only `LPOP` on the exact disposable processing queue is used; no database-wide Redis flush occurs.
+
+The worker is then resumed and the verifier waits until it owns the canonical processing lease.
+It asks Celery for the exact pool-process identifier and kills only that child process,
 leaving the Celery main process alive to reject and redeliver the unacknowledged message. The parser
 is resumed after the deliberately shortened disposable lease expires.
 
@@ -284,7 +302,8 @@ verifier additionally requires the canonical document, versions, original metada
 runs, structure blocks, chunk sets, and chunks to be absent. Unit tests separately prove duplicate
 execution is harmless. This M0 fixture has no dense vectors, so the command does not exercise live
 Pinecone deletion or mixed-document answer cleanup; the latter has PostgreSQL integration tests.
-Cleanup removes the unique project and its volumes after both success and failure. It never
+Paused services are resumed during failure cleanup. Cleanup removes the unique project and its
+volumes after both success and failure. Normal runtime activation remains pending. It never
 requests deletion of documents in the normal local archive.
 
 ## Complete M0 runtime verification

@@ -561,6 +561,29 @@ Seven separate SeaweedFS-only tests were skipped. The disposable database, volum
 were removed. Publication used a recording adapter; no Redis, live provider, frontend/browser,
 normal archive, hosted CI, or complete runtime journey was exercised in this block.
 
+**Real Redis publication-loss verification block (2026-10-22):** The existing queue verifier now
+pauses its isolated worker before a deferred-dispatch fixture capture. A test publisher sends a
+real message, then reports publication uncertainty before the canonical receipt; exactly one
+queued message is removed. The coordinator retries within generation zero and records attempt
+two. That acknowledged message is also removed. Repair before grace must be a no-op; an injected
+UTC clock advances only this probe beyond the unchanged 420-second grace, preparing and publishing
+generation one while retaining the prior receipt and processing snapshot. Repeated repair must
+do nothing. No production clock/policy or database timestamps are rewritten, and the monotonic
+broker deadline is unchanged. This is an acknowledgement-loss simulation, not an actual
+publisher-process crash or stopped Redis-server test. The existing subsequent worker-child loss,
+single-output verification, and synthetic permanent cleanup remain required. Failure cleanup
+resumes paused services before removing the disposable project. The existing offline CI command
+covers the extended gate; its step label now includes outbox loss. No normal runtime or scheduler
+is activated. Automatic trigger/operator wiring, full exhaustion status, actual broker-outage
+and expired-execution coordinator gates, and the complete Step 1 acceptance remain pending.
+Verification: 16 focused queue/coordinator unit tests and the full `scripts.verify_backend` gate
+passed, including formatting, linting, typing, and 2,393 unit tests. The extended
+`scripts.verify_queue_recovery` passed locally against real isolated PostgreSQL, Redis, parser,
+Celery worker, and SeaweedFS: publication-loss repair, worker-loss reclaim on attempt two, exactly
+one expected fixture output, and completed synthetic original/canonical purge. Its unique project,
+volumes, and networks were removed successfully. No paid provider, browser/frontend, normal archive,
+hosted CI, separate PostgreSQL integration suite, or full M0/M1 runtime journey was exercised.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

@@ -1,4 +1,4 @@
-"""Verify real Redis delivery and recovery after a Celery pool-worker loss."""
+"""Verify lost outbox publications, pool-worker recovery, and synthetic-source cleanup."""
 
 import os
 import secrets
@@ -50,10 +50,12 @@ STATE_TIMEOUT_SECONDS = 45.0
 POLL_INTERVAL_SECONDS = 0.25
 
 CAPTURE_PROBE_CODE = """\
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pydantic import SecretStr
+from redis import Redis
+from sqlalchemy import select
 
 from investment_research.bootstrap import build_api_container
 from investment_research.infrastructure.database.outbox_unit_of_work import (
@@ -63,12 +65,22 @@ from investment_research.infrastructure.database.unit_of_work import (
     create_capture_unit_of_work_factory,
 )
 from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
-from investment_research.modules.delivery.application import DrainOutboxService
-from investment_research.modules.delivery.ports import OutboxPublicationInvalidError
+from investment_research.infrastructure.queue.celery import PROCESSING_QUEUE_NAME
+from investment_research.modules.delivery.application import DrainOutboxService, DrainStopReason
+from investment_research.modules.delivery.domain import (
+    OUTBOX_UNSTARTED_GRACE_SECONDS, OutboxState,
+)
+from investment_research.modules.delivery.persistence import OutboxEventRow
+from investment_research.modules.delivery.ports import (
+    OutboxPublicationInvalidError, OutboxPublicationUnavailableError,
+)
+from investment_research.modules.delivery.repair import RepairOutboxService
 from investment_research.modules.documents.application import CaptureDocumentService
 from investment_research.modules.documents.contracts import PdfCaptureInput
+from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
 from investment_research.modules.processing.contracts import ProcessingJobV1
 from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.processing.persistence import ProcessingRunRow
 from investment_research.settings import load_api_settings
 from investment_research.settings_models import QueueSettings
 
@@ -101,10 +113,88 @@ try:
         runtime_location=container.settings.runtime_location,
         redis_url=container.settings.redis_url,
     ))
-    drained = DrainOutboxService(
-        create_outbox_delivery_unit_of_work_factory(container.session_factory), publisher
-    ).drain(context)
-    assert drained.claimed == drained.published == 1, "bounded outbox publication failed"
+    maximum_attempts = M0_0_PROCESSING_PROFILE.maximum_attempts
+    factory = create_outbox_delivery_unit_of_work_factory(
+        container.session_factory, maximum_processing_attempts=maximum_attempts,
+    )
+
+    def snapshot():
+        with container.session_factory() as session:
+            run = session.scalars(select(ProcessingRunRow).where(
+                ProcessingRunRow.workspace_id == context.workspace_id,
+                ProcessingRunRow.id == result.processing_run_id,
+            )).one().to_domain()
+            events = tuple(row.to_domain() for row in session.scalars(
+                select(OutboxEventRow).where(
+                    OutboxEventRow.workspace_id == context.workspace_id,
+                    OutboxEventRow.target_id == result.processing_run_id,
+                ).order_by(OutboxEventRow.generation)
+            ))
+        return run, events
+
+    class UncertainPublisher:
+        def is_ready(self, *, timeout_seconds):
+            return publisher.is_ready(timeout_seconds=timeout_seconds)
+
+        def publish(self, job, *, timeout_seconds):
+            publisher.publish(job, timeout_seconds=timeout_seconds)
+            # Test-only failure after Redis accepted the job, before a canonical receipt.
+            raise OutboxPublicationUnavailableError("synthetic lost publication acknowledgement")
+
+    initial_run, initial_events = snapshot()
+    assert initial_run.attempt_count == 0 and len(initial_events) == 1
+    with Redis.from_url(
+        container.settings.require_redis_url(), socket_connect_timeout=2, socket_timeout=2,
+    ) as broker:
+        assert broker.llen(PROCESSING_QUEUE_NAME) == 0, "isolated processing queue is not empty"
+
+        def lose_one_message():
+            # Only this paused, disposable project's explicit processing queue is touched.
+            assert broker.llen(PROCESSING_QUEUE_NAME) == 1, "expected one isolated queued job"
+            assert broker.lpop(PROCESSING_QUEUE_NAME) is not None
+            assert broker.llen(PROCESSING_QUEUE_NAME) == 0
+
+        uncertain = DrainOutboxService(
+            factory, UncertainPublisher(), jitter=lambda low, high: 0,
+        ).drain(context)
+        assert uncertain.claimed == 1 and uncertain.published == 0
+        assert uncertain.stop_reason is DrainStopReason.BROKER_UNAVAILABLE
+        run, events = snapshot()
+        assert run == initial_run and events[0].state is OutboxState.RETRY_WAIT
+        assert events[0].attempt_count == 1 and events[0].published_at is None
+        lose_one_message()
+
+        repair = RepairOutboxService(factory, publisher, maximum_attempts)
+        retried = repair.repair(context)
+        assert retried.delivery.claimed == retried.delivery.published == 1
+        run, events = snapshot()
+        assert run == initial_run and len(events) == 1
+        assert events[0].state is OutboxState.PUBLISHED and events[0].attempt_count == 2
+        published = events[0]
+        lose_one_message()
+
+        premature = repair.repair(context)
+        assert premature.unstarted.prepared == premature.delivery.published == 0
+        assert snapshot() == (initial_run, (published,))
+
+        # Advance only this probe's injected UTC clock, not database rows, production grace,
+        # the system clock, or the monotonic broker deadline. No seven-minute sleep is needed.
+        repair_time = datetime.now(UTC) + timedelta(seconds=OUTBOX_UNSTARTED_GRACE_SECONDS + 1)
+        recovery = RepairOutboxService(
+            factory, publisher, maximum_attempts, clock=lambda: repair_time,
+        )
+        recovered = recovery.repair(context)
+        assert recovered.unstarted.prepared == recovered.delivery.published == 1
+        assert recovered.used_targets == 2
+        run, events = snapshot()
+        assert run == initial_run and len(events) == 2 and events[0] == published
+        assert events[1].generation == 1 and events[1].state is OutboxState.PUBLISHED
+        assert events[1].attempt_count == 1
+        repeated = recovery.repair(context)
+        assert repeated.used_targets == repeated.delivery.published == 0
+        assert snapshot() == (initial_run, events)
+        assert broker.llen(PROCESSING_QUEUE_NAME) == 1
+    print("Lost publications before and after receipt recovered with retained history.", flush=True)
     invalid_publisher = BoundedCeleryOutboxPublisher(QueueSettings(
         runtime_location="container",
         redis_url=SecretStr("redis://:synthetic-invalid-probe@redis:6379/0"),
@@ -445,6 +535,8 @@ def verify_queue_recovery() -> int:
     python_command = [sys.executable, "-m"]
     parser_container_id: str | None = None
     parser_is_paused = False
+    worker_container_id: str | None = None
+    worker_is_paused = False
     engine: Engine | None = None
     exit_code = 0
 
@@ -502,8 +594,19 @@ def verify_queue_recovery() -> int:
                 environment=compose_environment,
             )
             parser_is_paused = True
+            worker_container_id = compose_container_id(
+                compose_command,
+                "worker",
+                environment=compose_environment,
+            )
             run_command(
-                "Capture fixture and publish one real Celery job",
+                "Pause isolated worker before removing test publications",
+                ["docker", "pause", worker_container_id],
+                environment=compose_environment,
+            )
+            worker_is_paused = True
+            run_command(
+                "Capture fixture and recover lost outbox publications",
                 [
                     *compose_command,
                     "run",
@@ -523,15 +626,16 @@ def verify_queue_recovery() -> int:
                 ],
                 environment=compose_environment,
             )
+            run_command(
+                "Resume isolated worker after outbox recovery probes",
+                ["docker", "unpause", worker_container_id],
+                environment=compose_environment,
+            )
+            worker_is_paused = False
             processing_run_id = find_processing_run_id(engine)
             wait_for_processing_state(engine, processing_run_id, ProcessingState.PARSING)
             shorten_active_lease(engine, processing_run_id)
 
-            worker_container_id = compose_container_id(
-                compose_command,
-                "worker",
-                environment=compose_environment,
-            )
             worker_loss = run_command(
                 "Kill the active Celery pool worker after its canonical claim",
                 [
@@ -594,6 +698,15 @@ def verify_queue_recovery() -> int:
                 check=False,
             )
         finally:
+            if worker_is_paused and worker_container_id is not None:
+                unpause_worker = run_command(
+                    "Resume isolated worker before cleanup",
+                    ["docker", "unpause", worker_container_id],
+                    environment=compose_environment,
+                    check=False,
+                )
+                if unpause_worker.returncode != 0 and exit_code == 0:
+                    exit_code = unpause_worker.returncode
             if parser_is_paused and parser_container_id is not None:
                 unpause = run_command(
                     "Resume parser before cleanup",
