@@ -334,6 +334,18 @@ class SqlAlchemyOutboxDeliveryRepository:
     def claim_next_due(self, context: WorkspaceContext, *, now: datetime) -> OutboxEvent | None:
         """Lock at most one due row; cancelled/blocked outcomes also consume one scan slot."""
 
+        return self._claim_due(context, now=now)
+
+    def claim_due_event(
+        self, context: WorkspaceContext, *, event_id: UUID, now: datetime
+    ) -> OutboxEvent | None:
+        """Reserve only the requested canonical event; all normal due/lifecycle fences apply."""
+
+        return self._claim_due(context, now=now, event_id=event_id)
+
+    def _claim_due(
+        self, context: WorkspaceContext, *, now: datetime, event_id: UUID | None = None
+    ) -> OutboxEvent | None:
         now = self._aware_time(now)
         unfinished = and_(
             ProcessingRunRow.state.in_(
@@ -355,7 +367,7 @@ class SqlAlchemyOutboxDeliveryRepository:
             )
             .exists()
         )
-        candidate = self._session.execute(
+        statement = (
             select(OutboxEventRow, ProcessingRunRow)
             .join(
                 ProcessingRunRow,
@@ -387,7 +399,10 @@ class SqlAlchemyOutboxDeliveryRepository:
             .limit(1)
             .with_for_update(skip_locked=True, of=[OutboxEventRow, ProcessingRunRow])
             .execution_options(populate_existing=True)
-        ).one_or_none()
+        )
+        if event_id is not None:
+            statement = statement.where(OutboxEventRow.event_id == event_id)
+        candidate = self._session.execute(statement).one_or_none()
         if candidate is None:
             return None
         row: OutboxEventRow

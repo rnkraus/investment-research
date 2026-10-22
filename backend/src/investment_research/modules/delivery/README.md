@@ -78,6 +78,24 @@ the future broker adapter receives its detached value, and opens a separate rece
 No broker call is part of these database operations. The drain checks broker readiness before
 claiming and enforces the sweep, publication deadline, and scan bounds.
 
+## Targeted single-event claim (2026-10-23)
+
+`claim_due_event` narrows the same database claim implementation to one explicit event ID in the
+trusted workspace. It never substitutes another due row when that event is absent, foreign,
+not yet due, superseded, already published/closed, or locked. The existing latest-generation,
+active/current source, deletion, execution, profile, lease, retry, and attempt rules remain shared
+with `claim_next_due`; a returned `CANCELLED`/`BLOCKED` result never authorizes publication.
+Both operations use single-row `SKIP LOCKED` claims and caller-owned short transactions. Rollback
+preserves intent, and concurrent exact claims have at most one owner without claiming unrelated
+work. Neither operation contacts the broker, changes processing attempts, or creates intent.
+
+This is the persistence prerequisite for a bounded post-capture fast path, not its activation.
+The caller must still check broker readiness before claiming, commit/close before publication,
+and retain existing fenced receipt handling afterward. The normal API dispatcher, worker,
+scheduler, schemas, and capture response are unchanged by this block. Existing unit/PostgreSQL
+CI discovery covers query scope, exact selection, concurrency, rollback, source exclusion,
+due times, exhaustion, and explicit recovery-profile qualification.
+
 ## Implemented bounded publication boundary (2026-10-19)
 
 `DrainOutboxService` checks readiness before each claim, then commits/closes the claim transaction,

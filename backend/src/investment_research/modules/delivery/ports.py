@@ -127,6 +127,16 @@ class OutboxDeliveryRepository(Protocol):
         Otherwise keep unfinished recovery intent deferred; never cancel it as legacy work.
         """
 
+    def claim_due_event(
+        self, context: WorkspaceContext, *, event_id: UUID, now: datetime
+    ) -> OutboxEvent | None:
+        """Apply the same claim fences to exactly one event, without falling back to other work.
+
+        Unknown, foreign, live-claimed, not-yet-due, or superseded intent returns None.
+        A returned CANCELLED/BLOCKED event is not publication authority. The caller checks broker
+        readiness first and commits/closes this transaction before any publication.
+        """
+
     def record_published(
         self, context: WorkspaceContext, *, event_id: UUID, lease_id: UUID, now: datetime
     ) -> bool:
