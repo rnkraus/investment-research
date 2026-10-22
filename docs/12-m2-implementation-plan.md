@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted; Step 1 opt-in scheduler verified; normal capture/runtime activation pending
+**Status:** Step 0 accepted; Step 1 bounded API capture dispatch; default scheduler activation pending
 
 **Date:** 2026-10-01
 
@@ -793,6 +793,36 @@ No bootstrap, settings, schema, HTTP, dependency, frontend, or provider behavior
 archive, paid provider, frontend/browser, hosted CI, live queue, or complete M0/M1 runtime journey
 was exercised in this block. Step 1 remains incomplete: normal API composition, default periodic
 repair activation, and complete outage/runtime compatibility gates remain pending.
+
+**Normal API capture composition block (2026-10-23):** `build_api_container` now installs the
+bounded `DispatchCapturedProcessingService`, sharing its trusted identity provider and binding
+short delivery transactions to the selected processing profile's attempt ceiling. The publisher
+receives only broker/runtime configuration. PDF/text capture attempts only its committed
+generation-zero intent; the legacy direct processing publisher is no longer the normal API path.
+The capture response, original/status access, processing attempts, purge delivery, and all
+workspace/evidence/provider boundaries remain unchanged. Default scheduler startup is deliberately
+not included in this block.
+
+Verification: 54 focused lifecycle/dispatcher/verifier unit tests passed. `scripts.verify_backend`
+passed formatting, linting, typing across 374 source files, and 2,542 unit tests.
+`scripts.verify_postgres` passed migration head/base/head cycling, schema drift checks, and
+357 integration tests, including sixteen new HTTP capture cases across both processing profiles,
+PDF/text, and successful/unavailable/uncertain/invalid publication. These prove preserved originals,
+unchanged unrelated due work, safe expected failures, and no capture/claim lock retained during
+publication. Seven separate SeaweedFS-only tests were skipped. Existing unit/PostgreSQL CI
+discovery includes these cases without a workflow change.
+
+The isolated `scripts.verify_m0_runtime` and
+`scripts.verify_m1_runtime --skip-browser` each passed their HTTP acceptance journey and protected-log
+checks using real Redis, workers, PostgreSQL, and SeaweedFS with synthetic adapters. The explicit
+M1 option retains stack setup, HTTP assertions, log safety, and cleanup while neither discovering
+pnpm nor launching a browser. Its five new unit cases preserve failures and verify CLI selection;
+the default full CI command still includes browser acceptance. No browser, hosted CI, normal
+archive, or paid provider was exercised. This is local compatibility evidence, not completion of
+the full M1 browser gate or M2 Step 1. Default periodic startup and automatic recovery of an
+HTTP-captured document across a real Redis outage remain the next activation block.
+All disposable projects, their volumes/networks, and acceptance images were removed successfully;
+`scripts.verify_runtime_cleanup` confirmed that no isolated runtime verification resources remain.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 

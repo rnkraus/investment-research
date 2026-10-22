@@ -18,25 +18,29 @@ canonical source of `ProcessingRun` state, derived output, and deletion receipts
 
 ## Publication flow
 
-**M2 storage block:** Capture now commits durable outbox intent together with the processing run.
-The direct post-commit path shown below remains active; the outbox dispatcher, publication receipts,
-scheduler, and periodic repair are not enabled yet. Pending outbox state is therefore not proof
-that this legacy path never delivered the job. See the
-[delivery guide](../../modules/delivery/README.md) for the staged replacement boundary. Current
-purge delivery remains unchanged; only canonical purge detachment of outbox history is added.
+**M2 API composition (2026-10-23):** Normal PDF/text capture commits durable outbox intent with the
+processing run and then uses `DispatchCapturedProcessingService` to attempt only that run's
+generation-zero event. Trusted identity, readiness-before-claim, closed claim transactions,
+bounded private publication, and fenced receipts replace direct post-commit Celery publication.
+Expected broker failures preserve the original and the existing `CAPTURED` response. An absent
+claim is a no-op, not proof of delivery. The legacy `CeleryProcessingDispatcher` remains available
+for explicit compatibility use but is no longer the normal API capture adapter. Current purge
+delivery remains unchanged. See the [delivery guide](../../modules/delivery/README.md).
 
-**M2 bounded dispatch block:** The explicit `DrainOutboxService` and outbox publisher are implemented
-and used by `scripts.verify_queue_recovery` for its disposable synthetic capture. They are not yet
-wired into normal capture, worker bootstrap, an operator command, or periodic scheduling. The
-legacy diagram below still describes the normal application path; automatic repair and runtime
-activation remain separate Step 1 gates.
+The worker repair task and manual command reuse canonical bounded repair. Its separate periodic
+scheduler is still opt-in through `compose.m2-repair.yaml`; default scheduler startup and automatic
+HTTP-capture outage recovery remain Step 1 activation gates. Publication receipts alone never prove
+processing completion or durable retention in Redis.
 
 ```mermaid
 flowchart LR
     CAPTURE[Document capture service] --> JOB[ProcessingJobV1]
     JOB --> PORT[ProcessingDispatcher port]
-    PORT --> ADAPTER[CeleryProcessingDispatcher]
-    ADAPTER --> REDIS[(Redis broker)]
+    PORT --> ADAPTER[DispatchCapturedProcessingService]
+    ADAPTER --> CLAIM[Exact canonical claim in PostgreSQL]
+    CLAIM --> PUBLISH[Bounded private Celery publisher]
+    PUBLISH --> RECEIPT[Fenced publication receipt]
+    PUBLISH --> REDIS[(Redis broker)]
     REDIS --> TASK[Celery task adapter]
     TASK --> VALIDATE[ProcessingJobV1 validation]
     VALIDATE --> SCOPE[Server-controlled workspace check]

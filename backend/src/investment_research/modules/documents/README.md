@@ -67,17 +67,22 @@ An uncertain commit outcome preserves the potentially canonical original and ret
 error; it must not be mistaken for proven rollback or deletion permission.
 
 The [delivery module](../delivery/README.md) documents the durable intent and migration boundary.
-The current block does not enable an outbox dispatcher or automatic repair; the post-commit
-fast path below remains active and does not yet write outbox publication receipts.
+Normal API capture now attempts its generation-zero event through the bounded outbox dispatcher
+after commit. Periodic repair remains opt-in; default scheduler activation and automatic HTTP
+outage recovery still require the remaining M2 Step 1 gates.
 
 After the canonical transaction closes successfully, the service creates the strict versioned
 `ProcessingJobV1` and calls the application-owned `ProcessingDispatcher`. An expected broker
 publication failure records only the safe workspace and processing-run identifiers, returns the
 committed capture result, and leaves the run visibly `CAPTURED` for recovery. Dispatch is outside the
 compensation block, so neither a broker failure nor an unexpected post-commit error can delete an
-already canonical original. The API container constructs the Celery adapter and provides its
-`ProcessingDispatcher` to the capture service explicitly. Focused service tests use typed recording
-dispatchers so they remain independent of a live broker.
+already canonical original. The API container explicitly supplies `DispatchCapturedProcessingService`
+with the same trusted identity provider as the HTTP boundary, short outbox transactions, and the
+bounded private broker publisher. It reuses only the committed generation-zero intent and does not
+fall back to unrelated events or direct publication. Known unavailability before claiming consumes
+no publication attempt; uncertain sends retain bounded retry intent. Empty claims are no-ops, not
+delivery or completion proof. Focused service tests use typed recording dispatchers so they remain
+independent of a live broker.
 
 ## Original access
 

@@ -61,7 +61,6 @@ from investment_research.infrastructure.operations.opentelemetry import (
 )
 from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
-    CeleryProcessingDispatcher,
 )
 from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
 from investment_research.infrastructure.search.deterministic_index import (
@@ -73,6 +72,7 @@ from investment_research.infrastructure.search.pinecone import (
     PineconeDenseRetriever,
 )
 from investment_research.main import create_app
+from investment_research.modules.delivery.dispatch import DispatchCapturedProcessingService
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
@@ -114,7 +114,7 @@ from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.search.contracts import M1_LANE_CANDIDATE_LIMIT, M1SelectionProfile
 from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
 from investment_research.modules.search.indexing import IndexActiveChunksService
-from investment_research.settings import ApiSettings, WorkerSettings
+from investment_research.settings import ApiSettings, QueueSettings, WorkerSettings
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://test-user:test-password@127.0.0.1:5432/test-database"
 LOCAL_REDIS_URL = "redis://:synthetic-secret@127.0.0.1:6379/0"
@@ -340,7 +340,16 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
             assert isinstance(container.object_storage, LocalObjectStorage)
             assert isinstance(
                 container.processing_dispatcher,
-                CeleryProcessingDispatcher,
+                DispatchCapturedProcessingService,
+            )
+            dispatcher = container.processing_dispatcher
+            assert dispatcher.identity_context_provider is container.identity_context_provider
+            assert container.capture_document_service._processing_dispatcher is dispatcher
+            publisher = dispatcher.delivery_service.publisher
+            assert isinstance(publisher, BoundedCeleryOutboxPublisher)
+            assert publisher.settings == QueueSettings(
+                runtime_location=settings.runtime_location,
+                redis_url=settings.redis_url,
             )
             assert container.queue_application.conf.broker_url == LOCAL_REDIS_URL
             assert container.queue_application.conf.result_backend is None
@@ -389,11 +398,18 @@ def test_build_api_container_wires_only_api_resources(tmp_path: Path) -> None:
         container.close()
 
 
-def test_build_api_container_uses_m0_profile_for_isolated_regression(tmp_path: Path) -> None:
+@pytest.mark.parametrize("profile", ["m0-regression", "m1"])
+def test_build_api_container_qualifies_delivery_with_the_selected_processing_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str
+) -> None:
+    delivery_factory = Mock(wraps=create_outbox_delivery_unit_of_work_factory)
+    monkeypatch.setattr(
+        bootstrap_module, "create_outbox_delivery_unit_of_work_factory", delivery_factory
+    )
     settings = ApiSettings.model_validate(
         {
             "environment": "test",
-            "processing_profile": "m0-regression",
+            "processing_profile": profile,
             "database_url": LOCAL_DATABASE_URL,
             "redis_url": LOCAL_REDIS_URL,
             "object_storage_root": tmp_path / "objects",
@@ -402,10 +418,17 @@ def test_build_api_container_uses_m0_profile_for_isolated_regression(tmp_path: P
     container = build_api_container(settings)
 
     try:
-        assert container.capture_document_service._processing_profile is M0_0_PROCESSING_PROFILE
+        expected_profile = (
+            M0_0_PROCESSING_PROFILE if profile == "m0-regression" else M1_PROCESSING_PROFILE
+        )
+        assert container.capture_document_service._processing_profile is expected_profile
         assert (
             container.retrieve_research_service._search_profile.lexical_config_version
-            == M0_0_PROCESSING_PROFILE.lexical_config_version
+            == expected_profile.lexical_config_version
+        )
+        delivery_factory.assert_called_once_with(
+            container.session_factory,
+            maximum_processing_attempts=expected_profile.maximum_attempts,
         )
     finally:
         container.close()
