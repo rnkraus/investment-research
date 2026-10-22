@@ -32,8 +32,11 @@ from investment_research.modules.processing.persistence import ProcessingRunRow
 class SqlAlchemyOutboxDeliveryRepository:
     """Never commit, contact the broker, or change processing execution attempts here."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, maximum_processing_attempts: int | None = None) -> None:
+        if maximum_processing_attempts is not None and maximum_processing_attempts < 1:
+            raise ValueError("maximum_processing_attempts must be positive")
         self._session = session
+        self._maximum_processing_attempts = maximum_processing_attempts
 
     def list_unstarted_candidates(
         self, context: WorkspaceContext, *, now: datetime
@@ -205,33 +208,7 @@ class SqlAlchemyOutboxDeliveryRepository:
         ).one_or_none()
         if target is None:
             return None
-        document = self._session.scalar(
-            select(DocumentRow.id)
-            .join(
-                DocumentVersionRow,
-                and_(
-                    DocumentVersionRow.workspace_id == DocumentRow.workspace_id,
-                    DocumentVersionRow.document_id == DocumentRow.id,
-                    DocumentVersionRow.id == DocumentRow.current_version_id,
-                ),
-            )
-            .join(
-                ProcessingRunRow,
-                and_(
-                    ProcessingRunRow.workspace_id == DocumentVersionRow.workspace_id,
-                    ProcessingRunRow.document_version_id == DocumentVersionRow.id,
-                ),
-            )
-            .where(
-                DocumentRow.workspace_id == context.workspace_id,
-                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
-                ProcessingRunRow.id == target.target_id,
-            )
-            # SHARE fences deletion/promotion but remains compatible with processing's
-            # source-write guard. Skip a locked run instead of reversing its lock order.
-            .with_for_update(read=True, skip_locked=True, of=DocumentRow)
-        )
-        if document is None:
+        if not self._lock_recovery_source(context, run_id=target.target_id):
             return None
         run = self._session.scalar(
             select(ProcessingRunRow)
@@ -269,6 +246,35 @@ class SqlAlchemyOutboxDeliveryRepository:
             return None
         return run.to_domain(), latest.to_domain(), target.generation
 
+    def _lock_recovery_source(self, context: WorkspaceContext, *, run_id: UUID) -> bool:
+        document = self._session.scalar(
+            select(DocumentRow.id)
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == DocumentRow.workspace_id,
+                    DocumentVersionRow.document_id == DocumentRow.id,
+                    DocumentVersionRow.id == DocumentRow.current_version_id,
+                ),
+            )
+            .join(
+                ProcessingRunRow,
+                and_(
+                    ProcessingRunRow.workspace_id == DocumentVersionRow.workspace_id,
+                    ProcessingRunRow.document_version_id == DocumentVersionRow.id,
+                ),
+            )
+            .where(
+                DocumentRow.workspace_id == context.workspace_id,
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                ProcessingRunRow.id == run_id,
+            )
+            # SHARE fences deletion/promotion but remains compatible with processing's
+            # source-write guard. Skip a locked run instead of reversing its lock order.
+            .with_for_update(read=True, skip_locked=True, of=DocumentRow)
+        )
+        return document is not None
+
     def _insert_recovery_successor(
         self, context: WorkspaceContext, *, run_id: UUID, successor: OutboxEvent
     ) -> OutboxEvent | None:
@@ -295,10 +301,40 @@ class SqlAlchemyOutboxDeliveryRepository:
         """Lock at most one due row; cancelled/blocked outcomes also consume one scan slot."""
 
         now = self._aware_time(now)
-        row = self._session.scalar(
-            select(OutboxEventRow)
+        unfinished = and_(
+            ProcessingRunRow.state.in_(
+                [ProcessingState.PARSING, ProcessingState.LEXICAL_READY, ProcessingState.INDEXING]
+            ),
+            ProcessingRunRow.completed_at.is_(None),
+        )
+        allowed = or_(OutboxEventRow.generation == 0, ~unfinished)
+        if self._maximum_processing_attempts is not None:
+            allowed = or_(allowed, ProcessingRunRow.lease_expires_at <= now)
+        newer = aliased(OutboxEventRow)
+        has_newer = (
+            select(newer.event_id)
+            .where(
+                newer.workspace_id == OutboxEventRow.workspace_id,
+                newer.kind == OutboxEventRow.kind,
+                newer.target_id == OutboxEventRow.target_id,
+                newer.generation > OutboxEventRow.generation,
+            )
+            .exists()
+        )
+        candidate = self._session.execute(
+            select(OutboxEventRow, ProcessingRunRow)
+            .join(
+                ProcessingRunRow,
+                and_(
+                    ProcessingRunRow.workspace_id == OutboxEventRow.workspace_id,
+                    ProcessingRunRow.id == OutboxEventRow.processing_run_id,
+                    ProcessingRunRow.id == OutboxEventRow.target_id,
+                ),
+            )
             .where(
                 OutboxEventRow.workspace_id == context.workspace_id,
+                allowed,
+                ~has_newer,
                 or_(
                     and_(
                         OutboxEventRow.state.in_([OutboxState.PENDING, OutboxState.RETRY_WAIT]),
@@ -315,19 +351,46 @@ class SqlAlchemyOutboxDeliveryRepository:
                 OutboxEventRow.event_id,
             )
             .limit(1)
-            .with_for_update(skip_locked=True, of=OutboxEventRow)
-        )
-        if row is None:
+            .with_for_update(skip_locked=True, of=[OutboxEventRow, ProcessingRunRow])
+            .execution_options(populate_existing=True)
+        ).one_or_none()
+        if candidate is None:
             return None
+        row: OutboxEventRow
+        run_row: ProcessingRunRow
+        row, run_row = candidate
         event = row.to_domain()
-        if not self._eligible(context, event, require_captured=True):
+        run = run_row.to_domain()
+        if not self._eligible(context, event, require_captured=False):
+            result = event.cancel()
+        elif run.state is not ProcessingState.CAPTURED and (
+            event.generation == 0 or run.completed_at is not None
+        ):
             # The legacy fast path may already have started/completed this run. Do not
             # turn its unacknowledged PENDING row into another execution allowance.
             result = event.cancel()
-        elif event.attempt_count == OUTBOX_MAX_ATTEMPTS:
-            result = event.block_expired_final_claim(now=now)
+        elif not self._lock_recovery_source(context, run_id=run.id):
+            # A source lock or a concurrent lifecycle change is not permission to cancel
+            # durable intent. Close this transaction and let a later sweep requalify it.
+            return None
         else:
-            result = event.claim(lease_id=uuid4(), claimed_at=now)
+            if run.state is not ProcessingState.CAPTURED:
+                maximum_attempts = self._maximum_processing_attempts
+                if (
+                    maximum_attempts is None
+                    or run.lease_expires_at is None
+                    or run.lease_expires_at > now
+                ):
+                    return None
+                if not run.can_reclaim_expired(now=now, maximum_attempts=maximum_attempts):
+                    result = event.block_exhausted_target(now=now)
+                    self._store(row, result)
+                    return result
+            result = (
+                event.block_expired_final_claim(now=now)
+                if event.attempt_count == OUTBOX_MAX_ATTEMPTS
+                else event.claim(lease_id=uuid4(), claimed_at=now)
+            )
         self._store(row, result)
         return result
 

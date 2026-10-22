@@ -493,6 +493,29 @@ including five new scan cases and extended existing eligibility assertions. Seve
 SeaweedFS-only tests were skipped. The disposable database, volume, and networks were removed.
 No broker, frontend/browser, live-provider, normal archive, or full runtime journey was exercised.
 
+**Opt-in recovery-dispatch block (2026-10-22):** The delivery transaction factory accepts an
+explicit existing processing-profile attempt ceiling. Default dispatch preserves unfinished
+later-generation intent; opt-in dispatch can claim latest due recovery events after canonical
+expiry/source checks. Claims lock the event and run with `SKIP LOCKED` and refresh snapshots;
+active/current source SHARE guards fence lifecycle changes. Live recovery work is excluded before
+the one-target limit, while source locks defer intent without cancelling it. Generation-zero
+legacy work retains its existing redundant-start cancellation. Exhausted execution allowances
+block due intent without increasing publication counts or modifying processing state. Terminal
+and ineligible work cannot be published. Publication claims keep their own existing ceilings and
+leases; the unchanged drain closes the claim transaction before publishing and separately records
+receipts, including a fake consumer that has already taken a new execution fence. This explicit
+database-factory option adds no environment key, normal runtime activation, schema, dependency,
+frontend, or paid call. Existing backend/PostgreSQL CI discovery covers the added tests. Shared
+tick orchestration, complete exhaustion status, real Redis-loss verification, scheduler/operator
+wiring, and the full Step 1 gate remain pending.
+Verification: 31 focused delivery unit tests passed, including five new exhaustion/opt-in cases.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,367 unit tests after adding
+explicit types for the jointly selected ORM rows. `scripts.verify_postgres` passed migration
+cycling, schema drift checks, and 311 integration tests, including 13 new recovery-dispatch cases.
+Seven separate SeaweedFS-only tests were skipped. The disposable database, volume, and networks
+were removed. Publication/consumer behavior used a recording test adapter, not Redis or a live
+provider. No frontend/browser, normal archive, hosted CI, or full runtime journey was exercised.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

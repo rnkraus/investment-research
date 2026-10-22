@@ -109,6 +109,8 @@ class OutboxDeliveryRepository(Protocol):
         Only a CLAIMED result authorizes publication. CANCELLED/BLOCKED results count toward
         the caller's scan bound; None means no unlocked due row in this trusted workspace.
         The caller must commit and close this transaction before contacting the broker.
+        Expired-run claims require an explicitly configured processing attempt ceiling.
+        Otherwise keep unfinished recovery intent deferred; never cancel it as legacy work.
         """
 
     def record_published(

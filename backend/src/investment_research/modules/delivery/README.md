@@ -50,10 +50,11 @@ of publication. Concurrent dispatchers skip locked rows. Only a returned `CLAIME
 be published; a returned `CANCELLED`/`BLOCKED` event still consumes one of the future caller's
 twenty scan slots. `None` means no unlocked due event, not proof that all work is complete.
 
-The event must reference an active current document and an untouched `CAPTURED` run. Intent for
-a run already started by the legacy fast path is cancelled as redundant without changing its
-processing state or execution allowance. This also applies to ineligible/deletion-pending sources.
-Recovery of expired execution leases belongs to the later reconciliation block, not this claim.
+Generation-zero intent must reference an active current document and an untouched `CAPTURED` run.
+Initial intent already handled by the legacy fast path is cancelled as redundant without changing
+processing state or execution allowance. Ineligible/deletion-pending sources remain excluded.
+Later-generation unfinished execution intent is deferred unless recovery dispatch is explicitly
+enabled as described below; it is not cancelled merely because processing previously started.
 
 Each claim increments only the event's publication count and receives a fresh 30-second token.
 Only expired delivery claims can be reclaimed. A third expired claim becomes `BLOCKED` rather
@@ -146,9 +147,9 @@ retained in addition to execution expiry, preventing consecutive scans from imme
 all generations while a newly published message waits for a worker. Previous receipts remain
 immutable; repeats can reuse the direct successor without resetting it. The operation never
 changes execution state, counters, tokens, or outputs and never publishes. This is preparation
-only: the existing captured-only drain cannot yet dispatch this intent. Appropriate drain
-qualification, shared-budget orchestration, and automatic activation remain
-pending. Do not invoke this operation as a complete recovery workflow.
+only: publication requires the explicit recovery-dispatch qualification described below.
+Shared-budget orchestration and automatic activation remain pending. Do not invoke this operation
+as a complete recovery workflow.
 
 **Bounded expired-execution scan (2026-10-22):** `list_expired_candidates` shares the scoped
 source/latest-event qualification, 420-second grace, receipt/ID ordering, and twenty-target bound
@@ -161,8 +162,23 @@ its own transaction. Changed/skipped targets consume a slot. The cooperative thi
 prevents starting further recovery, not in-flight SQL cancellation. Prepared includes idempotent
 successor reuse, not broker delivery or execution. These remain independent preparation services;
 the shared-budget runtime coordinator must not concatenate their full budgets into one tick.
-Expired-run dispatch qualification, exhaustion status, operator/scheduler wiring, and normal
+Shared-budget orchestration, complete exhaustion status, operator/scheduler wiring, and normal
 runtime activation remain pending.
+
+**Opt-in recovery dispatch (2026-10-22):** The delivery transaction factory accepts the existing
+processing profile's `maximum_processing_attempts`; its default `None` does not enable expired-run
+dispatch. With an explicit ceiling, `claim_next_due` can claim a latest, due later-generation event
+for unfinished, expired processing work. It locks the event and run together with `SKIP LOCKED`,
+refreshes the canonical snapshot, and qualifies the active/current source under SHARE. Live
+executions are filtered before selecting one target, so they do not consume an attempt or hide
+other due work. Busy source locks leave intent unchanged for a later sweep. Exhausted execution
+allowances block due intent with `ATTEMPTS_EXHAUSTED` without increasing publication counts or
+changing the run. Terminal/superseded legacy work remains non-executable. Existing publication
+attempt/lease limits still apply. The unchanged `DrainOutboxService` publishes only after the
+claim commits/closes; receipts may accept a worker that has already claimed a new execution fence.
+This is not an environment option or normal worker wiring. Tests use a recording publisher and
+fake consumer against disposable PostgreSQL; real Redis recovery and full runtime gates remain
+pending, as do shared tick bounds and scheduler/operator activation.
 
 The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
 are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator

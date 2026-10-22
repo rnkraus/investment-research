@@ -234,9 +234,16 @@ well as requiring execution expiry; it cannot use old publication age to bypass 
 It prepares a bounded next generation without changing execution state/counters, prior receipts,
 or outputs. The bounded expired-work scan now carries observed execution tokens from a scoped
 twenty-target snapshot into separate requalification transactions within a cooperative
-thirty-second budget. Snapshot and database tests do not activate dispatch: the drain's expired-run
-qualification, shared-budget tick orchestration, and the complete automatic recovery gate remain
-pending.
+thirty-second budget. Snapshot and database tests do not activate normal dispatch.
+
+**Opt-in expired-run dispatch (2026-10-22):** An explicit processing-profile attempt ceiling in
+the delivery transaction factory enables latest due later-generation claims for canonically
+eligible expired executions. The default preserves unfinished recovery intent without dispatch.
+Claims lock/reload the run and event, qualify the active/current source, defer live executions,
+and block exhausted target allowances without consuming another publication or execution attempt.
+Broker publication remains outside transactions; receipts still permit a newly started worker.
+This internal opt-in is not normal worker/scheduler wiring. Shared-budget tick orchestration,
+honest complete exhaustion status, real Redis-loss recovery, and the full Step 1 gate remain pending.
 
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not

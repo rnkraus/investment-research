@@ -254,6 +254,27 @@ class OutboxEvent(BaseModel):
             ),
         )
 
+    def block_exhausted_target(self, *, now: datetime) -> Self:
+        """Close due intent after the caller proves canonical execution exhaustion."""
+
+        now = self._aware_time(now)
+        due_at = (
+            self.lease_expires_at if self.state is OutboxState.CLAIMED else self.next_attempt_at
+        )
+        if (
+            self.state not in {OutboxState.PENDING, OutboxState.RETRY_WAIT, OutboxState.CLAIMED}
+            or due_at is None
+            or due_at > now
+        ):
+            raise OutboxTransitionError("delivery intent is not due for target exhaustion")
+        return self._replace(
+            state=OutboxState.BLOCKED,
+            next_attempt_at=None,
+            lease_id=None,
+            lease_expires_at=None,
+            last_error_category=DeliveryErrorCategory.ATTEMPTS_EXHAUSTED,
+        )
+
     def block_expired_final_claim(self, *, now: datetime) -> Self:
         """Retain the last consumed attempt after a publisher disappears."""
 
