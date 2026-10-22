@@ -436,6 +436,23 @@ checks; seven separate SeaweedFS-only tests were skipped. The isolated database,
 networks were removed. No frontend/browser, broker, live-provider, normal archive, or full runtime
 journey checks were rerun for this internal recovery block.
 
+**Expired-execution eligibility block (2026-10-22):** Added only the pure
+`ProcessingRun.can_reclaim_expired` snapshot rule. It requires an expired complete execution
+lease, unfinished `PARSING`/active `LEXICAL_READY`/`INDEXING`, and remaining attempts under the
+existing caller-supplied processing profile. Publication age alone never qualifies running work.
+Untouched captured runs, completed historical lexical work, searchable/failed states, live
+leases, and exhausted allowances are rejected. The check changes no lease, attempt, processing
+state, output, or delivery generation. A newly claimed fence makes its current snapshot ineligible.
+The next database recovery block must lock/reload the canonical run and qualify trusted workspace,
+active/current source, latest intent, and unchanged execution ownership before preparing bounded
+delivery. The snapshot is not authorization. Existing CI unit discovery covers the new file;
+database reconciliation, broker/drain integration, scheduler, and normal runtime activation are
+not implemented by this block. Step 1 remains incomplete.
+Verification: 67 focused processing tests passed, including 39 new eligibility cases.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,345 unit tests. No schema,
+persistence, broker, frontend, or provider behavior changed; PostgreSQL/Compose, frontend/browser,
+and live-provider checks were not rerun for this pure snapshot rule.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

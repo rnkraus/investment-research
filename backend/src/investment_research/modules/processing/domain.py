@@ -179,6 +179,26 @@ class ProcessingRun(ImmutableProcessingModel):
 
         return self.embedding_config_version != M0_DISABLED_EMBEDDING_CONFIG_VERSION
 
+    def can_reclaim_expired(self, *, now: datetime, maximum_attempts: int) -> bool:
+        """Inspect an abandoned execution without claiming it or resetting its history.
+
+        This snapshot is not source authorization. Recovery must lock/reload canonical work,
+        check workspace and active/current eligibility, and retain the execution fence.
+        """
+
+        now = self._aware_utc(now, name="now")
+        if maximum_attempts < 1:
+            raise ValueError("maximum_attempts must be positive")
+        return (
+            self.state
+            in {ProcessingState.PARSING, ProcessingState.LEXICAL_READY, ProcessingState.INDEXING}
+            and self.completed_at is None
+            and self.lease_id is not None
+            and self.lease_expires_at is not None
+            and self.lease_expires_at <= now
+            and self.attempt_count < maximum_attempts
+        )
+
     def claim_for_processing(
         self,
         *,
