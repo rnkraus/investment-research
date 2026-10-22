@@ -62,7 +62,9 @@ def test_snapshot_and_each_target_have_separate_transactions() -> None:
     assert (result.scanned, result.prepared) == (3, 3)
     assert result.stop_reason is RecoveryStopReason.SNAPSHOT_EXHAUSTED
     assert harness.transactions == 4 and harness.active_transactions == 0
-    harness.repository.list_unstarted_candidates.assert_called_once_with(harness.context, now=NOW)
+    harness.repository.list_unstarted_candidates.assert_called_once_with(
+        harness.context, now=NOW, limit=20
+    )
     assert harness.repository.recover_unstarted.call_args_list == [
         call(harness.context, event_id=identifier, now=NOW) for identifier in harness.candidates
     ]

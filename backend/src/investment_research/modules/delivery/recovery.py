@@ -6,7 +6,8 @@ from datetime import datetime
 from enum import StrEnum
 from time import monotonic
 
-from investment_research.modules.delivery.application import OUTBOX_SWEEP_SECONDS, utc_now
+from investment_research.modules.delivery.application import utc_now
+from investment_research.modules.delivery.budget import OutboxSweepBudget, validate_target_limit
 from investment_research.modules.delivery.ports import (
     OUTBOX_RECOVERY_MAX_TARGETS,
     OutboxDeliveryUnitOfWorkFactory,
@@ -35,31 +36,46 @@ class RecoverUnstartedOutboxService:
     clock: Callable[[], datetime] = utc_now
     monotonic_clock: Callable[[], float] = monotonic
 
-    def recover(self, context: WorkspaceContext) -> OutboxRecoveryResult:
+    def recover(
+        self,
+        context: WorkspaceContext,
+        *,
+        budget: OutboxSweepBudget | None = None,
+        max_targets: int = OUTBOX_RECOVERY_MAX_TARGETS,
+    ) -> OutboxRecoveryResult:
         """Read one snapshot, then requalify each target in its own short transaction.
 
         The thirty-second budget prevents starting further work, not an in-flight SQL timeout.
         This prepares intent only; it neither publishes nor schedules a combined repair tick.
         """
 
-        deadline = self.monotonic_clock() + OUTBOX_SWEEP_SECONDS
+        validate_target_limit(max_targets)
+        budget = budget if budget is not None else OutboxSweepBudget(self.monotonic_clock)
+        if budget.remaining_seconds <= 0:
+            return OutboxRecoveryResult(0, 0, RecoveryStopReason.DEADLINE)
+        if budget.remaining_targets <= 0:
+            return OutboxRecoveryResult(0, 0, RecoveryStopReason.TARGET_LIMIT)
+        limit = min(max_targets, budget.remaining_targets)
         with self.unit_of_work_factory() as work:
-            candidates = work.delivery.list_unstarted_candidates(context, now=self.clock())
+            candidates = work.delivery.list_unstarted_candidates(
+                context, now=self.clock(), limit=limit
+            )
         scanned = prepared = 0
-        for event_id in candidates[:OUTBOX_RECOVERY_MAX_TARGETS]:
-            if self.monotonic_clock() >= deadline:
+        for event_id in candidates[:limit]:
+            if budget.remaining_seconds <= 0:
                 return OutboxRecoveryResult(scanned, prepared, RecoveryStopReason.DEADLINE)
             with self.unit_of_work_factory() as work:
                 successor = work.delivery.recover_unstarted(
                     context, event_id=event_id, now=self.clock()
                 )
+            budget.consume_target()
             scanned += 1
             prepared += successor is not None
         reason = (
             RecoveryStopReason.DEADLINE
-            if self.monotonic_clock() >= deadline
+            if budget.remaining_seconds <= 0
             else RecoveryStopReason.TARGET_LIMIT
-            if scanned == OUTBOX_RECOVERY_MAX_TARGETS
+            if scanned == limit
             else RecoveryStopReason.SNAPSHOT_EXHAUSTED
         )
         return OutboxRecoveryResult(scanned, prepared, reason)
@@ -76,21 +92,33 @@ class RecoverExpiredOutboxService:
         if self.maximum_attempts < 1:
             raise ValueError("maximum_attempts must be positive")
 
-    def recover(self, context: WorkspaceContext) -> OutboxRecoveryResult:
+    def recover(
+        self,
+        context: WorkspaceContext,
+        *,
+        budget: OutboxSweepBudget | None = None,
+        max_targets: int = OUTBOX_RECOVERY_MAX_TARGETS,
+    ) -> OutboxRecoveryResult:
         """Recheck at most twenty observed execution tokens in separate transactions.
 
         The cooperative budget prevents further transactions, not in-flight SQL cancellation.
         Do not combine this and other independent sweeps into an unbounded runtime tick.
         """
 
-        deadline = self.monotonic_clock() + OUTBOX_SWEEP_SECONDS
+        validate_target_limit(max_targets)
+        budget = budget if budget is not None else OutboxSweepBudget(self.monotonic_clock)
+        if budget.remaining_seconds <= 0:
+            return OutboxRecoveryResult(0, 0, RecoveryStopReason.DEADLINE)
+        if budget.remaining_targets <= 0:
+            return OutboxRecoveryResult(0, 0, RecoveryStopReason.TARGET_LIMIT)
+        limit = min(max_targets, budget.remaining_targets)
         with self.unit_of_work_factory() as work:
             candidates = work.delivery.list_expired_candidates(
-                context, now=self.clock(), maximum_attempts=self.maximum_attempts
+                context, now=self.clock(), maximum_attempts=self.maximum_attempts, limit=limit
             )
         scanned = prepared = 0
-        for candidate in candidates[:OUTBOX_RECOVERY_MAX_TARGETS]:
-            if self.monotonic_clock() >= deadline:
+        for candidate in candidates[:limit]:
+            if budget.remaining_seconds <= 0:
                 return OutboxRecoveryResult(scanned, prepared, RecoveryStopReason.DEADLINE)
             with self.unit_of_work_factory() as work:
                 successor = work.delivery.recover_expired(
@@ -100,13 +128,14 @@ class RecoverExpiredOutboxService:
                     now=self.clock(),
                     maximum_attempts=self.maximum_attempts,
                 )
+            budget.consume_target()
             scanned += 1
             prepared += successor is not None
         reason = (
             RecoveryStopReason.DEADLINE
-            if self.monotonic_clock() >= deadline
+            if budget.remaining_seconds <= 0
             else RecoveryStopReason.TARGET_LIMIT
-            if scanned == OUTBOX_RECOVERY_MAX_TARGETS
+            if scanned == limit
             else RecoveryStopReason.SNAPSHOT_EXHAUSTED
         )
         return OutboxRecoveryResult(scanned, prepared, reason)

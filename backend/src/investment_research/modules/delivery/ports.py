@@ -7,11 +7,12 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from investment_research.modules.delivery.budget import OUTBOX_SWEEP_MAX_TARGETS
 from investment_research.modules.delivery.domain import DeliveryErrorCategory, OutboxEvent
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import ProcessingJobV1
 
-OUTBOX_RECOVERY_MAX_TARGETS = 20
+OUTBOX_RECOVERY_MAX_TARGETS = OUTBOX_SWEEP_MAX_TARGETS
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +60,7 @@ class OutboxDeliveryRepository(Protocol):
     """Short delivery transactions, separate from broker readiness and publication."""
 
     def list_unstarted_candidates(
-        self, context: WorkspaceContext, *, now: datetime
+        self, context: WorkspaceContext, *, now: datetime, limit: int = OUTBOX_RECOVERY_MAX_TARGETS
     ) -> tuple[UUID, ...]:
         """Snapshot at most twenty due latest published events for eligible captured runs.
 
@@ -68,7 +69,12 @@ class OutboxDeliveryRepository(Protocol):
         """
 
     def list_expired_candidates(
-        self, context: WorkspaceContext, *, now: datetime, maximum_attempts: int
+        self,
+        context: WorkspaceContext,
+        *,
+        now: datetime,
+        maximum_attempts: int,
+        limit: int = OUTBOX_RECOVERY_MAX_TARGETS,
     ) -> tuple[ExpiredOutboxCandidate, ...]:
         """Snapshot at most twenty eligible latest published events and execution tokens.
 

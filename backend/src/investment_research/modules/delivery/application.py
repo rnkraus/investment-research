@@ -7,6 +7,11 @@ from enum import StrEnum
 from random import uniform
 from time import monotonic
 
+from investment_research.modules.delivery.budget import (
+    OUTBOX_SWEEP_MAX_TARGETS,
+    OutboxSweepBudget,
+    validate_target_limit,
+)
 from investment_research.modules.delivery.domain import (
     OUTBOX_MAX_RETRY_DELAY_SECONDS,
     DeliveryErrorCategory,
@@ -22,8 +27,6 @@ from investment_research.modules.delivery.ports import (
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import ProcessingJobV1
 
-OUTBOX_SWEEP_MAX_TARGETS = 20
-OUTBOX_SWEEP_SECONDS = 30
 OUTBOX_BROKER_OPERATION_SECONDS = 2
 
 
@@ -58,14 +61,21 @@ class DrainOutboxService:
     monotonic_clock: Callable[[], float] = monotonic
     jitter: Callable[[float, float], float] = uniform
 
-    def drain(self, context: WorkspaceContext) -> OutboxDrainResult:
+    def drain(
+        self,
+        context: WorkspaceContext,
+        *,
+        budget: OutboxSweepBudget | None = None,
+        max_targets: int = OUTBOX_SWEEP_MAX_TARGETS,
+    ) -> OutboxDrainResult:
         """Drain at most twenty rows in thirty seconds; never claim ahead of publication."""
 
-        deadline = self.monotonic_clock() + OUTBOX_SWEEP_SECONDS
+        validate_target_limit(max_targets)
+        budget = budget if budget is not None else OutboxSweepBudget(self.monotonic_clock)
         scanned = claimed = published = rejected = 0
         reason = DrainStopReason.TARGET_LIMIT
-        while scanned < OUTBOX_SWEEP_MAX_TARGETS:
-            remaining = deadline - self.monotonic_clock()
+        while scanned < max_targets and budget.remaining_targets > 0:
+            remaining = budget.remaining_seconds
             if remaining <= 0:
                 reason = DrainStopReason.DEADLINE
                 break
@@ -79,7 +89,7 @@ class DrainOutboxService:
             if not ready:
                 reason = DrainStopReason.BROKER_UNAVAILABLE
                 break
-            if self.monotonic_clock() >= deadline:
+            if budget.remaining_seconds <= 0:
                 reason = DrainStopReason.DEADLINE
                 break
             with self.unit_of_work_factory() as work:
@@ -87,13 +97,14 @@ class DrainOutboxService:
             if event is None:
                 reason = DrainStopReason.EMPTY
                 break
+            budget.consume_target()
             scanned += 1
             if event.state is not OutboxState.CLAIMED:
                 continue
             claimed += 1
             assert event.lease_id is not None and event.lease_expires_at is not None
             remaining = min(
-                deadline - self.monotonic_clock(),
+                budget.remaining_seconds,
                 (event.lease_expires_at - self.clock()).total_seconds(),
             )
             if remaining <= 0:
@@ -103,7 +114,7 @@ class DrainOutboxService:
                 reason = DrainStopReason.DEADLINE
                 break
             try:
-                publication_deadline = self.monotonic_clock() + min(
+                publication_deadline = budget.monotonic_now() + min(
                     OUTBOX_BROKER_OPERATION_SECONDS, remaining
                 )
                 self.publisher.publish(
@@ -112,7 +123,7 @@ class DrainOutboxService:
                     ),
                     timeout_seconds=min(OUTBOX_BROKER_OPERATION_SECONDS, remaining),
                 )
-                if self.monotonic_clock() >= publication_deadline:
+                if budget.monotonic_now() >= publication_deadline:
                     raise OutboxPublicationUnavailableError("publication deadline exceeded")
             except OutboxPublicationUnavailableError:
                 rejected += not self._record_failure(
@@ -132,6 +143,8 @@ class DrainOutboxService:
                 )
             published += accepted
             rejected += not accepted
+        if reason is DrainStopReason.TARGET_LIMIT and budget.remaining_seconds <= 0:
+            reason = DrainStopReason.DEADLINE
         return OutboxDrainResult(scanned, claimed, published, rejected, reason)
 
     def _record_failure(

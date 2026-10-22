@@ -516,6 +516,28 @@ Seven separate SeaweedFS-only tests were skipped. The disposable database, volum
 were removed. Publication/consumer behavior used a recording test adapter, not Redis or a live
 provider. No frontend/browser, normal archive, hosted CI, or full runtime journey was exercised.
 
+**Shared phase-budget block (2026-10-22):** Added `OutboxSweepBudget` and moved the existing
+twenty-target/thirty-second constants into that application-owned value boundary. Both recovery
+services and the drain accept one shared budget and optional smaller per-call limits. Preparations
+and returned claims consume separate slots, conservatively even for the same target; skipped,
+cancelled, and blocked targets count, while empty lookups do not. Candidate SQL receives the
+remaining capped limit. A later phase cannot restart the deadline or allowance; exhausted budget
+prevents snapshots, claims, and broker readiness probes. Broker timeouts use shared remaining time.
+Already-started SQL and mandatory fenced failure/receipt bookkeeping may complete after the
+deadline. Calls without an explicit budget retain standalone behavior. Existing unit and PostgreSQL
+CI discovery covers combined budget tests and existing service regressions. This block provides
+shared limits, not automatic tick orchestration: the coordinator must pass one instance and
+allocate phase capacity before runtime activation. Scheduler/operator wiring, full exhaustion
+status, real Redis-loss gates, and the complete Step 1 gate remain pending. No schema, environment
+keys, dependencies, paid calls, normal-runtime wiring, or frontend behavior changed.
+Verification: 41 focused delivery tests passed, including 14 new shared-budget cases.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,381 unit tests.
+`scripts.verify_postgres` passed migration cycling, schema drift checks, and 315 integration tests,
+including four new shared-budget/SQL-limit cases. Seven separate SeaweedFS-only tests were skipped.
+The disposable database, volume, and networks were removed. Publication used a recording test
+adapter; no Redis, live-provider, frontend/browser, normal archive, hosted CI, or full runtime
+journey was exercised by this block.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
