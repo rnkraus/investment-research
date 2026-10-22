@@ -31,6 +31,7 @@ from investment_research.settings import (
     load_api_settings,
     load_database_settings,
     load_generation_provider_settings,
+    load_outbox_repair_settings,
     load_parser_settings,
     load_worker_settings,
 )
@@ -113,6 +114,41 @@ def clear_external_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         *PROVIDER_SETTING_NAMES,
     ):
         monkeypatch.delenv(name, raising=False)
+
+
+def test_repair_settings_load_only_database_broker_and_processing_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "host")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", LOCAL_DATABASE_URL)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_REDIS_URL", "redis://:synthetic@127.0.0.1:6379/0")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_PROFILE", "m0-regression")
+    # Deliberately incomplete/invalid unrelated groups must not be loaded or opened.
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OBJECT_STORAGE_PROVIDER", "invalid")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY_FILE", "/must-not-be-opened")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD", "invalid")
+    settings = load_outbox_repair_settings(env_file=None)
+    assert settings.require_database_url() == LOCAL_DATABASE_URL
+    assert settings.require_redis_url() == "redis://:synthetic@127.0.0.1:6379/0"
+    assert settings.processing_profile == "m0-regression"
+    assert set(settings.model_dump()) == {
+        "environment",
+        "runtime_location",
+        "log_level",
+        "database_url",
+        "redis_url",
+        "processing_profile",
+    }
+
+
+def test_repair_settings_default_to_worker_profile_and_reject_unknown_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("INVESTMENT_RESEARCH_PROCESSING_PROFILE", raising=False)
+    assert load_outbox_repair_settings(env_file=None).processing_profile == "m1"
+    monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_PROFILE", "unbounded")
+    with pytest.raises(ValidationError):
+        load_outbox_repair_settings(env_file=None)
 
 
 def valid_s3_configuration(

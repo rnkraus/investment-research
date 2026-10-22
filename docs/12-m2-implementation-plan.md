@@ -676,6 +676,28 @@ repair-task probe. Its containers, networks, and volumes were removed successful
 archive, paid provider, frontend/browser, hosted CI, separate PostgreSQL integration suite, or
 complete M0/M1 runtime journey was exercised in this block.
 
+**Manual repair-command block (2026-10-22):**
+`python -m investment_research.repair_outbox` invokes one existing bounded coordinator pass without
+requiring a scheduler or repair-tick consumer. It resolves the same fixed server-owned workspace,
+loads only database/broker/runtime/profile configuration, checks the current schema, and disposes
+its engine on success/failure. Recovery and delivery use the selected worker profile's shared
+attempt ceiling; the publisher receives only broker settings. No provider/parser/storage client,
+force/reset/scope/limit override, or automatic repetition is introduced. Published processing may
+still use the live worker's approved providers/budget. Output contains only phase counts and safe
+stop categories. Exit `0` means a completed bounded pass, not global health or processing completion;
+exit `1` also covers encountered exhaustion, rejected receipts, unavailable/invalid publication,
+and deadlines. The delivery guide owns usage and complete exit semantics. Existing unit discovery
+and queue CI cover the command without workflow changes. No migration, dependency, frontend, paid
+test, scheduler, or normal capture dispatch change belongs to this block. Step 1 remains incomplete
+pending separate scheduler wiring, automatic dispatch activation, and complete runtime gates.
+Verification: 201 focused command/settings tests passed. `scripts.verify_backend` passed
+formatting, linting, typing, and 2,465 unit tests. `scripts.verify_queue_recovery` passed the real
+broker-outage, publication-loss, worker-crash, expired-execution, single-output, two-source purge,
+and explicit worker-task gates, plus the new empty-archive operator-command smoke check. Both
+purged sources remained canonically absent; the test project's containers, networks, and volumes
+were removed successfully. No normal archive, paid provider, frontend/browser,
+hosted CI, separate PostgreSQL integration suite, or complete M0/M1 runtime journey was exercised.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

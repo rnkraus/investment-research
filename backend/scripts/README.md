@@ -274,7 +274,8 @@ flowchart LR
     EXPIRED --> OUTPUT[Real worker: require one output and purge second fixture]
     OUTPUT --> TICK[Send one explicit content-free repair tick]
     TICK --> DONE[Observe exact worker-task completion; retain empty canonical archive]
-    DONE --> CLEANUP[Remove project and volumes]
+    DONE --> MANUAL[Run one manual repair pass; retain canonical absence]
+    MANUAL --> CLEANUP[Remove project and volumes]
 ```
 
 Run the live Redis-outage, outbox-loss, worker-loss, and deletion gate from `backend/` with Docker
@@ -335,6 +336,14 @@ unrelated task successes do not qualify. This is an adapter execution check on a
 archive, not proof of scheduled recovery, processing completion, or paid-provider behavior. No
 Beat schedule or recurring sender is enabled. Existing application/database and real-broker tests
 continue to own the actual due-work, receipt, scope, and exhaustion assertions.
+
+The verifier then runs `python -m investment_research.repair_outbox` inside the isolated worker
+container and requires exit `0`, followed by canonical absence checks for both purged fixtures.
+This exercises the minimal database/broker settings loader, schema readiness, direct bounded
+coordinator composition, safe report, and engine cleanup without relying on a scheduled tick.
+It is an empty-archive command smoke check, not a new due-work recovery or paid-provider test.
+The operator command's usage and exit semantics are in the
+[delivery guide](../src/investment_research/modules/delivery/README.md#explicit-local-operator-command-2026-10-22).
 
 Paused services are resumed during failure cleanup. Cleanup removes the unique project and its
 volumes after both success and failure. Normal runtime activation remains pending. It never

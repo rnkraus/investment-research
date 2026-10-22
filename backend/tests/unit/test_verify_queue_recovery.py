@@ -178,6 +178,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Resume worker for repaired expired execution",
         "Purge the isolated expired-execution fixture",
         "Publish one explicit repair tick after synthetic cleanup",
+        "Run one manual repair pass after synthetic cleanup",
         "Remove isolated queue-recovery project and its volumes",
     ]
     assert states == [
@@ -193,6 +194,8 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "verify-purge",
         "verify-repair-tick",
         "verify-purge",
+        "verify-purge",
+        "verify-purge",
     ]
     commands = {label: command for label, command, _ in calls}
     assert commands["Stop isolated Redis before fixture capture"][-2:] == ("stop", "redis")
@@ -202,6 +205,14 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "redis",
     )
     assert commands["Capture fixture while isolated Redis is stopped"][-1] == "capture-outage"
+    assert commands["Run one manual repair pass after synthetic cleanup"] == (
+        "docker",
+        "exec",
+        "worker-container",
+        "/app/.venv/bin/python",
+        "-m",
+        "investment_research.repair_outbox",
+    )
     assert commands["Recover retained fixture and lost outbox publications"][-1] == "recover-loss"
     expired_command = commands["Verify live-fence rejection and expired-execution repair"]
     assert expired_command[-1] == "/verification-expired-execution.py"
@@ -257,6 +268,7 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
         ("Resume worker for repaired expired execution", True, False),
         ("Purge the isolated expired-execution fixture", False, False),
         ("Publish one explicit repair tick after synthetic cleanup", False, False),
+        ("Run one manual repair pass after synthetic cleanup", False, False),
     ],
 )
 def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(

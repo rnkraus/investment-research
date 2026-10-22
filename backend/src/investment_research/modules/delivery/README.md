@@ -242,9 +242,38 @@ passes, while canonical target claims/ceilings remain authoritative. The queue v
 explicit tick after its two fixture purges and observes that exact task's completion. That log
 observation proves adapter execution, not canonical business-work completion or automatic recovery.
 
+## Explicit local operator command (2026-10-22)
+
+From `backend/`, run exactly one repair pass:
+
+```shell
+uv run --locked python -m investment_research.repair_outbox
+```
+
+The command loads the existing database/broker connection configuration and
+`INVESTMENT_RESEARCH_PROCESSING_PROFILE` (default `m1`), not storage/parser/provider settings or
+the full worker bootstrap. In containers it supports the existing mounted database/Redis secret
+files. It requires the current Alembic revision before mutation and closes its engine on success
+and failure. Scope comes from the same fixed local identity, never arguments. There are no force,
+scope, counter-reset, limit-override, or loop flags. `--help` requires no configuration/connection.
+
+This invokes the existing coordinator directly; it needs PostgreSQL and Redis but not a working
+scheduler or repair-tick consumer. Processing still requires a worker. The publisher receives only
+broker settings and preserves existing deadlines/fences/ceilings. The command itself performs no
+parser, storage, or AI calls; published jobs may invoke paid providers in a configured live worker,
+subject to its unchanged budget and attempt rules. Do not treat invocation as a read-only check.
+
+Output contains only phase counts and stop categories. Exit `0` means one bounded pass completed,
+not an empty queue, healthy archive, or completed document processing. `TARGET_LIMIT` can leave work
+for another invocation. Exit `1` means configuration/database/execution/cleanup failure, a deadline,
+unavailable/invalid publication, rejected receipts, or exhausted work encountered in this pass.
+There is no automatic command retry. Previously blocked rows outside this pass are not summarized.
+Failure details and connection URLs are withheld. The queue verifier runs the command against the
+empty isolated archive after both fixture purges and checks that their canonical absence remains.
+
 The existing post-commit Celery fast path is still active in the normal app. Bounded repair is now
-available through the explicitly delivered worker task, but no capture outbox dispatch, operator
-command, scheduler, or periodic sender is enabled. Automatic dispatch and periodic repair remain pending.
+available through the explicitly delivered worker task and manual command, but no capture outbox
+dispatch, scheduler, or periodic sender is enabled. Automatic dispatch and periodic repair remain pending.
 Consequently `PENDING` means no outbox-owned publication receipt, not proof the legacy fast path
 never published or the worker never ran. The later dispatcher must recheck canonical readiness
 and lifecycle before claiming or publishing this intent. Duplicate delivery remains safe under the
