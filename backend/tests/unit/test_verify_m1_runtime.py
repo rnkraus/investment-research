@@ -140,6 +140,74 @@ def test_verification_preserves_failure_and_still_cleans_up(
     ]
 
 
+@pytest.mark.parametrize("failure", ["none", "http", "logs"])
+def test_explicit_http_only_mode_never_discovers_or_runs_a_browser_and_keeps_checks(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    prepare_deterministic_runtime(monkeypatch)
+
+    def forbidden_browser_discovery() -> None:
+        pytest.fail("HTTP-only verification must not discover a browser runner")
+
+    monkeypatch.setattr(verify_m1_runtime, "find_pnpm_executable", forbidden_browser_discovery)
+    labels: list[str] = []
+
+    def record_command(
+        label: str,
+        command: Sequence[str],
+        *,
+        environment: Mapping[str, str],
+        working_directory: Path = verify_m1_runtime.REPOSITORY_ROOT,
+        check: bool = True,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del environment, working_directory, check
+        labels.append(label)
+        assert "test:browser" not in command
+        if failure == "http" and label == "Run automatic M1 PDF and text journey":
+            raise subprocess.CalledProcessError(9, command)
+        output = (
+            (TEST_CREDENTIAL.encode() if failure == "logs" else b"safe log")
+            if capture_output
+            else None
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=output)
+
+    monkeypatch.setattr(verify_m1_runtime, "run_command", record_command)
+    assert (
+        verify_m1_runtime.verify_m1_runtime(skip_browser=True)
+        == {"none": 0, "http": 9, "logs": 1}[failure]
+    )
+    assert "Run automatic M1 PDF and text journey" in labels
+    assert "Run visible M1 Chromium journey" not in labels
+    assert "Capture isolated M1 runtime logs for sensitive-content verification" in labels
+    assert labels[-2:] == [
+        "Remove isolated M1 runtime and its volumes",
+        "Remove isolated M1 acceptance image",
+    ]
+    output = capsys.readouterr()
+    assert TEST_CREDENTIAL not in output.out + output.err
+    if failure == "none":
+        assert "full M1 gate remains incomplete" in output.out
+
+
+@pytest.mark.parametrize("skip_browser", [False, True])
+def test_main_passes_explicit_browser_option(
+    monkeypatch: pytest.MonkeyPatch, skip_browser: bool
+) -> None:
+    from unittest.mock import Mock
+
+    runner = Mock(return_value=7)
+    monkeypatch.setattr(verify_m1_runtime, "verify_m1_runtime", runner)
+    monkeypatch.setattr(
+        "sys.argv", ["verify_m1_runtime", *(["--skip-browser"] if skip_browser else [])]
+    )
+    assert verify_m1_runtime.main() == 7
+    runner.assert_called_once_with(skip_browser=skip_browser)
+
+
 def test_sensitive_runtime_logs_are_redacted_and_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

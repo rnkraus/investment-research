@@ -1,5 +1,6 @@
 """Verify the complete credential-free M1 journey through an isolated runtime."""
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -122,14 +123,14 @@ def remove_acceptance_image(
     return result.returncode or 1
 
 
-def verify_m1_runtime() -> int:
+def verify_m1_runtime(*, skip_browser: bool = False) -> int:
     """Create, verify, and always remove one complete isolated M1 runtime."""
 
     if find_docker_executable() is None:
         print("Docker is required for M1 runtime verification.", file=sys.stderr)
         return 127
-    pnpm_executable = find_pnpm_executable()
-    if pnpm_executable is None:
+    pnpm_executable = None if skip_browser else find_pnpm_executable()
+    if not skip_browser and pnpm_executable is None:
         print("pnpm is required for M1 browser verification.", file=sys.stderr)
         return 127
     required_files = (
@@ -222,19 +223,26 @@ def verify_m1_runtime() -> int:
                 ],
                 environment=compose_environment,
             )
-            browser_environment = os.environ.copy()
-            browser_environment["PLAYWRIGHT_BASE_URL"] = f"http://127.0.0.1:{web_port}"
-            run_command(
-                "Run visible M1 Chromium journey",
-                [
-                    pnpm_executable,
-                    "--filter",
-                    "@investment-research/frontend",
-                    "test:browser",
-                ],
-                environment=browser_environment,
-                working_directory=REPOSITORY_ROOT,
-            )
+            if skip_browser:
+                print(
+                    "Browser journey explicitly skipped; full M1 gate remains incomplete.",
+                    flush=True,
+                )
+            else:
+                assert pnpm_executable is not None
+                browser_environment = os.environ.copy()
+                browser_environment["PLAYWRIGHT_BASE_URL"] = f"http://127.0.0.1:{web_port}"
+                run_command(
+                    "Run visible M1 Chromium journey",
+                    [
+                        pnpm_executable,
+                        "--filter",
+                        "@investment-research/frontend",
+                        "test:browser",
+                    ],
+                    environment=browser_environment,
+                    working_directory=REPOSITORY_ROOT,
+                )
             runtime_logs = capture_runtime_logs(compose_command, compose_environment)
             assert_runtime_logs_are_safe(runtime_logs, secret_values)
             print("Automatic M1 PDF and text journey passed.", flush=True)
@@ -271,7 +279,14 @@ def verify_m1_runtime() -> int:
 def main() -> int:
     """Run the complete M1 runtime verification command."""
 
-    return verify_m1_runtime()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--skip-browser",
+        action="store_true",
+        help="Run the isolated HTTP journey and log checks without the separate browser gate.",
+    )
+    arguments = parser.parse_args()
+    return verify_m1_runtime(skip_browser=arguments.skip_browser)
 
 
 if __name__ == "__main__":

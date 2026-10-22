@@ -446,6 +446,17 @@ are not added to its environment. The PDF journey verifies the stored physical p
 journey verifies the Unicode-code-point range, exact text, and checksum before accepting the
 highlight. API, browser, or log-safety failures all enter the same scoped `finally` cleanup path.
 
+For an explicitly browser-free local check, run:
+
+```shell
+uv run --locked python -m scripts.verify_m1_runtime --skip-browser
+```
+
+This mode retains the same isolated Compose stack, HTTP PDF/text acceptance, log-safety checks,
+and scoped cleanup. It neither discovers pnpm nor launches Playwright. It explicitly reports the
+skipped browser gate and does not replace full M1 acceptance. CI still uses the default complete
+command above; no required gate is disabled.
+
 CI follows the parser-isolation, queue-recovery, and complete-runtime checks with:
 
 ```shell
