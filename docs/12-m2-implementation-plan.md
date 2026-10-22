@@ -747,6 +747,25 @@ periodic control on an empty archive, not automatic processing of an HTTP-captur
 No normal archive, paid provider, frontend/browser, hosted CI, separate PostgreSQL suite, or
 complete M0/M1 runtime journey was exercised.
 
+**Targeted post-capture claim prerequisite (2026-10-23):** `claim_due_event` narrows the same
+single-row claim implementation to one explicit canonical event in the trusted workspace. Missing,
+foreign, premature, live-claimed, superseded, closed, or locked intent never falls back to another
+due event. All existing source/current-version/deletion, execution-profile, retry, lease, and
+attempt rules remain shared with `claim_next_due`; cancelled/blocked results do not authorize
+publication. Concurrency admits one exact owner, rollback preserves intent, and processing state,
+attempts, leases, and earlier receipts remain unchanged. This prepares an immediate post-capture
+adapter without adding broker calls, schema, dependency, HTTP/UI behavior, default scheduler
+activation, or normal capture dispatch. The next block must compose readiness, this short claim,
+bounded publication after commit, and separately fenced receipts before runtime activation.
+Verification: 14 focused SQL/sweep unit tests passed. After narrowly accounting for SQLAlchemy's
+untyped test dialect constructor, `scripts.verify_backend` passed formatting, linting, typing, and
+2,515 unit tests. `scripts.verify_postgres` passed migration head/base/head cycling, schema drift
+checks, and 333 integration tests, including nine new targeted-claim cases. Seven separate
+SeaweedFS-only tests were skipped. The disposable database container, networks, and volume were
+removed successfully. Existing unit/PostgreSQL CI discovery includes the added checks; no new
+workflow is needed. No normal archive, paid provider, frontend/browser, hosted CI, live queue,
+or complete M0/M1 runtime journey was exercised in this block. Step 1 remains incomplete.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

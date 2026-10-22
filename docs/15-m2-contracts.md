@@ -380,6 +380,18 @@ archive, private provider data, or paid operation is needed for this control-pat
 capture outbox activation, default scheduler startup, complete M0/M1 compatibility, and automatic
 recovery of an HTTP-captured document still belong to the full Step 1 activation gate.
 
+**Targeted claim prerequisite (2026-10-23):** `claim_due_event` now restricts the existing claim
+query to exactly one event in the trusted workspace, without selecting unrelated work when that
+target is absent, foreign, not due, live-claimed, superseded, closed, or locked. It shares all
+source/current-version/deletion, execution-profile, retry, lease, and attempt qualification with
+`claim_next_due`. A returned `CANCELLED`/`BLOCKED` result is not permission to publish. Short
+transactions, `SKIP LOCKED`, receipt fencing, and unchanged processing attempts remain mandatory.
+This adds no new event, broker operation, schema, HTTP response, or normal-runtime dispatch path.
+It prepares the bounded post-capture adapter; readiness-before-claim and publication/receipt
+orchestration still belong to that subsequent block. Existing unit/PostgreSQL CI discovery covers
+exact selection, unknown/foreign equivalence, no fallback, concurrency, rollback, due times,
+source exclusion, exhaustion, and explicit recovery-profile qualification.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings
