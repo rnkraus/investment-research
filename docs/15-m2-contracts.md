@@ -284,6 +284,15 @@ the publication-loss and worker-loss tests, with no recapture or manual database
 extends the earlier broker test; it does not prove automatic scheduler recovery or the HTTP
 capture path while Redis is down, and does not activate normal dispatch.
 
+**Expired-execution coordinator verification (2026-10-22):** The queue gate adds a separately
+guarded synthetic abandoned execution after purging its first fixture. Mature publication is
+arranged through fixture clocks, while the ten-second test-only execution lease expires in real
+UTC time. The explicit coordinator must reject recovery while the fence is live, then publish
+one new generation without resetting execution state/counts/token or prior receipts. A repeated
+pass is a no-op, and the resumed real worker must reclaim once and produce one canonical fixture
+output before purge. This supplements the first fixture's actual worker-child crash, not an
+additional actual crash or production lease change. Automatic runtime activation remains pending.
+
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not
 record outbox receipts. Normal automatic dispatch, scheduler, periodic repair,

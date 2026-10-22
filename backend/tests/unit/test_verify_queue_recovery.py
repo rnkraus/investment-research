@@ -166,10 +166,24 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Kill the active Celery pool worker after its canonical claim",
         "Resume parser for the reclaimed delivery",
         "Publish permanent deletion for the isolated synthetic document",
+        "Pause worker before expired-execution fixture",
+        "Verify live-fence rejection and expired-execution repair",
+        "Resume worker for repaired expired execution",
+        "Purge the isolated expired-execution fixture",
         "Remove isolated queue-recovery project and its volumes",
     ]
-    assert states == [ProcessingState.PARSING, ProcessingState.LEXICAL_READY]
-    assert events == ["shorten-lease", "verify-output", "verify-purge"]
+    assert states == [
+        ProcessingState.PARSING,
+        ProcessingState.LEXICAL_READY,
+        ProcessingState.LEXICAL_READY,
+    ]
+    assert events == [
+        "shorten-lease",
+        "verify-output",
+        "verify-purge",
+        "verify-output",
+        "verify-purge",
+    ]
     commands = {label: command for label, command, _ in calls}
     assert commands["Stop isolated Redis before fixture capture"][-2:] == ("stop", "redis")
     assert commands["Restart isolated Redis before outbox recovery"][-3:] == (
@@ -179,6 +193,13 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     )
     assert commands["Capture fixture while isolated Redis is stopped"][-1] == "capture-outage"
     assert commands["Recover retained fixture and lost outbox publications"][-1] == "recover-loss"
+    expired_command = commands["Verify live-fence rejection and expired-execution repair"]
+    assert expired_command[-1] == "/verification-expired-execution.py"
+    assert "INVESTMENT_RESEARCH_QUEUE_RECOVERY_VERIFICATION=1" in expired_command
+    assert (
+        f"{verify_queue_recovery.EXPIRED_EXECUTION_PROBE}:/verification-expired-execution.py:ro"
+        in expired_command
+    )
     assert all(TEST_CREDENTIAL not in argument for _, command, _ in calls for argument in command)
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
     assert str(verify_queue_recovery.COMPOSE_FILE) in calls[0][1]
@@ -191,6 +212,8 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
             "Capture fixture while isolated Redis is stopped",
             "Recover retained fixture and lost outbox publications",
             "Publish permanent deletion for the isolated synthetic document",
+            "Verify live-fence rejection and expired-execution repair",
+            "Purge the isolated expired-execution fixture",
         }:
             assert rag_mount in command
             assert command[command.index(rag_mount) - 1] == "--volume"
@@ -211,18 +234,25 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
 
 
 @pytest.mark.parametrize(
-    ("failure_label", "worker_needs_resume"),
+    ("failure_label", "worker_needs_resume", "parser_needs_resume"),
     [
-        ("Pause isolated worker before removing test publications", False),
-        ("Stop isolated Redis before fixture capture", True),
-        ("Capture fixture while isolated Redis is stopped", True),
-        ("Restart isolated Redis before outbox recovery", True),
-        ("Recover retained fixture and lost outbox publications", True),
-        ("Resume isolated worker after outbox recovery probes", True),
+        ("Pause isolated worker before removing test publications", False, True),
+        ("Stop isolated Redis before fixture capture", True, True),
+        ("Capture fixture while isolated Redis is stopped", True, True),
+        ("Restart isolated Redis before outbox recovery", True, True),
+        ("Recover retained fixture and lost outbox publications", True, True),
+        ("Resume isolated worker after outbox recovery probes", True, True),
+        ("Pause worker before expired-execution fixture", False, False),
+        ("Verify live-fence rejection and expired-execution repair", True, False),
+        ("Resume worker for repaired expired execution", True, False),
+        ("Purge the isolated expired-execution fixture", False, False),
     ],
 )
 def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
-    monkeypatch: pytest.MonkeyPatch, failure_label: str, worker_needs_resume: bool
+    monkeypatch: pytest.MonkeyPatch,
+    failure_label: str,
+    worker_needs_resume: bool,
+    parser_needs_resume: bool,
 ) -> None:
     engine, _, _ = prepare_deterministic_runtime(monkeypatch)
     labels: list[str] = []
@@ -247,8 +277,8 @@ def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
     expected_cleanup = ["Show isolated worker logs after verification failure"]
     if worker_needs_resume:
         expected_cleanup.append("Resume isolated worker before cleanup")
-    expected_cleanup.extend(
-        ["Resume parser before cleanup", "Remove isolated queue-recovery project and its volumes"]
-    )
+    if parser_needs_resume:
+        expected_cleanup.append("Resume parser before cleanup")
+    expected_cleanup.append("Remove isolated queue-recovery project and its volumes")
     assert labels[-len(expected_cleanup) :] == expected_cleanup
     engine.dispose.assert_called_once_with()
