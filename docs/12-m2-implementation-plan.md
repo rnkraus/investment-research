@@ -453,6 +453,26 @@ Verification: 67 focused processing tests passed, including 39 new eligibility c
 persistence, broker, frontend, or provider behavior changed; PostgreSQL/Compose, frontend/browser,
 and live-provider checks were not rerun for this pure snapshot rule.
 
+**Targeted expired-execution preparation block (2026-10-22):** Added `recover_expired` to
+the short delivery transaction. It accepts the expected execution lease ID and existing profile
+ceiling, locks/reloads the scoped active/current source and run, applies the expired-execution
+rule, and locks the exact latest delivery event. Shared lock/insert helpers keep the existing
+unstarted path equivalent. Changed/live fences, completed/exhausted work, excluded/non-current
+sources, superseded intent, and locked targets cannot create a generation. The existing 420-second
+publication grace is retained alongside execution expiry, so repeated scans cannot immediately
+consume all generations while newly published work waits for a worker. Idempotent insertion
+retains receipts and all execution fields, without committing or publishing. This is preparation
+only: the existing captured-only drain does not yet publish expired-run intent. Bounded expired
+scanning, dispatch qualification, shared-budget coordination, exhaustion status, scheduler/operator
+wiring, and the full Step 1 gate remain pending. Existing unit/PostgreSQL CI discovery includes
+the added tests; no paid provider, frontend, or normal-runtime change is part of this block.
+Verification: 59 focused recovery unit tests passed, including eight new delivery-value cases.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,353 unit tests after correcting
+a test fixture's optional-lease type. `scripts.verify_postgres` passed migration cycling, schema
+drift checks, and 293 integration tests, including 15 new expired-recovery cases; seven separate
+SeaweedFS-only tests were skipped. The isolated database, volume, and networks were removed.
+No broker, browser/frontend, live-provider, normal archive, or full runtime journey was exercised.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
