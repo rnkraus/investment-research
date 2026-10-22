@@ -274,7 +274,8 @@ flowchart LR
     EXPIRED --> OUTPUT[Real worker: require one output and purge second fixture]
     OUTPUT --> TICK[Send one explicit content-free repair tick]
     TICK --> DONE[Observe exact worker-task completion; retain empty canonical archive]
-    DONE --> MANUAL[Run one manual repair pass; retain canonical absence]
+    DONE --> BEAT[One due Beat step through bounded sender; no immediate repeat]
+    BEAT --> MANUAL[Run one manual repair pass; retain canonical absence]
     MANUAL --> CLEANUP[Remove project and volumes]
 ```
 
@@ -336,6 +337,13 @@ unrelated task successes do not qualify. This is an adapter execution check on a
 archive, not proof of scheduled recovery, processing completion, or paid-provider behavior. No
 Beat schedule or recurring sender is enabled. Existing application/database and real-broker tests
 continue to own the actual due-work, receipt, scope, and exhaustion assertions.
+
+Before the manual command, the verifier constructs the real dedicated Beat scheduler with
+disposable schedule state, makes only that entry due, and requires a successful bounded Redis
+publication without immediate repetition. It captures static publication events internally rather
+than printing connection details. This proves one Beat scheduling/send step, not a separate
+periodic process, its Compose isolation, or automatic end-to-end recovery after an outage.
+No canonical timestamps/counters or system clock are changed.
 
 The verifier then runs `python -m investment_research.repair_outbox` inside the isolated worker
 container and requires exit `0`, followed by canonical absence checks for both purged fixtures.

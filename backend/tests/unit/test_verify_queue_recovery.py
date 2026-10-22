@@ -178,6 +178,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Resume worker for repaired expired execution",
         "Purge the isolated expired-execution fixture",
         "Publish one explicit repair tick after synthetic cleanup",
+        "Verify one due scheduler step through the bounded broker sender",
         "Run one manual repair pass after synthetic cleanup",
         "Remove isolated queue-recovery project and its volumes",
     ]
@@ -268,6 +269,7 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
         ("Resume worker for repaired expired execution", True, False),
         ("Purge the isolated expired-execution fixture", False, False),
         ("Publish one explicit repair tick after synthetic cleanup", False, False),
+        ("Verify one due scheduler step through the bounded broker sender", False, False),
         ("Run one manual repair pass after synthetic cleanup", False, False),
     ],
 )
@@ -305,6 +307,18 @@ def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
     expected_cleanup.append("Remove isolated queue-recovery project and its volumes")
     assert labels[-len(expected_cleanup) :] == expected_cleanup
     engine.dispose.assert_called_once_with()
+
+
+def test_scheduler_probe_changes_only_disposable_schedule_and_requires_real_send() -> None:
+    code = verify_queue_recovery.SCHEDULER_PROBE_CODE
+    compile(code, "scheduler-probe", "exec")
+    assert "load_scheduler_settings()" in code
+    assert "TemporaryDirectory" in code
+    assert "scheduler.tick() == 0" in code and "scheduler.tick() > 0" in code
+    assert code.count("delivery.repair_tick.published") == 2
+    assert "scheduler.close()" in code
+    assert "worker import" not in code
+    assert "update(" not in code
 
 
 def test_explicit_repair_probe_is_content_free_and_does_not_enable_a_schedule() -> None:

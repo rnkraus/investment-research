@@ -271,6 +271,33 @@ There is no automatic command retry. Previously blocked rows outside this pass a
 Failure details and connection URLs are withheld. The queue verifier runs the command against the
 empty isolated archive after both fixture purges and checks that their canonical absence remains.
 
+## Separate scheduler implementation (2026-10-22)
+
+`investment_research.scheduler` is the dedicated Celery Beat entry point, not a worker import or
+embedded worker scheduler. Its settings loader reads only runtime and broker process values; it
+does not load a local environment file or resolve database/storage/provider configuration. The
+application factory installs exactly one thirty-second `outbox-repair-tick.v1` schedule. Creation
+alone neither connects nor sends. The normal API/worker factories do not install this schedule.
+
+`infrastructure/queue/scheduler.py` retains Beat's interval/state handling but bypasses its default
+producer and raw publication-error reporting. Each due entry must match the fixed task, empty
+arguments/options, and exact content-free payload. The existing private subprocess publisher owns
+the same two-second send deadline and disabled retries. The helper generates the fixed signal;
+callers cannot supply document/workspace IDs or another task. Unstarted ticks expire after thirty
+seconds; this does not stop an already running repair pass or alter canonical business intent.
+Unavailable/invalid publication emits only a static event and waits for a later interval. An
+unexpected failure stops the scheduler through a sanitized error boundary. Missed ticks do not
+erase due work, consume canonical delivery attempts, or provide paid-operation allowance.
+
+Beat state uses `/tmp/investment-research-beat-schedule`, never application sources or business
+storage. SIGTERM follows Beat's shutdown/sync path; the Celery application closes on exit. Exactly
+one scheduler process is required. Compose must still give that process broker-only secrets,
+restricted networking, non-root/read-only execution, and bounded writable temporary storage before
+normal activation. No Compose service or recurring normal-runtime sender is enabled in this block.
+The queue verifier exercises one due Beat step with disposable schedule state and the real bounded
+Redis sender, checks no immediate repeat, and retains canonical absence after synthetic purges.
+It does not prove a separately running periodic process or automatic outage recovery end to end.
+
 The existing post-commit Celery fast path is still active in the normal app. Bounded repair is now
 available through the explicitly delivered worker task and manual command, but no capture outbox
 dispatch, scheduler, or periodic sender is enabled. Automatic dispatch and periodic repair remain pending.

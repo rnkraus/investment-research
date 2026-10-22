@@ -33,6 +33,7 @@ from investment_research.settings import (
     load_generation_provider_settings,
     load_outbox_repair_settings,
     load_parser_settings,
+    load_scheduler_settings,
     load_worker_settings,
 )
 
@@ -149,6 +150,30 @@ def test_repair_settings_default_to_worker_profile_and_reject_unknown_profile(
     monkeypatch.setenv("INVESTMENT_RESEARCH_PROCESSING_PROFILE", "unbounded")
     with pytest.raises(ValidationError):
         load_outbox_repair_settings(env_file=None)
+
+
+def test_scheduler_loads_only_process_broker_values_without_local_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("INVESTMENT_RESEARCH_RUNTIME_LOCATION", "host")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_REDIS_URL", "redis://:synthetic@127.0.0.1:6379/0")
+    for name in (
+        "INVESTMENT_RESEARCH_DATABASE_URL_FILE",
+        "POSTGRES_PASSWORD_FILE",
+        "INVESTMENT_RESEARCH_OPENAI_DOCUMENT_API_KEY_FILE",
+        "INVESTMENT_RESEARCH_S3_SECRET_ACCESS_KEY_FILE",
+    ):
+        monkeypatch.setenv(name, "/must-not-be-opened")
+
+    def reject_local_file(_: Path | None) -> dict[str, str | None]:
+        raise AssertionError("scheduler must not read a local environment file")
+
+    monkeypatch.setattr(settings_module, "_read_local_values", reject_local_file)
+    settings = load_scheduler_settings()
+    assert settings.database_url is None
+    assert settings.require_redis_url() == "redis://:synthetic@127.0.0.1:6379/0"
+    assert not hasattr(settings, "indexing_providers")
+    assert not hasattr(settings, "s3")
 
 
 def valid_s3_configuration(

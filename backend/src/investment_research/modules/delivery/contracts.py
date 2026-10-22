@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+OUTBOX_REPAIR_INTERVAL_SECONDS = 30
+
 
 class OutboxRepairTickV1(BaseModel):
     """An internal wake-up signal, not a business job or workspace authorization."""

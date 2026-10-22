@@ -13,6 +13,7 @@ from pydantic import SecretStr, ValidationError
 from redis.exceptions import AuthenticationError
 
 from investment_research.infrastructure.queue import outbox, outbox_transport
+from investment_research.infrastructure.queue.celery import REPAIR_OUTBOX_TASK_NAME
 from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
 from investment_research.infrastructure.queue.outbox_transport import BrokerOperation
 from investment_research.modules.delivery.ports import (
@@ -199,6 +200,51 @@ def test_transport_rejects_probe_with_a_job_and_unknown_fields() -> None:
                 }
                 | changes
             )
+
+
+def test_repair_tick_uses_same_private_pipe_without_caller_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    constructor, process = install_process_mock(monkeypatch)
+    make_publisher().publish_repair_tick(timeout_seconds=2)
+    payload = json.loads(process.communicate.call_args_list[0].kwargs["input"])
+    assert payload["operation"] == "repair_tick"
+    assert payload["job"] is None
+    assert set(payload) == {"operation", "broker_url", "runtime_location", "deadline", "job"}
+    assert SYNTHETIC_BROKER_URL not in repr(constructor.call_args)
+
+
+def test_transport_creates_only_fixed_expiring_repair_signal_without_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    application = Mock()
+    application.__enter__ = Mock(return_value=application)
+    application.__exit__ = Mock(return_value=False)
+    connection = Mock()
+    application.connection_for_write.return_value.__enter__ = Mock(return_value=connection)
+    application.connection_for_write.return_value.__exit__ = Mock(return_value=False)
+    monkeypatch.setattr(outbox_transport, "create_celery_app", Mock(return_value=application))
+    request = BrokerOperation(
+        operation="repair_tick",
+        broker_url=SecretStr(SYNTHETIC_BROKER_URL),
+        runtime_location="host",
+        deadline=monotonic() + 2,
+    )
+    assert outbox_transport.execute_operation(request) == 0
+    application.send_task.assert_called_once_with(
+        REPAIR_OUTBOX_TASK_NAME,
+        kwargs={"payload": {"schema_version": "outbox-repair-tick.v1"}},
+        queue="document-processing",
+        serializer="json",
+        ignore_result=True,
+        add_to_parent=False,
+        connection=connection,
+        retry=False,
+        retry_policy={"max_retries": 0},
+        expires=30,
+    )
+    with pytest.raises(ValidationError):
+        BrokerOperation.model_validate({**request.model_dump(), "job": make_job()})
 
 
 @pytest.mark.parametrize(
