@@ -269,7 +269,7 @@ jobs:
       - name: Verify parser isolation
         run: uv run --locked python -m scripts.verify_parser_isolation
 
-      - name: Verify lost outbox publication and worker recovery
+      - name: Verify Redis outage, lost publications, and worker recovery
         run: uv run --locked python -m scripts.verify_queue_recovery
 
       - name: Verify complete automatic M0 fixture journey

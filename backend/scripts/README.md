@@ -29,7 +29,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_parser_isolation.py`  | Exercises the final parser image, protocol, resources, and network isolation.            |
 | `verify_paths.py`             | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`          | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
-| `verify_queue_recovery.py`    | Proves lost outbox publication recovery, worker-loss recovery, and synthetic-source cleanup. |
+| `verify_queue_recovery.py`    | Proves stopped-Redis capture, outbox/worker-loss recovery, and synthetic-source cleanup. |
 | `verify_runtime_cleanup.py`   | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                |
 
 The M1.5 evaluation commands, fixture provenance, output schema, and opt-in boundaries are
@@ -252,8 +252,11 @@ secrets are removed even when a check fails.
 flowchart LR
     COMMAND[verify_queue_recovery.py] --> STACK[Start isolated worker runtime]
     STACK --> PAUSE[Pause isolated worker and parser]
-    PAUSE --> CAPTURE[Capture fixture with deferred legacy dispatch]
-    CAPTURE --> LOST[Drop accepted job before receipt and retry through outbox]
+    PAUSE --> STOP[Stop only isolated Redis]
+    STOP --> CAPTURE[Capture fixture with deferred legacy dispatch]
+    CAPTURE --> RETAIN[Require unchanged pending intent across two repair passes]
+    RETAIN --> RESTART[Restart Redis; reuse the retained capture]
+    RESTART --> LOST[Drop accepted job before receipt and retry through outbox]
     LOST --> RECEIPT[Drop acknowledged job and require publication grace]
     RECEIPT --> REPAIR[Prepare and publish one recovery generation]
     REPAIR --> REPEAT[Require repeated repair to be a no-op]
@@ -269,15 +272,20 @@ flowchart LR
     VERIFY --> CLEANUP[Remove project and volumes]
 ```
 
-Run the live outbox-loss, worker-loss, and deletion gate from `backend/` with Docker running:
+Run the live Redis-outage, outbox-loss, worker-loss, and deletion gate from `backend/` with Docker
+running:
 
 ```shell
 uv run --locked python -m scripts.verify_queue_recovery
 ```
 
 The command creates a unique Compose project with generated disposable credentials and does not
-load repository `.env` values. It pauses the isolated worker and parser and captures the frozen PDF
-through the real application container, explicitly deferring the legacy post-commit dispatcher.
+load repository `.env` values. It pauses the isolated worker and parser, stops that project's Redis,
+and captures the frozen PDF through the real application container, explicitly deferring the legacy
+post-commit dispatcher. Two bounded repair passes must report the broker unavailable while leaving
+the run and its pending generation-zero intent unchanged, with no publication or execution attempts
+consumed. After Redis restarts and is healthy, a second probe reuses the same scoped captured run;
+there is no second upload, database timestamp/counter repair, or external credential change.
 A test publisher first sends a real Redis job and then reports an uncertain acknowledgement before
 a canonical receipt. The probe removes exactly one message from the isolated processing queue,
 then uses `RepairOutboxService` to republish generation zero under its remaining attempt allowance.
@@ -286,7 +294,7 @@ only an injected UTC clock past the unchanged 420-second grace. One bounded reco
 must publish while retaining the prior receipt and leaving processing state/counts unchanged.
 Repeated repair is a no-op. No database timestamps, production policy, system clock, or monotonic
 broker deadlines are changed; test retry jitter is zero. This simulates publication uncertainty,
-not an actual publisher-process crash, and does not test a stopped Redis server or scheduler ticks.
+not an actual publisher-process crash. Scheduler ticks and normal-runtime activation are not tested.
 Only `LPOP` on the exact disposable processing queue is used; no database-wide Redis flush occurs.
 
 The worker is then resumed and the verifier waits until it owns the canonical processing lease.

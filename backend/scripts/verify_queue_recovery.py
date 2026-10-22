@@ -50,6 +50,7 @@ STATE_TIMEOUT_SECONDS = 45.0
 POLL_INTERVAL_SECONDS = 0.25
 
 CAPTURE_PROBE_CODE = """\
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -89,26 +90,37 @@ class DeferredDispatcher:
     def dispatch(self, job: ProcessingJobV1) -> None:
         pass
 
+assert len(sys.argv) == 2 and sys.argv[1] in {"capture-outage", "recover-loss"}
+phase = sys.argv[1]
 container = build_api_container(load_api_settings(env_file=None))
 try:
     context = container.identity_context_provider.resolve()
-    capture_input = PdfCaptureInput(
-        filename="northstar-grid-analytics-fy2025-earnings-brief.pdf",
-        media_type="application/pdf",
-        title="Queue recovery verification fixture",
-        language="en",
-        published_at=datetime(2026, 2, 20, 12, tzinfo=UTC),
-        available_at=datetime(2026, 2, 20, 12, tzinfo=UTC),
-    )
-    capture_service = CaptureDocumentService(
-        object_storage=container.object_storage,
-        unit_of_work_factory=create_capture_unit_of_work_factory(container.session_factory),
-        max_upload_bytes=container.settings.max_upload_bytes,
-        processing_dispatcher=DeferredDispatcher(),
-    )
-    with Path("/verification-fixture.pdf").open("rb") as content:
-        result = capture_service.capture_pdf(context, capture_input, content)
-    assert result.state is ProcessingState.CAPTURED
+    if phase == "capture-outage":
+        capture_input = PdfCaptureInput(
+            filename="northstar-grid-analytics-fy2025-earnings-brief.pdf",
+            media_type="application/pdf",
+            title="Queue recovery verification fixture",
+            language="en",
+            published_at=datetime(2026, 2, 20, 12, tzinfo=UTC),
+            available_at=datetime(2026, 2, 20, 12, tzinfo=UTC),
+        )
+        capture_service = CaptureDocumentService(
+            object_storage=container.object_storage,
+            unit_of_work_factory=create_capture_unit_of_work_factory(container.session_factory),
+            max_upload_bytes=container.settings.max_upload_bytes,
+            processing_dispatcher=DeferredDispatcher(),
+        )
+        with Path("/verification-fixture.pdf").open("rb") as content:
+            result = capture_service.capture_pdf(context, capture_input, content)
+        assert result.state is ProcessingState.CAPTURED
+        processing_run_id = result.processing_run_id
+    else:
+        # Reuse the one captured run; never recapture or modify canonical state after outage.
+        with container.session_factory() as session:
+            processing_run_id = session.scalars(select(ProcessingRunRow.id).where(
+                ProcessingRunRow.workspace_id == context.workspace_id,
+                ProcessingRunRow.state == ProcessingState.CAPTURED,
+            )).one()
     publisher = BoundedCeleryOutboxPublisher(QueueSettings(
         runtime_location=container.settings.runtime_location,
         redis_url=container.settings.redis_url,
@@ -122,12 +134,12 @@ try:
         with container.session_factory() as session:
             run = session.scalars(select(ProcessingRunRow).where(
                 ProcessingRunRow.workspace_id == context.workspace_id,
-                ProcessingRunRow.id == result.processing_run_id,
+                ProcessingRunRow.id == processing_run_id,
             )).one().to_domain()
             events = tuple(row.to_domain() for row in session.scalars(
                 select(OutboxEventRow).where(
                     OutboxEventRow.workspace_id == context.workspace_id,
-                    OutboxEventRow.target_id == result.processing_run_id,
+                    OutboxEventRow.target_id == processing_run_id,
                 ).order_by(OutboxEventRow.generation)
             ))
         return run, events
@@ -143,6 +155,19 @@ try:
 
     initial_run, initial_events = snapshot()
     assert initial_run.attempt_count == 0 and len(initial_events) == 1
+    assert initial_events[0].state is OutboxState.PENDING
+    assert initial_events[0].attempt_count == 0 and initial_events[0].published_at is None
+    if phase == "capture-outage":
+        repair = RepairOutboxService(factory, publisher, maximum_attempts)
+        for _ in range(2):
+            unavailable = repair.repair(context)
+            assert unavailable.delivery.stop_reason is DrainStopReason.BROKER_UNAVAILABLE
+            assert unavailable.used_targets == unavailable.delivery.claimed == 0
+            assert unavailable.delivery.published == 0
+            assert snapshot() == (initial_run, initial_events)
+        print("Capture retained pending intent during Redis outage without consuming attempts.",
+              flush=True)
+        raise SystemExit(0)  # Always runs the container cleanup below.
     with Redis.from_url(
         container.settings.require_redis_url(), socket_connect_timeout=2, socket_timeout=2,
     ) as broker:
@@ -606,24 +631,40 @@ def verify_queue_recovery() -> int:
             )
             worker_is_paused = True
             run_command(
-                "Capture fixture and recover lost outbox publications",
-                [
-                    *compose_command,
-                    "run",
-                    "--rm",
-                    "--no-deps",
-                    "--entrypoint",
-                    "/app/.venv/bin/python",
-                    "--volume",
-                    f"{FIXTURE_PDF}:/verification-fixture.pdf:ro",
-                    "--volume",
-                    f"{REPOSITORY_ROOT / 'config' / 'rag.toml'}:/config/rag.toml:ro",
-                    "--env",
-                    "INVESTMENT_RESEARCH_API_HOST=0.0.0.0",
-                    "worker",
-                    "-c",
-                    CAPTURE_PROBE_CODE,
-                ],
+                "Stop isolated Redis before fixture capture",
+                [*compose_command, "stop", "redis"],
+                environment=compose_environment,
+            )
+            probe_command = [
+                *compose_command,
+                "run",
+                "--rm",
+                "--no-deps",
+                "--entrypoint",
+                "/app/.venv/bin/python",
+                "--volume",
+                f"{FIXTURE_PDF}:/verification-fixture.pdf:ro",
+                "--volume",
+                f"{REPOSITORY_ROOT / 'config' / 'rag.toml'}:/config/rag.toml:ro",
+                "--env",
+                "INVESTMENT_RESEARCH_API_HOST=0.0.0.0",
+                "worker",
+                "-c",
+                CAPTURE_PROBE_CODE,
+            ]
+            run_command(
+                "Capture fixture while isolated Redis is stopped",
+                [*probe_command, "capture-outage"],
+                environment=compose_environment,
+            )
+            run_command(
+                "Restart isolated Redis before outbox recovery",
+                [*compose_command, "start", "--wait", "redis"],
+                environment=compose_environment,
+            )
+            run_command(
+                "Recover retained fixture and lost outbox publications",
+                [*probe_command, "recover-loss"],
                 environment=compose_environment,
             )
             run_command(

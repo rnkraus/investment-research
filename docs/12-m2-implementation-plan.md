@@ -584,6 +584,27 @@ one expected fixture output, and completed synthetic original/canonical purge. I
 volumes, and networks were removed successfully. No paid provider, browser/frontend, normal archive,
 hosted CI, separate PostgreSQL integration suite, or full M0/M1 runtime journey was exercised.
 
+**Stopped-Redis capture verification block (2026-10-22):** The existing queue gate now stops only
+its disposable Redis service after pausing the worker/parser. The real capture service preserves
+the synthetic original, run, and generation-zero outbox intent with legacy dispatch explicitly
+deferred. Two bounded coordinator passes must report `BROKER_UNAVAILABLE` and leave the processing
+snapshot, pending intent, and both attempt counters unchanged. After Redis restarts and passes
+health checks, a second probe selects that same scoped captured run; it does not recapture or
+repair rows manually. The retained intent then enters the existing real message-loss, worker-loss,
+single-output, and permanent-cleanup gates. Unit tests extend orchestration/failure cleanup coverage,
+and the existing CI command includes the new scenario. This is an explicitly invoked application
+service test, not proof of the normal HTTP capture path during outage or periodic automatic repair.
+No normal runtime, scheduler, credentials, attempt policy, or paid provider behavior is changed.
+Scheduler/operator wiring, full exhaustion status, expired-execution coordinator verification,
+and complete Step 1 acceptance remain pending.
+Verification: 20 focused queue/coordinator tests passed. `scripts.verify_backend` passed
+formatting, linting, typing, and 2,397 unit tests. The extended `scripts.verify_queue_recovery`
+passed locally with actual Redis stop/start, retained capture/intent, unchanged outage counters,
+publication-loss repair, worker-loss recovery on attempt two, exactly one expected fixture output,
+and completed original/canonical purge. The unique project's containers, volumes, and networks
+were removed successfully. No normal archive, live paid provider, frontend/browser, hosted CI,
+separate PostgreSQL integration suite, or full M0/M1 runtime journey was exercised in this block.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
