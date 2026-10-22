@@ -232,8 +232,11 @@ active/current source, the same expected execution lease, remaining profile atte
 published intent under short canonical locks. It retains the 420-second publication grace as
 well as requiring execution expiry; it cannot use old publication age to bypass a live fence.
 It prepares a bounded next generation without changing execution state/counters, prior receipts,
-or outputs. Snapshot and database tests do not activate dispatch: expired-work scanning, the drain's
-expired-run qualification, and the complete automatic recovery gate remain pending.
+or outputs. The bounded expired-work scan now carries observed execution tokens from a scoped
+twenty-target snapshot into separate requalification transactions within a cooperative
+thirty-second budget. Snapshot and database tests do not activate dispatch: the drain's expired-run
+qualification, shared-budget tick orchestration, and the complete automatic recovery gate remain
+pending.
 
 Only `PROCESS_DOCUMENT` is currently enabled in persistence; the reserved `PURGE_DOCUMENT` kind
 belongs to Step 6. The existing direct Celery publication still runs after commit and does not

@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
@@ -11,6 +12,14 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import ProcessingJobV1
 
 OUTBOX_RECOVERY_MAX_TARGETS = 20
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiredOutboxCandidate:
+    """Content-free observation, not authorization to reclaim a subsequently renewed lease."""
+
+    event_id: UUID
+    execution_lease_id: UUID
 
 
 class OutboxScopeError(ValueError):
@@ -56,6 +65,15 @@ class OutboxDeliveryRepository(Protocol):
 
         Exclude exhausted generations and newer intent. This read does not lock or authorize
         recovery; recover_unstarted must recheck each candidate in a separate transaction.
+        """
+
+    def list_expired_candidates(
+        self, context: WorkspaceContext, *, now: datetime, maximum_attempts: int
+    ) -> tuple[ExpiredOutboxCandidate, ...]:
+        """Snapshot at most twenty eligible latest published events and execution tokens.
+
+        Require publication grace, expired unfinished execution, and remaining profile
+        attempts. The targeted recovery operation must lock/recheck every observed token.
         """
 
     def recover_unstarted(

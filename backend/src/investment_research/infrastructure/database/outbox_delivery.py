@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, aliased
 
@@ -18,7 +18,10 @@ from investment_research.modules.delivery.domain import (
     OutboxTransitionError,
 )
 from investment_research.modules.delivery.persistence import OutboxEventRow
-from investment_research.modules.delivery.ports import OUTBOX_RECOVERY_MAX_TARGETS
+from investment_research.modules.delivery.ports import (
+    OUTBOX_RECOVERY_MAX_TARGETS,
+    ExpiredOutboxCandidate,
+)
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -37,6 +40,50 @@ class SqlAlchemyOutboxDeliveryRepository:
     ) -> tuple[UUID, ...]:
         """Read a bounded snapshot; the targeted operation owns all mutation fences."""
 
+        return tuple(
+            self._session.scalars(
+                self._recovery_candidates(context, now=now).where(
+                    ProcessingRunRow.state == ProcessingState.CAPTURED
+                )
+            )
+        )
+
+    def list_expired_candidates(
+        self, context: WorkspaceContext, *, now: datetime, maximum_attempts: int
+    ) -> tuple[ExpiredOutboxCandidate, ...]:
+        """Observe execution tokens without locking or authorizing their later recovery."""
+
+        if maximum_attempts < 1:
+            raise ValueError("maximum_attempts must be positive")
+        now = self._aware_time(now)
+        rows = self._session.execute(
+            self._recovery_candidates(context, now=now)
+            .add_columns(ProcessingRunRow.lease_id)
+            .where(
+                ProcessingRunRow.state.in_(
+                    [
+                        ProcessingState.PARSING,
+                        ProcessingState.LEXICAL_READY,
+                        ProcessingState.INDEXING,
+                    ]
+                ),
+                ProcessingRunRow.completed_at.is_(None),
+                ProcessingRunRow.lease_id.is_not(None),
+                ProcessingRunRow.lease_expires_at <= now,
+                ProcessingRunRow.attempt_count < maximum_attempts,
+            )
+        )
+        candidates = []
+        for event_id, lease_id in rows:
+            assert lease_id is not None
+            candidates.append(ExpiredOutboxCandidate(event_id, lease_id))
+        return tuple(candidates)
+
+    def _recovery_candidates(
+        self, context: WorkspaceContext, *, now: datetime
+    ) -> Select[tuple[UUID]]:
+        """Apply shared source, history, grace, ordering, and twenty-target bounds in SQL."""
+
         now = self._aware_time(now)
         newer = aliased(OutboxEventRow)
         has_newer = (
@@ -49,46 +96,43 @@ class SqlAlchemyOutboxDeliveryRepository:
             )
             .exists()
         )
-        return tuple(
-            self._session.scalars(
-                select(OutboxEventRow.event_id)
-                .join(
-                    ProcessingRunRow,
-                    and_(
-                        ProcessingRunRow.workspace_id == OutboxEventRow.workspace_id,
-                        ProcessingRunRow.id == OutboxEventRow.processing_run_id,
-                        ProcessingRunRow.id == OutboxEventRow.target_id,
-                    ),
-                )
-                .join(
-                    DocumentVersionRow,
-                    and_(
-                        DocumentVersionRow.workspace_id == ProcessingRunRow.workspace_id,
-                        DocumentVersionRow.id == ProcessingRunRow.document_version_id,
-                    ),
-                )
-                .join(
-                    DocumentRow,
-                    and_(
-                        DocumentRow.workspace_id == DocumentVersionRow.workspace_id,
-                        DocumentRow.id == DocumentVersionRow.document_id,
-                        DocumentRow.current_version_id == DocumentVersionRow.id,
-                    ),
-                )
-                .where(
-                    OutboxEventRow.workspace_id == context.workspace_id,
-                    OutboxEventRow.kind == OutboxKind.PROCESS_DOCUMENT,
-                    OutboxEventRow.state == OutboxState.PUBLISHED,
-                    OutboxEventRow.published_at
-                    <= now - timedelta(seconds=OUTBOX_UNSTARTED_GRACE_SECONDS),
-                    OutboxEventRow.generation < OUTBOX_MAX_GENERATIONS - 1,
-                    ProcessingRunRow.state == ProcessingState.CAPTURED,
-                    DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
-                    ~has_newer,
-                )
-                .order_by(OutboxEventRow.published_at, OutboxEventRow.event_id)
-                .limit(OUTBOX_RECOVERY_MAX_TARGETS)
+        return (
+            select(OutboxEventRow.event_id)
+            .join(
+                ProcessingRunRow,
+                and_(
+                    ProcessingRunRow.workspace_id == OutboxEventRow.workspace_id,
+                    ProcessingRunRow.id == OutboxEventRow.processing_run_id,
+                    ProcessingRunRow.id == OutboxEventRow.target_id,
+                ),
             )
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == ProcessingRunRow.workspace_id,
+                    DocumentVersionRow.id == ProcessingRunRow.document_version_id,
+                ),
+            )
+            .join(
+                DocumentRow,
+                and_(
+                    DocumentRow.workspace_id == DocumentVersionRow.workspace_id,
+                    DocumentRow.id == DocumentVersionRow.document_id,
+                    DocumentRow.current_version_id == DocumentVersionRow.id,
+                ),
+            )
+            .where(
+                OutboxEventRow.workspace_id == context.workspace_id,
+                OutboxEventRow.kind == OutboxKind.PROCESS_DOCUMENT,
+                OutboxEventRow.state == OutboxState.PUBLISHED,
+                OutboxEventRow.published_at
+                <= now - timedelta(seconds=OUTBOX_UNSTARTED_GRACE_SECONDS),
+                OutboxEventRow.generation < OUTBOX_MAX_GENERATIONS - 1,
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                ~has_newer,
+            )
+            .order_by(OutboxEventRow.published_at, OutboxEventRow.event_id)
+            .limit(OUTBOX_RECOVERY_MAX_TARGETS)
         )
 
     def recover_unstarted(

@@ -473,6 +473,26 @@ drift checks, and 293 integration tests, including 15 new expired-recovery cases
 SeaweedFS-only tests were skipped. The isolated database, volume, and networks were removed.
 No broker, browser/frontend, live-provider, normal archive, or full runtime journey was exercised.
 
+**Bounded expired-execution scan block (2026-10-22):** Added a typed content-free candidate
+carrying event ID and observed execution lease ID. The new scoped query shares active/current
+source qualification, latest published intent, grace, generation ceiling, stable ordering, and
+the twenty-target bound with the existing unstarted query. It additionally filters unfinished
+leased parsing/indexing work with expired fences and remaining profile attempts before applying
+the limit. Completed lexical work, including historical M1 completion, is excluded.
+`RecoverExpiredOutboxService` closes the snapshot transaction and rechecks each observed token in
+its own `recover_expired` transaction. Changed/skipped work consumes a slot; later execution cannot
+be authorized by an earlier token. The cooperative thirty-second deadline stops further work, not
+in-flight SQL. Prepared counts do not imply broker delivery or processing completion. Existing CI
+unit/integration discovery includes the tests. The captured-only drain, normal app, scheduler,
+operator command, exhausted-work status, and shared-budget runtime coordinator remain unchanged;
+Step 1 is not complete. This block adds no schema, dependencies, paid calls, or frontend behavior.
+Verification: 16 focused scan unit tests passed, including nine new expired-scan cases.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,362 unit tests.
+`scripts.verify_postgres` passed migration cycling, schema drift checks, and 298 integration tests,
+including five new scan cases and extended existing eligibility assertions. Seven separate
+SeaweedFS-only tests were skipped. The disposable database, volume, and networks were removed.
+No broker, frontend/browser, live-provider, normal archive, or full runtime journey was exercised.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
