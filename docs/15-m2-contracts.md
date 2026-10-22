@@ -392,6 +392,21 @@ orchestration still belong to that subsequent block. Existing unit/PostgreSQL CI
 exact selection, unknown/foreign equivalence, no fallback, concurrency, rollback, due times,
 source exclusion, exhaustion, and explicit recovery-profile qualification.
 
+**Targeted publication/adapter prerequisite (2026-10-23):**
+`DrainOutboxService.deliver_event` now reuses the sweep implementation for at most one exact event,
+including readiness-before-claim, its existing cooperative deadline, the two-second broker cap,
+publication after the claim transaction closes, and separately fenced receipts/failures. It never
+substitutes other due work. `DispatchCapturedProcessingService` revalidates the existing job,
+resolves server-owned identity, checks workspace agreement, and derives only its generation-zero
+event identity. It creates no event, recovery generation, direct Celery fallback, or new allowance.
+Expected failure maps to the existing safe post-commit capture error; empty selection is a no-op,
+not delivery or eligibility proof. Unexpected programming/database/commit errors still propagate.
+Explicit PDF/text capture composition with a deterministic publisher verifies preserved originals,
+attempts and unrelated intent for successful, unavailable, uncertain, and invalid publication.
+The normal API dispatcher, settings, HTTP response, scheduler, and provider behavior remain unchanged.
+Existing unit/PostgreSQL CI discovery covers these checks; normal composition and complete live
+outage/runtime compatibility gates remain pending before Step 1 activation.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings

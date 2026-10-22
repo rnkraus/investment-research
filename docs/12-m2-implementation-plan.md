@@ -766,6 +766,34 @@ removed successfully. Existing unit/PostgreSQL CI discovery includes the added c
 workflow is needed. No normal archive, paid provider, frontend/browser, hosted CI, live queue,
 or complete M0/M1 runtime journey was exercised in this block. Step 1 remains incomplete.
 
+**Targeted post-capture publication/adapter block (2026-10-23):**
+`DrainOutboxService.deliver_event` now reuses the bounded sweep algorithm for exactly one requested
+event, without falling back to unrelated due work. `DispatchCapturedProcessingService` implements
+the existing processing-dispatch contract: it revalidates the job, resolves trusted identity,
+checks workspace equality, and derives only the generation-zero processing event ID. It creates
+no intent, resets no counters, and adds no direct-publication or later-generation fallback.
+Readiness precedes claiming; publication runs after the claim transaction closes; receipts and
+safe failure records retain their ownership fences. Cooperative deadlines do not promise hard
+cancellation of database operations. An empty claim is a no-op, not proof of publication or
+processing completion. Expected publication failures use the existing post-commit capture error
+handling so committed originals remain intact; unexpected database errors still propagate.
+
+Verification: 41 focused dispatch/drain/repair unit tests passed. `scripts.verify_backend` passed
+formatting, linting, typing across 373 source files, and 2,536 unit tests. `scripts.verify_postgres`
+passed migration head/base/head cycling, schema drift checks, and 341 integration tests. Its eight
+new PDF/text capture cases cover publication success, known broker unavailability, uncertain
+publication, and invalid publication. A second database connection verifies committed capture
+and released claim locks before publication; unrelated due work and processing-attempt counters
+remain unchanged. Seven separate SeaweedFS-only tests were skipped. The disposable PostgreSQL
+container, networks, and volume were removed successfully. Existing unit/PostgreSQL CI discovery
+includes these checks; no workflow change is required.
+
+The adapter is explicitly composed by the integration tests, not activated in the normal API.
+No bootstrap, settings, schema, HTTP, dependency, frontend, or provider behavior changed. No normal
+archive, paid provider, frontend/browser, hosted CI, live queue, or complete M0/M1 runtime journey
+was exercised in this block. Step 1 remains incomplete: normal API composition, default periodic
+repair activation, and complete outage/runtime compatibility gates remain pending.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
