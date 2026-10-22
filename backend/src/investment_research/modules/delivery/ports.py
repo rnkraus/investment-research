@@ -64,8 +64,8 @@ class OutboxDeliveryRepository(Protocol):
     ) -> tuple[UUID, ...]:
         """Snapshot at most twenty due latest published events for eligible captured runs.
 
-        Exclude exhausted generations and newer intent. This read does not lock or authorize
-        recovery; recover_unstarted must recheck each candidate in a separate transaction.
+        Include final generations for bounded exhaustion closure, but exclude newer intent.
+        This read does not authorize mutation; recover_unstarted must lock/recheck each target.
         """
 
     def list_expired_candidates(
@@ -78,8 +78,8 @@ class OutboxDeliveryRepository(Protocol):
     ) -> tuple[ExpiredOutboxCandidate, ...]:
         """Snapshot at most twenty eligible latest published events and execution tokens.
 
-        Require publication grace, expired unfinished execution, and remaining profile
-        attempts. The targeted recovery operation must lock/recheck every observed token.
+        Require publication grace and expired unfinished execution. Include exhausted targets
+        for closure, not another attempt. Lock/recheck every observed token before mutation.
         """
 
     def recover_unstarted(
@@ -87,8 +87,9 @@ class OutboxDeliveryRepository(Protocol):
     ) -> OutboxEvent | None:
         """Insert one next generation after canonical eligibility and latest-event checks.
 
-        A repeat may return its existing direct successor without resetting it. Unknown,
-        foreign, locked, ineligible, premature, exhausted, or superseded targets return None.
+        An exhausted latest publication becomes BLOCKED with its receipt retained. A repeat
+        may return an existing direct successor unchanged. Unknown, foreign, locked,
+        ineligible, premature, closed, or superseded targets return None.
         The caller owns this short transaction; this operation never publishes.
         """
 
@@ -105,7 +106,9 @@ class OutboxDeliveryRepository(Protocol):
 
         Lock/reload the active/current source, run, and exact latest intent. Preserve all
         execution metadata and previous receipts; never claim work or contact the broker.
-        Unknown, foreign, changed/live/locked, terminal, or exhausted targets return None.
+        Exhausted execution/generation allowances close mature published intent as BLOCKED
+        without changing processing. Unknown, foreign, changed/live/locked, terminal, or
+        already closed targets return None.
         The caller supplies its existing processing profile's attempt ceiling.
         """
 

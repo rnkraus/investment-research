@@ -8,6 +8,7 @@ from time import monotonic
 
 from investment_research.modules.delivery.application import utc_now
 from investment_research.modules.delivery.budget import OutboxSweepBudget, validate_target_limit
+from investment_research.modules.delivery.domain import OutboxState
 from investment_research.modules.delivery.ports import (
     OUTBOX_RECOVERY_MAX_TARGETS,
     OutboxDeliveryUnitOfWorkFactory,
@@ -28,6 +29,7 @@ class OutboxRecoveryResult:
     scanned: int
     prepared: int
     stop_reason: RecoveryStopReason
+    blocked: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,17 +62,19 @@ class RecoverUnstartedOutboxService:
             candidates = work.delivery.list_unstarted_candidates(
                 context, now=self.clock(), limit=limit
             )
-        scanned = prepared = 0
+        scanned = prepared = blocked = 0
         for event_id in candidates[:limit]:
             if budget.remaining_seconds <= 0:
-                return OutboxRecoveryResult(scanned, prepared, RecoveryStopReason.DEADLINE)
+                return OutboxRecoveryResult(scanned, prepared, RecoveryStopReason.DEADLINE, blocked)
             with self.unit_of_work_factory() as work:
                 successor = work.delivery.recover_unstarted(
                     context, event_id=event_id, now=self.clock()
                 )
             budget.consume_target()
             scanned += 1
-            prepared += successor is not None
+            if successor is not None:
+                blocked += successor.state is OutboxState.BLOCKED
+                prepared += successor.state is not OutboxState.BLOCKED
         reason = (
             RecoveryStopReason.DEADLINE
             if budget.remaining_seconds <= 0
@@ -78,7 +82,7 @@ class RecoverUnstartedOutboxService:
             if scanned == limit
             else RecoveryStopReason.SNAPSHOT_EXHAUSTED
         )
-        return OutboxRecoveryResult(scanned, prepared, reason)
+        return OutboxRecoveryResult(scanned, prepared, reason, blocked)
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,10 +120,10 @@ class RecoverExpiredOutboxService:
             candidates = work.delivery.list_expired_candidates(
                 context, now=self.clock(), maximum_attempts=self.maximum_attempts, limit=limit
             )
-        scanned = prepared = 0
+        scanned = prepared = blocked = 0
         for candidate in candidates[:limit]:
             if budget.remaining_seconds <= 0:
-                return OutboxRecoveryResult(scanned, prepared, RecoveryStopReason.DEADLINE)
+                return OutboxRecoveryResult(scanned, prepared, RecoveryStopReason.DEADLINE, blocked)
             with self.unit_of_work_factory() as work:
                 successor = work.delivery.recover_expired(
                     context,
@@ -130,7 +134,9 @@ class RecoverExpiredOutboxService:
                 )
             budget.consume_target()
             scanned += 1
-            prepared += successor is not None
+            if successor is not None:
+                blocked += successor.state is OutboxState.BLOCKED
+                prepared += successor.state is not OutboxState.BLOCKED
         reason = (
             RecoveryStopReason.DEADLINE
             if budget.remaining_seconds <= 0
@@ -138,4 +144,4 @@ class RecoverExpiredOutboxService:
             if scanned == limit
             else RecoveryStopReason.SNAPSHOT_EXHAUSTED
         )
-        return OutboxRecoveryResult(scanned, prepared, reason)
+        return OutboxRecoveryResult(scanned, prepared, reason, blocked)

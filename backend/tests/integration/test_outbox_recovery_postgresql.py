@@ -105,17 +105,20 @@ def test_recovery_is_scoped_due_idempotent_and_preserves_existing_successors(
             lease_id=final_claim.lease_id,
             now=RECOVER_AT + timedelta(seconds=420),
         )
+        assert work.delivery.list_unstarted_candidates(
+            context, now=RECOVER_AT + timedelta(seconds=840)
+        ) == (final_claim.event_id,)
+        blocked = work.delivery.recover_unstarted(
+            context, event_id=final_claim.event_id, now=RECOVER_AT + timedelta(seconds=840)
+        )
+        assert blocked is not None and blocked.state is OutboxState.BLOCKED
+        assert blocked.published_at == RECOVER_AT + timedelta(seconds=420)
+        assert blocked.generation == 2 and blocked.attempt_count == 1
         assert (
             work.delivery.list_unstarted_candidates(
                 context, now=RECOVER_AT + timedelta(seconds=840)
             )
             == ()
-        )
-        assert (
-            work.delivery.recover_unstarted(
-                context, event_id=final_claim.event_id, now=RECOVER_AT + timedelta(seconds=840)
-            )
-            is None
         )
     assert read_event(engine, context, original) == original
     assert read_event(engine, context, published_next) == published_next

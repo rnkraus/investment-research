@@ -628,6 +628,33 @@ The project's containers, volumes, and networks were removed successfully. No no
 paid provider, frontend/browser, hosted CI, separate PostgreSQL integration suite, or complete
 M0/M1 runtime journey was exercised in this block.
 
+**Recovery exhaustion-closure block (2026-10-22):** Existing preparation snapshots now include
+mature final-generation and exhausted-execution publications for bounded closure. Targeted
+operations requalify the active/current source, same expired execution token, run, and latest
+event under the existing locks. Exhaustion becomes `BLOCKED` / `ATTEMPTS_EXHAUSTED`, preserving
+publication receipts/counts, event/generation identity, processing state/counts/fences, and older
+history. Live, changed, excluded, foreign, or superseded targets cannot be closed. Closed intent
+leaves future snapshots. Recovery results count `blocked` separately from `prepared`, within
+the unchanged shared budget; no generation or execution allowance is added. Outbox exhaustion
+does not establish processing failure or prove an earlier message was never delivered.
+Migration `0014_outbox_exhaustion_receipts` changes only the publication constraint, without row
+rewrites, to retain exhausted blocked receipts; readiness requires it. Downgrade rejects incompatible
+retained history rather than discarding/mislabeling it. Existing unit/PostgreSQL discovery covers
+receipt preservation, fencing, isolation, locks, rollback, concurrency, result counts, migration
+compatibility, and safe downgrade refusal. No new HTTP/UI behavior, dependencies, paid call,
+scheduler, operator command, or normal runtime activation is introduced. Scheduler/operator wiring
+and the complete Step 1 activation gate remain pending.
+Verification: 50 focused recovery/coordinator tests passed, including eleven new exhaustion cases.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,420 unit tests.
+`scripts.verify_postgres` passed head/base/head migration cycling, drift checks, and 324 integration
+tests, including seven new closure/migration cases and extended existing recovery assertions.
+Seven separate SeaweedFS-only tests were skipped. `scripts.verify_queue_recovery` passed the real
+Redis outage/publication-loss, worker-crash, expired-execution, single-output, and two-source purge
+gates. An initial Docker Desktop outage prevented the first infrastructure runs; after the owner
+restarted Docker, both verifiers passed sequential reruns. No containers/networks/volumes remained
+from the failed attempts, and successful test projects were fully removed. No normal archive,
+paid provider, frontend/browser, hosted CI, or complete M0/M1 runtime journey was exercised.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

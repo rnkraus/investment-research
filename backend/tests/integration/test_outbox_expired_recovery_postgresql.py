@@ -16,7 +16,11 @@ from investment_research.infrastructure.database.outbox_unit_of_work import (
     create_outbox_delivery_unit_of_work_factory,
 )
 from investment_research.infrastructure.database.session import create_session_factory
-from investment_research.modules.delivery.domain import OutboxEvent, OutboxState
+from investment_research.modules.delivery.domain import (
+    DeliveryErrorCategory,
+    OutboxEvent,
+    OutboxState,
+)
 from investment_research.modules.delivery.persistence import OutboxEventRow
 from investment_research.modules.delivery.ports import ExpiredOutboxCandidate
 from investment_research.modules.documents.domain import DocumentLifecycleState
@@ -184,22 +188,28 @@ def test_expired_recovery_rechecks_canonical_eligibility(
         candidates = work.delivery.list_expired_candidates(
             context, now=RECOVER_AT, maximum_attempts=3
         )
-        if condition == "renewed":
+        if condition in {"renewed", "exhausted"}:
             assert len(candidates) == 1 and candidates[0].event_id == original.event_id
-            assert candidates[0].execution_lease_id != run.lease_id
+            if condition == "renewed":
+                assert candidates[0].execution_lease_id != run.lease_id
         else:
             assert candidates == ()
-        assert (
-            work.delivery.recover_expired(
-                context,
-                event_id=original.event_id,
-                execution_lease_id=run.lease_id,
-                now=RECOVER_AT,
-                maximum_attempts=3,
-            )
-            is None
+        result = work.delivery.recover_expired(
+            context,
+            event_id=original.event_id,
+            execution_lease_id=run.lease_id,
+            now=RECOVER_AT,
+            maximum_attempts=3,
         )
-    assert read_event(engine, context, original) == original
+        if condition == "exhausted":
+            assert result is not None and result.state is OutboxState.BLOCKED
+            assert result.last_error_category is DeliveryErrorCategory.ATTEMPTS_EXHAUSTED
+            assert result.published_at == original.published_at
+            assert result.attempt_count == original.attempt_count
+        else:
+            assert result is None
+    if condition != "exhausted":
+        assert read_event(engine, context, original) == original
 
 
 @pytest.mark.parametrize("lock_target", ["document", "run", "event"])
