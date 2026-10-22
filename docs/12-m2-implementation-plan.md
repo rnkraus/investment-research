@@ -605,6 +605,29 @@ and completed original/canonical purge. The unique project's containers, volumes
 were removed successfully. No normal archive, live paid provider, frontend/browser, hosted CI,
 separate PostgreSQL integration suite, or full M0/M1 runtime journey was exercised in this block.
 
+**Expired-execution coordinator verification block (2026-10-22):** After the existing real
+worker-child crash and first-source purge, the queue gate pauses its worker for a second synthetic
+source. A guarded, read-only mounted probe requires explicit isolated verification, container
+location, test environment, and the M0 regression profile. Injected past fixture clocks create an
+already mature publication; a synthetic abandoned execution is claimed through the existing
+domain transition with a ten-second test-only lease. Its one queued message is removed. The
+coordinator must reject live-fence recovery without changing canonical snapshots, then prepare
+and publish one generation after actual expiry within a bounded monotonic wait. It preserves
+execution state/count/token and prior receipts; repeated repair is a no-op. The resumed real
+worker must reclaim on attempt two, produce exactly one expected fixture output, and complete
+permanent cleanup of the second source. Production policy is unchanged. The probe arranges a
+lost execution; it is not a second actual crash, operator command, scheduler, or normal-runtime
+activation. Existing CI discovery/queue invocation includes the extended gate. Full exhaustion
+status, scheduler/operator wiring, and complete Step 1 activation remain pending.
+Verification: 32 focused probe/queue/coordinator tests passed. `scripts.verify_backend` passed
+formatting, linting, typing, and 2,409 unit tests. The extended `scripts.verify_queue_recovery`
+passed locally against real isolated PostgreSQL, Redis, Celery worker, parser, and SeaweedFS.
+Both sources produced one expected fixture output on processing attempt two and were permanently
+purged; the second source exercised the coordinator after real expiry of its synthetic lease.
+The project's containers, volumes, and networks were removed successfully. No normal archive,
+paid provider, frontend/browser, hosted CI, separate PostgreSQL integration suite, or complete
+M0/M1 runtime journey was exercised in this block.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

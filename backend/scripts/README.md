@@ -30,6 +30,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_paths.py`             | Runs deterministic checks for explicitly selected backend Python files.                  |
 | `verify_postgres.py`          | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 | `verify_queue_recovery.py`    | Proves stopped-Redis capture, outbox/worker-loss recovery, and synthetic-source cleanup. |
+| `queue_expired_execution_probe.py` | Guarded container-only fixture for live-fence rejection and expired-run outbox recovery; invoked only by the queue verifier. |
 | `verify_runtime_cleanup.py`   | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                |
 
 The M1.5 evaluation commands, fixture provenance, output schema, and opt-in boundaries are
@@ -269,7 +270,9 @@ flowchart LR
     READY --> ADMIT[Commit permanent exclusion and receipt]
     ADMIT --> PURGE[Publish the same ID-only purge job twice]
     PURGE --> VERIFY[Require completed receipt and absent canonical source rows]
-    VERIFY --> CLEANUP[Remove project and volumes]
+    VERIFY --> EXPIRED[Second fixture: reject live lease then repair expired execution]
+    EXPIRED --> OUTPUT[Real worker: require one output and purge second fixture]
+    OUTPUT --> CLEANUP[Remove project and volumes]
 ```
 
 Run the live Redis-outage, outbox-loss, worker-loss, and deletion gate from `backend/` with Docker
@@ -310,6 +313,19 @@ verifier additionally requires the canonical document, versions, original metada
 runs, structure blocks, chunk sets, and chunks to be absent. Unit tests separately prove duplicate
 execution is harmless. This M0 fixture has no dense vectors, so the command does not exercise live
 Pinecone deletion or mixed-document answer cleanup; the latter has PostgreSQL integration tests.
+After the first purge, the worker is paused for a second synthetic source. The guarded
+`queue_expired_execution_probe.py` helper requires the explicit internal verification flag,
+container location, test environment, and M0 regression profile. It arranges an already mature
+publication by injecting past fixture capture/publication clocks, not rewriting database history.
+It claims a synthetic abandoned execution through the existing domain transition with a ten-second
+test-only lease, removes its one queued message, and proves repair cannot bypass that live fence.
+After actual UTC expiry within a bounded monotonic wait, the coordinator must prepare/publish one
+new generation without changing the processing lease, attempt count, or old receipt. Repeated
+repair is a no-op. The resumed real worker must reclaim on attempt two and produce exactly one
+expected output before the second source is permanently purged. This phase arranges abandoned
+execution; the first phase retains the actual worker-child crash test. Normal lease policy is
+unchanged. The helper is not an operator command and is mounted read-only only into its probe.
+
 Paused services are resumed during failure cleanup. Cleanup removes the unique project and its
 volumes after both success and failure. Normal runtime activation remains pending. It never
 requests deletion of documents in the normal local archive.

@@ -43,6 +43,7 @@ COMPOSE_TEST_FILE = REPOSITORY_ROOT / "compose.test.yaml"
 FIXTURE_PDF = (
     REPOSITORY_ROOT / "fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf"
 )
+EXPIRED_EXECUTION_PROBE = BACKEND_ROOT / "scripts/queue_expired_execution_probe.py"
 POSTGRES_DATABASE = "investment_research"
 POSTGRES_USER = "investment_research"
 RECOVERY_LEASE_SECONDS = 10
@@ -538,8 +539,8 @@ def verify_queue_recovery() -> int:
     if find_docker_executable() is None:
         print("Docker is required for queue recovery verification.", file=sys.stderr)
         return 127
-    if not FIXTURE_PDF.is_file():
-        print("The frozen M0.0 PDF fixture is unavailable.", file=sys.stderr)
+    if not FIXTURE_PDF.is_file() or not EXPIRED_EXECUTION_PROBE.is_file():
+        print("The frozen fixture or expired-execution probe is unavailable.", file=sys.stderr)
         return 2
 
     run_id = uuid4().hex[:8]
@@ -726,6 +727,67 @@ def verify_queue_recovery() -> int:
             )
             wait_for_document_purge(engine, document_id)
             print("Queue purge completed canonical and original cleanup.", flush=True)
+            run_command(
+                "Pause worker before expired-execution fixture",
+                ["docker", "pause", worker_container_id],
+                environment=compose_environment,
+            )
+            worker_is_paused = True
+            run_command(
+                "Verify live-fence rejection and expired-execution repair",
+                [
+                    *compose_command,
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "--entrypoint",
+                    "/app/.venv/bin/python",
+                    "--volume",
+                    f"{FIXTURE_PDF}:/verification-fixture.pdf:ro",
+                    "--volume",
+                    f"{REPOSITORY_ROOT / 'config' / 'rag.toml'}:/config/rag.toml:ro",
+                    "--volume",
+                    f"{EXPIRED_EXECUTION_PROBE}:/verification-expired-execution.py:ro",
+                    "--env",
+                    "INVESTMENT_RESEARCH_API_HOST=0.0.0.0",
+                    "--env",
+                    "INVESTMENT_RESEARCH_QUEUE_RECOVERY_VERIFICATION=1",
+                    "worker",
+                    "/verification-expired-execution.py",
+                ],
+                environment=compose_environment,
+            )
+            run_command(
+                "Resume worker for repaired expired execution",
+                ["docker", "unpause", worker_container_id],
+                environment=compose_environment,
+            )
+            worker_is_paused = False
+            expired_run_id = find_processing_run_id(engine)
+            wait_for_processing_state(engine, expired_run_id, ProcessingState.LEXICAL_READY)
+            verify_single_recovered_output(engine, expired_run_id)
+            print("Expired-execution repair produced one canonical lexical output.", flush=True)
+            expired_document_id = find_document_id(engine, expired_run_id)
+            run_command(
+                "Purge the isolated expired-execution fixture",
+                [
+                    *compose_command,
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "--entrypoint",
+                    "/app/.venv/bin/python",
+                    "--volume",
+                    f"{REPOSITORY_ROOT / 'config' / 'rag.toml'}:/config/rag.toml:ro",
+                    "--env",
+                    "INVESTMENT_RESEARCH_API_HOST=0.0.0.0",
+                    "worker",
+                    "-c",
+                    PURGE_PROBE_CODE,
+                ],
+                environment=compose_environment,
+            )
+            wait_for_document_purge(engine, expired_document_id)
         except (QueueRecoveryVerificationError, subprocess.CalledProcessError) as error:
             if isinstance(error, QueueRecoveryVerificationError):
                 print(f"Queue recovery verification failed: {error}", file=sys.stderr)
