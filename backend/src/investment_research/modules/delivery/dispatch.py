@@ -1,4 +1,4 @@
-"""Opt-in adapter for immediate delivery of already committed capture intent."""
+"""API adapter for immediate delivery of already committed capture intent."""
 
 from dataclasses import dataclass
 

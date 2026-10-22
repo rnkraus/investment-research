@@ -407,6 +407,17 @@ The normal API dispatcher, settings, HTTP response, scheduler, and provider beha
 Existing unit/PostgreSQL CI discovery covers these checks; normal composition and complete live
 outage/runtime compatibility gates remain pending before Step 1 activation.
 
+**Normal API capture composition (2026-10-23):** `build_api_container` now installs
+`DispatchCapturedProcessingService` instead of the legacy direct publisher. It shares the HTTP
+container's trusted identity provider and qualifies delivery with the selected processing profile's
+attempt ceiling. Only runtime location and broker configuration reach the bounded publisher.
+PDF/text HTTP capture retains the existing `202`/`CAPTURED`, original-access, and status contracts,
+including expected broker outages and uncertain/invalid publication. Tests cover both M0-regression
+and M1 profiles, committed/unlocked capture before publication, unrelated due intent, safe failures,
+and unchanged processing attempts. Existing CI discovers these tests. No scheduler, environment,
+schema, provider, frontend, or purge-delivery change is included. Default periodic startup and the
+automatic HTTP-capture outage/recovery gate remain pending before Step 1 acceptance.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings

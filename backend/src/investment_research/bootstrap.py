@@ -101,7 +101,6 @@ from investment_research.infrastructure.parsing.client import HttpDocumentParser
 from investment_research.infrastructure.queue.celery import (
     CeleryBrokerReadinessProbe,
     CeleryDocumentPurgeDispatcher,
-    CeleryProcessingDispatcher,
     create_celery_app,
 )
 from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
@@ -119,6 +118,8 @@ from investment_research.infrastructure.search.pinecone import (
     create_pinecone_dense_index_writer,
     create_pinecone_dense_retriever,
 )
+from investment_research.modules.delivery.application import DrainOutboxService
+from investment_research.modules.delivery.dispatch import DispatchCapturedProcessingService
 from investment_research.modules.delivery.repair import (
     ExecuteOutboxRepairService,
     RepairOutboxService,
@@ -458,8 +459,23 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         else M1_PROCESSING_PROFILE
     )
     queue_application = create_celery_app(settings)
-    processing_dispatcher = CeleryProcessingDispatcher(queue_application)
     database = _build_database_resources(settings)
+    identity_context_provider = FixedLocalIdentityContextProvider()
+    processing_dispatcher = DispatchCapturedProcessingService(
+        delivery_service=DrainOutboxService(
+            unit_of_work_factory=create_outbox_delivery_unit_of_work_factory(
+                database.session_factory,
+                maximum_processing_attempts=processing_profile.maximum_attempts,
+            ),
+            publisher=BoundedCeleryOutboxPublisher(
+                QueueSettings(
+                    runtime_location=settings.runtime_location,
+                    redis_url=settings.redis_url,
+                )
+            ),
+        ),
+        identity_context_provider=identity_context_provider,
+    )
     object_storage = _build_object_storage(settings)
     operation_tracer = create_operation_tracer(
         service_name="investment-research-api",
@@ -899,7 +915,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     )
     return ApiContainer(
         settings=settings,
-        identity_context_provider=FixedLocalIdentityContextProvider(),
+        identity_context_provider=identity_context_provider,
         database_engine=database.engine,
         session_factory=database.session_factory,
         readiness_probe=CompositeReadinessProbe(tuple(readiness_probes)),

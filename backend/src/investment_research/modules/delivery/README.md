@@ -10,7 +10,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | `budget.py` | Shared twenty-slot/thirty-second budget for sequential preparation and publication phases |
 | `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
 | `application.py` | Scoped drain, readiness-before-claim, scan/time bounds, jitter, and safe outcomes |
-| `dispatch.py` | Explicit post-capture adapter resolving trusted scope and delivering only existing generation-zero intent |
+| `dispatch.py` | Normal API post-capture adapter resolving trusted scope and delivering only existing generation-zero intent |
 | `recovery.py` | Bounded snapshots and separately fenced preparation of unstarted/expired redelivery intent |
 | `repair.py` | Opt-in preparation/delivery coordinator with one shared budget and reserved publication capacity |
 | `persistence.py` | Module-owned `outbox_events` mapping, constraints, and due-work indexes |
@@ -109,19 +109,20 @@ or rejected receipt is not counted as acknowledged success. This is not a hard S
 new end-to-end latency guarantee. Unexpected programming/database/commit errors still propagate.
 
 `DispatchCapturedProcessingService` implements the existing `ProcessingDispatcher` boundary for
-explicit composition. It revalidates the job, resolves the server-owned identity, rejects a
+normal API capture. It revalidates the job, resolves the server-owned identity, rejects a
 workspace mismatch, and derives only that run's deterministic generation-zero event ID. It never
 creates intent, selects a recovery generation, resets attempts, falls back to direct Celery
 publication, or retries inside capture. Expected delivery failures use `ProcessingDispatchError`,
 which capture already handles after commit without compensating its canonical original. An empty
 claim is an idempotent no-op, not proof of delivery, processing completion, or source eligibility.
 
-The normal API composition still uses the previous dispatcher. This adapter is tested by explicit
-PDF/text capture composition in disposable PostgreSQL with a deterministic publisher, including
-retained originals, unchanged unrelated due intent, and no open transaction during publication.
-Unit/PostgreSQL CI discovery covers it; no schema, settings, HTTP response, provider, frontend,
-scheduler, or normal runtime activation is changed here. Normal wiring and full outage/runtime
-compatibility gates remain the next Step 1 block.
+The normal API composition now shares its trusted identity provider with this adapter and passes
+the selected processing profile's attempt ceiling to its delivery transactions. Both explicit
+service tests and HTTP PDF/text capture tests exercise disposable PostgreSQL with a deterministic
+publisher, including retained originals, unchanged unrelated due intent, and no open transaction
+during publication. Existing unit/PostgreSQL CI discovers these tests. No schema, settings, HTTP
+response, provider, or frontend contract changes. Periodic repair remains opt-in; default scheduler
+startup and full automatic HTTP-capture outage recovery remain pending before Step 1 acceptance.
 
 ## Implemented bounded publication boundary (2026-10-19)
 
