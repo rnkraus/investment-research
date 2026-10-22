@@ -6,6 +6,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | Location | Responsibility |
 | --- | --- |
 | `domain.py` | Strict versioned event, deterministic identity, fenced transitions, and retry ceilings |
+| `contracts.py` | Content-free versioned repair tick with no payload-selected workspace |
 | `budget.py` | Shared twenty-slot/thirty-second budget for sequential preparation and publication phases |
 | `ports.py` | Separate capture/delivery interfaces and short transaction factory; no broker operations |
 | `application.py` | Scoped drain, readiness-before-claim, scan/time bounds, jitter, and safe outcomes |
@@ -16,6 +17,7 @@ persists intent with PDF/text capture and preserves it safely through permanent 
 | `../../infrastructure/database/outbox_delivery.py` | Single-row due claims, canonical eligibility, and fenced receipts |
 | `../../infrastructure/database/outbox_unit_of_work.py` | Short claim/receipt transactions returning detached immutable values |
 | `../../infrastructure/database/unit_of_work.py` | One transaction for document/version/original metadata, processing run, and outbox intent |
+| `../../infrastructure/queue/repair_tasks.py` | Validation and registration of the explicitly invoked worker repair task |
 
 ## Implemented storage boundary
 
@@ -222,9 +224,27 @@ an exhausted blocked receipt, retaining all rows/counters. Readiness requires th
 Downgrade refuses to discard or mislabel such receipts. No HTTP status/UI, operator command,
 scheduler, normal runtime activation, paid call, or new attempt allowance is introduced.
 
-The existing post-commit Celery fast path is still active in the normal app. The drain and adapter
-are exercised explicitly in verification, but not wired into capture, worker bootstrap, an operator
-command, or a scheduler. Automatic dispatch, scheduler, and periodic repair remain pending.
+**Explicit worker repair task (2026-10-22):** The worker registers
+`investment_research.delivery.repair_outbox.v1` on the existing `document-processing` queue.
+Its `outbox-repair-tick.v1` payload contains only the required `schema_version`; extra scope,
+content, or policy fields are rejected without echoing input. `ExecuteOutboxRepairService`
+resolves the existing server-owned identity and invokes one `RepairOutboxService` pass. Worker
+composition binds the same processing-profile ceiling to recovery and delivery and gives the
+bounded publisher broker-only settings. Process-local resources remain lazily constructed after
+fork and closed with the existing worker container. Repair calls only the existing database/broker
+phases; it does not invoke parser, embedding, generation, index, or purge services.
+
+Registration does not send a tick or install a Beat schedule. Results are ignored by Celery,
+automatic task retries are disabled, and unexpected failures propagate. The existing cooperative
+twenty-slot/thirty-second bounds and short transactions remain unchanged; no new hard SQL/task
+cancellation policy is introduced. Duplicate explicitly delivered ticks can run separate bounded
+passes, while canonical target claims/ceilings remain authoritative. The queue verifier sends one
+explicit tick after its two fixture purges and observes that exact task's completion. That log
+observation proves adapter execution, not canonical business-work completion or automatic recovery.
+
+The existing post-commit Celery fast path is still active in the normal app. Bounded repair is now
+available through the explicitly delivered worker task, but no capture outbox dispatch, operator
+command, scheduler, or periodic sender is enabled. Automatic dispatch and periodic repair remain pending.
 Consequently `PENDING` means no outbox-owned publication receipt, not proof the legacy fast path
 never published or the worker never ran. The later dispatcher must recheck canonical readiness
 and lifecycle before claiming or publishing this intent. Duplicate delivery remains safe under the

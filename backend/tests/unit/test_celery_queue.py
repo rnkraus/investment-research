@@ -18,6 +18,7 @@ from investment_research.infrastructure.queue.celery import (
     PROCESS_DOCUMENT_TASK_NAME,
     PROCESSING_QUEUE_NAME,
     PURGE_DOCUMENT_TASK_NAME,
+    REPAIR_OUTBOX_TASK_NAME,
     CeleryBrokerReadinessProbe,
     CeleryProcessingDispatcher,
     create_celery_app,
@@ -76,6 +77,7 @@ def test_celery_app_is_json_only_broker_configuration() -> None:
     assert application.conf.task_routes == {
         PROCESS_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
         PURGE_DOCUMENT_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
+        REPAIR_OUTBOX_TASK_NAME: {"queue": PROCESSING_QUEUE_NAME},
     }
 
 

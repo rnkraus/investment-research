@@ -6,6 +6,7 @@ from celery.signals import worker_process_shutdown  # type: ignore[import-untype
 from investment_research.bootstrap import WorkerContainer, build_worker_container
 from investment_research.infrastructure.queue.celery import create_celery_app
 from investment_research.infrastructure.queue.deletion_tasks import register_document_purge_tasks
+from investment_research.infrastructure.queue.repair_tasks import register_outbox_repair_task
 from investment_research.infrastructure.queue.tasks import register_processing_tasks
 from investment_research.modules.documents.deletion_contracts import (
     DocumentDeletionReceipt,
@@ -32,6 +33,11 @@ class WorkerProcessingJobExecutor:
         """Share this child's resources without constructing clients before Celery forks."""
 
         return self._get_container().execute_document_purge_job_service.execute(job)
+
+    def execute_repair(self) -> None:
+        """Run one explicitly delivered repair tick with this child's trusted identity."""
+
+        self._get_container().execute_outbox_repair_service.execute_repair()
 
     def close(self) -> None:
         """Release this process's database and provider resources once."""
@@ -60,6 +66,7 @@ def create_worker_application(
     executor = WorkerProcessingJobExecutor(settings)
     register_processing_tasks(application, executor)
     register_document_purge_tasks(application, executor)
+    register_outbox_repair_task(application, executor)
     return application, executor
 
 

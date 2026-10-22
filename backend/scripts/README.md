@@ -272,7 +272,9 @@ flowchart LR
     PURGE --> VERIFY[Require completed receipt and absent canonical source rows]
     VERIFY --> EXPIRED[Second fixture: reject live lease then repair expired execution]
     EXPIRED --> OUTPUT[Real worker: require one output and purge second fixture]
-    OUTPUT --> CLEANUP[Remove project and volumes]
+    OUTPUT --> TICK[Send one explicit content-free repair tick]
+    TICK --> DONE[Observe exact worker-task completion; retain empty canonical archive]
+    DONE --> CLEANUP[Remove project and volumes]
 ```
 
 Run the live Redis-outage, outbox-loss, worker-loss, and deletion gate from `backend/` with Docker
@@ -325,6 +327,14 @@ repair is a no-op. The resumed real worker must reclaim on attempt two and produ
 expected output before the second source is permanently purged. This phase arranges abandoned
 execution; the first phase retains the actual worker-child crash test. Normal lease policy is
 unchanged. The helper is not an operator command and is mounted read-only only into its probe.
+
+After both purges, the verifier explicitly publishes one `outbox-repair-tick.v1` through Redis.
+It requires successful completion of that exact registered worker task ID and checks that the
+canonical source rows remain absent. Captured worker logs are inspected without printing them;
+unrelated task successes do not qualify. This is an adapter execution check on an empty synthetic
+archive, not proof of scheduled recovery, processing completion, or paid-provider behavior. No
+Beat schedule or recurring sender is enabled. Existing application/database and real-broker tests
+continue to own the actual due-work, receipt, scope, and exhaustion assertions.
 
 Paused services are resumed during failure cleanup. Cleanup removes the unique project and its
 volumes after both success and failure. Normal runtime activation remains pending. It never

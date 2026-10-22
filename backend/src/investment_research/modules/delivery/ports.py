@@ -43,6 +43,11 @@ class OutboxPublisher(Protocol):
         """Publish once without hidden retries, or raise a safe application-owned error."""
 
 
+class OutboxRepairJobExecutor(Protocol):
+    def execute_repair(self) -> None:
+        """Resolve the trusted worker context and run one bounded pass, never a payload scope."""
+
+
 class OutboxRepository(Protocol):
     def add_processing_event(self, context: WorkspaceContext, event: OutboxEvent) -> OutboxEvent:
         """Stage one initial intent idempotently; never commit or publish it here."""

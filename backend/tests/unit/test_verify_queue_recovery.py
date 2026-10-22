@@ -1,6 +1,7 @@
 """Unit tests for live queue-recovery verification orchestration."""
 
 import subprocess
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from unittest.mock import Mock
@@ -9,6 +10,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy import Engine
 
+from investment_research.infrastructure.queue.celery import REPAIR_OUTBOX_TASK_NAME
 from investment_research.modules.processing.domain import ProcessingState
 from scripts import verify_queue_recovery
 
@@ -120,6 +122,11 @@ def prepare_deterministic_runtime(
     monkeypatch.setattr(
         verify_queue_recovery, "wait_for_document_purge", lambda *_: events.append("verify-purge")
     )
+    monkeypatch.setattr(
+        verify_queue_recovery,
+        "wait_for_repair_tick",
+        lambda *_, **__: events.append("verify-repair-tick"),
+    )
     return engine, states, events
 
 
@@ -170,6 +177,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Verify live-fence rejection and expired-execution repair",
         "Resume worker for repaired expired execution",
         "Purge the isolated expired-execution fixture",
+        "Publish one explicit repair tick after synthetic cleanup",
         "Remove isolated queue-recovery project and its volumes",
     ]
     assert states == [
@@ -182,6 +190,8 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "verify-output",
         "verify-purge",
         "verify-output",
+        "verify-purge",
+        "verify-repair-tick",
         "verify-purge",
     ]
     commands = {label: command for label, command, _ in calls}
@@ -246,6 +256,7 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
         ("Verify live-fence rejection and expired-execution repair", True, False),
         ("Resume worker for repaired expired execution", True, False),
         ("Purge the isolated expired-execution fixture", False, False),
+        ("Publish one explicit repair tick after synthetic cleanup", False, False),
     ],
 )
 def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
@@ -282,3 +293,43 @@ def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
     expected_cleanup.append("Remove isolated queue-recovery project and its volumes")
     assert labels[-len(expected_cleanup) :] == expected_cleanup
     engine.dispose.assert_called_once_with()
+
+
+def test_explicit_repair_probe_is_content_free_and_does_not_enable_a_schedule() -> None:
+    code = verify_queue_recovery.REPAIR_TICK_PROBE_CODE
+    compile(code, "synthetic-repair-tick-probe", "exec")
+    assert "OutboxRepairTickV1.create().model_dump" in code
+    assert "retry=False" in code
+    assert "beat_schedule" not in code and "workspace_id" not in code
+
+
+def test_repair_tick_completion_requires_the_exact_task_name_and_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = f"{REPAIR_OUTBOX_TASK_NAME}[expected-id] succeeded"
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout=marker, stderr=""))
+    monkeypatch.setattr(subprocess, "run", run)
+    verify_queue_recovery.wait_for_repair_tick(["docker", "compose"], "expected-id", environment={})
+    assert run.call_args.kwargs["capture_output"] is True
+    assert run.call_args.kwargs["timeout"] == 5
+
+
+def test_unrelated_task_completion_cannot_confirm_the_repair_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = Mock(side_effect=[0.0, 0.0, verify_queue_recovery.STATE_TIMEOUT_SECONDS])
+    monkeypatch.setattr(time, "monotonic", clock)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        Mock(
+            return_value=subprocess.CompletedProcess([], 0, stdout="other[id] succeeded", stderr="")
+        ),
+    )
+    with pytest.raises(
+        verify_queue_recovery.QueueRecoveryVerificationError, match="before timeout"
+    ):
+        verify_queue_recovery.wait_for_repair_tick(
+            ["docker", "compose"], "expected-id", environment={}
+        )

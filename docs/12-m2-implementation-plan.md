@@ -655,6 +655,27 @@ restarted Docker, both verifiers passed sequential reruns. No containers/network
 from the failed attempts, and successful test projects were fully removed. No normal archive,
 paid provider, frontend/browser, hosted CI, or complete M0/M1 runtime journey was exercised.
 
+**Explicit worker repair-adapter block (2026-10-22):** A strict, content-free
+`outbox-repair-tick.v1` signal now invokes the existing bounded coordinator through the registered
+`investment_research.delivery.repair_outbox.v1` task. The payload cannot supply workspace authority,
+document content, or policy overrides. Worker composition resolves its server-owned local identity,
+binds the processing profile's attempt ceiling consistently, and reuses child-owned resources with
+a broker-only publisher. Registration neither sends a tick nor adds a schedule. Task retries are
+disabled and results ignored; canonical claims and ceilings govern duplicate delivered ticks.
+The queue verifier explicitly sends one tick after purging its synthetic sources, observes success
+for that exact task ID without printing worker logs, and rechecks canonical absence. This proves
+adapter execution, not scheduled recovery or business-work completion. Existing CI already runs
+this verifier. No dependencies, migrations, HTTP/UI changes, paid calls, operator command, scheduler,
+or normal capture outbox activation are added. Step 1 remains incomplete pending those runtime
+wiring and complete activation gates.
+Verification: 68 focused task, lifecycle, queue, and verifier unit tests passed.
+`scripts.verify_backend` passed formatting, linting, typing, and 2,438 unit tests.
+`scripts.verify_queue_recovery` passed the existing real broker-outage, publication-loss,
+worker-crash, expired-execution, single-output, and two-source purge checks, plus the new explicit
+repair-task probe. Its containers, networks, and volumes were removed successfully. No normal
+archive, paid provider, frontend/browser, hosted CI, separate PostgreSQL integration suite, or
+complete M0/M1 runtime journey was exercised in this block.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

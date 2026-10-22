@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import URL, Engine, create_engine, func, select, update
 from sqlalchemy.orm import Session
 
+from investment_research.infrastructure.queue.celery import REPAIR_OUTBOX_TASK_NAME
 from investment_research.modules.documents.deletion_contracts import DocumentDeletionState
 from investment_research.modules.documents.persistence import (
     DocumentDeletionRow,
@@ -290,6 +291,26 @@ finally:
     container.close()
 """
 
+REPAIR_TICK_PROBE_CODE = """\
+import sys
+
+from investment_research.infrastructure.queue.celery import (
+    PROCESSING_QUEUE_NAME, REPAIR_OUTBOX_TASK_NAME,
+)
+from investment_research.modules.delivery.contracts import OutboxRepairTickV1
+from investment_research.worker import app
+
+try:
+    app.send_task(
+        REPAIR_OUTBOX_TASK_NAME,
+        kwargs={"payload": OutboxRepairTickV1.create().model_dump(mode="json")},
+        task_id=sys.argv[1], queue=PROCESSING_QUEUE_NAME,
+        serializer="json", ignore_result=True, retry=False,
+    )
+finally:
+    app.close()
+"""
+
 
 class QueueRecoveryVerificationError(RuntimeError):
     """Report a failed recovery invariant without exposing credentials."""
@@ -531,6 +552,29 @@ def wait_for_document_purge(engine: Engine, document_id: UUID) -> None:
                 return
         time.sleep(POLL_INTERVAL_SECONDS)
     raise QueueRecoveryVerificationError("document purge did not complete before timeout")
+
+
+def wait_for_repair_tick(
+    compose_command: Sequence[str], task_id: str, *, environment: Mapping[str, str]
+) -> None:
+    """Observe this explicit test tick only; logs are not canonical business-job state."""
+
+    deadline = time.monotonic() + STATE_TIMEOUT_SECONDS
+    marker = f"{REPAIR_OUTBOX_TASK_NAME}[{task_id}] succeeded"
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            [*compose_command, "logs", "--no-color", "--tail", "100", "worker"],
+            cwd=REPOSITORY_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        if marker in result.stdout + result.stderr:
+            return
+        time.sleep(POLL_INTERVAL_SECONDS)
+    raise QueueRecoveryVerificationError("explicit repair tick did not complete before timeout")
 
 
 def verify_queue_recovery() -> int:
@@ -788,6 +832,25 @@ def verify_queue_recovery() -> int:
                 environment=compose_environment,
             )
             wait_for_document_purge(engine, expired_document_id)
+            repair_task_id = f"outbox-repair-probe:{run_id}"
+            run_command(
+                "Publish one explicit repair tick after synthetic cleanup",
+                [
+                    "docker",
+                    "exec",
+                    worker_container_id,
+                    "/app/.venv/bin/python",
+                    "-c",
+                    REPAIR_TICK_PROBE_CODE,
+                    repair_task_id,
+                ],
+                environment=compose_environment,
+            )
+            wait_for_repair_tick(compose_command, repair_task_id, environment=compose_environment)
+            wait_for_document_purge(engine, expired_document_id)
+            print(
+                "The registered worker executed one explicit content-free repair tick.", flush=True
+            )
         except (QueueRecoveryVerificationError, subprocess.CalledProcessError) as error:
             if isinstance(error, QueueRecoveryVerificationError):
                 print(f"Queue recovery verification failed: {error}", file=sys.stderr)
