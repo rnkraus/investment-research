@@ -1,6 +1,6 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted; Step 1 bounded API capture dispatch; default scheduler activation pending
+**Status:** Step 0 accepted; Step 1 automatic HTTP recovery implemented; verification/CI review pending
 
 **Date:** 2026-10-01
 
@@ -823,6 +823,48 @@ the full M1 browser gate or M2 Step 1. Default periodic startup and automatic re
 HTTP-captured document across a real Redis outage remain the next activation block.
 All disposable projects, their volumes/networks, and acceptance images were removed successfully;
 `scripts.verify_runtime_cleanup` confirmed that no isolated runtime verification resources remain.
+
+**Default scheduler/HTTP recovery block (2026-10-23):** The single broker-only scheduler and
+internal repair network moved into `compose.yaml`; API startup includes it. Its existing image,
+dedicated entry point, disabled worker health check, broker-only secret, non-root/read-only/capability
+controls, private 16 MiB tmpfs, and 256 MiB/0.5 CPU/64-PID limits are unchanged. The former
+`compose.m2-repair.yaml` remains a no-op compatibility overlay. Worker-only tooling must explicitly
+start the scheduler when periodic repair is needed. No live/normal archive was started or changed.
+
+`scripts.verify_queue_recovery` retains its M0 publication-loss, worker-loss, expired-fence, purge,
+explicit-tick, and manual-repair checks. Only after those sources are purged does it start API and
+worker with the existing credential-free M1 acceptance override and deterministic test index.
+It first rechecks scheduler confinement, two autonomous publications, and real Redis outage/recovery.
+The new `queue_http_recovery_probe.py` then stops Redis, uploads PDF/text through the random loopback
+API port, and requires `202`/`CAPTURED`, byte-exact originals, live/not-ready health, and pending
+generation-zero intent with zero publication/execution attempts throughout the outage. After Redis
+returns, only ordinary scheduler/worker activity may resume processing: both sources reach
+`SEARCHABLE` with one publication, one execution attempt, and one chunk set. Another scheduled tick
+must preserve all output IDs; API/worker/scheduler IDs and restart counts remain unchanged.
+The HTTP phase performs no manual publication, database mutation, timestamp/counter repair,
+policy/clock change, or application restart. This is one canonical effect under at-least-once
+delivery, not exactly-once message delivery. Cleanup includes the added test-index volume.
+
+An initial live run correctly exposed that the inherited M0-regression parser accepts only PDF;
+the new PDF/text phase now uses the already-existing M1 acceptance profile before its outage.
+No application parser/validation rule, production limit, dependency, schema, credential, RAG policy,
+or provider budget was weakened or changed. The same required CI command automatically includes
+the additional gate; its step label now names HTTP recovery. Step 1 remains pending complete
+compatibility/hosted CI/browser confirmation and owner review, not accepted by implementation alone.
+
+Local verification: `scripts.verify_backend` passed formatting, linting, typing across 376 source
+files, and 2,572 unit tests. `scripts.verify_queue_recovery` passed its real publication-loss,
+worker-loss, purge, scheduler-confinement/cadence, and automatic HTTP PDF/text outage gate. The
+separate `scripts.verify_parser_isolation`, `scripts.verify_m0_runtime`, and
+`scripts.verify_m1_runtime --skip-browser` gates passed with the default scheduler topology.
+Frontend formatting, linting, typing, API-contract checks, and 95 tests passed. A host `pnpm build`
+was attempted twice, including with elevated execution permissions, but Turbopack could not bind
+its internal helper port (`Operation not permitted`); the owner/hosted CI must still confirm that
+build. No frontend application code or build configuration was changed to bypass this restriction.
+The isolated projects and their volumes/networks/indexes were removed, and
+`scripts.verify_runtime_cleanup` found no retained runtime-verification resources. The full
+PostgreSQL integration suite, dependency audits, hosted CI, browser acceptance, paid providers,
+and normal archive were not exercised in this block. No next implementation step was started.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 

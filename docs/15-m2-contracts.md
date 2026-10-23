@@ -418,6 +418,26 @@ and unchanged processing attempts. Existing CI discovers these tests. No schedul
 schema, provider, frontend, or purge-delivery change is included. Default periodic startup and the
 automatic HTTP-capture outage/recovery gate remain pending before Step 1 acceptance.
 
+**Default scheduler and HTTP recovery (2026-10-23):** `compose.yaml` now owns the single
+broker-only scheduler and its internal `repair` network. The API depends on scheduler startup;
+full Compose startup includes it, while worker-only tools opt in explicitly by naming it.
+The former `compose.m2-repair.yaml` is a no-op compatibility overlay. All existing secret, network,
+non-root, read-only, capability, private tmpfs, and resource limits remain enforced. There is no
+new scheduler credential, provider key, timing policy, schema, or paid-provider test.
+
+The isolated queue gate retains its controlled M0 loss/recovery/purge cases, then starts API and
+worker with the existing credential-free M1 acceptance override and test index. It checks actual
+scheduler isolation, autonomous cadence, and recovery after a real Redis outage. A further outage
+accepts PDF/text over HTTP, preserves exact originals and untouched generation-zero pending intent,
+then requires automatic `SEARCHABLE` completion after Redis returns. No manual publication, state
+mutation, policy/clock change, or application-process restart is allowed in this HTTP phase.
+One event/publication attempt, one processing attempt, one chunk set per source, and unchanged
+output IDs after another periodic tick prove one canonical effect, not exactly-once delivery.
+The original M0-only parser cannot accept text; switching both processes to the M1 acceptance
+profile is test setup before the outage, not an outage-recovery restart or a weakened parser check.
+Cleanup includes the acceptance-index volume. Hosted CI/full browser confirmation and owner
+review still belong to Step 1 acceptance; no later M2 step is activated by this local evidence.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings
