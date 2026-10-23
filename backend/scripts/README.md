@@ -276,11 +276,15 @@ flowchart LR
     TICK --> DONE[Observe exact worker-task completion; retain empty canonical archive]
     DONE --> BEAT[One due Beat step through bounded sender; no immediate repeat]
     BEAT --> MANUAL[Run one manual repair pass; retain canonical absence]
-    MANUAL --> PERIODIC[Start isolated opt-in scheduler and check confinement]
+    MANUAL --> PERIODIC[Start M1 API and worker with default scheduler; check confinement]
     PERIODIC --> TWICE[Require two autonomous publications]
     TWICE --> OUTAGE[Stop Redis and require safe failure]
     OUTAGE --> RECOVER[Restart Redis; require new publication without scheduler restart]
-    RECOVER --> CLEANUP[Recheck canonical absence; remove project and volumes]
+    RECOVER --> HTTP[Stop Redis; upload PDF and text through normal API]
+    HTTP --> PENDING[Require preserved originals and untouched pending intent]
+    PENDING --> AUTO[Restart Redis; scheduler alone resumes processing]
+    AUTO --> STABLE[Require SEARCHABLE and unchanged output after another tick]
+    STABLE --> CLEANUP[Remove project, volumes, and test index]
 ```
 
 Run the live Redis-outage, outbox-loss, worker-loss, and deletion gate from `backend/` with Docker
@@ -357,7 +361,9 @@ It is an empty-archive command smoke check, not a new due-work recovery or paid-
 The operator command's usage and exit semantics are in the
 [delivery guide](../src/investment_research/modules/delivery/README.md#explicit-local-operator-command-2026-10-22).
 
-Finally, `compose.m2-repair.yaml` starts one separate scheduler in the same disposable project.
+After the controlled M0 fixtures are purged, the existing `compose.m1-acceptance.yaml` switches the
+API and worker to the credential-free M1 PDF/text profile and deterministic test index. Starting
+the API starts the default single scheduler from `compose.yaml`, without the former repair overlay.
 `repair_scheduler_probe.py` checks actual non-root/read-only/capability/resource/tmpfs controls,
 the sole read-only Redis secret mount, its environment allowlist, and the dedicated internal
 network. Active checks permit Redis and deny source writes, database-IP/parser/storage/external
@@ -365,12 +371,21 @@ connections and extra secrets. Two independently scheduled publications must occ
 Redis stop produces a safe unavailable event. Redis is restarted in the probe's `finally` block;
 a fresh publication must follow without replacing/restarting the scheduler. Both purged sources
 must remain absent. Each event wait is bounded to ninety seconds, captured log reads to five
-seconds, and the existing thirty-second cadence is not shortened. This exercises periodic control
-on an empty synthetic archive, not normal HTTP capture or paid-provider processing. The normal
-Compose and M1 live commands do not include the opt-in override.
+seconds, and the existing thirty-second cadence is not shortened.
+
+`queue_http_recovery_probe.py` then stops only this project's Redis and uploads the frozen PDF and
+synthetic text over its random loopback API port. It requires `202`/`CAPTURED`, byte-exact original
+access, correct live/not-ready reporting, and unchanged pending generation-zero intent with zero
+attempts. After a failed periodic tick, it restarts Redis in `finally` and waits up to ninety
+seconds for both runs to become `SEARCHABLE`. Only the regular scheduler/worker may deliver them;
+there is no manual publication, database update, policy/clock change, or process restart.
+Both runs require one published event, one processing attempt, one chunk set, and the expected
+chunk counts. After another real scheduled tick, output IDs and process IDs/restart counts must
+remain unchanged. This checks one canonical effect, not exactly-once message delivery. Expected
+transport/contract errors are static, without raw HTTP/database details. No paid provider is used.
 
 Paused services are resumed during failure cleanup. Cleanup removes the unique project and its
-volumes after both success and failure. Normal runtime activation remains pending. It never
+volumes, including the acceptance index, after both success and failure. It never
 requests deletion of documents in the normal local archive.
 
 ## Complete M0 runtime verification

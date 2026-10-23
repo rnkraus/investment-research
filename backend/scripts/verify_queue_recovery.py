@@ -36,13 +36,17 @@ from scripts.docker_secrets import (
     COMPOSE_SECRET_FILES,
     disposable_compose_secret_environment,
 )
+from scripts.queue_http_recovery_probe import (
+    HttpRecoveryVerificationError,
+    verify_http_capture_recovery,
+)
 from scripts.repair_scheduler_probe import SchedulerVerificationError, verify_periodic_scheduler
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "compose.yaml"
 COMPOSE_TEST_FILE = REPOSITORY_ROOT / "compose.test.yaml"
-COMPOSE_REPAIR_FILE = REPOSITORY_ROOT / "compose.m2-repair.yaml"
+COMPOSE_M1_FILE = REPOSITORY_ROOT / "compose.m1-acceptance.yaml"
 FIXTURE_PDF = (
     REPOSITORY_ROOT / "fixtures/m0_0/documents/northstar-grid-analytics-fy2025-earnings-brief.pdf"
 )
@@ -616,13 +620,16 @@ def verify_queue_recovery() -> int:
     if find_docker_executable() is None:
         print("Docker is required for queue recovery verification.", file=sys.stderr)
         return 127
-    if not FIXTURE_PDF.is_file() or not EXPIRED_EXECUTION_PROBE.is_file():
-        print("The frozen fixture or expired-execution probe is unavailable.", file=sys.stderr)
+    if not all(path.is_file() for path in (FIXTURE_PDF, EXPIRED_EXECUTION_PROBE, COMPOSE_M1_FILE)):
+        print(
+            "A required fixture, probe, or M1 acceptance override is unavailable.", file=sys.stderr
+        )
         return 2
 
     run_id = uuid4().hex[:8]
     project_name = f"investment-research-queue-check-{run_id}"
     postgres_port = find_available_loopback_port()
+    api_port = find_available_loopback_port()
     secret_values = {name: generate_disposable_credential() for name in COMPOSE_SECRET_FILES}
     postgres_password = secret_values["POSTGRES_PASSWORD"]
     compose_command = [
@@ -634,8 +641,6 @@ def verify_queue_recovery() -> int:
         str(COMPOSE_FILE),
         "--file",
         str(COMPOSE_TEST_FILE),
-        "--file",
-        str(COMPOSE_REPAIR_FILE),
     ]
     python_command = [sys.executable, "-m"]
     parser_container_id: str | None = None
@@ -653,6 +658,7 @@ def verify_queue_recovery() -> int:
                 "POSTGRES_DB": POSTGRES_DATABASE,
                 "POSTGRES_USER": POSTGRES_USER,
                 "POSTGRES_PORT": str(postgres_port),
+                "INVESTMENT_RESEARCH_API_PORT": str(api_port),
                 "INVESTMENT_RESEARCH_S3_BUCKET": f"queue-recovery-{run_id}",
                 "INVESTMENT_RESEARCH_S3_REGION_NAME": "us-east-1",
             }
@@ -912,22 +918,41 @@ def verify_queue_recovery() -> int:
             )
             wait_for_document_purge(engine, document_id)
             wait_for_document_purge(engine, expired_document_id)
+            # The inherited M0 parser deliberately accepts PDF only. Switch both processes
+            # to the existing credential-free M1 PDF/text profile after its fixtures are purged.
+            http_compose_command = [*compose_command, "--file", str(COMPOSE_M1_FILE)]
             run_command(
-                "Start opt-in isolated repair scheduler",
-                [*compose_command, "up", "--build", "--detach", "--wait", "scheduler"],
+                "Start isolated M1 API and worker with default repair scheduler",
+                [*http_compose_command, "up", "--build", "--detach", "--wait", "api", "worker"],
                 environment=compose_environment,
             )
             verify_periodic_scheduler(
-                compose_command, project_name=project_name, environment=compose_environment
+                http_compose_command, project_name=project_name, environment=compose_environment
             )
             wait_for_document_purge(engine, document_id)
             wait_for_document_purge(engine, expired_document_id)
+            verify_http_capture_recovery(
+                http_compose_command,
+                project_name=project_name,
+                environment=compose_environment,
+                engine=engine,
+                api_port=api_port,
+                fixture_pdf=FIXTURE_PDF,
+            )
         except (
             QueueRecoveryVerificationError,
             SchedulerVerificationError,
+            HttpRecoveryVerificationError,
             subprocess.CalledProcessError,
         ) as error:
-            if isinstance(error, (QueueRecoveryVerificationError, SchedulerVerificationError)):
+            if isinstance(
+                error,
+                (
+                    QueueRecoveryVerificationError,
+                    SchedulerVerificationError,
+                    HttpRecoveryVerificationError,
+                ),
+            ):
                 print(f"Queue recovery verification failed: {error}", file=sys.stderr)
                 exit_code = 1
             else:
@@ -961,7 +986,14 @@ def verify_queue_recovery() -> int:
                 engine.dispose()
             cleanup = run_command(
                 "Remove isolated queue-recovery project and its volumes",
-                [*compose_command, "down", "--volumes", "--remove-orphans"],
+                [
+                    *compose_command,
+                    "--file",
+                    str(COMPOSE_M1_FILE),
+                    "down",
+                    "--volumes",
+                    "--remove-orphans",
+                ],
                 environment=compose_environment,
                 check=False,
             )

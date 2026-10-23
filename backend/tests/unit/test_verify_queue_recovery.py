@@ -13,6 +13,7 @@ from sqlalchemy import Engine
 from investment_research.infrastructure.queue.celery import REPAIR_OUTBOX_TASK_NAME
 from investment_research.modules.processing.domain import ProcessingState
 from scripts import verify_queue_recovery
+from scripts.queue_http_recovery_probe import HttpRecoveryVerificationError
 from scripts.repair_scheduler_probe import SchedulerVerificationError
 
 RUN_UUID = UUID("12345678-1234-4000-8000-123456789abc")
@@ -133,6 +134,11 @@ def prepare_deterministic_runtime(
         "verify_periodic_scheduler",
         lambda *_, **__: events.append("verify-periodic-scheduler"),
     )
+    monkeypatch.setattr(
+        verify_queue_recovery,
+        "verify_http_capture_recovery",
+        lambda *_, **__: events.append("verify-http-recovery"),
+    )
     return engine, states, events
 
 
@@ -186,7 +192,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "Publish one explicit repair tick after synthetic cleanup",
         "Verify one due scheduler step through the bounded broker sender",
         "Run one manual repair pass after synthetic cleanup",
-        "Start opt-in isolated repair scheduler",
+        "Start isolated M1 API and worker with default repair scheduler",
         "Remove isolated queue-recovery project and its volumes",
     ]
     assert states == [
@@ -207,6 +213,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         "verify-periodic-scheduler",
         "verify-purge",
         "verify-purge",
+        "verify-http-recovery",
     ]
     commands = {label: command for label, command, _ in calls}
     assert commands["Stop isolated Redis before fixture capture"][-2:] == ("stop", "redis")
@@ -234,9 +241,15 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     )
     assert all(TEST_CREDENTIAL not in argument for _, command, _ in calls for argument in command)
     assert calls[-1][1][-3:] == ("down", "--volumes", "--remove-orphans")
+    assert str(verify_queue_recovery.COMPOSE_M1_FILE) in calls[-1][1]
     assert str(verify_queue_recovery.COMPOSE_FILE) in calls[0][1]
     assert str(verify_queue_recovery.COMPOSE_TEST_FILE) in calls[0][1]
-    assert str(verify_queue_recovery.COMPOSE_REPAIR_FILE) in calls[0][1]
+    assert all("compose.m2-repair.yaml" not in argument for argument in calls[0][1])
+    http_label = "Start isolated M1 API and worker with default repair scheduler"
+    assert commands[http_label][-2:] == ("api", "worker")
+    assert str(verify_queue_recovery.COMPOSE_M1_FILE) in commands[http_label]
+    assert str(verify_queue_recovery.COMPOSE_M1_FILE) not in calls[0][1]
+    assert calls[0][2]["INVESTMENT_RESEARCH_API_PORT"] == "55432"
     rag_mount = (
         f"{verify_queue_recovery.REPOSITORY_ROOT / 'config' / 'rag.toml'}:/config/rag.toml:ro"
     )
@@ -282,7 +295,7 @@ def test_purge_probe_commits_explicit_intent_before_id_only_publication() -> Non
         ("Publish one explicit repair tick after synthetic cleanup", False, False),
         ("Verify one due scheduler step through the bounded broker sender", False, False),
         ("Run one manual repair pass after synthetic cleanup", False, False),
-        ("Start opt-in isolated repair scheduler", False, False),
+        ("Start isolated M1 API and worker with default repair scheduler", False, False),
     ],
 )
 def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
@@ -321,16 +334,25 @@ def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
     engine.dispose.assert_called_once_with()
 
 
-def test_periodic_scheduler_failure_is_reported_and_project_is_removed(
+@pytest.mark.parametrize(
+    ("function", "error_type"),
+    [
+        ("verify_periodic_scheduler", SchedulerVerificationError),
+        ("verify_http_capture_recovery", HttpRecoveryVerificationError),
+    ],
+)
+def test_scheduler_or_http_recovery_failure_is_reported_and_project_is_removed(
     monkeypatch: pytest.MonkeyPatch,
+    function: str,
+    error_type: type[Exception],
 ) -> None:
     engine, _, _ = prepare_deterministic_runtime(monkeypatch)
     command = Mock(return_value=subprocess.CompletedProcess([], 0))
     monkeypatch.setattr(verify_queue_recovery, "run_command", command)
     monkeypatch.setattr(
         verify_queue_recovery,
-        "verify_periodic_scheduler",
-        Mock(side_effect=SchedulerVerificationError("synthetic periodic failure")),
+        function,
+        Mock(side_effect=error_type("synthetic verification failure")),
     )
     assert verify_queue_recovery.verify_queue_recovery() == 1
     assert command.call_args.args[0] == "Remove isolated queue-recovery project and its volumes"

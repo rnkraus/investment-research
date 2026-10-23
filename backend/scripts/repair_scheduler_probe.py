@@ -1,4 +1,4 @@
-"""Inspect and exercise the opt-in scheduler only inside the isolated queue verifier."""
+"""Inspect and exercise the broker-only scheduler inside the isolated queue verifier."""
 
 import json
 import subprocess
