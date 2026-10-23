@@ -68,7 +68,7 @@ def test_http_capture_retains_original_and_records_only_its_own_publication(
         publisher.is_ready.return_value = outcome != "unavailable"
 
         def publish(job: ProcessingJobV1, *, timeout_seconds: float) -> None:
-            assert 0 < timeout_seconds <= 2
+            assert 0 < timeout_seconds <= 5
             assert job.workspace_id == context.workspace_id
             assert job.processing_run_id != previous.processing_run_id
             # A separate connection must be able to lock capture/claim immediately.
@@ -122,7 +122,7 @@ def test_http_capture_retains_original_and_records_only_its_own_publication(
         )
         assert "synthetic-private-broker-detail" not in response.text + caplog.text
 
-    publisher.is_ready.assert_called_once_with(timeout_seconds=2)
+    publisher.is_ready.assert_called_once_with(timeout_seconds=5)
     assert publisher.publish.call_count == (0 if outcome == "unavailable" else 1)
     with sessions() as session:
         events = session.scalars(

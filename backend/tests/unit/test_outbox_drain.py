@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from unittest.mock import Mock
 from uuid import uuid4
@@ -62,12 +62,12 @@ class Harness:
 
     def ready(self, *, timeout_seconds: float) -> bool:
         assert self.active_transactions == 0
-        assert 0 < timeout_seconds <= 2
+        assert 0 < timeout_seconds <= 5
         return True
 
     def publish(self, job: object, *, timeout_seconds: float) -> None:
         assert self.active_transactions == 0
-        assert 0 < timeout_seconds <= 2
+        assert 0 < timeout_seconds <= 5
 
 
 def test_publication_is_outside_transactions_and_receipt_is_separate() -> None:
@@ -184,6 +184,14 @@ def test_remaining_sweep_time_caps_the_last_publication() -> None:
     result = harness.service.drain(harness.context)
     assert result.published == 1
     assert harness.publisher.publish.call_args.kwargs["timeout_seconds"] == 0.5
+
+
+def test_remaining_lease_still_caps_publication_below_five_seconds() -> None:
+    harness = Harness()
+    harness.service = replace(harness.service, clock=lambda: NOW + timedelta(seconds=28.5))
+    result = harness.service.drain(harness.context)
+    assert result.published == 1
+    assert harness.publisher.publish.call_args.kwargs["timeout_seconds"] == 1.5
 
 
 def test_expired_claim_after_commit_never_reaches_the_broker() -> None:

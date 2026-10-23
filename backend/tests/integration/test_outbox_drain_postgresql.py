@@ -42,7 +42,7 @@ def test_drain_commits_before_publish_and_retains_uncertain_delivery_for_retry(
 
     def publish(job: ProcessingJobV1, *, timeout_seconds: float) -> None:
         assert job.processing_run_id == capture.processing_run_id
-        assert 0 < timeout_seconds <= 2
+        assert 0 < timeout_seconds <= 5
         # A different transaction can lock the claimed event immediately: the claim
         # committed and released its connection before entering this broker callback.
         with sessions.begin() as session:

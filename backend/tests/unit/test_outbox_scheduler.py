@@ -100,7 +100,7 @@ def test_real_beat_tick_uses_only_bounded_publisher_and_does_not_resend_immediat
     entry.last_run_at -= timedelta(seconds=31)
     beat._heap = None
     assert beat.tick() == 0
-    publisher.publish_repair_tick.assert_called_once_with(timeout_seconds=2)
+    publisher.publish_repair_tick.assert_called_once_with(timeout_seconds=5)
     broker_settings = factory.call_args.args[0]
     assert broker_settings.database_url is None
     assert broker_settings.require_redis_url() == settings().require_redis_url()
