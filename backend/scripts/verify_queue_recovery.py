@@ -200,7 +200,13 @@ try:
 
         repair = RepairOutboxService(factory, publisher, maximum_attempts)
         retried = repair.repair(context)
-        assert retried.delivery.claimed == retried.delivery.published == 1
+        assert retried.delivery.claimed == retried.delivery.published == 1, (
+            "Outbox retry recovery failed: "
+            f"scanned={retried.delivery.scanned}, claimed={retried.delivery.claimed}, "
+            f"published={retried.delivery.published}, "
+            f"rejected_receipts={retried.delivery.rejected_receipts}, "
+            f"stop_reason={retried.delivery.stop_reason.value}"
+        )
         run, events = snapshot()
         assert run == initial_run and len(events) == 1
         assert events[0].state is OutboxState.PUBLISHED and events[0].attempt_count == 2
