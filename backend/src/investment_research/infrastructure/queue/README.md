@@ -27,10 +27,13 @@ claim is a no-op, not proof of delivery. The legacy `CeleryProcessingDispatcher`
 for explicit compatibility use but is no longer the normal API capture adapter. Current purge
 delivery remains unchanged. See the [delivery guide](../../modules/delivery/README.md).
 
-The worker repair task and manual command reuse canonical bounded repair. Its separate periodic
-scheduler is still opt-in through `compose.m2-repair.yaml`; default scheduler startup and automatic
-HTTP-capture outage recovery remain Step 1 activation gates. Publication receipts alone never prove
-processing completion or durable retention in Redis.
+The worker repair task and manual command reuse canonical bounded repair. Its single periodic
+scheduler is part of `compose.yaml` and an API startup dependency. It retains broker-only secrets,
+the dedicated internal network, and the existing thirty-second cadence; the former
+`compose.m2-repair.yaml` is only a compatibility overlay. The isolated queue gate verifies normal
+HTTP PDF/text capture while Redis is stopped and automatic processing after Redis returns, without
+manual delivery or state changes. Publication receipts alone never prove processing completion or
+durable retention in Redis. Worker-only commands must explicitly start the scheduler if needed.
 
 ```mermaid
 flowchart LR

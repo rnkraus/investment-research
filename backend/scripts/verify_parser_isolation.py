@@ -372,7 +372,7 @@ def verify_redis_metadata(
     )
     network_settings = require_mapping(inspection, "NetworkSettings")
     networks = require_mapping(network_settings, "Networks")
-    if set(networks) != {f"{project_name}_backend"}:
+    if set(networks) != {f"{project_name}_backend", f"{project_name}_repair"}:
         raise ParserIsolationVerificationError("redis has unexpected network membership")
     serialized = json.dumps(inspection, sort_keys=True)
     if any(credential in serialized for credential in credentials):

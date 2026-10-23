@@ -121,8 +121,8 @@ the selected processing profile's attempt ceiling to its delivery transactions. 
 service tests and HTTP PDF/text capture tests exercise disposable PostgreSQL with a deterministic
 publisher, including retained originals, unchanged unrelated due intent, and no open transaction
 during publication. Existing unit/PostgreSQL CI discovers these tests. No schema, settings, HTTP
-response, provider, or frontend contract changes. Periodic repair remains opt-in; default scheduler
-startup and full automatic HTTP-capture outage recovery remain pending before Step 1 acceptance.
+response, provider, or frontend contract changes. The base Compose stack now starts periodic repair
+with the API; the isolated HTTP outage gate below covers automatic recovery of captured work.
 
 ## Implemented bounded publication boundary (2026-10-19)
 
@@ -344,9 +344,9 @@ The queue verifier exercises one due Beat step with disposable schedule state an
 Redis sender, checks no immediate repeat, and retains canonical absence after synthetic purges.
 It does not prove a separately running periodic process or automatic outage recovery end to end.
 
-## Opt-in Compose scheduler (2026-10-22)
+## Default Compose scheduler (2026-10-23)
 
-`compose.m2-repair.yaml` explicitly adds one scheduler using the existing worker image with the
+`compose.yaml` defines one scheduler using the existing worker image with the
 dedicated Python entry point and the inherited worker health check disabled. It receives only the
 Redis password secret and five runtime/broker environment values, with no ports, source/config
 mounts, database/storage/provider credentials, or Docker socket. A dedicated internal `repair`
@@ -356,26 +356,30 @@ The service runs as `65532:65532`, with read-only root, all capabilities dropped
 Do not scale it above one. There is no worker-style ping health check: running-container state
 does not prove periodic publication, worker availability, or completed business work.
 
-The queue verifier adds this override but starts the scheduler only after its synthetic-source
-purges. It checks actual container controls/secret mounts, internal networking, blocked PostgreSQL
+API startup includes that scheduler; worker-only commands must name it explicitly when periodic
+repair is required. `compose.m2-repair.yaml` remains a no-op compatibility overlay and cannot create
+a second scheduler. The queue verifier starts the API/scheduler only after its controlled M0
+worker-loss fixtures are purged, using the existing M1 acceptance override for both PDF and text.
+It checks actual container controls/secret mounts, internal networking, blocked PostgreSQL
 IP/parser/storage/external connections, and permitted authenticated Redis access. It waits for two
 autonomous publications at the unchanged interval, stops Redis, requires a safe unavailable event,
 restarts Redis even when the outage observation fails, and requires a new successful publication.
 The same scheduler container/restart count must remain; canonical source absence is checked again.
 Logs/inspection JSON are captured rather than printed. The shared project is removed on failure too.
 
-Adding this override deliberately starts canonical repair scans and may enqueue existing eligible
-processing work; live workers retain their normal provider/budget rules. It is opt-in, not included
-by the normal Compose files or M1 live start. This block verifies an empty-archive periodic control
-path, not automatic recovery of an HTTP-captured document. No new secrets or provider keys are needed.
+The same isolated gate then stops Redis and uploads PDF and text through the running API. Both
+must return `CAPTURED`, retain byte-exact originals, and leave generation-zero intent pending with
+zero delivery/execution attempts throughout the outage. After Redis returns, only the existing
+periodic scheduler may initiate recovery: both runs must reach `SEARCHABLE`, with one publication,
+one processing attempt, and one canonical chunk set each. Another scheduled tick must leave their
+output IDs unchanged. API, worker, and scheduler IDs/restart counts must not change. The probe
+never republishes jobs, repairs database values, shortens grace, or restarts those processes.
 
-The existing post-commit Celery fast path is still active in the normal app. Bounded repair is now
-available through the explicitly delivered worker task, manual command, and opt-in scheduler. Normal
-capture outbox dispatch, default scheduler activation, and the complete Step 1 runtime gate remain pending.
-Consequently `PENDING` means no outbox-owned publication receipt, not proof the legacy fast path
-never published or the worker never ran. The later dispatcher must recheck canonical readiness
-and lifecycle before claiming or publishing this intent. Duplicate delivery remains safe under the
-existing execution lease.
+Normal startup now deliberately enables canonical repair scans and can enqueue existing eligible
+processing work; live workers retain their normal provider/budget and exhaustion rules. Neither
+running the scheduler nor acknowledging publication proves business completion. No new secrets,
+provider keys, schema, RAG settings, or paid test calls are required. The legacy direct processing
+publisher is not the normal API path; duplicate delivery remains safe under the execution lease.
 
 `PROCESS_DOCUMENT` is the only currently enabled outbox kind. `PURGE_DOCUMENT` remains the reserved
 M2 Step 6 extension; current purge tasks still use their existing delivery adapter. Retry/history,
