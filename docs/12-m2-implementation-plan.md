@@ -898,6 +898,19 @@ checks exact safe output, and preserves silent success. Hosted diagnosis and Ste
 remain pending. Targeted formatting, linting, typing, and all 36 queue-verifier unit tests passed;
 Docker/runtime checks were not rerun for this assertion-message-only change.
 
+**Scheduler wait diagnostics (2026-10-24):** A later hosted run passed the lost-ack retry probe
+but timed out waiting for two periodic scheduler publication events; worker logs showed two
+completed repair tasks. That evidence does not establish why publication confirmations were
+missing. The unchanged scheduler wait now reports its allowlisted expected event, minimum count,
+and observed `published`, `unavailable`, `invalid`, and `entry_rejected` counts. All counts come
+from the same existing bounded log read per poll; timeout diagnostics add no extra reads or wait.
+Raw logs, arbitrary event names/fields, credentials, and exception content are never rendered.
+Cadence, deadlines, parsing rules, publication behavior, and success criteria remain unchanged.
+Regression tests cover exact safe timeout output, all expected event types, silent success, and
+rejection of unapproved diagnostic event names. Hosted diagnosis and Step 1 acceptance remain
+pending. Targeted formatting, linting, typing, and all 98 scheduler/HTTP/queue-verifier unit tests
+passed. Docker/runtime checks were not rerun for this diagnostic-only change.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
