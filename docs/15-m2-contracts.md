@@ -438,6 +438,22 @@ profile is test setup before the outage, not an outage-recovery restart or a wea
 Cleanup includes the acceptance-index volume. Hosted CI/full browser confirmation and owner
 review still belong to Step 1 acceptance; no later M2 step is activated by this local evidence.
 
+**Compose compatibility correction (2026-10-23):** The scheduler now overrides the inherited
+worker healthcheck with `investment_research.scheduler_health`, rather than disabling it. It
+requires the exact dedicated Python module among PID 1's direct children in the private Linux PID
+namespace. It reads only process command lines, loads no settings/secrets, imports no worker,
+and makes no network calls. Its ten-second interval, three-second timeout, three retries, and
+five-second start period prove process liveness only. Publication cadence and recovery still
+require their existing runtime assertions, including fresh events across a real Redis outage.
+No network, credential, resource, retry, or processing policy is expanded by this check.
+
+The isolated recovery probes use `compose start redis` followed by the shared
+`scripts.compose_health.wait_for_service_health`; they do not depend on `start --wait` support.
+The helper resolves exactly one existing container, inspects only its status/health, and requires
+`running healthy` within one sixty-second monotonic deadline. Inspections are capped at five
+seconds and the remaining deadline; missing healthchecks, unhealthy/exited containers, command
+failures, and success returned after the deadline fail closed without printing raw output.
+
 The remaining text describes accepted target behavior, not currently active features.
 
 ## 6. Initial numeric policy — accepted, not yet runtime settings

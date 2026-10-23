@@ -13,6 +13,7 @@ from sqlalchemy import Engine
 from investment_research.infrastructure.queue.celery import REPAIR_OUTBOX_TASK_NAME
 from investment_research.modules.processing.domain import ProcessingState
 from scripts import verify_queue_recovery
+from scripts.compose_health import ComposeHealthVerificationError
 from scripts.queue_http_recovery_probe import HttpRecoveryVerificationError
 from scripts.repair_scheduler_probe import SchedulerVerificationError
 
@@ -139,6 +140,11 @@ def prepare_deterministic_runtime(
         "verify_http_capture_recovery",
         lambda *_, **__: events.append("verify-http-recovery"),
     )
+    monkeypatch.setattr(
+        verify_queue_recovery,
+        "wait_for_service_health",
+        lambda *_, **__: events.append("verify-redis-health"),
+    )
     return engine, states, events
 
 
@@ -201,6 +207,7 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
         ProcessingState.LEXICAL_READY,
     ]
     assert events == [
+        "verify-redis-health",
         "shorten-lease",
         "verify-output",
         "verify-purge",
@@ -217,9 +224,8 @@ def test_verification_runs_worker_loss_sequence_and_cleans_up(
     ]
     commands = {label: command for label, command, _ in calls}
     assert commands["Stop isolated Redis before fixture capture"][-2:] == ("stop", "redis")
-    assert commands["Restart isolated Redis before outbox recovery"][-3:] == (
+    assert commands["Restart isolated Redis before outbox recovery"][-2:] == (
         "start",
-        "--wait",
         "redis",
     )
     assert commands["Capture fixture while isolated Redis is stopped"][-1] == "capture-outage"
@@ -337,6 +343,7 @@ def test_verification_resumes_paused_services_and_cleans_up_after_probe_failure(
 @pytest.mark.parametrize(
     ("function", "error_type"),
     [
+        ("wait_for_service_health", ComposeHealthVerificationError),
         ("verify_periodic_scheduler", SchedulerVerificationError),
         ("verify_http_capture_recovery", HttpRecoveryVerificationError),
     ],

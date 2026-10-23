@@ -5,6 +5,7 @@ import subprocess
 import time
 from collections.abc import Mapping, Sequence
 
+from scripts.compose_health import wait_for_service_health
 from scripts.verify_parser_isolation import (
     ParserIsolationVerificationError,
     capture_command,
@@ -77,6 +78,14 @@ def verify_scheduler_metadata(inspection: Mapping[str, object], *, project_name:
             "investment_research.scheduler",
         ]:
             raise SchedulerVerificationError("scheduler does not use its dedicated entry point")
+        healthcheck = require_mapping(config, "Healthcheck")
+        if healthcheck.get("Test") != [
+            "CMD",
+            "/app/.venv/bin/python",
+            "-m",
+            "investment_research.scheduler_health",
+        ]:
+            raise SchedulerVerificationError("scheduler does not use its local process check")
         environment = config.get("Env")
         if not isinstance(environment, list) or not all(
             isinstance(item, str) for item in environment
@@ -235,9 +244,10 @@ def verify_periodic_scheduler(
     finally:
         run_command(
             "Restart isolated Redis after scheduler outage",
-            [*compose_command, "start", "--wait", "redis"],
+            [*compose_command, "start", "redis"],
             environment=environment,
         )
+        wait_for_service_health(compose_command, service="redis", environment=environment)
     wait_for_event(
         compose_command, "delivery.repair_tick.published", published + 1, environment=environment
     )
