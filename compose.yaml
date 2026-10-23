@@ -138,11 +138,45 @@ services:
       - /run/redis:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=999,gid=1000
     networks:
       - backend
+      - repair
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 64
     restart: unless-stopped
     stop_grace_period: 15s
+
+  scheduler:
+    <<: *backend-runtime
+    image: investment-research-backend-worker:local
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: worker
+    entrypoint:
+      - /app/.venv/bin/python
+      - -m
+      - investment_research.scheduler
+    command: []
+    healthcheck:
+      disable: true
+    environment:
+      INVESTMENT_RESEARCH_ENVIRONMENT: development
+      INVESTMENT_RESEARCH_RUNTIME_LOCATION: container
+      INVESTMENT_RESEARCH_LOG_LEVEL: INFO
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      REDIS_PORT: 6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    secrets:
+      - redis_password
+    networks:
+      - repair
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=65532,gid=65532
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
 
   parser:
     <<: *backend-runtime
@@ -204,6 +238,8 @@ services:
         bind:
           create_host_path: false
     depends_on:
+      scheduler:
+        condition: service_started
       migration:
         condition: service_completed_successfully
       postgres:
@@ -455,6 +491,8 @@ volumes:
 
 networks:
   frontend:
+  repair:
+    internal: true
   backend:
     internal: true
   parser:

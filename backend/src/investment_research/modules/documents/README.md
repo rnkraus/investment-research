@@ -68,8 +68,9 @@ error; it must not be mistaken for proven rollback or deletion permission.
 
 The [delivery module](../delivery/README.md) documents the durable intent and migration boundary.
 Normal API capture now attempts its generation-zero event through the bounded outbox dispatcher
-after commit. Periodic repair remains opt-in; default scheduler activation and automatic HTTP
-outage recovery still require the remaining M2 Step 1 gates.
+after commit. The base Compose stack now starts one periodic scheduler with the API. Its worker
+repairs eligible captured intent after Redis returns, subject to the existing bounded policy.
+The isolated HTTP outage gate verifies both PDF and text without another upload or manual repair.
 
 After the canonical transaction closes successfully, the service creates the strict versioned
 `ProcessingJobV1` and calls the application-owned `ProcessingDispatcher`. An expected broker

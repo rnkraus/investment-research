@@ -121,6 +121,17 @@ seed or reset commands below when deterministic synthetic workspaces are require
 `compose.yaml` remains the credential-free foundation for isolated tests; by itself it does not
 configure a working M1 indexing worker.
 
+The base stack now includes one broker-only repair scheduler. Starting the API also starts this
+dependency; a full `up` starts it normally. Every thirty seconds it sends a content-free wake-up
+signal and the worker checks canonical outbox intent. After an ordinary Redis outage, eligible
+captured work resumes without another upload or manual database changes. Existing execution,
+delivery, provider-budget, and exhaustion limits still apply; recovery is not unlimited retry.
+The scheduler receives only the Redis secret and runs on its own internal network. Do not scale
+it above one. Its running state is not proof that processing is healthy. The former
+`compose.m2-repair.yaml` is an optional compatibility overlay, no longer required to enable repair.
+Worker-only development commands that deliberately omit the API must also start `scheduler` if
+periodic repair is wanted. No new secret files or paid test calls are required by scheduling.
+
 ### Default M1.5 source-ID research
 
 M1.5 is the default for the provider-backed live Compose stack and for host API startup with

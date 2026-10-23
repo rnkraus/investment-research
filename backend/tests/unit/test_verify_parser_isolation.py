@@ -44,8 +44,29 @@ def redis_inspection() -> dict[str, object]:
             "SecurityOpt": ["no-new-privileges:true"],
             "PortBindings": {},
         },
-        "NetworkSettings": {"Networks": {f"{PROJECT_NAME}_backend": {}}},
+        "NetworkSettings": {
+            "Networks": {f"{PROJECT_NAME}_backend": {}, f"{PROJECT_NAME}_repair": {}}
+        },
     }
+
+
+@pytest.mark.parametrize(
+    "networks",
+    [
+        {f"{PROJECT_NAME}_backend": {}},
+        {f"{PROJECT_NAME}_repair": {}},
+        {f"{PROJECT_NAME}_backend": {}, f"{PROJECT_NAME}_repair": {}, "unexpected": {}},
+    ],
+)
+def test_redis_metadata_requires_exact_backend_and_broker_only_repair_networks(
+    networks: dict[str, object],
+) -> None:
+    metadata = redis_inspection()
+    metadata["NetworkSettings"] = {"Networks": networks}
+    with pytest.raises(verify_parser_isolation.ParserIsolationVerificationError):
+        verify_parser_isolation.verify_redis_metadata(
+            metadata, project_name=PROJECT_NAME, credentials=()
+        )
 
 
 def test_verification_builds_exercises_and_cleans_isolated_project(
