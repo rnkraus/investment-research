@@ -1,9 +1,11 @@
 """Unit tests for live queue-recovery verification orchestration."""
 
+import ast
 import subprocess
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -11,6 +13,7 @@ import pytest
 from sqlalchemy import Engine
 
 from investment_research.infrastructure.queue.celery import REPAIR_OUTBOX_TASK_NAME
+from investment_research.modules.delivery.application import DrainStopReason, OutboxDrainResult
 from investment_research.modules.processing.domain import ProcessingState
 from scripts import verify_queue_recovery
 from scripts.compose_health import ComposeHealthVerificationError
@@ -69,6 +72,34 @@ def test_outage_probe_requires_pending_intent_without_consuming_attempts() -> No
     assert "snapshot() == (initial_run, initial_events)" in code
     assert code.count("capture_service.capture_pdf(") == 1
     assert "ProcessingRunRow.state == ProcessingState.CAPTURED" in code
+
+
+@pytest.mark.parametrize("reason", list(DrainStopReason))
+@pytest.mark.parametrize("claimed", [0, 1])
+def test_retry_probe_assertion_exposes_only_counters_and_fixed_stop_reason(
+    reason: DrainStopReason, claimed: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tree = ast.parse(verify_queue_recovery.CAPTURE_PROBE_CODE)
+    assertion = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assert)
+        and ast.unparse(node.test) == "retried.delivery.claimed == retried.delivery.published == 1"
+    )
+    # Execute the actual embedded assertion without importing the container probe or its settings.
+    code = compile(ast.Module(body=[assertion], type_ignores=[]), "retry-diagnostic-probe", "exec")
+    delivery = OutboxDrainResult(2, claimed, 0, 1, reason)
+    with pytest.raises(AssertionError) as error:
+        exec(code, {"retried": SimpleNamespace(delivery=delivery, details="must-not-appear")})
+    assert str(error.value) == (
+        f"Outbox retry recovery failed: scanned=2, claimed={claimed}, published=0, "
+        f"rejected_receipts=1, stop_reason={reason.value}"
+    )
+    assert "must-not-appear" not in str(error.value)
+    assert capsys.readouterr() == ("", "")
+    # Diagnostics must not alter a successful probe or add success logging.
+    exec(code, {"retried": SimpleNamespace(delivery=OutboxDrainResult(1, 1, 1, 0, reason))})
+    assert capsys.readouterr() == ("", "")
 
 
 def prepare_deterministic_runtime(

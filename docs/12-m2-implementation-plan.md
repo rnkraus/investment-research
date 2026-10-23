@@ -886,6 +886,18 @@ runner's Compose version; corrected hosted CI/full browser confirmation and owne
 pending. No dependency updates, paid providers, normal archive, or browser were involved. Step 1
 is not accepted and Step 2 has not started.
 
+**Lost-ack retry diagnostics (2026-10-23):** After the Compose correction, hosted M1 runtime
+passed; the M0 job reached a later failure in the controlled lost-publication-acknowledgement
+probe. Its unchanged retry assertion now reports only `scanned`, `claimed`, `published`,
+`rejected_receipts`, and the fixed `DrainStopReason` value. It does not print the result object,
+credentials, document content, or exception details. Counts distinguish missing claims from failed
+publication/receipt acceptance; they do not by themselves prove a transport timeout. No retry,
+deadline, production behavior, or success criterion changes. Regression coverage executes the
+actual embedded assertion in isolation for every stop reason and both claim/no-claim failures,
+checks exact safe output, and preserves silent success. Hosted diagnosis and Step 1 acceptance
+remain pending. Targeted formatting, linting, typing, and all 36 queue-verifier unit tests passed;
+Docker/runtime checks were not rerun for this assertion-message-only change.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and
