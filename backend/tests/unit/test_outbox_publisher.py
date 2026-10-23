@@ -50,7 +50,7 @@ def test_credentials_only_travel_through_the_private_pipe(monkeypatch: pytest.Mo
     monkeypatch.setenv("INVESTMENT_RESEARCH_DATABASE_URL", "synthetic-not-for-child")
     monkeypatch.setenv("INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY", "synthetic-not-for-child")
     job = make_job()
-    make_publisher().publish(job, timeout_seconds=2)
+    make_publisher().publish(job, timeout_seconds=5)
     assert SYNTHETIC_BROKER_URL not in repr(constructor.call_args)
     arguments = constructor.call_args.kwargs
     assert arguments["stdin"] is subprocess.PIPE
@@ -66,7 +66,7 @@ def test_credentials_only_travel_through_the_private_pipe(monkeypatch: pytest.Mo
     payload = json.loads(process.communicate.call_args_list[0].kwargs["input"])
     assert payload["broker_url"] == SYNTHETIC_BROKER_URL
     assert payload["job"] == job.model_dump(mode="json")
-    assert 0 < process.communicate.call_args_list[0].kwargs["timeout"] <= 2
+    assert 0 < process.communicate.call_args_list[0].kwargs["timeout"] <= 5
 
 
 @pytest.mark.parametrize("code", [1, 2, 3])
@@ -80,44 +80,60 @@ def test_helper_errors_are_safe_and_do_not_hide_programming_faults(
         3: RuntimeError,
     }[code]
     with pytest.raises(expected) as captured:
-        make_publisher().publish(make_job(), timeout_seconds=2)
+        make_publisher().publish(make_job(), timeout_seconds=5)
     assert "synthetic-broker" not in str(captured.value)
     assert captured.value.__cause__ is None
 
 
-def test_startup_consumes_the_same_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("timeout", [2, 5])
+def test_startup_consumes_the_same_deadline(monkeypatch: pytest.MonkeyPatch, timeout: int) -> None:
     constructor, process = install_process_mock(monkeypatch)
     process.poll.return_value = None
-    monkeypatch.setattr(outbox, "monotonic", Mock(side_effect=[10, 12]))
+    monkeypatch.setattr(outbox, "monotonic", Mock(side_effect=[10, 10 + timeout]))
     with pytest.raises(OutboxPublicationUnavailableError):
-        make_publisher().publish(make_job(), timeout_seconds=2)
+        make_publisher().publish(make_job(), timeout_seconds=timeout)
     process.kill.assert_called_once()
     # No input/publication was attempted after process creation exhausted the deadline.
     process.communicate.assert_called_once_with()
     constructor.assert_called_once()
 
 
+@pytest.mark.parametrize("timeout", [2, 5])
 def test_timeout_kills_and_reaps_without_exposing_the_private_payload(
     monkeypatch: pytest.MonkeyPatch,
+    timeout: int,
 ) -> None:
     _, process = install_process_mock(monkeypatch)
     process.poll.return_value = None
     process.communicate.side_effect = [
-        subprocess.TimeoutExpired("synthetic-helper", 2),
+        subprocess.TimeoutExpired("synthetic-helper", timeout),
         (None, None),
     ]
-    assert not make_publisher().is_ready(timeout_seconds=2)
+    assert not make_publisher().is_ready(timeout_seconds=timeout)
     process.kill.assert_called_once()
     assert process.communicate.call_count == 2
 
 
-def test_late_child_success_is_not_reported_as_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("timeout", [2, 5])
+def test_late_child_success_is_not_reported_as_ready(
+    monkeypatch: pytest.MonkeyPatch, timeout: int
+) -> None:
     install_process_mock(monkeypatch)
-    monkeypatch.setattr(outbox, "monotonic", Mock(side_effect=[10, 10.1, 12]))
-    assert not make_publisher().is_ready(timeout_seconds=2)
+    monkeypatch.setattr(outbox, "monotonic", Mock(side_effect=[10, 10.1, 10 + timeout]))
+    assert not make_publisher().is_ready(timeout_seconds=timeout)
 
 
-@pytest.mark.parametrize("timeout", [0, -1, 2.1, float("nan"), float("inf")])
+def test_five_second_budget_accepts_slower_success_and_still_includes_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, process = install_process_mock(monkeypatch)
+    monkeypatch.setattr(outbox, "monotonic", Mock(side_effect=[10, 10.25, 13.5]))
+    make_publisher().publish(make_job(), timeout_seconds=5)
+    assert process.communicate.call_args_list[0].kwargs["timeout"] == 4.75
+    process.kill.assert_not_called()
+
+
+@pytest.mark.parametrize("timeout", [0, -1, 5.1, float("nan"), float("inf")])
 def test_invalid_deadlines_never_start_a_process(
     monkeypatch: pytest.MonkeyPatch, timeout: float
 ) -> None:
@@ -206,7 +222,7 @@ def test_repair_tick_uses_same_private_pipe_without_caller_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     constructor, process = install_process_mock(monkeypatch)
-    make_publisher().publish_repair_tick(timeout_seconds=2)
+    make_publisher().publish_repair_tick(timeout_seconds=5)
     payload = json.loads(process.communicate.call_args_list[0].kwargs["input"])
     assert payload["operation"] == "repair_tick"
     assert payload["job"] is None

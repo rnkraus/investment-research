@@ -76,7 +76,9 @@ from investment_research.infrastructure.database.unit_of_work import (
 )
 from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
 from investment_research.infrastructure.queue.celery import PROCESSING_QUEUE_NAME
-from investment_research.modules.delivery.application import DrainOutboxService, DrainStopReason
+from investment_research.modules.delivery.application import (
+    OUTBOX_BROKER_OPERATION_SECONDS, DrainOutboxService, DrainStopReason,
+)
 from investment_research.modules.delivery.domain import (
     OUTBOX_UNSTARTED_GRACE_SECONDS, OutboxState,
 )
@@ -240,7 +242,7 @@ try:
         redis_url=SecretStr("redis://:synthetic-invalid-probe@redis:6379/0"),
     ))
     try:
-        invalid_publisher.is_ready(timeout_seconds=2)
+        invalid_publisher.is_ready(timeout_seconds=OUTBOX_BROKER_OPERATION_SECONDS)
     except OutboxPublicationInvalidError:
         pass
     else:

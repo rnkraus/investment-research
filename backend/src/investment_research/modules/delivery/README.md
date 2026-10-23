@@ -129,7 +129,7 @@ with the API; the isolated HTTP outage gate below covers automatic recovery of c
 `DrainOutboxService` checks readiness before each claim, then commits/closes the claim transaction,
 publishes the existing ID-only `ProcessingJobV1`, and records the outcome in a separate transaction.
 It inspects at most 20 returned rows in a 30-second monotonic sweep; cancelled/blocked rows count
-toward that limit. The next publication receives the minimum of the two-second broker cap, sweep
+toward that limit. The next publication receives the minimum of the five-second broker cap, sweep
 time remaining, and delivery-lease time remaining. It never claims a batch ahead of sending.
 
 A known broker outage before claiming consumes no attempt. A timeout/lost acknowledgement after
@@ -328,7 +328,7 @@ alone neither connects nor sends. The normal API/worker factories do not install
 `infrastructure/queue/scheduler.py` retains Beat's interval/state handling but bypasses its default
 producer and raw publication-error reporting. Each due entry must match the fixed task, empty
 arguments/options, and exact content-free payload. The existing private subprocess publisher owns
-the same two-second send deadline and disabled retries. The helper generates the fixed signal;
+the same five-second send deadline and disabled retries. The helper generates the fixed signal;
 callers cannot supply document/workspace IDs or another task. Unstarted ticks expire after thirty
 seconds; this does not stop an already running repair pass or alter canonical business intent.
 Unavailable/invalid publication emits only a static event and waits for a later interval. An

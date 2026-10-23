@@ -46,10 +46,10 @@ def test_exact_delivery_checks_readiness_then_commits_before_one_publication_and
         0,
     )
     assert result.stop_reason is DrainStopReason.TARGET_LIMIT
-    harness.publisher.is_ready.assert_called_once_with(timeout_seconds=2)
+    harness.publisher.is_ready.assert_called_once_with(timeout_seconds=5)
     harness.publisher.publish.assert_called_once_with(
         ProcessingJobV1.create(workspace_id=event.workspace_id, processing_run_id=event.target_id),
-        timeout_seconds=2,
+        timeout_seconds=5,
     )
     harness.repository.record_published.assert_called_once_with(
         harness.context, event_id=event.event_id, lease_id=event.lease_id, now=NOW

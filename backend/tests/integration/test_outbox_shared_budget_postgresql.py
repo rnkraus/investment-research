@@ -60,11 +60,11 @@ def test_one_budget_bounds_mixed_recovery_and_delivery_across_real_transactions(
 
     class Publisher:
         def is_ready(self, *, timeout_seconds: float) -> bool:
-            assert 0 < timeout_seconds <= 2
+            assert 0 < timeout_seconds <= 5
             return True
 
         def publish(self, job: ProcessingJobV1, *, timeout_seconds: float) -> None:
-            assert 0 < timeout_seconds <= 2
+            assert 0 < timeout_seconds <= 5
             jobs.append(job)
 
     delivery = DrainOutboxService(factory, Publisher(), clock=lambda: RECOVER_AT)

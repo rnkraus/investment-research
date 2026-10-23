@@ -69,7 +69,7 @@ def test_explicit_capture_dispatch_preserves_original_and_owns_only_new_event(
     sent: list[ProcessingJobV1] = []
 
     def publish(job: ProcessingJobV1, *, timeout_seconds: float) -> None:
-        assert 0 < timeout_seconds <= 2
+        assert 0 < timeout_seconds <= 5
         assert job.processing_run_id != previous.processing_run_id
         # A second connection can lock capture/run/claim immediately: no surrounding
         # capture or delivery transaction may remain open during a broker operation.

@@ -71,11 +71,11 @@ def test_recovery_dispatch_commits_before_publish_and_accepts_a_new_worker_fence
 
     class Publisher:
         def is_ready(self, *, timeout_seconds: float) -> bool:
-            assert 0 < timeout_seconds <= 2
+            assert 0 < timeout_seconds <= 5
             return True
 
         def publish(self, job: ProcessingJobV1, *, timeout_seconds: float) -> None:
-            assert 0 < timeout_seconds <= 2
+            assert 0 < timeout_seconds <= 5
             assert job.workspace_id == context.workspace_id and job.processing_run_id == run.id
             assert read_event(engine, context, successor).state is OutboxState.CLAIMED
             # A fake consumer must be able to lock the run on another connection immediately.

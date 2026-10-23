@@ -911,6 +911,28 @@ rejection of unapproved diagnostic event names. Hosted diagnosis and Step 1 acce
 pending. Targeted formatting, linting, typing, and all 98 scheduler/HTTP/queue-verifier unit tests
 passed. Docker/runtime checks were not rerun for this diagnostic-only change.
 
+**Broker-operation policy amendment v2 (2026-10-24):** The owner approved increasing the shared
+per-operation broker deadline from two to five seconds, including helper startup and completion.
+The central constant applies to readiness, post-capture delivery, periodic repair, the scheduler,
+the manual repair command, and the invalid-credential verification probe. The thirty-second
+sweep/claim bounds, per-call remaining-time clamps, ninety-second scheduler verification wait,
+attempt counts, disabled hidden retries, and late-success rejection are unchanged. Tests cover
+successful completion beyond two seconds, timeout kill/reap and late-success refusal at both
+two and five seconds, the upper cap, and shorter remaining sweep/lease allowances. Integration
+publisher expectations follow the new explicit five-second policy. This is a bounded headroom
+change to test, not a claim that the intermittent hosted failures have been resolved. No schema,
+dependency, RAG, credential, or frontend change is included.
+
+Verification: the complete deterministic backend gate passed formatting, linting, typing, and
+2,627 unit tests. `scripts.verify_postgres` passed the empty migration round trip, metadata checks,
+and 357 integration tests; seven separately activated SeaweedFS tests were expected skips.
+`scripts.verify_queue_recovery` passed the controlled loss/worker-crash/manual-repair probes,
+scheduler confinement/cadence/outage recovery, and automatic HTTP PDF/text recovery with unchanged
+canonical-output assertions. Frontend formatting, linting, typing, contracts, and 95 tests passed.
+Both isolated projects were removed; runtime cleanup verification found no retained test resources.
+The full M0/M1 runtime/browser gates, hosted CI, dependency audits, paid providers, and normal
+archive were not rerun for this amendment. Hosted confirmation and Step 1 acceptance remain pending.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

@@ -28,7 +28,7 @@ from investment_research.modules.delivery.ports import (
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.contracts import ProcessingJobV1
 
-OUTBOX_BROKER_OPERATION_SECONDS = 2
+OUTBOX_BROKER_OPERATION_SECONDS = 5
 
 
 class DrainStopReason(StrEnum):

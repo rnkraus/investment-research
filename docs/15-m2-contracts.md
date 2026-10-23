@@ -10,6 +10,17 @@ ADRs [0010](./adr/0010-transactional-outbox-and-reconciliation.md),
 Implementation must pass its owning step's tests before runtime activation; a failed gate requires
 a visible correction or contract amendment, never silently relaxed bounds.
 
+**Numeric policy amendment v2 (2026-10-24, owner-approved):** The per-operation broker cap is
+five seconds rather than the original two. It includes helper startup, connection, publication,
+and acknowledgement. Outbox readiness and publication each retain their own bounded operation; both
+consume the same unchanged thirty-second sweep budget, and publication cannot exceed the remaining
+claim lease. This revision changes no payload/schema version, attempt allowance, thirty-second
+scheduler interval, ninety-second verification wait, provider limit, or authorization boundary.
+Hosted failures reported transient publication uncertainty even when workers received repair ticks;
+the extra startup headroom is a bounded correction to evaluate, not proof of the original cause
+or permission to accept late success. Historical implementation notes describe their original
+two-second setting; the current bound is this amendment and the numeric policy table below.
+
 **Scope:** Extend the accepted local M1/M1.5 runtime without changing RAG policy, provider budgets,
 fixed identity, or loopback-only operation. The [M2 plan](./12-m2-implementation-plan.md) owns
 sequence and gates. [M1 contracts](./11-m1-contracts.md) remain the implemented compatibility baseline.
@@ -215,8 +226,9 @@ recovery.
 **Bounded drain/adapter (2026-10-19):** `DrainOutboxService` now checks readiness before each
 individual claim, publishes outside the transaction, and records a fenced outcome separately.
 Its monotonic sweep is bounded to 20 returned rows and 30 seconds. Broker operations receive at
-most two seconds and no more than the remaining sweep/lease time. Transient publication uncertainty
-stops the sweep after recording a bounded retry; invalid publication blocks the owned event.
+most five seconds (amendment v2) and no more than the remaining sweep/lease time. Transient
+publication uncertainty stops the sweep after recording a bounded retry; invalid publication
+blocks the owned event.
 
 The synchronous Celery adapter uses a disposable broker-only helper process and a bounded private
 stdin pipe, with no credentials in argv or inherited database/storage/provider environment. Startup,
@@ -351,8 +363,9 @@ The separate scheduler, normal capture outbox activation, and full Step 1 gate r
 normal Compose activation. Its factory installs exactly one thirty-second repair schedule and
 imports no worker entry point. A narrow Celery Beat scheduler keeps disposable state at
 `/tmp/investment-research-beat-schedule`, bypasses Beat's default producer/error reporting, and
-uses the existing private two-second broker helper with hidden retries disabled. Only the exact
-content-free repair entry is accepted. The helper generates the fixed payload and expires unstarted
+uses the existing private broker helper (currently five seconds under amendment v2) with hidden
+retries disabled. Only the exact content-free repair entry is accepted. The helper generates the
+fixed payload and expires unstarted
 ticks after one interval; this changes no canonical intent or running-task deadline. Unavailable or
 invalid publication reports a static event and waits until a later interval; unexpected failures
 stop through a sanitized boundary. SIGTERM uses Beat's state-sync/shutdown path. The Celery
@@ -394,8 +407,9 @@ source exclusion, exhaustion, and explicit recovery-profile qualification.
 
 **Targeted publication/adapter prerequisite (2026-10-23):**
 `DrainOutboxService.deliver_event` now reuses the sweep implementation for at most one exact event,
-including readiness-before-claim, its existing cooperative deadline, the two-second broker cap,
-publication after the claim transaction closes, and separately fenced receipts/failures. It never
+including readiness-before-claim, its existing cooperative deadline, the broker cap (currently
+five seconds under amendment v2), publication after the claim transaction closes, and separately
+fenced receipts/failures. It never
 substitutes other due work. `DispatchCapturedProcessingService` revalidates the existing job,
 resolves server-owned identity, checks workspace agreement, and derives only its generation-zero
 event identity. It creates no event, recovery generation, direct Celery fallback, or new allowance.
@@ -470,7 +484,7 @@ environment keys or an authorization to change model prices, RAG limits, or the 
 | Stage execution | At most 3 automatic claimed attempts and 1 explicitly requested recovery attempt per stage; recovery does not erase previous attempts or repeat a completed stage. Keep 360-second fenced execution budget, with 300/330-second soft/hard task caps inherited from purge; split work into durable bounded batches if it cannot fit. |
 | Provider retries | Keep existing 30-second embedding and 20-second Pinecone per-call caps, 30-second visibility deadline, and at most 2 application-owned attempts per operation within the stage deadline. SDK retries stay disabled. Every attempted paid call reserves/accounting independently; delivery generations add no paid allowance. |
 | Delivery | At most 3 publication claims per generation and 3 automatic generations per target; maximum automatic publication claims is 9, not 9 processing attempts. Block after exhaustion; do not reset counters each tick. Reuse backoff/jitter with 30-second cap. |
-| Scan and claim | At most 20 targets per tick, matching the default catalog page size; 30-second sweep budget, matching the processing-timeout default. Claim individually immediately before publication, with a 30-second fence and 2-second broker-operation cap derived from the readiness cap. Stop scanning/publishing when the deadline is exhausted. |
+| Scan and claim | At most 20 targets per tick, matching the default catalog page size; 30-second sweep budget, matching the processing-timeout default. Claim individually immediately before publication, with a 30-second fence and 5-second broker-operation cap including helper startup (owner-approved amendment v2, 2026-10-24). Always cap calls by the remaining sweep/lease time. Stop scanning/publishing when the deadline is exhausted. |
 | Repair | Tick every 30 seconds. A published untouched `CAPTURED` run is eligible for redelivery after 420 seconds, matching broker visibility; running stages require their execution fence to expire, never just publication age. |
 | Existing purge | Preserve the 1–100 explicit-ID batch, four scheduled retries, 300/330-second task caps, no restoration, and ADR-0019 retention. Step 6 adds durable global attempt accounting before enabling periodic purge redelivery. |
 
