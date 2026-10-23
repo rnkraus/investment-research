@@ -17,6 +17,12 @@ from scripts.verify_parser_isolation import (
 
 SCHEDULER_TIMEOUT_SECONDS = 90.0
 POLL_SECONDS = 0.5
+SCHEDULER_EVENTS = (
+    "delivery.repair_tick.published",
+    "delivery.repair_tick.unavailable",
+    "delivery.repair_tick.invalid",
+    "delivery.repair_tick.entry_rejected",
+)
 
 RUNTIME_PROBE_CODE = """\
 import os
@@ -150,9 +156,11 @@ def verify_scheduler_metadata(inspection: Mapping[str, object], *, project_name:
         raise SchedulerVerificationError("scheduler confinement metadata is invalid") from None
 
 
-def event_count(
-    compose_command: Sequence[str], event: str, *, environment: Mapping[str, str]
-) -> int:
+def event_counts(
+    compose_command: Sequence[str], *, environment: Mapping[str, str]
+) -> dict[str, int]:
+    """Count only fixed scheduler events from one bounded log read; never print raw content."""
+
     result = subprocess.run(
         [*compose_command, "logs", "--no-color", "--tail", "200", "scheduler"],
         env=environment,
@@ -161,7 +169,7 @@ def event_count(
         text=True,
         timeout=5,
     )
-    count = 0
+    counts = dict.fromkeys(SCHEDULER_EVENTS, 0)
     for line in result.stdout.splitlines():
         _, separator, body = line.partition("|")
         if not separator:
@@ -170,19 +178,38 @@ def event_count(
             record = json.loads(body)
         except json.JSONDecodeError:
             continue
-        count += isinstance(record, dict) and record.get("event") == event
-    return count
+        name = record.get("event") if isinstance(record, dict) else None
+        if isinstance(name, str) and name in counts:
+            counts[name] += 1
+    return counts
+
+
+def event_count(
+    compose_command: Sequence[str], event: str, *, environment: Mapping[str, str]
+) -> int:
+    return event_counts(compose_command, environment=environment).get(event, 0)
 
 
 def wait_for_event(
     compose_command: Sequence[str], event: str, minimum: int, *, environment: Mapping[str, str]
 ) -> None:
+    if event not in SCHEDULER_EVENTS:
+        raise SchedulerVerificationError("scheduler event is not allowlisted")
     deadline = time.monotonic() + SCHEDULER_TIMEOUT_SECONDS
+    counts = dict.fromkeys(SCHEDULER_EVENTS, 0)
     while time.monotonic() < deadline:
-        if event_count(compose_command, event, environment=environment) >= minimum:
+        counts = event_counts(compose_command, environment=environment)
+        if counts[event] >= minimum:
             return
         time.sleep(POLL_SECONDS)
-    raise SchedulerVerificationError("scheduler did not reach the required periodic event count")
+    raise SchedulerVerificationError(
+        "scheduler did not reach the required periodic event count: "
+        f"expected_event={event}, minimum={minimum}, "
+        f"published={counts['delivery.repair_tick.published']}, "
+        f"unavailable={counts['delivery.repair_tick.unavailable']}, "
+        f"invalid={counts['delivery.repair_tick.invalid']}, "
+        f"entry_rejected={counts['delivery.repair_tick.entry_rejected']}"
+    )
 
 
 def verify_periodic_scheduler(

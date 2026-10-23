@@ -195,6 +195,8 @@ def test_event_counter_accepts_only_exact_structured_events_without_printing_log
         [
             'scheduler-1 | {"event":"delivery.repair_tick.published"}',
             'scheduler-1 | {"event":"delivery.repair_tick.published.extra"}',
+            'scheduler-1 | {"event":[]}',
+            'scheduler-1 | {"event":"must-not-appear"}',
             "scheduler-1 | unstructured must-not-appear",
             "scheduler-1 | []",
         ]
@@ -209,9 +211,58 @@ def test_event_counter_accepts_only_exact_structured_events_without_printing_log
     assert capsys.readouterr().out == ""
 
 
-def test_event_wait_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("event", probe.SCHEDULER_EVENTS)
+def test_event_wait_is_bounded_and_reports_only_fixed_events_and_counters(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
+) -> None:
     monkeypatch.setattr(time, "monotonic", Mock(side_effect=[0, 0, 91]))
     monkeypatch.setattr(time, "sleep", Mock())
-    monkeypatch.setattr(probe, "event_count", Mock(return_value=0))
-    with pytest.raises(probe.SchedulerVerificationError, match="periodic event count"):
-        probe.wait_for_event([], "delivery.repair_tick.published", 2, environment={})
+    output = "\n".join(
+        [
+            'scheduler-1 | {"event":"delivery.repair_tick.published","detail":"must-not-appear"}',
+            'scheduler-1 | {"event":"delivery.repair_tick.unavailable"}',
+            'scheduler-1 | {"event":"delivery.repair_tick.unavailable"}',
+            'scheduler-1 | {"event":"delivery.repair_tick.invalid"}',
+            'scheduler-1 | {"event":"delivery.repair_tick.entry_rejected"}',
+            'scheduler-1 | {"event":"must-not-appear"}',
+            "scheduler-1 | unstructured must-not-appear",
+        ]
+    )
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout=output))
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(probe.SchedulerVerificationError) as error:
+        probe.wait_for_event([], event, 3, environment={})
+    assert str(error.value) == (
+        "scheduler did not reach the required periodic event count: "
+        f"expected_event={event}, minimum=3, published=1, unavailable=2, "
+        "invalid=1, entry_rejected=1"
+    )
+    assert run.call_count == 1  # No extra log reads or waiting after the existing deadline.
+    assert run.call_args.kwargs["timeout"] == 5
+    assert capsys.readouterr() == ("", "")
+
+
+def test_successful_event_wait_remains_silent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(time, "monotonic", Mock(side_effect=[0, 0]))
+    sleep = Mock()
+    monkeypatch.setattr(time, "sleep", sleep)
+    output = 'scheduler-1 | {"event":"delivery.repair_tick.published"}\n' * 2
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout=output))
+    monkeypatch.setattr(subprocess, "run", run)
+    probe.wait_for_event([], "delivery.repair_tick.published", 2, environment={})
+    assert run.call_count == 1
+    sleep.assert_not_called()
+    assert capsys.readouterr() == ("", "")
+
+
+def test_unapproved_event_cannot_enter_timeout_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = Mock()
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(probe.SchedulerVerificationError) as error:
+        probe.wait_for_event([], "must-not-appear", 2, environment={})
+    assert "must-not-appear" not in str(error.value)
+    run.assert_not_called()
