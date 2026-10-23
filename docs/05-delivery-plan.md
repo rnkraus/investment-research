@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.7 — M2 Step 1 bounded API capture dispatch; default scheduler activation next
+**Status:** Active v1.8 — M2 Step 1 automatic HTTP recovery implemented; verification/CI review pending
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -452,10 +452,10 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
    and separate scheduler implementation under `15-m2-contracts.md` and ADR-0010. Details and local
    verification are recorded in the M2 plan. Do not reset execution/provider attempts or revive
    excluded sources.
-2. The broker-only scheduler Compose override and isolated periodic/outage gate are implemented.
-   Preserve bounded normal capture outbox dispatch; complete default scheduler startup, full runtime
-   compatibility, and automatic HTTP-capture outage recovery before accepting Step 1. The scheduler remains
-   explicitly opt-in; its empty-archive control-path test does not complete the document-recovery gate.
+2. The broker-only scheduler is now part of normal API/Compose startup. Preserve bounded capture
+   dispatch and the isolated automatic HTTP PDF/text outage/recovery gate. Complete compatibility
+   verification, required hosted CI/browser checks, and owner review before accepting Step 1.
+   A running scheduler or publication receipt alone never proves document processing completed.
 3. Preserve the existing catalog, multi-document selection, permanent deletion, and frontend capture
    contract. Continue backend → CI → frontend compatibility in the documented work blocks;
    later version/history/purge extensions belong to their owning M2 steps and accepted ADRs.
