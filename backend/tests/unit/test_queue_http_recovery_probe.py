@@ -155,6 +155,7 @@ def install_fakes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Mock
     monkeypatch.setattr(probe, "wait_for_event", wait)
     command = Mock()
     monkeypatch.setattr(probe, "run_command", command)
+    monkeypatch.setattr(probe, "wait_for_service_health", Mock())
     values = (recovered(4), recovered(1))
     monkeypatch.setattr(probe, "snapshot", Mock(side_effect=[PENDING] * 4 + list(values)))
     monkeypatch.setattr(probe, "wait_for_recovery", Mock(return_value=values))
@@ -166,6 +167,8 @@ def test_http_capture_uses_existing_schedule_without_manual_delivery_and_recheck
     tmp_path: Path,
 ) -> None:
     client, command, wait, fixture = install_fakes(monkeypatch, tmp_path)
+    health = Mock()
+    monkeypatch.setattr(probe, "wait_for_service_health", health)
     probe.verify_http_capture_recovery(
         COMPOSE,
         project_name=PROJECT,
@@ -176,7 +179,7 @@ def test_http_capture_uses_existing_schedule_without_manual_delivery_and_recheck
     )
     assert [call.args[1] for call in command.call_args_list] == [
         [*COMPOSE, "stop", "redis"],
-        [*COMPOSE, "start", "--wait", "redis"],
+        [*COMPOSE, "start", "redis"],
     ]
     assert [call.args[0] for call in client.post.call_args_list] == [
         "/api/v1/documents",
@@ -191,9 +194,12 @@ def test_http_capture_uses_existing_schedule_without_manual_delivery_and_recheck
         timeout=10,
         trust_env=False,
     )
+    health.assert_called_once_with(COMPOSE, service="redis", environment={})
 
 
-@pytest.mark.parametrize("failure", ["http", "scheduler", "changed_output", "restarted"])
+@pytest.mark.parametrize(
+    "failure", ["http", "scheduler", "redis_health", "changed_output", "restarted"]
+)
 def test_failures_are_not_success_and_redis_restart_is_preserved(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -208,6 +214,15 @@ def test_failures_are_not_success_and_redis_restart_is_preserved(
 
         error_type = SchedulerVerificationError
         wait.side_effect = error_type("synthetic unavailable tick missing")
+    elif failure == "redis_health":
+        from scripts.compose_health import ComposeHealthVerificationError
+
+        error_type = ComposeHealthVerificationError
+        monkeypatch.setattr(
+            probe,
+            "wait_for_service_health",
+            Mock(side_effect=error_type("synthetic Redis health failure")),
+        )
     elif failure == "changed_output":
         monkeypatch.setattr(probe, "snapshot", Mock(side_effect=[PENDING] * 6))
     else:
@@ -233,7 +248,7 @@ def test_failures_are_not_success_and_redis_restart_is_preserved(
             fixture_pdf=fixture,
         )
     assert "must-not-appear" not in str(error.value)
-    assert command.call_args.args[1] == [*COMPOSE, "start", "--wait", "redis"]
+    assert command.call_args.args[1] == [*COMPOSE, "start", "redis"]
 
 
 @pytest.mark.parametrize("failed", [False, True])

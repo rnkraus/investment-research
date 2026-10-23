@@ -866,6 +866,26 @@ The isolated projects and their volumes/networks/indexes were removed, and
 PostgreSQL integration suite, dependency audits, hosted CI, browser acceptance, paid providers,
 and normal archive were not exercised in this block. No next implementation step was started.
 
+**Compose compatibility correction (2026-10-23):** Hosted CI exposed two startup/tooling
+differences despite the preceding local run: its Compose rejects `start --wait`, and `up --wait`
+rejects the scheduler's disabled inherited worker healthcheck. All three isolated Redis restart
+sites now use `start redis` and a shared sixty-second health wait for the same existing container.
+Five-second/remaining-deadline inspection timeouts, exact healthy status, safe failure reporting,
+and cleanup are preserved. The scheduler instead has a dedicated local process-liveness check
+that reads only its init-supervised command line; no worker import, settings, credentials, broker
+probe, or new authority is added. Existing cadence/outage/output tests remain authoritative for
+successful recovery. Regression tests reject missing/unhealthy services, late success, unrelated
+processes, disabled/dummy scheduler checks, and failed readiness without successful recovery.
+Verification: the complete deterministic backend gate passed formatting, linting, typing across
+380 files, and 2,607 unit tests. The isolated queue-recovery gate passed all Redis restarts,
+scheduler cadence/isolation checks, and automatic HTTP PDF/text recovery. M0 and M1 HTTP runtime
+journeys passed, including protected-log checks and cleanup; M1 explicitly used `--skip-browser`.
+Frontend formatting, linting, typing, contract checks, and 95 tests passed. Cleanup verification
+found no retained isolated runtime resources. These local runs used Compose 5.6.1, not the hosted
+runner's Compose version; corrected hosted CI/full browser confirmation and owner review remain
+pending. No dependency updates, paid providers, normal archive, or browser were involved. Step 1
+is not accepted and Step 2 has not started.
+
 ### Step 2 — Processing stages, attempts, and safe retry controls
 
 **Backend:** Add `ProcessingStage` state and attempt history for the required parse/lexical and

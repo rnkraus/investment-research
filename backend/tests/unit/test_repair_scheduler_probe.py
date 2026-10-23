@@ -7,6 +7,7 @@ from unittest.mock import Mock
 import pytest
 
 from scripts import repair_scheduler_probe as probe
+from scripts.compose_health import ComposeHealthVerificationError
 
 PROJECT = "isolated-scheduler-test"
 
@@ -19,6 +20,14 @@ def inspection() -> dict[str, object]:
         "Config": {
             "User": "65532:65532",
             "Entrypoint": ["/app/.venv/bin/python", "-m", "investment_research.scheduler"],
+            "Healthcheck": {
+                "Test": [
+                    "CMD",
+                    "/app/.venv/bin/python",
+                    "-m",
+                    "investment_research.scheduler_health",
+                ]
+            },
             "Env": ["REDIS_PASSWORD_FILE=/run/secrets/redis_password", "REDIS_PORT=6379"],
         },
         "HostConfig": {
@@ -45,6 +54,8 @@ def test_metadata_accepts_exact_broker_only_confinement() -> None:
     [
         ("Config", "User", "0:0"),
         ("Config", "Entrypoint", ["celery", "worker"]),
+        ("Config", "Healthcheck", {"Test": ["NONE"]}),
+        ("Config", "Healthcheck", {"Test": ["CMD", "true"]}),
         ("Config", "Env", ["POSTGRES_PASSWORD_FILE=/must-not-be-opened"]),
         ("Config", "Env", ["INVESTMENT_RESEARCH_OPENAI_QUERY_API_KEY=must-not-appear"]),
         ("Config", "Env", ["REDIS_PASSWORD=must-not-appear"]),
@@ -114,6 +125,7 @@ def install_periodic_fakes(monkeypatch: pytest.MonkeyPatch) -> tuple[Mock, Mock,
     monkeypatch.setattr(probe, "run_command", command)
     monkeypatch.setattr(probe, "wait_for_event", wait)
     monkeypatch.setattr(probe, "event_count", count)
+    monkeypatch.setattr(probe, "wait_for_service_health", Mock())
     return inspect, command, wait, count
 
 
@@ -121,6 +133,8 @@ def test_periodic_probe_requires_repeat_and_new_success_after_actual_outage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, command, wait, _ = install_periodic_fakes(monkeypatch)
+    health = Mock()
+    monkeypatch.setattr(probe, "wait_for_service_health", health)
     probe.verify_periodic_scheduler(["docker", "compose"], project_name=PROJECT, environment={})
     assert [call.args[1:] for call in wait.call_args_list] == [
         ("delivery.repair_tick.published", 2),
@@ -132,6 +146,8 @@ def test_periodic_probe_requires_repeat_and_new_success_after_actual_outage(
         "Stop isolated Redis during periodic scheduling",
         "Restart isolated Redis after scheduler outage",
     ]
+    assert command.call_args.args[1] == ["docker", "compose", "start", "redis"]
+    health.assert_called_once_with(["docker", "compose"], service="redis", environment={})
 
 
 def test_outage_probe_restarts_redis_even_if_failure_evidence_times_out(
@@ -142,6 +158,20 @@ def test_outage_probe_restarts_redis_even_if_failure_evidence_times_out(
     with pytest.raises(probe.SchedulerVerificationError):
         probe.verify_periodic_scheduler(["docker", "compose"], project_name=PROJECT, environment={})
     assert command.call_args.args[0] == "Restart isolated Redis after scheduler outage"
+
+
+def test_redis_health_failure_cannot_confirm_scheduler_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, wait, _ = install_periodic_fakes(monkeypatch)
+    monkeypatch.setattr(
+        probe,
+        "wait_for_service_health",
+        Mock(side_effect=ComposeHealthVerificationError("synthetic Redis health failure")),
+    )
+    with pytest.raises(ComposeHealthVerificationError):
+        probe.verify_periodic_scheduler(["docker", "compose"], project_name=PROJECT, environment={})
+    assert wait.call_count == 2  # No successful post-outage event can bypass failed readiness.
 
 
 @pytest.mark.parametrize("change", [{"Id": "replacement"}, {"RestartCount": 1}])

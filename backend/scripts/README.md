@@ -8,6 +8,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
 | `__init__.py`                 | Makes development commands importable for tests and `python -m` execution.               |
 | `docker_secrets.py`           | Creates portable read-only Compose secret files inside a private temporary directory.    |
+| `compose_health.py`           | Requires an existing isolated service to become healthy within one bounded deadline.     |
 | `export_openapi.py`           | Exports the FastAPI OpenAPI document or verifies that the committed snapshot is current. |
 | `reset_local.py`              | Recreates only the fixed local Compose runtime after exact confirmation.                 |
 | `seed_m0_0.py`                | Idempotently creates the two deterministic synthetic M0.0 workspaces.                    |
@@ -371,7 +372,12 @@ connections and extra secrets. Two independently scheduled publications must occ
 Redis stop produces a safe unavailable event. Redis is restarted in the probe's `finally` block;
 a fresh publication must follow without replacing/restarting the scheduler. Both purged sources
 must remain absent. Each event wait is bounded to ninety seconds, captured log reads to five
-seconds, and the existing thirty-second cadence is not shortened.
+seconds, and the existing thirty-second cadence is not shortened. Every Redis restart uses
+`compose start redis` plus `compose_health.py`, not version-dependent `start --wait`. The shared
+helper requires the same existing container to become healthy within sixty seconds, with
+five-second/remaining-budget inspection timeouts and no raw inspection output. Scheduler metadata
+must retain its dedicated, broker-independent process healthcheck; that liveness check does not
+replace publication, recovery, or canonical-output assertions.
 
 `queue_http_recovery_probe.py` then stops only this project's Redis and uploads the frozen PDF and
 synthetic text over its random loopback API port. It requires `202`/`CAPTURED`, byte-exact original

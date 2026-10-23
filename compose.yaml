@@ -158,7 +158,15 @@ services:
       - investment_research.scheduler
     command: []
     healthcheck:
-      disable: true
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -m
+        - investment_research.scheduler_health
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     environment:
       INVESTMENT_RESEARCH_ENVIRONMENT: development
       INVESTMENT_RESEARCH_RUNTIME_LOCATION: container

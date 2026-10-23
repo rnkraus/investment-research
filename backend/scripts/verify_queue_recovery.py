@@ -32,6 +32,7 @@ from investment_research.modules.processing.persistence import (
     ProcessingRunRow,
     StructureBlockRow,
 )
+from scripts.compose_health import ComposeHealthVerificationError, wait_for_service_health
 from scripts.docker_secrets import (
     COMPOSE_SECRET_FILES,
     disposable_compose_secret_environment,
@@ -745,8 +746,11 @@ def verify_queue_recovery() -> int:
             )
             run_command(
                 "Restart isolated Redis before outbox recovery",
-                [*compose_command, "start", "--wait", "redis"],
+                [*compose_command, "start", "redis"],
                 environment=compose_environment,
+            )
+            wait_for_service_health(
+                compose_command, service="redis", environment=compose_environment
             )
             run_command(
                 "Recover retained fixture and lost outbox publications",
@@ -940,6 +944,7 @@ def verify_queue_recovery() -> int:
                 fixture_pdf=FIXTURE_PDF,
             )
         except (
+            ComposeHealthVerificationError,
             QueueRecoveryVerificationError,
             SchedulerVerificationError,
             HttpRecoveryVerificationError,
@@ -948,6 +953,7 @@ def verify_queue_recovery() -> int:
             if isinstance(
                 error,
                 (
+                    ComposeHealthVerificationError,
                     QueueRecoveryVerificationError,
                     SchedulerVerificationError,
                     HttpRecoveryVerificationError,

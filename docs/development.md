@@ -126,8 +126,11 @@ dependency; a full `up` starts it normally. Every thirty seconds it sends a cont
 signal and the worker checks canonical outbox intent. After an ordinary Redis outage, eligible
 captured work resumes without another upload or manual database changes. Existing execution,
 delivery, provider-budget, and exhaustion limits still apply; recovery is not unlimited retry.
-The scheduler receives only the Redis secret and runs on its own internal network. Do not scale
-it above one. Its running state is not proof that processing is healthy. The former
+The scheduler receives only the Redis secret and runs on its own internal network. Its local
+`investment_research.scheduler_health` check inspects only the init-supervised scheduler process,
+without loading settings or contacting Redis. This explicit liveness check also supports Compose
+versions that reject a disabled inherited healthcheck during `up --wait`. Do not scale it above
+one. Process liveness is not proof of successful scheduling or healthy processing. The former
 `compose.m2-repair.yaml` is an optional compatibility overlay, no longer required to enable repair.
 Worker-only development commands that deliberately omit the API must also start `scheduler` if
 periodic repair is wanted. No new secret files or paid test calls are required by scheduling.

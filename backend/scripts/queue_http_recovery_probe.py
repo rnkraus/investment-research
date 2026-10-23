@@ -22,6 +22,7 @@ from investment_research.modules.processing.persistence import (
     ChunkSetRow,
     ProcessingRunRow,
 )
+from scripts.compose_health import wait_for_service_health
 from scripts.repair_scheduler_probe import event_count, wait_for_event
 from scripts.verify_parser_isolation import inspect_service, run_command
 
@@ -236,9 +237,10 @@ def _verify_http_capture_recovery(
         finally:
             run_command(
                 "Restart isolated Redis for automatic HTTP recovery",
-                [*compose_command, "start", "--wait", "redis"],
+                [*compose_command, "start", "redis"],
                 environment=environment,
             )
+            wait_for_service_health(compose_command, service="redis", environment=environment)
         values = wait_for_recovery(client, engine, captures)
         for value, expected in zip(values, (4, 1), strict=True):
             require_recovered(value, expected_chunks=expected)
