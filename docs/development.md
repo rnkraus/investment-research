@@ -11,7 +11,7 @@ public deployment. Only approved public or synthetic documents may reach live pr
 ## Prerequisites
 
 - Node.js 24
-- pnpm 11.24
+- pnpm 11.28.6
 - Python 3.14
 - uv 0.12.7 or newer within the 0.12 release line
 - Docker with Docker Compose
@@ -500,6 +500,32 @@ pnpm audit signatures
 cd backend
 uv audit --locked
 ```
+
+### Frontend security refresh (2026-10-24)
+
+The frontend locks Next.js and `eslint-config-next` to 16.4.2, with minimum declarations of
+`^16.4.2`. This includes the [October Next.js security fixes](https://github.com/vercel/next.js/security/advisories/GHSA-673q-mjm6-r5xr)
+and the subsequent [16.4.2 maintenance fixes](https://github.com/vercel/next.js/releases/tag/v16.4.2).
+The lockfile also updates sharp to 0.35.5, source-map-js to 1.2.2, Zod to 4.6.7, and the affected
+brace-expansion release lines to 1.1.21, 2.1.7, and 5.0.12. A narrowly scoped
+`minimatch@10.2.6>brace-expansion` override replaces its pinned vulnerable 5.0.9 dependency; review
+and remove this override when its parent no longer needs it. No new direct dependency is added.
+
+Local tooling and the frontend Docker builder both pin pnpm 11.28.6, which includes
+[package-installation and lockfile hardening](https://pnpm.io/blog/releases/11.28.5).
+The seven-day release-age gate and strict peer checks remain enabled. These selected npm releases
+were published no later than October 15; this update does not waive their release-age gate.
+
+Local verification on October 24 passed formatting, ESLint, TypeScript, the generated API-contract
+check, all 95 frontend unit tests, and the Next.js production build. The npm audit reported no
+known vulnerabilities in the resolved graph; registry signature verification passed for 417
+packages. Browser acceptance and Docker runtime verification were not rerun in this package block.
+The existing CI frontend checks consume the same package-manager pin and frozen lockfile.
+
+The owner separately approved a release-age exception for the October 21 Node.js 24.22.1 security
+patch. That runtime/container update requires its own image-digest and compatibility verification;
+updating npm packages alone does not patch Node.js. Neither a clean npm audit nor this refresh
+establishes that the application or its container images are free of vulnerabilities.
 
 ## Current architecture
 
