@@ -1,7 +1,7 @@
 {
   "name": "investment-research",
   "private": true,
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@11.28.6",
   "engines": {
     "node": ">=24 <25",
     "pnpm": ">=11 <12"
