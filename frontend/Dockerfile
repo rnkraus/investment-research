@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM docker.io/library/node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS builder
+# Node.js 24.22.1 security release; release-age exception approved 2026-10-24.
+FROM docker.io/library/node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS builder
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     PNPM_HOME=/pnpm \
@@ -24,7 +25,8 @@ ENV INVESTMENT_RESEARCH_RUNTIME_LOCATION=container \
 
 RUN pnpm --filter @investment-research/frontend build
 
-FROM gcr.io/distroless/nodejs24-debian13@sha256:bb6b03d81066993293a10feda7250e8e1cc034035fe9b61cfceededa7c8bf04d AS runtime
+# Verified Node.js 24.22.1 runtime and upstream Cosign identity on 2026-10-26.
+FROM gcr.io/distroless/nodejs24-debian13@sha256:206cfbab1a64af20b63645150e3aa61b7babc17869e0254914947732963d6f07 AS runtime
 
 ENV HOME=/nonexistent \
     HOSTNAME=0.0.0.0 \
