@@ -8,7 +8,14 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     PATH=/pnpm:$PATH
 
 RUN corepack enable \
-    && corepack prepare pnpm@11.28.6 --activate
+    && corepack prepare pnpm@11.28.6 --activate \
+    # Builds use Corepack and pnpm, not npm's separate bundled dependency tree.
+    && rm -r /usr/local/lib/node_modules/npm \
+    && rm /usr/local/bin/npm /usr/local/bin/npx \
+    && test ! -e /usr/local/lib/node_modules/npm \
+    && test ! -e /usr/local/bin/npm \
+    && test ! -e /usr/local/bin/npx \
+    && pnpm --version
 
 WORKDIR /workspace
 
