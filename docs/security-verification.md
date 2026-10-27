@@ -30,6 +30,7 @@ versions and image pins belong in package manifests, lockfiles, and Dockerfiles.
 | October 27 | Frozen installation and build after unused build-tool removal | Passed, alongside formatting, lint, types, contracts, and all 95 frontend unit tests. |
 | October 27 | Targeted backend dependency update | Formatting, lint, types, all 2,627 backend unit tests, and isolated storage/API checks passed. The overall dependency audit still has unresolved findings. |
 | October 27 | Migration and tracing dependency refresh | All 2,627 backend unit tests and formatting/lint/type checks passed. Five backend image targets, isolated database migrations including repeat execution, and API health/readiness checks passed. The overall dependency audit remains unresolved. |
+| October 27 | Development-tool dependency refresh | Backend verification and API-contract hooks passed. Cross-process file-lock contention/reacquisition and fresh Python 3.14 environment creation passed. Changes are development-only; the overall dependency audit remains unresolved. |
 
 ## Safeguards and limitations
 
