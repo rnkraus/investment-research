@@ -28,6 +28,7 @@ versions and image pins belong in package manifests, lockfiles, and Dockerfiles.
 | October 26 | Runtime-base and final ARM64 web-image scans | No known critical/high findings in those checked artifacts at that time; not a permanent zero-CVE guarantee. |
 | October 26–27 | Isolated M1 HTTP journey | Passed with the browser gate explicitly skipped; disposable resources removed. |
 | October 27 | Frozen installation and build after unused build-tool removal | Passed, alongside formatting, lint, types, contracts, and all 95 frontend unit tests. |
+| October 27 | Targeted backend dependency update | Formatting, lint, types, all 2,627 backend unit tests, and isolated storage/API checks passed. The overall dependency audit still has unresolved findings. |
 
 ## Safeguards and limitations
 
@@ -36,7 +37,7 @@ non-root, read-only runtime receives only the traced application and static asse
 builder's operating-system tooling. This reduces exposure without claiming to contain arbitrary
 malicious build code or eliminate supply-chain risk.
 
-Some build-time findings still require follow-up. Their detailed investigation and remediation
+Some dependency and build-time findings still require follow-up. Their detailed investigation and remediation
 notes are maintained locally, outside version control. Omitting those details here is a
 publication boundary, not remediation, suppression, or risk acceptance. Specific release-age
 exceptions are reviewed separately and must not be generalized to later dependencies or tools.
