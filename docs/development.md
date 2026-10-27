@@ -492,6 +492,8 @@ cd ..
 pnpm --filter @investment-research/frontend contracts:check
 ```
 
+## Dependency and image maintenance
+
 The following security checks depend on external registries and are currently run manually:
 
 ```shell
@@ -501,68 +503,20 @@ cd backend
 uv audit --locked
 ```
 
-### Frontend security refresh (2026-10-24)
+Versions and digests are maintained in the package manifests, lockfiles, and
+`frontend/Dockerfile`. The frontend builder uses Corepack and pinned pnpm; its unused npm/npx
+installation is removed. Project audits do not cover the package manager's own bundled packages
+or operating-system packages, so review builder and final runtime images separately.
 
-The frontend locks Next.js and `eslint-config-next` to 16.4.2, with minimum declarations of
-`^16.4.2`. This includes the [October Next.js security fixes](https://github.com/vercel/next.js/security/advisories/GHSA-673q-mjm6-r5xr)
-and the subsequent [16.4.2 maintenance fixes](https://github.com/vercel/next.js/releases/tag/v16.4.2).
-The lockfile also updates sharp to 0.35.5, source-map-js to 1.2.2, Zod to 4.6.7, and the affected
-brace-expansion release lines to 1.1.21, 2.1.7, and 5.0.12. A narrowly scoped
-`minimatch@10.2.6>brace-expansion` override replaces its pinned vulnerable 5.0.9 dependency; review
-and remove this override when its parent no longer needs it. No new direct dependency is added.
+The seven-day npm release-age policy and strict peer checks remain enabled. An exception for one
+security release does not approve other versions or tools. Updating npm packages or Docker images
+does not update an already-installed local Node.js runtime; keep the Node 24 installation current.
 
-Local tooling and the frontend Docker builder both pin pnpm 11.28.6, which includes
-[package-installation and lockfile hardening](https://pnpm.io/blog/releases/11.28.5).
-The seven-day release-age gate and strict peer checks remain enabled. These selected npm releases
-were published no later than October 15; this update does not waive their release-age gate.
-
-Local verification on October 24 passed formatting, ESLint, TypeScript, the generated API-contract
-check, all 95 frontend unit tests, and the Next.js production build. The npm audit reported no
-known vulnerabilities in the resolved graph; registry signature verification passed for 417
-packages. Browser acceptance and Docker runtime verification were not rerun in this package block.
-The existing CI frontend checks consume the same package-manager pin and frozen lockfile.
-
-### Node.js container security refresh (2026-10-26)
-
-The frontend builder and Distroless runtime pin the Node.js 24.22.1
-[October 21 security release](https://nodejs.org/en/blog/release/v24.22.1), covering the Node.js
-Brotli, DNS, TLS, and other fixes described in the upstream advisory. The owner approved the
-release-age exception on October 24; no general relaxation of the seven-day npm policy is implied.
-The build/runtime distributions, non-root application user, entrypoint, and Compose isolation are
-unchanged. Both multi-platform image indexes include Linux AMD64 and ARM64:
-
-- Builder: `docker.io/library/node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205`.
-- Runtime: `gcr.io/distroless/nodejs24-debian13@sha256:206cfbab1a64af20b63645150e3aa61b7babc17869e0254914947732963d6f07`.
-
-The runtime's upstream Cosign signature was verified with issuer `https://accounts.google.com`
-and identity `keyless@distroless.iam.gserviceaccount.com`; network-disabled, read-only, non-root
-ARM64 and AMD64 runs reported Node.js 24.22.1. Distroless uses reproducible epoch creation
-timestamps, so its image-config date is not evidence of publication age. Local development still uses the Node 24
-line selected by `.nvmrc`; owners must update an already-installed older Node 24 independently.
-
-Updating npm packages alone does not patch Node.js. Neither a clean npm audit nor these version
-and signature checks establish that the application or its container images are free of
-vulnerabilities. Browser verification remains owner-controlled.
-
-Verification on October 26 passed the CI Dockerfile check without warnings, the ARM64 production
-image build, frontend formatting/lint/types/contracts and all 95 unit tests, and
-`uv run --locked python -m scripts.verify_m1_runtime --skip-browser`. The isolated HTTP journey
-covered PDF and text processing, retrieval, evidence-grounded answers, original opening, and
-safe-log checks; its temporary containers, networks, volumes, and acceptance image were removed.
-The browser gate was explicitly skipped, not accepted. Runtime execution on AMD64 was only a
-Node version probe, not a full AMD64 application journey.
-
-Docker Scout reported no known critical/high findings for either Distroless base architecture.
-The final ARM64 web image (`sha256:1798af41a8a93e18283c6fcb7207fc21e8470b055b75bd58969e5bede0b5fa0b`)
-also had no reported critical/high findings across 89 indexed packages; its configured user was
-`65532:65532`. These are time- and scanner-specific results, not a permanent zero-CVE property.
-The ARM64 Bookworm **builder base** still reported 13 high findings across util-linux, npm-bundled
-Undici, brace-expansion and http-cache-semantics, zlib, and Perl. These findings remain open for
-separate reachability/remediation review; the successful build is not their acceptance or dismissal.
-Only the traced standalone application and static assets are copied into the Distroless final
-stage, not the builder's npm installation or operating-system tools. This separation reduces
-runtime exposure but does not eliminate build-time supply-chain risk. No advisory is suppressed
-and no unreviewed base-distribution switch is made to reduce a scanner count.
+See [dependency and container verification](./security-verification.md) for dated results,
+verification methods, and limitations. Detailed open-finding notes stay local and outside version
+control. The public summary is historical evidence, not a current clean bill of health or approval
+to ignore findings. Do not commit raw scanner/test logs, credentials, private endpoints, full
+prompts, or private document content.
 
 ## Current architecture
 
