@@ -504,9 +504,13 @@ uv audit --locked
 ```
 
 Versions and digests are maintained in the package manifests, lockfiles, and
-`frontend/Dockerfile`. The frontend builder uses Corepack and pinned pnpm; its unused npm/npx
-installation is removed. Project audits do not cover the package manager's own bundled packages
-or operating-system packages, so review builder and final runtime images separately.
+`backend/Dockerfile` and `frontend/Dockerfile`. The frontend builder uses Corepack and pinned pnpm;
+its unused npm/npx installation is removed. Project audits do not cover the package manager's own
+bundled packages or operating-system packages, so review builder and final runtime images separately.
+
+Backend runtime images omit pip, its command-line entry points, and the optional ensurepip bootstrap
+package. Dependencies are installed by uv during the build; rebuild the image to change them. The
+builder and host development environments keep their existing tools.
 
 The seven-day npm release-age policy and strict peer checks remain enabled. An exception for one
 security release does not approve other versions or tools. Updating npm packages or Docker images

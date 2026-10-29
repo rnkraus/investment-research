@@ -1,6 +1,6 @@
 # Security Verification Summary
 
-**Scope:** Historical local verification, October 24–29, 2026. This summary is not a current
+**Scope:** Historical local verification, October 24–30, 2026. This summary is not a current
 scan, security certification, hosted-CI result, or acceptance of unresolved risks.
 
 Use the [development guide](./development.md#dependency-and-image-maintenance) for operational
@@ -33,6 +33,7 @@ versions and image pins belong in package manifests, lockfiles, and Dockerfiles.
 | October 27 | Development-tool dependency refresh | Backend verification and API-contract hooks passed. Cross-process file-lock contention/reacquisition and fresh Python 3.14 environment creation passed. Changes are development-only; the overall dependency audit remains unresolved. |
 | October 29 | Pinned package-manager refresh | Frozen installation, formatting/lint/types/contracts, 95 frontend tests, and 417 registry signatures passed; no known project-graph audit findings. Dockerfile check, ARM64 production build, and isolated M1 HTTP journey passed. Browser gate skipped; host build blocked by local process restrictions. |
 | October 29 | Eligible Python parser and development-tool refresh | Dependency audit reported no known findings in 88 packages. Formatting/lint/types, 2,628 unit tests, parser isolation, and isolated M0/M1 HTTP journeys passed. Existing release-age and parser-version checks retained; newer upstream corrections and OS findings still require follow-up. |
+| October 30 | Backend runtime installer removal | pip/ensurepip absence verified under application and global Python in all five runtime roles. Formatting/lint/types, 2,628 unit tests, migrations/API readiness, parser isolation, and M0/M1 HTTP journeys passed. Image scan confirms removal of installer-related findings; remaining OS findings are unresolved. Browser gate skipped. |
 
 ## Safeguards and limitations
 
@@ -41,7 +42,10 @@ non-root, read-only runtime receives only the traced application and static asse
 builder's operating-system tooling. This reduces exposure without claiming to contain arbitrary
 malicious build code or eliminate supply-chain risk.
 
-Some dependency and build-time findings still require follow-up. Their detailed investigation and remediation
+Backend dependencies are installed by uv during the build. Final backend runtimes omit pip and its
+optional ensurepip bootstrap package; both the application and global interpreters are checked in CI.
+
+Some upstream dependency and container findings still require follow-up. Their detailed investigation and remediation
 notes are maintained locally, outside version control. Omitting those details here is a
 publication boundary, not remediation, suppression, or risk acceptance. Specific release-age
 exceptions are reviewed separately and must not be generalized to later dependencies or tools.

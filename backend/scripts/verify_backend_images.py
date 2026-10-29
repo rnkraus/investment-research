@@ -41,6 +41,9 @@ FORBIDDEN_CONFIGURATION_NAMES = (
 RUNTIME_SMOKE_CODE = """\
 import importlib.util
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import investment_research
@@ -48,6 +51,20 @@ import investment_research
 assert os.getuid() == 65532
 assert os.getgid() == 65532
 assert importlib.util.find_spec("pytest") is None
+installer_check = (
+    "import importlib.util; "
+    "assert importlib.util.find_spec('pip') is None; "
+    "assert importlib.util.find_spec('ensurepip') is None"
+)
+for executable in (sys.executable, str(Path(sys.base_prefix) / "bin/python3")):
+    subprocess.run(
+        [executable, "-I", "-c", installer_check],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+for command in ("pip", "pip3", f"pip{sys.version_info.major}.{sys.version_info.minor}"):
+    assert shutil.which(command) is None
 assert not Path("/bin/uv").exists()
 assert Path("/app/src/investment_research").is_dir()
 assert not os.access("/app/src", os.W_OK)
