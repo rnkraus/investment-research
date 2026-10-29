@@ -30,6 +30,10 @@ RUN chmod -R a+rX /app/tests
 
 FROM python:3.14.7-slim-trixie@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS runtime
 
+# Runtime executes the uv-built environment without package installation or pip bootstrapping.
+RUN python -m pip uninstall --yes pip \
+    && rm -r /usr/local/lib/python3.14/ensurepip
+
 RUN groupadd --system --gid 65532 app \
     && useradd --system --uid 65532 --gid 65532 --no-create-home \
         --home-dir /nonexistent --shell /usr/sbin/nologin app
