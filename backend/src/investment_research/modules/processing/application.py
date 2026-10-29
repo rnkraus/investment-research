@@ -69,7 +69,7 @@ class ProcessingProfile:
 
 
 M0_0_PROCESSING_PROFILE = ProcessingProfile(
-    parser_version="pypdf-6.16.2",
+    parser_version="pypdf-6.21.2",
     parser_config_version=PDF_PARSER_CONFIG_VERSION_V1,
     chunker_version="m0.0-structure-block-v1",
     chunking_config_version="m0.0-structure-block-config-v1",
@@ -81,7 +81,7 @@ M0_0_PROCESSING_PROFILE = ProcessingProfile(
 )
 
 M1_PROCESSING_PROFILE = ProcessingProfile(
-    parser_version="pypdf-6.16.2",
+    parser_version="pypdf-6.21.2",
     parser_config_version=M1_PARSER_CONFIG_VERSION,
     chunker_version="m1-source-block-v1",
     chunking_config_version="m1-source-block-config-v1",

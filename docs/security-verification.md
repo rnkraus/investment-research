@@ -32,6 +32,7 @@ versions and image pins belong in package manifests, lockfiles, and Dockerfiles.
 | October 27 | Migration and tracing dependency refresh | All 2,627 backend unit tests and formatting/lint/type checks passed. Five backend image targets, isolated database migrations including repeat execution, and API health/readiness checks passed. The overall dependency audit remains unresolved. |
 | October 27 | Development-tool dependency refresh | Backend verification and API-contract hooks passed. Cross-process file-lock contention/reacquisition and fresh Python 3.14 environment creation passed. Changes are development-only; the overall dependency audit remains unresolved. |
 | October 29 | Pinned package-manager refresh | Frozen installation, formatting/lint/types/contracts, 95 frontend tests, and 417 registry signatures passed; no known project-graph audit findings. Dockerfile check, ARM64 production build, and isolated M1 HTTP journey passed. Browser gate skipped; host build blocked by local process restrictions. |
+| October 29 | Eligible Python parser and development-tool refresh | Dependency audit reported no known findings in 88 packages. Formatting/lint/types, 2,628 unit tests, parser isolation, and isolated M0/M1 HTTP journeys passed. Existing release-age and parser-version checks retained; newer upstream corrections and OS findings still require follow-up. |
 
 ## Safeguards and limitations
 
