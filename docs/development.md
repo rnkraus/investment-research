@@ -11,7 +11,7 @@ public deployment. Only approved public or synthetic documents may reach live pr
 ## Prerequisites
 
 - Node.js 24
-- pnpm 11.28.6
+- pnpm 11.28.7
 - Python 3.14
 - uv 0.12.7 or newer within the 0.12 release line
 - Docker with Docker Compose
