@@ -8,7 +8,11 @@ from pypdf import PdfWriter
 from pypdf import __version__ as pypdf_version
 
 from investment_research.infrastructure.parsing.pypdf import PypdfDocumentParser
-from investment_research.modules.processing.application import M0_0_PROCESSING_PROFILE
+from investment_research.modules.processing.application import (
+    M0_0_PROCESSING_PROFILE,
+    M1_PROCESSING_PROFILE,
+    ProcessingProfile,
+)
 from investment_research.modules.processing.contracts import ParserLimits
 from investment_research.modules.processing.ports import (
     DocumentParser,
@@ -41,11 +45,12 @@ def encrypted_pdf() -> BytesIO:
     return content
 
 
-def test_pypdf_adapter_matches_document_parser_protocol() -> None:
+@pytest.mark.parametrize("profile", [M0_0_PROCESSING_PROFILE, M1_PROCESSING_PROFILE])
+def test_pypdf_adapter_matches_document_parser_protocol(profile: ProcessingProfile) -> None:
     parser: DocumentParser = PypdfDocumentParser()
 
     assert parser.parser_version == f"pypdf-{pypdf_version}"
-    assert parser.parser_version == M0_0_PROCESSING_PROFILE.parser_version
+    assert parser.parser_version == profile.parser_version
 
 
 def test_parse_preserves_fixture_pages_and_expected_page_text() -> None:

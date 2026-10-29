@@ -512,6 +512,10 @@ The seven-day npm release-age policy and strict peer checks remain enabled. An e
 security release does not approve other versions or tools. Updating npm packages or Docker images
 does not update an already-installed local Node.js runtime; keep the Node 24 installation current.
 
+Parser dependency updates must keep the active processing profiles aligned with the installed
+parser version. Rebuild the API, worker, and parser together. Existing processing runs retain their
+recorded parser version; do not relabel an older run to bypass a version mismatch.
+
 See [dependency and container verification](./security-verification.md) for dated results,
 verification methods, and limitations. Detailed open-finding notes stay local and outside version
 control. The public summary is historical evidence, not a current clean bill of health or approval
