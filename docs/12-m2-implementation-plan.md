@@ -1,10 +1,10 @@
 # Investment Research Archive — M2 Implementation Plan
 
-**Status:** Step 0 accepted; Step 1 automatic HTTP recovery implemented; verification/CI review pending
+**Status:** Steps 0 and 1 accepted for local operation; Step 2 and remaining M2 work pending
 
 **Date:** 2026-10-01
 
-**Baseline updated:** 2026-10-14
+**Baseline updated:** 2026-11-02
 
 **Milestone:** M2 — Reliable ingestion and lifecycle
 
@@ -30,6 +30,11 @@ and accepted [ADRs](./adr/README.md). M1's frozen contracts remain in
 [11-m1-contracts.md](./11-m1-contracts.md); this plan extends them rather than rewriting them.
 The accepted additive technical contracts are in [15-m2-contracts.md](./15-m2-contracts.md).
 They define implementation requirements, not endpoints or settings already available at runtime.
+
+The [Step 1 closeout](#step-1-closeout-2026-11-02) records the current processing-delivery acceptance.
+Dated implementation notes retain their original verification boundaries; their pending statements
+are historical where superseded by that closeout. Later steps remain unimplemented unless their
+own records state otherwise.
 
 ## 1. Outcome and boundaries
 
@@ -932,6 +937,45 @@ canonical-output assertions. Frontend formatting, linting, typing, contracts, an
 Both isolated projects were removed; runtime cleanup verification found no retained test resources.
 The full M0/M1 runtime/browser gates, hosted CI, dependency audits, paid providers, and normal
 archive were not rerun for this amendment. Hosted confirmation and Step 1 acceptance remain pending.
+
+#### Step 1 closeout (2026-11-02)
+
+**Decision:** Accept Step 1's durable delivery and bounded automatic recovery for the existing
+local single-user PDF/text processing path. The owner confirmed green merge checks and requested
+this closeout after the pip-removal change was merged into `main` at `d259fb4`. No Step 2
+implementation or full M2 lifecycle acceptance follows from this decision.
+
+Accepted behavior:
+
+- Capture commits the processing run and workspace-scoped outbox intent together. Publication
+  follows outside the database transaction; an ordinary Redis outage does not discard the original.
+- Fenced claims and receipts, bounded publication generations, and execution fences preserve one
+  canonical effect under at-least-once delivery. A receipt never proves processing completion.
+- The separate broker-only scheduler and scoped worker repair recover eligible captured/expired
+  work within existing limits. Exhaustion remains blocked work, not a reset of execution/provider
+  attempts or a promise of recovery after every failure.
+- Deleted and otherwise excluded sources cannot be revived by repair. Existing catalog, deletion,
+  RAG, provider-budget, fixed-identity, and parser-isolation contracts remain in force.
+
+Evidence and limits:
+
+- The recorded October 24 local gate covers 2,627 backend unit tests, migration checks and 357
+  PostgreSQL integration tests, queue/worker-loss and automatic HTTP PDF/text recovery, and
+  frontend formatting/lint/types/contracts with 95 tests. Those counts describe that historical run.
+- The subsequent October 30 installer-removal verification recorded 2,628 backend unit tests,
+  all backend image roles, parser isolation, and complete M0/M1 HTTP journeys. Its M1 browser
+  stage was explicitly skipped locally; see [the security summary](./security-verification.md).
+- The owner-reported green hosted merge checks supply the later compatibility confirmation.
+  The committed CI workflow includes the outbox/scheduler/HTTP recovery gate and the complete
+  M0 and M1 journeys, with browser acceptance in the M1 job. GitHub run details were not retrieved
+  independently for this record, and no additional owner-run manual browser test is asserted.
+- This documentation closeout reruns no Docker stack, browser, dependency audit, or paid provider.
+  It does not clear outstanding image findings, verify live Pinecone deletion, establish restore
+  guarantees, or authorize shared-network/public operation.
+
+The remaining M2 stages, replay/version/batch endpoints, durable index reconciliation, reprocessing
+activation, historical-answer access, and expanded purge delivery retain their owning steps and
+gates. No next implementation step starts as part of this closeout.
 
 ### Step 2 — Processing stages, attempts, and safe retry controls
 

@@ -10,6 +10,13 @@ ADRs [0010](./adr/0010-transactional-outbox-and-reconciliation.md),
 Implementation must pass its owning step's tests before runtime activation; a failed gate requires
 a visible correction or contract amendment, never silently relaxed bounds.
 
+**Implementation status (2026-11-02):** Step 1's local processing outbox, fenced delivery,
+bounded repair, and separate scheduler are accepted as recorded in the
+[M2 Step 1 closeout](./12-m2-implementation-plan.md#step-1-closeout-2026-11-02).
+This is an implementation-status update, not a new contract or numeric policy version. Dated
+implementation notes below retain their historical scope. Later stage/version/index/purge
+extensions still require their owning steps' activation gates; full M2 acceptance is not claimed.
+
 **Numeric policy amendment v2 (2026-10-24, owner-approved):** The per-operation broker cap is
 five seconds rather than the original two. It includes helper startup, connection, publication,
 and acknowledgement. Outbox readiness and publication each retain their own bounded operation; both

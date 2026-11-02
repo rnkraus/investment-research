@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.8 — M2 Step 1 automatic HTTP recovery implemented; verification/CI review pending
+**Status:** Active v1.9 — M2 Step 1 accepted for local operation; remaining M2 steps pending
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -252,6 +252,15 @@ The backend-to-CI-to-frontend step sequence, repository delta, accepted contract
 gates are in [12-m2-implementation-plan.md](./12-m2-implementation-plan.md). Contract acceptance
 does not itself implement or activate runtime changes.
 
+**Step 1 acceptance (2026-11-02):** The owner confirmed green merge checks and requested closeout
+after the runtime-installer fix reached `main` at `d259fb4`. The recorded local recovery and
+compatibility checks, together with owner-reported hosted CI including the complete M1 browser
+journey, close the durable processing-delivery step for local operation. The detailed evidence and
+limitations are in the [Step 1 closeout](./12-m2-implementation-plan.md#step-1-closeout-2026-11-02).
+No new manual browser run or independent GitHub status retrieval is claimed. The dated notes below
+retain the state of their original work blocks. Step 2 and the remaining M2 lifecycle gate are
+not accepted or started by this closeout.
+
 **Step 0 review (2026-10-14):** The owner approved candidate-version activation, replay versus
 intentional duplicates, per-item batch results, answer-bound historical citations, and a separate
 repair scheduler, followed by the initial limits and content-free replay protection after purge.
@@ -450,11 +459,11 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 
 1. Preserve M2 Step 1's implemented bounded recovery, exhaustion closure, worker task, manual command,
    and separate scheduler implementation under `15-m2-contracts.md` and ADR-0010. Details and local
-   verification are recorded in the M2 plan. Do not reset execution/provider attempts or revive
+   acceptance are recorded in the M2 plan. Do not reset execution/provider attempts or revive
    excluded sources.
 2. The broker-only scheduler is now part of normal API/Compose startup. Preserve bounded capture
-   dispatch and the isolated automatic HTTP PDF/text outage/recovery gate. Complete compatibility
-   verification, required hosted CI/browser checks, and owner review before accepting Step 1.
+   dispatch and the isolated automatic HTTP PDF/text outage/recovery gate in future compatibility
+   and hosted CI checks. Step 1 is accepted for local operation as recorded on 2026-11-02.
    A running scheduler or publication receipt alone never proves document processing completed.
 3. Preserve the existing catalog, multi-document selection, permanent deletion, and frontend capture
    contract. Continue backend → CI → frontend compatibility in the documented work blocks;
