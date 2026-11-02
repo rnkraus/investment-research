@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.9 — M2 Step 1 accepted for local operation; remaining M2 steps pending
+**Status:** Active v1.10 — M2 Step 1 accepted; bounded M3 company foundation in progress
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -57,6 +57,12 @@ M0.0 is governed by its narrower proof-specific constraints and exit gate. For M
 | M9 — Bounded agentic research | LangGraph handles justified multi-step cases | It measurably improves named cases within budgets |
 
 Milestones are sequential release gates, not fixed-duration sprints. Small refactors and documentation updates happen continuously.
+
+**Bounded sequencing supplement (2026-11-02, owner-approved):** After M2 Step 1 acceptance, a
+limited local M3 company/archive slice may proceed while the remaining M2 steps stay pending.
+This does not accept the full M2 or M3 exit gate or authorize shared/public operation. The first
+work block is company identity/name values and typed creation/summary contracts; each later block
+still requires the repository's backend, CI, frontend, and verification order.
 
 ## 4. M0.0 — Lean proof of value
 
@@ -306,6 +312,19 @@ Replaying any job or outbox event produces the same final state. Deleted or inac
 
 ## 8. M3 — Archive and discovery
 
+**Company foundation block (2026-11-02):** Implemented workspace-owned company identity, bounded
+Unicode display-name normalization and casefolded comparison keys, and name-only creation/safe
+summary contracts. Focused unit tests join the existing backend/architecture CI discovery; no new
+workflow or paid test is needed. This block provides no persistence, uniqueness constraint, HTTP
+route, document assignment, or frontend feature. Those are separate follow-up blocks, not implied
+by the existence of the company values. The current catalog and research behavior are unchanged.
+
+Local verification: 51 focused company/architecture checks, the complete backend gate with 2,676
+unit tests and typing across 384 source files, and unchanged OpenAPI checks passed. Frontend
+formatting/lint/types/contracts and 95 tests passed with pinned pnpm; the test script's nested
+host pnpm initially selected an older version, so its contract and Node-test components were run
+directly through the pinned tool. No Docker, browser, live provider, or hosted CI run is claimed.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
@@ -471,3 +490,6 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 4. Keep the accepted local RAG profile, evaluation history, fixed local owner, and loopback-only
    boundary. Provider checks remain separately approved, bounded, and public/synthetic only;
    publishing source code does not authorize a public application deployment.
+5. Verify the bounded M3 company foundation before adding persistence or public routes. Preserve
+   the remaining M2 gates; do not infer company assignment or reviewed report metadata for old
+   documents from their titles or legacy type constants.
