@@ -342,6 +342,21 @@ components again used pinned pnpm directly. No browser, live-provider, or hosted
 Company application services, HTTP routes, document assignment, and UI remain separate blocks;
 this does not complete the M3 step or its exit gate.
 
+**Company application block (2026-11-02):** `CompanyService` creates server-owned identities and
+returns a safe summary only after its transaction commits. Scoped lookup uses a separate read
+session and treats unknown/foreign identities alike. The infrastructure unit of work translates
+only the exact company-name constraint to a safe conflict; unrelated integrity failures remain
+distinct. Uncertain commit outcomes never return success or trigger automatic retries. No HTTP
+route, company listing, document assignment, composition-root wiring, or UI is added in this block.
+
+Local verification passed: 15 focused service/transaction/architecture tests; complete backend
+formatting, linting, typing across 394 files and 2,693 unit tests; 376 PostgreSQL integration tests,
+including five new service cases and migration/schema checks; unchanged OpenAPI; frontend
+formatting/lint/types/contracts and 95 tests. The PostgreSQL-only verifier skipped seven separate
+SeaweedFS cases. Frontend test components used pinned pnpm directly as above. Existing CI gates
+discover these tests automatically; hosted CI, backend images, browsers, and live providers were
+not rerun for this service-only block. The full M3 step remains incomplete.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
@@ -507,6 +522,6 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 4. Keep the accepted local RAG profile, evaluation history, fixed local owner, and loopback-only
    boundary. Provider checks remain separately approved, bounded, and public/synthetic only;
    publishing source code does not authorize a public application deployment.
-5. Verify the bounded M3 company persistence before adding application services or HTTP routes. Preserve
+5. Verify the bounded M3 company application services before adding HTTP routes. Preserve
    the remaining M2 gates; do not infer company assignment or reviewed report metadata for old
    documents from their titles or legacy type constants.

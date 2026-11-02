@@ -8,7 +8,8 @@ Own workspace-scoped economic company identities separately from tickers, docume
 |---|---|
 | `domain.py` | Immutable company identity, explicit workspace/creator provenance, UTC creation time, and bounded Unicode name normalization. |
 | `contracts.py` | Name-only `CreateCompanyCommand` and safe `CompanySummary` without internal comparison keys. |
-| `ports.py` | Caller-owned transaction boundary for scoped company creation and lookup. |
+| `application.py` | Server-owned identity/provenance, commit-before-return creation, and scoped summary lookup. |
+| `ports.py` | Repository and transaction contracts with safe duplicate-name and uncertain-commit errors. |
 | `persistence.py` | PostgreSQL mapping, workspace-scoped reads, trusted creator checks, and database-enforced name uniqueness. |
 
 Names preserve case, accents, and punctuation after NFC and whitespace normalization. The display
@@ -23,6 +24,15 @@ repository neither commits nor flushes, so callers retain transaction control. C
 collisions are resolved by PostgreSQL's unique constraint. Stored display names and comparison
 keys are checked for consistency when read.
 
-There is no application service, HTTP route, document assignment, or UI yet. Capture, retrieval,
-citations, deletion, and provider calls remain unchanged. Existing backend and PostgreSQL CI gates
-discover the unit, concurrency, workspace-isolation, and migration tests automatically.
+`CompanyService` assigns identity, creator, workspace, and creation time from trusted server
+inputs. Creation returns a summary only after the write transaction exits successfully; lookup
+uses a separate non-committing read session and reports unknown/foreign identities uniformly.
+The infrastructure adapter in `infrastructure/database/company_unit_of_work.py` translates only
+the exact company-name unique constraint to `CompanyNameConflictError`. Other integrity failures
+are not name conflicts. A connection failure during commit becomes `CompanyCommitUncertainError`;
+there is no automatic retry or claimed success. Both safe errors suppress storage traceback context
+when rendered normally; callers must not log the raw underlying exception or submitted name.
+
+There is no HTTP route, company list, document assignment, or UI yet. Capture, retrieval, citations,
+deletion, and provider calls remain unchanged. Existing backend and PostgreSQL CI gates discover
+the unit, concurrency, workspace-isolation, transaction, and migration tests automatically.
