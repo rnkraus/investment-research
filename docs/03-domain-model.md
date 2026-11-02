@@ -53,6 +53,15 @@ All repository operations require an explicit `workspace_id`. Object keys, queue
 
 A company is not a ticker. One company may have multiple active, historical, or exchange-specific listings.
 
+**Implemented company foundation (2026-11-02):** The Companies module now defines an immutable
+company identity with explicit workspace, creator, and UTC creation time. Display names use NFC
+and collapsed whitespace, preserve case/accents/punctuation, and are bounded to 200 code points;
+control, format, and surrogate characters are rejected. Casefolding derives a comparison key of
+at most 600 code points without accepting that key from a create command. A create command contains
+only the name; a safe summary contains company ID, display name, and creation time. Persistence,
+scoped uniqueness enforcement, document assignment, HTTP routes, aliases/listings, and watchlists
+are not activated by these value and contract definitions.
+
 ### 3.3 Documents and originals
 
 | Entity | Meaning | Important properties |
