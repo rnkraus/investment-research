@@ -1,7 +1,8 @@
 # ADR-0010 — Transactional outbox and bounded reconciliation
 
 **Status:** Accepted for M2 implementation — owner-approved contracts and bounds on 2026-10-14;
-runtime implementation and activation tests remain outstanding.
+Step 1 processing delivery/repair accepted for local operation on 2026-11-02. Later index and
+purge reconciliation implementation and activation gates remain outstanding.
 
 **Scope:** M2 durable delivery, repair, and derived-index convergence. For M2 this supersedes
 only ADR-0005's manual post-commit publication recovery gap, not its workspace, ID-only message,
@@ -63,11 +64,15 @@ make paid test calls. Existing local-only and public/non-sensitive-provider boun
 
 ## Validation and reconsideration
 
-Acceptance records the Step 0 contract review. Before runtime activation, prove rollback atomicity, competing
+Decision acceptance records the Step 0 contract review. Before runtime activation, prove rollback atomicity, competing
 claims, stale-fence rejection, broker loss before and after a receipt, worker-loss recovery,
 bounded exhaustion, duplicate ticks, wrong-workspace equivalence, and provider-independent CI.
 Step 4 adds deterministic partial-index/stale-vector convergence; Step 6 adds interrupted-purge
 reconciliation. Migration must preserve legacy state without inventing attempts or deleting intent.
+
+The [Step 1 closeout](../12-m2-implementation-plan.md#step-1-closeout-2026-11-02) records the accepted
+local processing-delivery gate and its historical local plus owner-reported hosted verification.
+It does not accept the remaining index/purge gates or change this decision's authority and bounds.
 
 Reconsider the single scheduler only after measured throughput or availability requires another
 topology. Do not add an external workflow engine or distributed transaction without a new decision.
