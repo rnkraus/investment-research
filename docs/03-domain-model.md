@@ -62,8 +62,11 @@ only the name; a safe summary contains company ID, display name, and creation ti
 `0015_company_identity` adds a canonical PostgreSQL store with workspace-scoped name uniqueness.
 The repository checks trusted workspace/creator ownership, scopes every lookup, and retains the
 caller's transaction boundary. Existing documents are not backfilled into companies. A downgrade
-refuses to discard existing companies. Document assignment, application services, HTTP routes,
-aliases/listings, and watchlists remain follow-up work.
+refuses to discard existing companies. The application service creates server-owned identities,
+returns summaries only after commit, and hides unknown/foreign IDs behind the same absence error.
+Exact name conflicts are distinct from unrelated integrity failures and uncertain commits; none
+triggers an automatic creation retry. Document assignment, HTTP routes, aliases/listings, and
+watchlists remain follow-up work.
 
 ### 3.3 Documents and originals
 
