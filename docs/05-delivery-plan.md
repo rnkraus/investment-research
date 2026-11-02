@@ -325,6 +325,23 @@ formatting/lint/types/contracts and 95 tests passed with pinned pnpm; the test s
 host pnpm initially selected an older version, so its contract and Node-test components were run
 directly through the pinned tool. No Docker, browser, live provider, or hosted CI run is claimed.
 
+**Company persistence block (2026-11-02):** Migration `0015_company_identity` adds an empty,
+workspace-owned company store without assigning or rewriting existing documents. The repository
+checks trusted workspace/creator ownership, scopes every read, and leaves transactions to callers.
+PostgreSQL enforces normalized-name uniqueness per workspace, including concurrent creation;
+names in different workspaces remain independent. A guarded downgrade refuses to discard companies.
+The required runtime schema revision and model registry include this migration. Existing CI backend
+and PostgreSQL gates discover the added tests without a new workflow or paid provider access.
+
+Local verification passed: 59 focused unit/architecture checks; full backend formatting, linting,
+typing across 389 files and 2,681 unit tests; 371 PostgreSQL integration tests and migration/schema
+checks; all five backend image targets, repeatable migration, and API health/readiness; unchanged
+OpenAPI; frontend formatting/lint/types/contracts and 95 tests. Seven SeaweedFS integration cases
+were intentionally skipped by the PostgreSQL-only verifier. Frontend contract and Node-test
+components again used pinned pnpm directly. No browser, live-provider, or hosted CI run is claimed.
+Company application services, HTTP routes, document assignment, and UI remain separate blocks;
+this does not complete the M3 step or its exit gate.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
@@ -490,6 +507,6 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 4. Keep the accepted local RAG profile, evaluation history, fixed local owner, and loopback-only
    boundary. Provider checks remain separately approved, bounded, and public/synthetic only;
    publishing source code does not authorize a public application deployment.
-5. Verify the bounded M3 company foundation before adding persistence or public routes. Preserve
+5. Verify the bounded M3 company persistence before adding application services or HTTP routes. Preserve
    the remaining M2 gates; do not infer company assignment or reviewed report metadata for old
    documents from their titles or legacy type constants.

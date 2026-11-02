@@ -3,6 +3,7 @@
 from sqlalchemy import MetaData
 
 from investment_research.infrastructure.database.base import Base
+from investment_research.modules.companies import persistence as _companies_persistence
 from investment_research.modules.delivery import persistence as _delivery_persistence
 from investment_research.modules.documents import persistence as _documents_persistence
 from investment_research.modules.evidence import persistence as _evidence_persistence
@@ -14,6 +15,7 @@ from investment_research.modules.search import persistence as _search_persistenc
 
 MAPPING_MODULES = (
     _identity_persistence,
+    _companies_persistence,
     _documents_persistence,
     _processing_persistence,
     _delivery_persistence,

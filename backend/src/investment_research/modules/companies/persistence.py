@@ -1,0 +1,119 @@
+"""SQLAlchemy mapping and scoped repository for canonical company identities."""
+
+from datetime import datetime
+from typing import Self
+from uuid import UUID, uuid4
+
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    String,
+    UniqueConstraint,
+    func,
+    select,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, Session, mapped_column
+
+from investment_research.infrastructure.database.base import Base
+from investment_research.modules.companies.domain import (
+    COMPANY_NAME_KEY_MAX_LENGTH,
+    COMPANY_NAME_MAX_LENGTH,
+    Company,
+    CompanyName,
+    CompanyNameIntegrityError,
+    CompanyScopeError,
+    company_name_key,
+)
+from investment_research.modules.identity.domain import WorkspaceContext
+
+
+class CompanyRow(Base):
+    """Persist one company with scoped uniqueness on its application-derived name key."""
+
+    __tablename__ = "companies"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id"),
+        UniqueConstraint("workspace_id", "normalized_name"),
+        ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
+        CheckConstraint("char_length(name) > 0 AND name = btrim(name)", name="non_empty_name"),
+        CheckConstraint(
+            "char_length(normalized_name) > 0 AND normalized_name = btrim(normalized_name)",
+            name="non_empty_normalized_name",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(COMPANY_NAME_MAX_LENGTH), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(
+        String(COMPANY_NAME_KEY_MAX_LENGTH, collation="C"), nullable=False
+    )
+    created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    @classmethod
+    def from_domain(cls, company: Company) -> Self:
+        """Derive the comparison key from the validated display name before staging."""
+
+        return cls(
+            id=company.id,
+            workspace_id=company.workspace_id,
+            name=company.name,
+            normalized_name=company.normalized_name,
+            created_by=company.created_by,
+            created_at=company.created_at,
+        )
+
+    def to_domain(self) -> Company:
+        """Reject inconsistent stored name data rather than silently accepting it."""
+
+        company = Company(
+            id=self.id,
+            workspace_id=self.workspace_id,
+            name=self.name,
+            created_by=self.created_by,
+            created_at=self.created_at,
+        )
+        if self.name != company.name or self.normalized_name != company.normalized_name:
+            raise CompanyNameIntegrityError("stored company name is inconsistent")
+        return company
+
+
+class SqlAlchemyCompanyRepository:
+    """Use one caller-owned session without committing or accessing other module tables."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, context: WorkspaceContext, company: Company) -> None:
+        """Validate trusted ownership before staging; the database arbitrates duplicates."""
+
+        if company.workspace_id != context.workspace_id or company.created_by != context.user_id:
+            raise CompanyScopeError("company write is outside the trusted context")
+        self._session.add(CompanyRow.from_domain(company))
+
+    def get_by_id(self, context: WorkspaceContext, company_id: UUID) -> Company | None:
+        """Never resolve another workspace's company from its UUID alone."""
+
+        row = self._session.scalar(
+            select(CompanyRow).where(
+                CompanyRow.workspace_id == context.workspace_id,
+                CompanyRow.id == company_id,
+            )
+        )
+        return None if row is None else row.to_domain()
+
+    def get_by_name(self, context: WorkspaceContext, name: CompanyName) -> Company | None:
+        """Find an exact comparison-key match without cross-workspace equivalence."""
+
+        row = self._session.scalar(
+            select(CompanyRow).where(
+                CompanyRow.workspace_id == context.workspace_id,
+                CompanyRow.normalized_name == company_name_key(name),
+            )
+        )
+        return None if row is None else row.to_domain()

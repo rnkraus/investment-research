@@ -7,7 +7,7 @@ This directory contains business capabilities with explicit ownership boundaries
 | Module        | Responsibility                                                                 |
 | ------------- | ------------------------------------------------------------------------------ |
 | `identity/`   | Resolves the trusted user and workspace boundary for each operation.           |
-| `companies/`  | Defines bounded company identity/name contracts; persistence and API are not active yet. |
+| `companies/`  | Owns scoped company identities, name contracts, and PostgreSQL persistence; no API yet. |
 | `documents/`  | Owns logical documents, immutable versions, originals, and eligible retrieval. |
 | `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.      |
 | `search/`     | Owns reproducible retrieval runs and their ordered candidate records.          |
