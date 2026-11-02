@@ -58,9 +58,12 @@ company identity with explicit workspace, creator, and UTC creation time. Displa
 and collapsed whitespace, preserve case/accents/punctuation, and are bounded to 200 code points;
 control, format, and surrogate characters are rejected. Casefolding derives a comparison key of
 at most 600 code points without accepting that key from a create command. A create command contains
-only the name; a safe summary contains company ID, display name, and creation time. Persistence,
-scoped uniqueness enforcement, document assignment, HTTP routes, aliases/listings, and watchlists
-are not activated by these value and contract definitions.
+only the name; a safe summary contains company ID, display name, and creation time. Migration
+`0015_company_identity` adds a canonical PostgreSQL store with workspace-scoped name uniqueness.
+The repository checks trusted workspace/creator ownership, scopes every lookup, and retains the
+caller's transaction boundary. Existing documents are not backfilled into companies. A downgrade
+refuses to discard existing companies. Document assignment, application services, HTTP routes,
+aliases/listings, and watchlists remain follow-up work.
 
 ### 3.3 Documents and originals
 

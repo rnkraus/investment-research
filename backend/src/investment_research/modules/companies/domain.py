@@ -19,6 +19,14 @@ COMPANY_NAME_KEY_MAX_LENGTH = 600
 _UNSUPPORTED_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
 
 
+class CompanyScopeError(ValueError):
+    """Reject a company write outside the trusted workspace or creator context."""
+
+
+class CompanyNameIntegrityError(ValueError):
+    """Reject stored comparison data that disagrees with the canonical company name."""
+
+
 def normalize_company_name(value: object) -> str:
     """Normalize display spelling while rejecting hidden controls and invalid lengths."""
 

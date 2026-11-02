@@ -19,6 +19,7 @@ from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
 )
+from investment_research.infrastructure.health import REQUIRED_DATABASE_REVISIONS
 from investment_research.modules.delivery.domain import DeliveryErrorCategory, OutboxEvent
 from investment_research.modules.delivery.persistence import OutboxEventRow
 from investment_research.modules.documents.deletion_contracts import DeleteDocumentsCommand
@@ -118,7 +119,7 @@ def test_outbox_migration_backfills_only_unclaimed_active_capture_and_preserves_
         with engine.connect() as connection:
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0014_outbox_exhaustion_receipts"
+                in REQUIRED_DATABASE_REVISIONS
             )
     finally:
         if engine is not None:
@@ -182,8 +183,9 @@ def test_exhaustion_migration_preserves_receipts_and_refuses_lossy_downgrade(
         with pytest.raises(RuntimeError, match="exhausted publication receipts"):
             command.downgrade(config, "0013_processing_outbox")
         with sessions() as session:
-            assert session.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0014_outbox_exhaustion_receipts"
+            assert (
+                session.scalar(text("SELECT version_num FROM alembic_version"))
+                in REQUIRED_DATABASE_REVISIONS
             )
             row = session.get(OutboxEventRow, published.event_id)
             assert row is not None and row.to_domain() == blocked
