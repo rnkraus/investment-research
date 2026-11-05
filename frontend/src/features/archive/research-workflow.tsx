@@ -30,6 +30,7 @@ import {
 interface ResearchWorkflowProps {
   readonly documents?: readonly DocumentCatalogEntry[];
   readonly documentIds: readonly string[] | undefined;
+  readonly companyId?: string;
   readonly onBusyChange: (busy: boolean) => void;
 }
 
@@ -54,6 +55,7 @@ function modelLabel(model: ResearchModel): string {
 export function ResearchWorkflow({
   documents = [],
   documentIds,
+  companyId,
   onBusyChange,
 }: ResearchWorkflowProps) {
   const questionInputId = useId();
@@ -146,6 +148,7 @@ export function ResearchWorkflow({
             : "gpt-5.6-terra",
           context: {
             document_ids: documentIds,
+            company_id: companyId,
             temporal_mode: "CURRENT",
           },
         },

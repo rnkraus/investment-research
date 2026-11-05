@@ -4,11 +4,13 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import {
   apiClient,
+  type CompanySummary,
   type DocumentCatalogEntry,
   type DocumentListCursor,
 } from "@/lib/api/client";
 
 import { archiveCopy } from "./copy";
+import { CompanyFilter } from "./company-filter";
 import { DocumentCompanyEditor } from "./document-company-editor";
 import { DocumentDeletionPanel } from "./document-deletion-panel";
 import {
@@ -38,6 +40,8 @@ export function ArchiveResearch({
   const scopeName = useId();
   const documentListId = useId();
   const [isListVisible, setIsListVisible] = useState(true);
+  const [company, setCompany] = useState<CompanySummary | null>(null);
+  const companyId = company?.company_id;
   const [companyDocumentId, setCompanyDocumentId] = useState<string | null>(
     null,
   );
@@ -74,6 +78,7 @@ export function ArchiveResearch({
         const page = await apiClient.listDocuments(
           undefined,
           controller.signal,
+          companyId,
         );
         if (!controller.signal.aborted) {
           setDocuments(page.items);
@@ -95,7 +100,7 @@ export function ArchiveResearch({
       controller.abort();
       request.current?.abort();
     };
-  }, [refreshKey, refreshCount]);
+  }, [refreshKey, refreshCount, companyId]);
 
   async function loadMore() {
     if (cursor == null || isLoading) {
@@ -107,7 +112,11 @@ export function ArchiveResearch({
     setIsLoading(true);
     setFailed(false);
     try {
-      const page = await apiClient.listDocuments(cursor, controller.signal);
+      const page = await apiClient.listDocuments(
+        cursor,
+        controller.signal,
+        companyId,
+      );
       if (!controller.signal.aborted) {
         setDocuments((current) => {
           const merged = new Map(
@@ -325,6 +334,22 @@ export function ArchiveResearch({
                               documentId={document.document_id}
                               documentTitle={document.title}
                               panelId={companyPanelId}
+                              onAssignmentsSaved={
+                                companyId === undefined
+                                  ? undefined
+                                  : (companies) => {
+                                      if (
+                                        !companies.some(
+                                          (item) =>
+                                            item.company_id === companyId,
+                                        )
+                                      ) {
+                                        setRefreshCount(
+                                          (current) => current + 1,
+                                        );
+                                      }
+                                    }
+                              }
                             />
                           )}
                           {document.processing?.state === "FAILED" &&
@@ -361,7 +386,11 @@ export function ArchiveResearch({
                 </p>
               ) : null}
               {!isLoading && !failed && documents.length === 0 ? (
-                <p>{archiveCopy.catalog.empty}</p>
+                <p>
+                  {companyId === undefined
+                    ? archiveCopy.catalog.empty
+                    : "No saved documents are assigned to this company."}
+                </p>
               ) : null}
               {selection.documents.length >= DOCUMENT_SELECTION_LIMIT ? (
                 <p className="mt-2">{archiveCopy.catalog.selectionLimit}</p>
@@ -405,7 +434,9 @@ export function ArchiveResearch({
                     className="accent-teal-700"
                   />
                   {scope === "ALL"
-                    ? archiveCopy.research.archiveScope
+                    ? companyId === undefined
+                      ? archiveCopy.research.archiveScope
+                      : "All documents for this company"
                     : archiveCopy.research.documentScope}
                 </label>
               ))}
@@ -438,10 +469,21 @@ export function ArchiveResearch({
               ) : null}
             </div>
           </fieldset>
+          <div className="border-b border-slate-200 py-4">
+            <CompanyFilter
+              company={company}
+              disabled={isResearching || isDeleting}
+              onChange={(nextCompany) => {
+                setSelection(EMPTY_DOCUMENT_SELECTION);
+                setCompany(nextCompany);
+              }}
+            />
+          </div>
           <ResearchWorkflow
             key={answerResetKey}
             documents={documents}
             documentIds={researchDocumentIds}
+            companyId={companyId}
             onBusyChange={setIsResearching}
           />
         </div>

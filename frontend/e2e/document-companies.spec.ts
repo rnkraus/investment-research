@@ -155,3 +155,103 @@ test("a document can save company selections and recover from a conflicting edit
   ).toBeVisible();
   await expect(editor.getByRole("alert")).toHaveCount(0);
 });
+
+test("the company filter scopes the catalog and research even when documents are hidden", async ({
+  page,
+  context,
+}) => {
+  const filteredSource = {
+    document_id: DOCUMENT,
+    document_version_id: VERSION,
+    title: "Blue Ridge earnings brief",
+    language: "en",
+    media_type: "text/plain",
+    byte_size: 42,
+    created_at: CREATED_AT,
+    captured_at: CREATED_AT,
+    processing: null,
+    original_url: `/api/v1/documents/${DOCUMENT}/versions/${VERSION}/original`,
+  };
+  const otherSource = {
+    ...filteredSource,
+    document_id: FIRST,
+    title: "Unassigned earnings brief",
+    original_url: `/api/v1/documents/${FIRST}/versions/${VERSION}/original`,
+  };
+  let submittedContext: unknown;
+  await context.route("**/api/v1/documents?*", (route) => {
+    const companyId = new URL(route.request().url()).searchParams.get(
+      "company_id",
+    );
+    return route.fulfill({
+      json: {
+        items:
+          companyId === SECOND
+            ? [filteredSource]
+            : [filteredSource, otherSource],
+        next_cursor: null,
+      },
+    });
+  });
+  await context.route("**/api/v1/companies?*", (route) => {
+    expect(new URL(route.request().url()).searchParams.get("q")).toBe("BLRG");
+    return route.fulfill({ json: { items: [created], next_cursor: null } });
+  });
+  await context.route("**/api/v1/research-requests/models", (route) =>
+    route.fulfill({
+      json: {
+        provider_enabled: false,
+        generation_models: [],
+        support_models: [],
+      },
+    }),
+  );
+  await context.route("**/api/v1/research-requests", (route) => {
+    submittedContext = route.request().postDataJSON().context;
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body: `event: answer.insufficient\ndata: ${JSON.stringify({
+        event: "answer.insufficient",
+        schema_version: "1.0",
+        research_request_id: VERSION,
+        coverage: "INSUFFICIENT",
+        message: "No supported answer in these test sources.",
+      })}\n\n`,
+    });
+  });
+
+  await page.goto("/");
+  await expect(
+    page.getByText(otherSource.title, { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Find a company by name or ticker").fill("BLRG");
+  await page.getByRole("button", { name: "Find companies" }).click();
+  await page.getByRole("button", { name: "Blue Ridge (BLRG)" }).click();
+  await expect(page.getByText(otherSource.title, { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByText(filteredSource.title, { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Hide documents" }).click();
+  await expect(
+    page.getByText("Blue Ridge (BLRG)", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Research question")
+    .fill("What did Blue Ridge report?");
+  await page.getByRole("button", { name: "Ask the archive" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Insufficient evidence" }),
+  ).toBeVisible();
+  expect(submittedContext).toEqual({
+    document_ids: [],
+    company_id: SECOND,
+    temporal_mode: "CURRENT",
+  });
+  await page.getByRole("button", { name: "Clear company filter" }).click();
+  await page.getByRole("button", { name: "Show documents" }).click();
+  await expect(
+    page.getByText(otherSource.title, { exact: true }),
+  ).toBeVisible();
+});

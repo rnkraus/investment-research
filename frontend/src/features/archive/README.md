@@ -36,6 +36,9 @@ On desktop, a collapsible document sidebar sits beside the question and answer a
 screens, the areas stack and the document toggle remains available. Hiding documents expands the
 research area without remounting research, losing selection, or fetching another catalog page.
 Search scope and the selected count stay above the question even when documents are hidden.
+The **Company filter** searches companies by name or ticker. A selected company scopes catalog
+pages and new research requests to its assigned documents. Explicit document selections further
+narrow the company scope. Changing the company clears the document selection.
 The sidebar shows titles, publication dates, processing status, and original links; other metadata
 and selection help are expandable. It cannot be hidden while deletion confirmation or submission
 locks selection. Permanent deletion controls remain at the top of the sidebar.
