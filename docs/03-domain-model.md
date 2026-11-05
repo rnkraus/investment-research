@@ -70,8 +70,7 @@ name substrings with 20/default and 100/maximum page size. Internal continuation
 workspace, query, size, and name/UUID ordering, contain no names/search text, and revalidate their
 anchor against canonical scope and filters. They confer no authorization or snapshot guarantee.
 The local [company HTTP interface](../backend/src/investment_research/modules/companies/README.md#local-http-interface)
-exposes scoped creation and listing. Document assignment, aliases/exchange listings, and watchlists
-remain follow-up work.
+exposes scoped creation and listing. Aliases, exchange listings, and watchlists remain follow-up work.
 
 ### 3.3 Documents and originals
 
@@ -87,6 +86,11 @@ remain follow-up work.
 `Document` owns user-facing lifecycle. `DocumentVersion` owns immutable content. A text edit or corrected edition creates a new version; parsing or chunking changes do not.
 
 Automatic company assignments remain reviewable suggestions. A duplicate relation never silently deletes either archive item.
+
+Migration `0016_document_companies` stores manual, reviewed links on logical documents. Each link
+records the reviewer and review time. Composite foreign keys keep both ends in the same workspace.
+Writes lock the active document, and permanent document deletion removes its links in the same
+transaction. Existing documents start without links. Editing requires the assignment service and API.
 
 ### 3.4 Processing and retrieval content
 

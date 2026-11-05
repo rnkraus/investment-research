@@ -123,6 +123,36 @@ class DocumentRow(Base):
         )
 
 
+class DocumentCompanyRow(Base):
+    """A manually reviewed company association owned by one logical document."""
+
+    __tablename__ = "document_companies"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "document_id"],
+            ["documents.workspace_id", "documents.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "company_id"],
+            ["companies.workspace_id", "companies.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("method = 'MANUAL'", name="manual_method"),
+        CheckConstraint("review_status = 'REVIEWED'", name="reviewed_status"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    document_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    company_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    method: Mapped[str] = mapped_column(String(16), server_default="MANUAL", nullable=False)
+    review_status: Mapped[str] = mapped_column(
+        String(16), server_default="REVIEWED", nullable=False
+    )
+    reviewed_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class DocumentDeletionRow(Base):
     """Durable content-free deletion intent that survives removal of the document."""
 

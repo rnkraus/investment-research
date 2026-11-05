@@ -390,6 +390,11 @@ tests. Seven separate SeaweedFS cases were skipped by the PostgreSQL-only verifi
 commands discover the added tests automatically. Hosted CI, images, browsers, and live providers
 were not rerun for this block. The full M3 step remains incomplete.
 
+**Company assignment storage block:** Migration `0016_document_companies` adds workspace-scoped
+manual links with review provenance. Writes use the active-document lock to serialize with deletion
+admission. Permanent purge removes the affected links in the same transaction. Rollback refuses
+to discard stored links. The assignment service and API follow this storage block.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.

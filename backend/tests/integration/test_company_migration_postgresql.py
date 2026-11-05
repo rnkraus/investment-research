@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, func, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -15,7 +16,7 @@ from investment_research.modules.companies.persistence import (
     CompanyRow,
     SqlAlchemyCompanyRepository,
 )
-from investment_research.modules.documents.persistence import DocumentRow
+from investment_research.modules.documents.persistence import DocumentCompanyRow, DocumentRow
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import ProcessingRunRow
 from investment_research.settings import DatabaseSettings
@@ -65,12 +66,14 @@ def test_company_migration_preserves_archive_and_allows_empty_rollback(
     command.check(config)
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(CompanyRow)) == 0
+        assert session.scalar(select(func.count()).select_from(DocumentCompanyRow)) == 0
         document = session.get(DocumentRow, source.document.id)
         assert document is not None and document.to_domain() == source.document
         run = session.get(ProcessingRunRow, source.processing_run.id)
         assert run is not None and run.to_domain() == source.processing_run
 
     command.downgrade(config, "0014_outbox_exhaustion_receipts")
+    assert "document_companies" not in inspect(engine).get_table_names()
     assert "companies" not in inspect(engine).get_table_names()
     command.upgrade(config, "head")
     command.check(config)
@@ -78,6 +81,34 @@ def test_company_migration_preserves_archive_and_allows_empty_rollback(
         assert session.scalar(select(func.count()).select_from(CompanyRow)) == 0
         document = session.get(DocumentRow, source.document.id)
         assert document is not None and document.to_domain() == source.document
+
+
+def test_company_link_migration_refuses_to_discard_assignments(
+    company_migration_database: tuple[Engine, Config],
+) -> None:
+    engine, config = company_migration_database
+    source = seed_legacy_run(engine, ProcessingState.CAPTURED)
+    command.upgrade(config, "head")
+    company = make_company(source.context)
+    key = (source.context.workspace_id, source.document.id, company.id)
+    with Session(engine) as session, session.begin():
+        SqlAlchemyCompanyRepository(session).add(source.context, company)
+        session.flush()
+        session.add(
+            DocumentCompanyRow(
+                workspace_id=key[0],
+                document_id=key[1],
+                company_id=key[2],
+                reviewed_by=source.context.user_id,
+                reviewed_at=company.created_at,
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="document-company links exist"):
+        command.downgrade(config, "0015_company_identity")
+
+    with Session(engine) as session:
+        assert session.get(DocumentCompanyRow, key) is not None
 
 
 def test_company_migration_refuses_to_discard_company_records(
@@ -95,7 +126,7 @@ def test_company_migration_refuses_to_discard_company_records(
 
     with Session(engine) as session:
         assert session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0015_company_identity"
+            ScriptDirectory.from_config(config).get_current_head()
         )
         assert SqlAlchemyCompanyRepository(session).get_by_id(source.context, company.id) == company
         document = session.get(DocumentRow, source.document.id)
