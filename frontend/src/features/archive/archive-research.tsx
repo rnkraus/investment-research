@@ -9,6 +9,7 @@ import {
 } from "@/lib/api/client";
 
 import { archiveCopy } from "./copy";
+import { DocumentCompanyEditor } from "./document-company-editor";
 import { DocumentDeletionPanel } from "./document-deletion-panel";
 import {
   DOCUMENT_SELECTION_LIMIT,
@@ -37,6 +38,9 @@ export function ArchiveResearch({
   const scopeName = useId();
   const documentListId = useId();
   const [isListVisible, setIsListVisible] = useState(true);
+  const [companyDocumentId, setCompanyDocumentId] = useState<string | null>(
+    null,
+  );
   const [documents, setDocuments] = useState<readonly DocumentCatalogEntry[]>(
     [],
   );
@@ -62,6 +66,7 @@ export function ArchiveResearch({
       setIsLoading(true);
       setFailed(false);
       setDocuments([]);
+      setCompanyDocumentId(null);
       setCursor(undefined);
       setSelectionWasReset(true);
       setSelection(resetDocumentSelection);
@@ -204,6 +209,9 @@ export function ArchiveResearch({
                       (item) => item.document_id === document.document_id,
                     );
                     const selectable = isDocumentSelectable(document);
+                    const editingCompanies =
+                      companyDocumentId === document.document_id;
+                    const companyPanelId = `${documentListId}-companies-${document.document_id}`;
                     const label = `${archiveCopy.catalog.selectDocument}: ${document.title}`;
                     return (
                       <li
@@ -294,6 +302,31 @@ export function ArchiveResearch({
                               ))}
                             </dl>
                           </details>
+                          <button
+                            type="button"
+                            aria-expanded={editingCompanies}
+                            aria-controls={
+                              editingCompanies ? companyPanelId : undefined
+                            }
+                            aria-label={`${editingCompanies ? "Close" : "Edit"} companies for ${document.title}`}
+                            className="mt-2 text-xs font-semibold text-teal-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-teal-700"
+                            onClick={() =>
+                              setCompanyDocumentId(
+                                editingCompanies ? null : document.document_id,
+                              )
+                            }
+                          >
+                            {editingCompanies
+                              ? "Close companies"
+                              : "Edit companies"}
+                          </button>
+                          {editingCompanies && (
+                            <DocumentCompanyEditor
+                              documentId={document.document_id}
+                              documentTitle={document.title}
+                              panelId={companyPanelId}
+                            />
+                          )}
                           {document.processing?.state === "FAILED" &&
                           document.processing.error_summary ? (
                             <p className="mt-1 text-xs text-rose-700">

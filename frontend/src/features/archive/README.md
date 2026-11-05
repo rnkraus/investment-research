@@ -215,6 +215,13 @@ user selects again or explicitly chooses all sources. List errors also block sel
 submission, never silently widening a question. Selection controls are disabled during research.
 The server rechecks eligibility; neither the status snapshot nor possession of an ID authorizes use.
 
+## Manual company assignments
+
+Open **Edit companies** on a document to see its current links. Search by name and select results
+across pages, or create a new company and select it in one action. **Save companies** replaces the
+document's set with the selected companies. Removing every selection and saving clears the links.
+On a conflicting edit, **Reload assignments** loads the latest saved selection before another save.
+
 ## Permanent local deletion
 
 Delete selected appears at the top of the document sidebar. Collapsing the sidebar also hides its

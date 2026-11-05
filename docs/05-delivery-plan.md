@@ -405,6 +405,10 @@ assignment HTTP interface follows this service block.
 responses, a bounded write body, and the revision-checked service. OpenAPI and TypeScript describe
 the two operations. The browser editing controls follow this block.
 
+**Company assignment UI block.** Document rows expose an editor for creating, finding, selecting,
+and saving companies. The editor retains selections across search pages and requires a reload
+after a conflicting save. The M1 browser suite discovers the assignment journey automatically.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
