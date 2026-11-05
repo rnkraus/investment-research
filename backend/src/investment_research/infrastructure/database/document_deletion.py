@@ -30,6 +30,7 @@ from investment_research.modules.documents.deletion_ports import (
 )
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import (
+    DocumentCompanyRevisionRow,
     DocumentCompanyRow,
     DocumentDeletionRow,
     DocumentRow,
@@ -286,12 +287,13 @@ class PostgresDocumentDeletionRepository:
                 )
                 .execution_options(synchronize_session=False)
             )
-        self._session.execute(
-            delete(DocumentCompanyRow).where(
-                DocumentCompanyRow.workspace_id == context.workspace_id,
-                DocumentCompanyRow.document_id == document_id,
+        for company_model in (DocumentCompanyRow, DocumentCompanyRevisionRow):
+            self._session.execute(
+                delete(company_model).where(
+                    company_model.workspace_id == context.workspace_id,
+                    company_model.document_id == document_id,
+                )
             )
-        )
         self._session.execute(
             delete(DocumentVersionRow)
             .where(

@@ -90,7 +90,12 @@ Automatic company assignments remain reviewable suggestions. A duplicate relatio
 Migration `0016_document_companies` stores manual, reviewed links on logical documents. Each link
 records the reviewer and review time. Composite foreign keys keep both ends in the same workspace.
 Writes lock the active document, and permanent document deletion removes its links in the same
-transaction. Existing documents start without links. Editing requires the assignment service and API.
+transaction. Existing documents start without links.
+
+The assignment service replaces up to 20 distinct companies at a time. It checks the caller's
+document version and assignment revision under an exclusive document lock. Each effective edit
+advances the revision. An identical set keeps the revision and review provenance. The revision is
+stored separately from the links so it survives clearing the set. Permanent purge removes both.
 
 ### 3.4 Processing and retrieval content
 
