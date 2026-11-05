@@ -220,6 +220,9 @@ function isCompanySummary(value: unknown): value is CompanySummary {
     isUuid(value.company_id) &&
     isNonEmptyString(value.name) &&
     Array.from(value.name).length <= 200 &&
+    (value.ticker == null ||
+      (typeof value.ticker === "string" &&
+        /^[A-Z0-9][A-Z0-9.-]{0,19}$/.test(value.ticker))) &&
     isTimestamp(value.created_at)
   );
 }
@@ -808,7 +811,7 @@ export function createApiClient(
       return page;
     },
 
-    createCompany(name: string): Promise<CompanySummary> {
+    createCompany(name: string, ticker?: string): Promise<CompanySummary> {
       return requestJson(
         fetchImplementation,
         "/api/v1/companies",
@@ -816,9 +819,30 @@ export function createApiClient(
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ name, ticker }),
         },
       );
+    },
+
+    async updateCompanyTicker(
+      companyId: string,
+      ticker: string | null,
+    ): Promise<CompanySummary> {
+      if (!isUuid(companyId))
+        throw new ApiProtocolError("The company identifier is invalid.");
+      const company = await requestJson(
+        fetchImplementation,
+        `/api/v1/companies/${companyId}/ticker`,
+        isCompanySummary,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ticker }),
+        },
+      );
+      if (company.company_id !== companyId.toLowerCase())
+        throw new ApiProtocolError();
+      return company;
     },
 
     async getDocumentCompanies(

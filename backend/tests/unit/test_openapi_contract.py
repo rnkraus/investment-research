@@ -28,6 +28,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/health",
         "/ready",
         "/api/v1/companies",
+        "/api/v1/companies/{company_id}/ticker",
         "/api/v1/documents",
         "/api/v1/documents/text",
         "/api/v1/documents/deletions",
@@ -61,8 +62,13 @@ def test_company_api_exposes_safe_creation_and_bounded_opaque_pagination() -> No
     assert set(routes) == {"post", "get"}
     models = schema["components"]["schemas"]
     assert models["CompanyInput"]["additionalProperties"] is False
-    assert set(models["CompanyInput"]["properties"]) == {"name"}
-    assert set(models["CompanySummary"]["properties"]) == {"company_id", "name", "created_at"}
+    assert set(models["CompanyInput"]["properties"]) == {"name", "ticker"}
+    assert set(models["CompanySummary"]["properties"]) == {
+        "company_id",
+        "name",
+        "ticker",
+        "created_at",
+    }
     assert "201" in routes["post"]["responses"]
     assert {parameter["name"] for parameter in routes["get"]["parameters"]} == {
         "q",

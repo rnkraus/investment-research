@@ -16,6 +16,7 @@ from pydantic import (
 
 COMPANY_NAME_MAX_LENGTH = 200
 COMPANY_NAME_KEY_MAX_LENGTH = 600
+COMPANY_TICKER_MAX_LENGTH = 20
 _UNSUPPORTED_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
 
 
@@ -47,6 +48,24 @@ CompanyName = Annotated[
 ]
 
 
+def normalize_company_ticker(value: object) -> str:
+    if not isinstance(value, str) or not value.isascii():
+        raise ValueError("company ticker must use ASCII characters")
+    return value.strip(" ").upper()
+
+
+CompanyTicker = Annotated[
+    str,
+    StringConstraints(
+        strict=True,
+        min_length=1,
+        max_length=COMPANY_TICKER_MAX_LENGTH,
+        pattern=r"^[A-Z0-9][A-Z0-9.-]*$",
+    ),
+    BeforeValidator(normalize_company_ticker),
+]
+
+
 def company_name_key(name: CompanyName) -> str:
     """Derive a case-insensitive key without stripping accents or punctuation."""
 
@@ -61,6 +80,7 @@ class Company(BaseModel):
     id: UUID
     workspace_id: UUID
     name: CompanyName
+    ticker: CompanyTicker | None = None
     created_by: UUID
     created_at: AwareDatetime
 

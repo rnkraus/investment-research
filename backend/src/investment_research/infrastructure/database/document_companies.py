@@ -88,11 +88,7 @@ class PostgresDocumentCompanyRepository:
 
     def _summaries(self, statement: Select[tuple[CompanyRow]]) -> tuple[CompanySummary, ...]:
         rows = self._session.scalars(statement.order_by(CompanyRow.normalized_name, CompanyRow.id))
-        companies = (row.to_domain() for row in rows)
-        return tuple(
-            CompanySummary(company_id=company.id, name=company.name, created_at=company.created_at)
-            for company in companies
-        )
+        return tuple(CompanySummary.from_company(row.to_domain()) for row in rows)
 
     def apply_changes(
         self,

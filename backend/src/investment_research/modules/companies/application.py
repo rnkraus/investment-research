@@ -9,6 +9,7 @@ from investment_research.modules.companies.contracts import (
     CompanyListQuery,
     CompanySummary,
     CreateCompanyCommand,
+    UpdateCompanyTickerCommand,
 )
 from investment_research.modules.companies.domain import Company
 from investment_research.modules.companies.ports import CompanyUnitOfWorkFactory
@@ -42,12 +43,13 @@ class CompanyService:
             id=self._identifier_factory(),
             workspace_id=context.workspace_id,
             name=command.name,
+            ticker=command.ticker,
             created_by=context.user_id,
             created_at=self._clock(),
         )
         with self._write() as unit:
             unit.companies.add(context, company)
-        return self._summary(company)
+        return CompanySummary.from_company(company)
 
     def get_by_id(self, context: WorkspaceContext, company_id: UUID) -> CompanySummary:
         """Resolve an identity within the trusted workspace, without a write transaction."""
@@ -56,16 +58,19 @@ class CompanyService:
             company = unit.companies.get_by_id(context, company_id)
         if company is None:
             raise CompanyUnavailableError("company is unavailable")
-        return self._summary(company)
+        return CompanySummary.from_company(company)
+
+    def update_ticker(
+        self, context: WorkspaceContext, company_id: UUID, command: UpdateCompanyTickerCommand
+    ) -> CompanySummary:
+        with self._write() as unit:
+            company = unit.companies.update_ticker(context, company_id, command.ticker)
+            if company is None:
+                raise CompanyUnavailableError("company is unavailable")
+        return CompanySummary.from_company(company)
 
     def list_companies(self, context: WorkspaceContext, query: CompanyListQuery) -> CompanyListPage:
         """Resolve one bounded filtered page through the existing short read boundary."""
 
         with self._read() as unit:
             return unit.companies.list_companies(context, query)
-
-    @staticmethod
-    def _summary(company: Company) -> CompanySummary:
-        return CompanySummary(
-            company_id=company.id, name=company.name, created_at=company.created_at
-        )

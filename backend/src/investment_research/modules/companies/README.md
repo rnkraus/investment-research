@@ -1,13 +1,13 @@
 # Companies
 
-Own workspace-scoped economic company identities separately from tickers, documents, and evidence.
+Own workspace-scoped company identities and optional display tickers.
 
 ## Implemented foundation
 
 | File | Role |
 |---|---|
 | `domain.py` | Immutable company identity, explicit workspace/creator provenance, UTC creation time, and bounded Unicode name normalization. |
-| `contracts.py` | Name-only creation, safe summaries, and bounded list/query/continuation contracts. |
+| `contracts.py` | Company creation, ticker replacement, public summaries, and bounded listing contracts. |
 | `application.py` | Server-owned identity/provenance, commit-before-return creation, and scoped lookup/listing. |
 | `ports.py` | Repository and transaction contracts with safe duplicate-name and uncertain-commit errors. |
 | `persistence.py` | PostgreSQL mapping, workspace-scoped reads, trusted creator checks, and database-enforced name uniqueness. |
@@ -33,7 +33,7 @@ are not name conflicts. A connection failure during commit becomes `CompanyCommi
 there is no automatic retry or claimed success. Both safe errors suppress storage traceback context
 when rendered normally; callers must not log the raw underlying exception or submitted name.
 
-`CompanyService.list_companies` reads a literal name substring within the trusted workspace.
+`CompanyService.list_companies` matches a literal substring of the name or ticker within the trusted workspace.
 Search uses the stored NFC/whitespace/casefold rules, preserves accents and punctuation, and treats
 SQL wildcard/escape characters literally. Blank search is absent; controls are rejected. Pages
 default to 20, allow 1–100, and order by comparison key using PostgreSQL `C` collation, then UUID.
@@ -50,8 +50,13 @@ require restarting the list. Company names are currently immutable and company d
 
 | Method | Request | Success |
 |---|---|---|
-| `POST /api/v1/companies` | JSON `{ "name": "Northstar Grid" }` | `201` with `company_id`, normalized display `name`, and UTC `created_at` after commit. |
+| `POST /api/v1/companies` | JSON with `name` and optional `ticker` | `201` with the committed company summary. |
 | `GET /api/v1/companies` | Optional `q`, `page_size`, `cursor` | `200` with `items` and nullable `next_cursor`. |
+| `PATCH /api/v1/companies/{company_id}/ticker` | JSON with `ticker`, where `null` clears it | `200` with the updated company summary. |
+
+Migration `0018_company_ticker` leaves the ticker empty for existing companies. Symbols are stored
+in uppercase and allow up to 20 ASCII letters, digits, dots, and hyphens. They start with a letter
+or digit. Tickers can repeat and carry no exchange identity.
 
 The API derives workspace and creator from the existing trusted local identity. It rejects extra
 body/query fields, repeated scalar query parameters, and query parameters on creation. JSON bodies
@@ -65,6 +70,5 @@ oversized bodies return `413 PAYLOAD_TOO_LARGE`. Storage and uncertain-commit er
 `500 INTERNAL_ERROR` without retrying creation or disclosing database details. Request logs use
 route templates rather than submitted names, query strings, or cursors.
 
-Document assignment and the UI are later work. Capture, retrieval, citations, deletion, and
-provider calls remain unchanged. Existing backend and PostgreSQL CI gates discover the HTTP,
-concurrency, workspace-isolation, transaction, pagination, and migration tests automatically.
+The document company editor supports ticker creation, updates, and search. Existing backend and
+PostgreSQL CI gates cover HTTP behavior, workspace isolation, pagination, and migrations.

@@ -149,7 +149,7 @@ def test_company_does_not_accept_a_forged_comparison_key() -> None:
         Company.model_validate(payload)
 
 
-def test_summary_exposes_only_company_identity_name_and_creation_time() -> None:
+def test_summary_exposes_only_public_company_fields() -> None:
     summary = CompanySummary(
         company_id=COMPANY_ID,
         name=" Northstar   Grid ",
@@ -159,9 +159,16 @@ def test_summary_exposes_only_company_identity_name_and_creation_time() -> None:
     assert summary.model_dump(mode="json") == {
         "company_id": str(COMPANY_ID),
         "name": "Northstar Grid",
+        "ticker": None,
         "created_at": "2026-11-02T12:00:00Z",
     }
     assert summary.created_at.tzinfo is UTC
+
+
+@pytest.mark.parametrize("ticker", ["", "A B", "NVDÄ", "NVDA\n", ".ABC", "A" * 21])
+def test_company_ticker_rejects_invalid_symbols(ticker: str) -> None:
+    with pytest.raises(ValidationError):
+        CreateCompanyCommand(name="Northstar", ticker=ticker)
 
 
 @pytest.mark.parametrize("field", ["workspace_id", "created_by", "normalized_name"])

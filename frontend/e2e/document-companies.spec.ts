@@ -5,14 +5,16 @@ const VERSION = "10000000-0000-4000-8000-000000000002";
 const FIRST = "10000000-0000-4000-8000-000000000003";
 const SECOND = "10000000-0000-4000-8000-000000000004";
 const CREATED_AT = "2026-11-05T12:00:00Z";
-const known = {
+const initialCompany = {
   company_id: FIRST,
   name: "Northstar Grid",
+  ticker: null as string | null,
   created_at: CREATED_AT,
 };
 const created = {
   company_id: SECOND,
   name: "Blue Ridge",
+  ticker: "BLRG",
   created_at: CREATED_AT,
 };
 
@@ -21,7 +23,8 @@ test("a document can save company selections and recover from a conflicting edit
   context,
 }) => {
   let revision = 0;
-  let companies: (typeof known)[] = [];
+  let known = initialCompany;
+  let companies: (typeof initialCompany)[] = [];
   const writes: unknown[] = [];
   const path = `/api/v1/documents/${DOCUMENT}/companies`;
   const snapshot = () => ({
@@ -69,8 +72,17 @@ test("a document can save company selections and recover from a conflicting edit
   });
   await context.route("**/api/v1/companies", (route) => {
     expect(route.request().method()).toBe("POST");
-    expect(route.request().postDataJSON()).toEqual({ name: "Blue Ridge" });
+    expect(route.request().postDataJSON()).toEqual({
+      name: "Blue Ridge",
+      ticker: "BLRG",
+    });
     return route.fulfill({ status: 201, json: created });
+  });
+  await context.route(`**/api/v1/companies/${FIRST}/ticker`, (route) => {
+    expect(route.request().method()).toBe("PATCH");
+    expect(route.request().postDataJSON()).toEqual({ ticker: "NGRID" });
+    known = { ...known, ticker: "NGRID" };
+    return route.fulfill({ json: known });
   });
   await context.route(`**${path}`, (route) => {
     if (route.request().method() === "GET")
@@ -100,12 +112,20 @@ test("a document can save company selections and recover from a conflicting edit
   });
   await editor.getByLabel("Search companies").fill("Northstar");
   await editor.getByRole("button", { name: "Search", exact: true }).click();
+  await editor
+    .getByRole("button", { name: "Edit ticker for Northstar Grid" })
+    .click();
+  await editor.getByLabel("Ticker for Northstar Grid").fill("NGRID");
+  await editor.getByRole("button", { name: "Save ticker" }).click();
+  await expect(editor.getByText("Northstar Grid (NGRID)")).toBeVisible();
   await editor.getByRole("button", { name: "Select Northstar Grid" }).click();
   await editor.getByLabel("New company name").fill("Blue Ridge");
+  await editor.getByLabel("Ticker (optional)").fill("BLRG");
   await editor.getByRole("button", { name: "Create and select" }).click();
   await expect(
     editor.getByRole("button", { name: "Remove Blue Ridge" }),
   ).toBeVisible();
+  await expect(editor.getByText("Blue Ridge (BLRG)")).toBeVisible();
   expect(writes).toHaveLength(0);
   const save = editor.getByRole("button", { name: "Save companies" });
   await save.click();
