@@ -24,6 +24,35 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+test("company pagination reuses the literal search and rejects a stalled cursor", async () => {
+  const client = createApiClient(async (path) => {
+    const url = new URL(path, "http://local.invalid");
+    assert.equal(url.pathname, "/api/v1/companies");
+    assert.equal(url.searchParams.get("q"), "A&B %");
+    assert.equal(url.searchParams.get("cursor"), "opaque_cursor");
+    return jsonResponse({ items: [], next_cursor: "opaque_cursor" });
+  });
+  await assert.rejects(
+    client.listCompanies("A&B %", "opaque_cursor"),
+    ApiProtocolError,
+  );
+});
+
+test("a company assignment response must match the requested document", async () => {
+  const client = createApiClient(async () =>
+    jsonResponse({
+      document_id: PROCESSING_RUN_ID,
+      document_version_id: VERSION_ID,
+      revision: 0,
+      companies: [],
+    }),
+  );
+  await assert.rejects(
+    client.getDocumentCompanies(DOCUMENT_ID),
+    ApiProtocolError,
+  );
+});
+
 async function collectResearch(client) {
   const events = [];
   for await (const event of client.streamResearch({

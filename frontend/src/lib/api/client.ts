@@ -1,5 +1,14 @@
 import type { components } from "./generated/schema";
 
+export type CompanySummary = components["schemas"]["CompanySummary"];
+export type CompanyCatalogPage = components["schemas"]["CompanyCatalogPage"];
+export type DocumentCompanyAssignment =
+  components["schemas"]["DocumentCompanyAssignment"];
+export type ReplaceDocumentCompaniesCommand =
+  components["schemas"]["ReplaceDocumentCompaniesCommand"];
+export const COMPANY_ASSIGNMENT_LIMIT = 20;
+const COMPANY_PAGE_SIZE = 20;
+
 export type DocumentAccepted = components["schemas"]["DocumentAccepted"];
 export type DocumentCatalogEntry =
   components["schemas"]["DocumentCatalogEntry"];
@@ -203,6 +212,57 @@ function isTimestamp(value: unknown): value is string {
     ) &&
     Number.isFinite(Date.parse(value))
   );
+}
+
+function isCompanySummary(value: unknown): value is CompanySummary {
+  return (
+    isRecord(value) &&
+    isUuid(value.company_id) &&
+    isNonEmptyString(value.name) &&
+    Array.from(value.name).length <= 200 &&
+    isTimestamp(value.created_at)
+  );
+}
+
+function isCompanyCursor(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,4096}$/.test(value);
+}
+
+function isCompanyCatalogPage(value: unknown): value is CompanyCatalogPage {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.items) &&
+    value.items.length <= COMPANY_PAGE_SIZE &&
+    value.items.every(isCompanySummary) &&
+    new Set(value.items.map((company) => company.company_id)).size ===
+      value.items.length &&
+    (value.next_cursor == null || isCompanyCursor(value.next_cursor))
+  );
+}
+
+function isDocumentCompanyAssignment(
+  value: unknown,
+): value is DocumentCompanyAssignment {
+  return (
+    isRecord(value) &&
+    isUuid(value.document_id) &&
+    isUuid(value.document_version_id) &&
+    typeof value.revision === "number" &&
+    Number.isSafeInteger(value.revision) &&
+    value.revision >= 0 &&
+    Array.isArray(value.companies) &&
+    value.companies.length <= COMPANY_ASSIGNMENT_LIMIT &&
+    value.companies.every(isCompanySummary) &&
+    new Set(value.companies.map((company) => company.company_id)).size ===
+      value.companies.length
+  );
+}
+
+function documentCompaniesPath(documentId: string): string {
+  if (!isUuid(documentId)) {
+    throw new ApiProtocolError("The document identifier is invalid.");
+  }
+  return `/api/v1/documents/${documentId}/companies`;
 }
 
 function isOptionalTimestamp(value: unknown): boolean {
@@ -724,6 +784,89 @@ export function createApiClient(
   fetchImplementation: FetchImplementation = globalThis.fetch.bind(globalThis),
 ) {
   return {
+    async listCompanies(
+      query: string,
+      cursor?: string,
+    ): Promise<CompanyCatalogPage> {
+      if (cursor !== undefined && !isCompanyCursor(cursor)) {
+        throw new ApiProtocolError();
+      }
+      const params = new URLSearchParams({
+        q: query,
+        page_size: String(COMPANY_PAGE_SIZE),
+      });
+      if (cursor !== undefined) params.set("cursor", cursor);
+      const page = await requestJson(
+        fetchImplementation,
+        `/api/v1/companies?${params}`,
+        isCompanyCatalogPage,
+        { cache: "no-store" },
+      );
+      if (cursor !== undefined && page.next_cursor === cursor) {
+        throw new ApiProtocolError("The company list did not advance.");
+      }
+      return page;
+    },
+
+    createCompany(name: string): Promise<CompanySummary> {
+      return requestJson(
+        fetchImplementation,
+        "/api/v1/companies",
+        isCompanySummary,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name }),
+        },
+      );
+    },
+
+    async getDocumentCompanies(
+      documentId: string,
+      signal?: AbortSignal,
+    ): Promise<DocumentCompanyAssignment> {
+      const assignment = await requestJson(
+        fetchImplementation,
+        documentCompaniesPath(documentId),
+        isDocumentCompanyAssignment,
+        { signal, cache: "no-store" },
+      );
+      if (assignment.document_id !== documentId.toLowerCase())
+        throw new ApiProtocolError();
+      return assignment;
+    },
+
+    async replaceDocumentCompanies(
+      documentId: string,
+      command: ReplaceDocumentCompaniesCommand,
+    ): Promise<DocumentCompanyAssignment> {
+      const assignment = await requestJson(
+        fetchImplementation,
+        documentCompaniesPath(documentId),
+        isDocumentCompanyAssignment,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(command),
+        },
+      );
+      const expectedIds = new Set(
+        command.company_ids.map((id) => id.toLowerCase()),
+      );
+      if (
+        assignment.document_id !== documentId.toLowerCase() ||
+        assignment.document_version_id !==
+          command.expected_document_version_id.toLowerCase() ||
+        assignment.companies.length !== expectedIds.size ||
+        assignment.companies.some(
+          (company) => !expectedIds.has(company.company_id),
+        )
+      ) {
+        throw new ApiProtocolError();
+      }
+      return assignment;
+    },
+
     async deleteDocuments(
       input: DocumentDeletionInput,
       signal?: AbortSignal,
