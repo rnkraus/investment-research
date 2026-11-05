@@ -12,11 +12,18 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     select,
+    tuple_,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from investment_research.infrastructure.database.base import Base
+from investment_research.modules.companies.contracts import (
+    CompanyListCursor,
+    CompanyListPage,
+    CompanyListQuery,
+    CompanySummary,
+)
 from investment_research.modules.companies.domain import (
     COMPANY_NAME_KEY_MAX_LENGTH,
     COMPANY_NAME_MAX_LENGTH,
@@ -26,6 +33,7 @@ from investment_research.modules.companies.domain import (
     CompanyScopeError,
     company_name_key,
 )
+from investment_research.modules.companies.ports import InvalidCompanyCursorError
 from investment_research.modules.identity.domain import WorkspaceContext
 
 
@@ -117,3 +125,47 @@ class SqlAlchemyCompanyRepository:
             )
         )
         return None if row is None else row.to_domain()
+
+    def list_companies(self, context: WorkspaceContext, query: CompanyListQuery) -> CompanyListPage:
+        """Filter before limiting; resolve continuation names only from scoped canonical rows."""
+
+        fingerprint = query.fingerprint(context.workspace_id)
+        anchor = None
+        if query.after is not None:
+            if query.after.query_fingerprint != fingerprint:
+                raise InvalidCompanyCursorError("company cursor is invalid")
+            anchor = self.get_by_id(context, query.after.company_id)
+            if anchor is None or (
+                query.normalized_query is not None
+                and query.normalized_query not in anchor.normalized_name
+            ):
+                raise InvalidCompanyCursorError("company cursor is invalid")
+
+        statement = (
+            select(CompanyRow)
+            .where(CompanyRow.workspace_id == context.workspace_id)
+            .order_by(CompanyRow.normalized_name.asc(), CompanyRow.id.asc())
+            .limit(query.page_size + 1)
+        )
+        if query.normalized_query is not None:
+            statement = statement.where(
+                CompanyRow.normalized_name.contains(query.normalized_query, autoescape=True)
+            )
+        if anchor is not None:
+            statement = statement.where(
+                tuple_(CompanyRow.normalized_name, CompanyRow.id)
+                > (anchor.normalized_name, anchor.id)
+            )
+
+        rows = self._session.scalars(statement).all()
+        companies = tuple(row.to_domain() for row in rows[: query.page_size])
+        items = tuple(
+            CompanySummary(company_id=company.id, name=company.name, created_at=company.created_at)
+            for company in companies
+        )
+        cursor = (
+            CompanyListCursor(company_id=items[-1].company_id, query_fingerprint=fingerprint)
+            if len(rows) > query.page_size
+            else None
+        )
+        return CompanyListPage(items=items, next_cursor=cursor)

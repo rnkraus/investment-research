@@ -4,7 +4,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from investment_research.modules.companies.contracts import CompanySummary, CreateCompanyCommand
+from investment_research.modules.companies.contracts import (
+    CompanyListPage,
+    CompanyListQuery,
+    CompanySummary,
+    CreateCompanyCommand,
+)
 from investment_research.modules.companies.domain import Company
 from investment_research.modules.companies.ports import CompanyUnitOfWorkFactory
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -52,6 +57,12 @@ class CompanyService:
         if company is None:
             raise CompanyUnavailableError("company is unavailable")
         return self._summary(company)
+
+    def list_companies(self, context: WorkspaceContext, query: CompanyListQuery) -> CompanyListPage:
+        """Resolve one bounded filtered page through the existing short read boundary."""
+
+        with self._read() as unit:
+            return unit.companies.list_companies(context, query)
 
     @staticmethod
     def _summary(company: Company) -> CompanySummary:

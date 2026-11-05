@@ -65,8 +65,11 @@ caller's transaction boundary. Existing documents are not backfilled into compan
 refuses to discard existing companies. The application service creates server-owned identities,
 returns summaries only after commit, and hides unknown/foreign IDs behind the same absence error.
 Exact name conflicts are distinct from unrelated integrity failures and uncertain commits; none
-triggers an automatic creation retry. Document assignment, HTTP routes, aliases/listings, and
-watchlists remain follow-up work.
+triggers an automatic creation retry. Bounded company discovery now supports literal normalized
+name substrings with 20/default and 100/maximum page size. Internal continuation positions bind
+workspace, query, size, and name/UUID ordering, contain no names/search text, and revalidate their
+anchor against canonical scope and filters. They confer no authorization or snapshot guarantee.
+Document assignment, HTTP routes, aliases/exchange listings, and watchlists remain follow-up work.
 
 ### 3.3 Documents and originals
 

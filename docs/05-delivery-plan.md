@@ -357,6 +357,23 @@ SeaweedFS cases. Frontend test components used pinned pnpm directly as above. Ex
 discover these tests automatically; hosted CI, backend images, browsers, and live providers were
 not rerun for this service-only block. The full M3 step remains incomplete.
 
+**Company listing block (2026-11-05):** The company service now lists bounded, workspace-scoped
+summaries with a literal normalized name substring, default 20/max 100 entries, and stable
+comparison-key/UUID ordering. PostgreSQL applies scope and escaped filtering before limiting.
+Typed internal continuation positions bind workspace, normalized query, page size, and ordering;
+they carry no names or search text. The anchor is resolved in canonical scope and must match the
+filter. Mismatched, unknown, and foreign positions fail safely. Pagination is not a snapshot.
+Transport encoding, HTTP routes, composition-root wiring, document assignment, and UI remain
+later blocks. There is no schema, dependency, provider, or existing research/capture API change.
+
+Local verification passed: 38 focused listing/service/architecture tests; complete backend
+formatting, linting, typing across 396 files and 2,722 unit tests; 389 PostgreSQL integration tests
+(including 13 new listing cases), migration cycles and schema checks; unchanged OpenAPI; frontend
+formatting/lint/types/contracts and 95 tests. Seven separate SeaweedFS cases were skipped by the
+PostgreSQL-only verifier. Frontend test components used pinned pnpm directly as above. Existing
+CI gates discover the new tests automatically; hosted CI, backend images, browser tests, and live
+providers were not rerun for this block. The full M3 step remains incomplete.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
