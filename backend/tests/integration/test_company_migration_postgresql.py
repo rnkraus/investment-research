@@ -12,6 +12,7 @@ from sqlalchemy import Engine, create_engine, func, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from investment_research.modules.companies.contracts import UpdateCompanyDetailsCommand
 from investment_research.modules.companies.persistence import (
     CompanyRow,
     SqlAlchemyCompanyRepository,
@@ -176,7 +177,9 @@ def test_ticker_migration_preserves_existing_company_and_guards_rollback(
     with Session(engine) as session, session.begin():
         repository = SqlAlchemyCompanyRepository(session)
         assert repository.get_by_id(source.context, company.id) == company
-        repository.update_ticker(source.context, company.id, "NVDA")
+        repository.update_details(
+            source.context, company.id, UpdateCompanyDetailsCommand(ticker="NVDA")
+        )
     with pytest.raises(RuntimeError, match="company tickers exist"):
         command.downgrade(config, "0017_company_link_revision")
     with Session(engine) as session:

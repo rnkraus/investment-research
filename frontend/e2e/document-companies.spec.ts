@@ -78,10 +78,13 @@ test("a document can save company selections and recover from a conflicting edit
     });
     return route.fulfill({ status: 201, json: created });
   });
-  await context.route(`**/api/v1/companies/${FIRST}/ticker`, (route) => {
+  await context.route(`**/api/v1/companies/${FIRST}`, (route) => {
     expect(route.request().method()).toBe("PATCH");
-    expect(route.request().postDataJSON()).toEqual({ ticker: "NGRID" });
-    known = { ...known, ticker: "NGRID" };
+    expect(route.request().postDataJSON()).toEqual({
+      name: "Northstar Energy",
+      ticker: "NGRID",
+    });
+    known = { ...known, name: "Northstar Energy", ticker: "NGRID" };
     return route.fulfill({ json: known });
   });
   await context.route(`**${path}`, (route) => {
@@ -113,12 +116,15 @@ test("a document can save company selections and recover from a conflicting edit
   await editor.getByLabel("Search companies").fill("Northstar");
   await editor.getByRole("button", { name: "Search", exact: true }).click();
   await editor
-    .getByRole("button", { name: "Edit ticker for Northstar Grid" })
+    .getByRole("button", { name: "Edit company details for Northstar Grid" })
     .click();
-  await editor.getByLabel("Ticker for Northstar Grid").fill("NGRID");
-  await editor.getByRole("button", { name: "Save ticker" }).click();
-  await expect(editor.getByText("Northstar Grid (NGRID)")).toBeVisible();
-  await editor.getByRole("button", { name: "Select Northstar Grid" }).click();
+  await editor
+    .getByLabel("Company name", { exact: true })
+    .fill("Northstar Energy");
+  await editor.getByLabel("Company ticker").fill("NGRID");
+  await editor.getByRole("button", { name: "Save company details" }).click();
+  await expect(editor.getByText("Northstar Energy (NGRID)")).toBeVisible();
+  await editor.getByRole("button", { name: "Select Northstar Energy" }).click();
   await editor.getByLabel("New company name").fill("Blue Ridge");
   await editor.getByLabel("Ticker (optional)").fill("BLRG");
   await editor.getByRole("button", { name: "Create and select" }).click();

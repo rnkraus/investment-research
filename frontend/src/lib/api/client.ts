@@ -2,6 +2,8 @@ import type { components } from "./generated/schema";
 
 export type CompanySummary = components["schemas"]["CompanySummary"];
 export type CompanyCatalogPage = components["schemas"]["CompanyCatalogPage"];
+export type UpdateCompanyDetailsCommand =
+  components["schemas"]["UpdateCompanyDetailsCommand"];
 export type DocumentCompanyAssignment =
   components["schemas"]["DocumentCompanyAssignment"];
 export type ReplaceDocumentCompaniesCommand =
@@ -824,20 +826,20 @@ export function createApiClient(
       );
     },
 
-    async updateCompanyTicker(
+    async updateCompanyDetails(
       companyId: string,
-      ticker: string | null,
+      changes: UpdateCompanyDetailsCommand,
     ): Promise<CompanySummary> {
       if (!isUuid(companyId))
         throw new ApiProtocolError("The company identifier is invalid.");
       const company = await requestJson(
         fetchImplementation,
-        `/api/v1/companies/${companyId}/ticker`,
+        `/api/v1/companies/${companyId}`,
         isCompanySummary,
         {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ticker }),
+          body: JSON.stringify(changes),
         },
       );
       if (company.company_id !== companyId.toLowerCase())

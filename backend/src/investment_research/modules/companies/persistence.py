@@ -25,6 +25,7 @@ from investment_research.modules.companies.contracts import (
     CompanyListPage,
     CompanyListQuery,
     CompanySummary,
+    UpdateCompanyDetailsCommand,
 )
 from investment_research.modules.companies.domain import (
     COMPANY_NAME_KEY_MAX_LENGTH,
@@ -34,7 +35,6 @@ from investment_research.modules.companies.domain import (
     CompanyName,
     CompanyNameIntegrityError,
     CompanyScopeError,
-    CompanyTicker,
     company_name_key,
 )
 from investment_research.modules.companies.ports import InvalidCompanyCursorError
@@ -180,13 +180,18 @@ class SqlAlchemyCompanyRepository:
         )
         return CompanyListPage(items=items, next_cursor=cursor)
 
-    def update_ticker(
-        self, context: WorkspaceContext, company_id: UUID, ticker: CompanyTicker | None
+    def update_details(
+        self, context: WorkspaceContext, company_id: UUID, command: UpdateCompanyDetailsCommand
     ) -> Company | None:
+        changes: dict[str, str | None] = {}
+        if command.name is not None:
+            changes.update(name=command.name, normalized_name=company_name_key(command.name))
+        if "ticker" in command.model_fields_set:
+            changes["ticker"] = command.ticker
         row = self._session.scalars(
             update(CompanyRow)
             .where(CompanyRow.workspace_id == context.workspace_id, CompanyRow.id == company_id)
-            .values(ticker=ticker)
+            .values(**changes)
             .returning(CompanyRow)
         ).one_or_none()
         return None if row is None else row.to_domain()

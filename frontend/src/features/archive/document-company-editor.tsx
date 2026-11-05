@@ -46,12 +46,13 @@ export function DocumentCompanyEditor({
   } | null>(null);
   const [newName, setNewName] = useState("");
   const [newTicker, setNewTicker] = useState("");
-  const [tickerEdit, setTickerEdit] = useState<{
-    companyId: string;
-    value: string;
+  const [companyEdit, setCompanyEdit] = useState<{
+    company: CompanySummary;
+    name: string;
+    ticker: string;
   } | null>(null);
   const [pending, setPending] = useState<
-    "load" | "search" | "create" | "save" | "ticker" | null
+    "load" | "search" | "create" | "save" | "edit" | null
   >("load");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export function DocumentCompanyEditor({
 
   async function search(query: string, cursor?: string) {
     if (isBusy) return;
-    setTickerEdit(null);
+    setCompanyEdit(null);
     setError(null);
     setNotice(null);
     setPending("search");
@@ -151,32 +152,50 @@ export function DocumentCompanyEditor({
     }
   }
 
-  async function saveTicker() {
-    if (tickerEdit === null || isBusy) return;
+  async function saveCompany() {
+    if (companyEdit === null || isBusy) return;
+    const { company } = companyEdit;
+    const name = companyEdit.name.trim();
+    const ticker = companyEdit.ticker.trim() || null;
+    if (!name) return;
+    const changes = {
+      ...(name === company.name ? {} : { name }),
+      ...(ticker === (company.ticker ?? null) ? {} : { ticker }),
+    };
+    if (Object.keys(changes).length === 0) {
+      setCompanyEdit(null);
+      return;
+    }
     setError(null);
     setNotice(null);
-    setPending("ticker");
+    setPending("edit");
     try {
-      const updated = await apiClient.updateCompanyTicker(
-        tickerEdit.companyId,
-        tickerEdit.value.trim() || null,
+      const updated = await apiClient.updateCompanyDetails(
+        company.company_id,
+        changes,
       );
       setSelected((current) =>
         current.map((company) =>
           company.company_id === updated.company_id ? updated : company,
         ),
       );
-      setTickerEdit(null);
-      // Restart the applied search because the edited company may no longer match its ticker.
+      setCompanyEdit(null);
+      // Restart the applied search because the edited company may no longer match.
       if (results !== null) {
         setResults(null);
         await search(results.query);
       }
-      setNotice("Ticker saved.");
-    } catch {
-      setError(
-        "Could not save the ticker. Search again to check the current ticker before retrying.",
-      );
+      setNotice("Company details saved.");
+    } catch (failure) {
+      if (failure instanceof ApiRequestError && failure.status === 409) {
+        setError("That company name already exists.");
+      } else if (failure instanceof ApiRequestError && failure.status === 422) {
+        setError("Enter a valid company name and ticker.");
+      } else {
+        setError(
+          "Could not save the company. Search again to check its current details.",
+        );
+      }
     } finally {
       setPending(null);
     }
@@ -335,40 +354,60 @@ export function DocumentCompanyEditor({
                             {isSelected ? "Selected" : "Select"}
                           </button>
                         </div>
-                        {tickerEdit?.companyId === company.company_id ? (
+                        {companyEdit?.company.company_id ===
+                        company.company_id ? (
                           <form
                             className="space-y-1"
                             onSubmit={(event) => {
                               event.preventDefault();
-                              void saveTicker();
+                              void saveCompany();
                             }}
                           >
                             <label
                               className="block font-semibold"
+                              htmlFor={`${nameId}-edit`}
+                            >
+                              Company name
+                            </label>
+                            <input
+                              id={`${nameId}-edit`}
+                              className={inputClass}
+                              maxLength={nameInputMaxLength}
+                              required
+                              value={companyEdit.name}
+                              onChange={(event) =>
+                                setCompanyEdit({
+                                  ...companyEdit,
+                                  name: event.target.value,
+                                })
+                              }
+                            />
+                            <label
+                              className="block font-semibold"
                               htmlFor={`${tickerId}-edit`}
                             >
-                              Ticker for {company.name}
+                              Company ticker
                             </label>
                             <input
                               id={`${tickerId}-edit`}
                               className={inputClass}
                               maxLength={tickerMaxLength}
-                              value={tickerEdit.value}
+                              value={companyEdit.ticker}
                               onChange={(event) =>
-                                setTickerEdit({
-                                  companyId: company.company_id,
-                                  value: event.target.value,
+                                setCompanyEdit({
+                                  ...companyEdit,
+                                  ticker: event.target.value,
                                 })
                               }
                             />
                             <div className="flex flex-wrap gap-2">
                               <button type="submit" className={buttonClass}>
-                                Save ticker
+                                Save company details
                               </button>
                               <button
                                 type="button"
                                 className={buttonClass}
-                                onClick={() => setTickerEdit(null)}
+                                onClick={() => setCompanyEdit(null)}
                               >
                                 Cancel
                               </button>
@@ -378,15 +417,16 @@ export function DocumentCompanyEditor({
                           <button
                             type="button"
                             className="font-semibold text-teal-700 underline focus-visible:outline-2"
-                            aria-label={`Edit ticker for ${company.name}`}
+                            aria-label={`Edit company details for ${company.name}`}
                             onClick={() =>
-                              setTickerEdit({
-                                companyId: company.company_id,
-                                value: company.ticker ?? "",
+                              setCompanyEdit({
+                                company,
+                                name: company.name,
+                                ticker: company.ticker ?? "",
                               })
                             }
                           >
-                            Edit ticker
+                            Edit company details
                           </button>
                         )}
                       </li>
