@@ -17,6 +17,10 @@ from investment_research.infrastructure.acceptance import (
     create_m1_acceptance_embedding_provider,
     create_m1_acceptance_support_evaluator,
 )
+from investment_research.infrastructure.database.company_unit_of_work import (
+    create_company_read_unit_of_work_factory,
+    create_company_write_unit_of_work_factory,
+)
 from investment_research.infrastructure.database.document_deletion import (
     create_document_deletion_unit_of_work_factory,
 )
@@ -118,6 +122,7 @@ from investment_research.infrastructure.search.pinecone import (
     create_pinecone_dense_index_writer,
     create_pinecone_dense_retriever,
 )
+from investment_research.modules.companies.application import CompanyService
 from investment_research.modules.delivery.application import DrainOutboxService
 from investment_research.modules.delivery.dispatch import DispatchCapturedProcessingService
 from investment_research.modules.delivery.repair import (
@@ -378,6 +383,7 @@ class ApiContainer:
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
     list_documents_service: ListDocumentsService
+    company_service: CompanyService
     submit_document_deletion_service: SubmitDocumentDeletionService
     get_document_deletion_service: GetDocumentDeletionService
     get_processing_run_service: GetProcessingRunService
@@ -939,6 +945,14 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             processing_profile=processing_profile,
         ),
         open_original_service=open_original_service,
+        company_service=CompanyService(
+            write_unit_of_work_factory=create_company_write_unit_of_work_factory(
+                database.session_factory
+            ),
+            read_unit_of_work_factory=create_company_read_unit_of_work_factory(
+                database.session_factory
+            ),
+        ),
         list_documents_service=ListDocumentsService(
             unit_of_work_factory=create_document_read_unit_of_work_factory(
                 database.session_factory

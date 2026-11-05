@@ -374,6 +374,22 @@ PostgreSQL-only verifier. Frontend test components used pinned pnpm directly as 
 CI gates discover the new tests automatically; hosted CI, backend images, browser tests, and live
 providers were not rerun for this block. The full M3 step remains incomplete.
 
+**Company HTTP block (2026-11-05):** The local API now exposes `POST /api/v1/companies` for
+committed creation and `GET /api/v1/companies` for filtered pages through the production company
+service. Trusted scope, canonical cursor validation, safe errors, and private/no-store responses
+are enforced. The 64 KiB creation limit covers declared and streamed bodies; transport overflow
+keeps its `413` status even when the framework would otherwise return a parsing error. The
+OpenAPI snapshot and TypeScript types include only the additive company contracts. Document
+assignment and UI remain later blocks; no migration, dependency, or provider change is needed.
+
+Local verification passed: 65 focused HTTP/transport/OpenAPI/architecture tests, full backend
+formatting/linting/typing across 400 files and 2,764 unit tests, 391 PostgreSQL integration tests
+including two production-wired company API cases, migration/schema checks, exact OpenAPI export
+comparison, frontend contract regeneration/verification, formatting/lint/types, and 95 frontend
+tests. Seven separate SeaweedFS cases were skipped by the PostgreSQL-only verifier. Existing CI
+commands discover the added tests automatically. Hosted CI, images, browsers, and live providers
+were not rerun for this block. The full M3 step remains incomplete.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
@@ -539,6 +555,6 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 4. Keep the accepted local RAG profile, evaluation history, fixed local owner, and loopback-only
    boundary. Provider checks remain separately approved, bounded, and public/synthetic only;
    publishing source code does not authorize a public application deployment.
-5. Verify the bounded M3 company application services before adding HTTP routes. Preserve
+5. Build scoped document assignment on the verified company services and HTTP routes. Preserve
    the remaining M2 gates; do not infer company assignment or reviewed report metadata for old
    documents from their titles or legacy type constants.

@@ -45,8 +45,26 @@ repository resolves the anchor in scope and requires it to match the filter; a c
 unknown/foreign anchor yields the same `InvalidCompanyCursorError`. Tokens are untrusted positions,
 not authorization. Pagination is not a snapshot: later insertions before the current position
 require restarting the list. Company names are currently immutable and company deletion is absent.
-Transport encoding and bounded HTTP parsing belong to the next API block.
 
-There is no HTTP route, document assignment, or UI yet. Capture, retrieval, citations, deletion,
-and provider calls remain unchanged. Existing backend and PostgreSQL CI gates discover the unit,
+## Local HTTP interface
+
+| Method | Request | Success |
+|---|---|---|
+| `POST /api/v1/companies` | JSON `{ "name": "Northstar Grid" }` | `201` with `company_id`, normalized display `name`, and UTC `created_at` after commit. |
+| `GET /api/v1/companies` | Optional `q`, `page_size`, `cursor` | `200` with `items` and nullable `next_cursor`. |
+
+The API derives workspace and creator from the existing trusted local identity. It rejects extra
+body/query fields, repeated scalar query parameters, and query parameters on creation. JSON bodies
+are limited to 64 KiB before parsing, including streamed bodies. Continuations are canonical
+unpadded base64url strings bounded to 4,096 characters. Reuse `next_cursor` with the same normalized
+query and page size. It is an opaque position, not a credential or an authorization grant.
+
+Responses and handled errors use `Cache-Control: private, no-store`. Duplicate names return
+`409 CONFLICT`; malformed input or an incompatible cursor returns `422 INVALID_REQUEST`;
+oversized bodies return `413 PAYLOAD_TOO_LARGE`. Storage and uncertain-commit errors return a safe
+`500 INTERNAL_ERROR` without retrying creation or disclosing database details. Request logs use
+route templates rather than submitted names, query strings, or cursors.
+
+Document assignment and the UI are later work. Capture, retrieval, citations, deletion, and
+provider calls remain unchanged. Existing backend and PostgreSQL CI gates discover the HTTP,
 concurrency, workspace-isolation, transaction, pagination, and migration tests automatically.
