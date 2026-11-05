@@ -7,8 +7,8 @@ Own workspace-scoped economic company identities separately from tickers, docume
 | File | Role |
 |---|---|
 | `domain.py` | Immutable company identity, explicit workspace/creator provenance, UTC creation time, and bounded Unicode name normalization. |
-| `contracts.py` | Name-only `CreateCompanyCommand` and safe `CompanySummary` without internal comparison keys. |
-| `application.py` | Server-owned identity/provenance, commit-before-return creation, and scoped summary lookup. |
+| `contracts.py` | Name-only creation, safe summaries, and bounded list/query/continuation contracts. |
+| `application.py` | Server-owned identity/provenance, commit-before-return creation, and scoped lookup/listing. |
 | `ports.py` | Repository and transaction contracts with safe duplicate-name and uncertain-commit errors. |
 | `persistence.py` | PostgreSQL mapping, workspace-scoped reads, trusted creator checks, and database-enforced name uniqueness. |
 
@@ -33,6 +33,20 @@ are not name conflicts. A connection failure during commit becomes `CompanyCommi
 there is no automatic retry or claimed success. Both safe errors suppress storage traceback context
 when rendered normally; callers must not log the raw underlying exception or submitted name.
 
-There is no HTTP route, company list, document assignment, or UI yet. Capture, retrieval, citations,
-deletion, and provider calls remain unchanged. Existing backend and PostgreSQL CI gates discover
-the unit, concurrency, workspace-isolation, transaction, and migration tests automatically.
+`CompanyService.list_companies` reads a literal name substring within the trusted workspace.
+Search uses the stored NFC/whitespace/casefold rules, preserves accents and punctuation, and treats
+SQL wildcard/escape characters literally. Blank search is absent; controls are rejected. Pages
+default to 20, allow 1–100, and order by comparison key using PostgreSQL `C` collation, then UUID.
+Filtering happens before the limit; one extra row determines whether another page exists.
+
+The typed internal continuation contains only a version, company UUID, and query fingerprint.
+The fingerprint binds trusted workspace, normalized search, page size, and fixed ordering. The
+repository resolves the anchor in scope and requires it to match the filter; a changed query or
+unknown/foreign anchor yields the same `InvalidCompanyCursorError`. Tokens are untrusted positions,
+not authorization. Pagination is not a snapshot: later insertions before the current position
+require restarting the list. Company names are currently immutable and company deletion is absent.
+Transport encoding and bounded HTTP parsing belong to the next API block.
+
+There is no HTTP route, document assignment, or UI yet. Capture, retrieval, citations, deletion,
+and provider calls remain unchanged. Existing backend and PostgreSQL CI gates discover the unit,
+concurrency, workspace-isolation, transaction, pagination, and migration tests automatically.
