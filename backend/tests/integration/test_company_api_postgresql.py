@@ -98,3 +98,47 @@ def test_company_api_rechecks_canonical_scope_even_for_a_forged_matching_fingerp
         assert "Private Synthetic Company" not in response.text
         assert str(foreign.workspace_id) not in response.text
         assert client.get("/api/v1/companies").json() == {"items": [], "next_cursor": None}
+
+
+def test_company_ticker_create_update_search_and_scope(
+    integration_database_engine: Engine,
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+) -> None:
+    owner = create_workspace(integration_database_engine)
+    foreign = create_workspace(integration_database_engine)
+    application = create_app(
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: owner
+    with TestClient(application) as client:
+        first = client.post(
+            "/api/v1/companies", json={"name": "Alpha Research", "ticker": " brk.b "}
+        )
+        assert first.status_code == 201 and first.json()["ticker"] == "BRK.B"
+        existing = client.post("/api/v1/companies", json={"name": "Beta Research"})
+        assert existing.status_code == 201 and existing.json()["ticker"] is None
+        company_id = existing.json()["company_id"]
+        path = f"/api/v1/companies/{company_id}/ticker"
+        updated = client.patch(path, json={"ticker": "brk.b"})
+        assert updated.status_code == 200 and updated.json() == {
+            **existing.json(),
+            "ticker": "BRK.B",
+        }
+        assert updated.headers["cache-control"] == "private, no-store"
+
+        page = client.get("/api/v1/companies", params={"q": "brk.b", "page_size": 1})
+        assert page.status_code == 200 and page.json()["items"] == [first.json()]
+        cursor = page.json()["next_cursor"]
+        assert isinstance(cursor, str)
+        second = client.get(
+            "/api/v1/companies", params={"q": "BRK.B", "page_size": 1, "cursor": cursor}
+        )
+        assert second.status_code == 200 and second.json()["items"] == [updated.json()]
+
+        application.dependency_overrides[get_workspace_context] = lambda: foreign
+        assert client.patch(path, json={"ticker": "NVDA"}).status_code == 404
+        assert client.get("/api/v1/companies", params={"q": "BRK.B"}).json()["items"] == []
+        application.dependency_overrides[get_workspace_context] = lambda: owner
+        cleared = client.patch(path, json={"ticker": None})
+        assert cleared.status_code == 200 and cleared.json() == existing.json()

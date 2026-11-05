@@ -409,6 +409,10 @@ the two operations. The browser editing controls follow this block.
 and saving companies. The editor retains selections across search pages and requires a reload
 after a conflicting save. The M1 browser suite discovers the assignment journey automatically.
 
+**Company ticker block.** Migration `0018_company_ticker` adds an optional display symbol. Users
+can set or clear it in the company editor and find companies by either name or ticker. Exchange
+listings remain a separate model.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.

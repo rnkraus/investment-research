@@ -321,13 +321,27 @@
       },
       "CompanyInput": {
         "additionalProperties": false,
-        "description": "Accept only a canonical display name; identity and scope remain server-owned.",
+        "description": "Accept a display name and optional ticker with server-owned identity and scope.",
         "properties": {
           "name": {
             "maxLength": 200,
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9][A-Z0-9.-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
           }
         },
         "required": [
@@ -355,6 +369,20 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9][A-Z0-9.-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
           }
         },
         "required": [
@@ -1593,6 +1621,31 @@
         "title": "TemporalMode",
         "type": "string"
       },
+      "UpdateCompanyTickerCommand": {
+        "additionalProperties": false,
+        "description": "Replace the optional ticker with a symbol or an explicit null.",
+        "properties": {
+          "ticker": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9][A-Z0-9.-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
+          }
+        },
+        "required": [
+          "ticker"
+        ],
+        "title": "UpdateCompanyTickerCommand",
+        "type": "object"
+      },
       "ValidationRule": {
         "description": "Server-side evidence rules recorded by the M0.0 validator.",
         "enum": [
@@ -1774,6 +1827,90 @@
           }
         },
         "summary": "Create Company",
+        "tags": [
+          "companies"
+        ]
+      }
+    },
+    "/api/v1/companies/{company_id}/ticker": {
+      "patch": {
+        "description": "Set or clear the ticker of an existing company in the active workspace.",
+        "operationId": "update_company_ticker_api_v1_companies__company_id__ticker_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "company_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Company Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyTickerCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Update Company Ticker",
         "tags": [
           "companies"
         ]

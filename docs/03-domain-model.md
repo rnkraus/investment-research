@@ -47,7 +47,7 @@ All repository operations require an explicit `workspace_id`. Object keys, queue
 
 | Entity | Meaning | Important properties |
 |---|---|---|
-| `Company` | Economic entity followed in the archive | Canonical name, aliases, status |
+| `Company` | Economic entity followed in the archive | Canonical name and optional display ticker |
 | `SecurityListing` | Exchange-specific tradable security | Ticker, exchange, security type, optional ISIN/FIGI, validity period |
 | `WatchlistEntry` | Workspace selection of a company | Active period and user attribution |
 
@@ -71,6 +71,9 @@ workspace, query, size, and name/UUID ordering, contain no names/search text, an
 anchor against canonical scope and filters. They confer no authorization or snapshot guarantee.
 The local [company HTTP interface](../backend/src/investment_research/modules/companies/README.md#local-http-interface)
 exposes scoped creation and listing. Aliases, exchange listings, and watchlists remain follow-up work.
+
+Each company can store one editable display ticker. The ticker is searchable and may be shared
+by companies. Exchange-specific identity belongs to `SecurityListing`.
 
 ### 3.3 Documents and originals
 

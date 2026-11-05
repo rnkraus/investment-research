@@ -65,7 +65,7 @@ def test_create_company_uses_trusted_provenance_and_finishes_transaction() -> No
     assert result == CompanySummary(
         company_id=COMPANY_ID, name="Northstar Grid", created_at=make_company().created_at
     )
-    assert set(result.model_dump()) == {"company_id", "name", "created_at"}
+    assert set(result.model_dump()) == {"company_id", "name", "ticker", "created_at"}
 
 
 @pytest.mark.parametrize("error", [CompanyNameConflictError(), CompanyCommitUncertainError()])

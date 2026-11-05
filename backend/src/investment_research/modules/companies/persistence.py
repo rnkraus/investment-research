@@ -11,8 +11,10 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    or_,
     select,
     tuple_,
+    update,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -27,10 +29,12 @@ from investment_research.modules.companies.contracts import (
 from investment_research.modules.companies.domain import (
     COMPANY_NAME_KEY_MAX_LENGTH,
     COMPANY_NAME_MAX_LENGTH,
+    COMPANY_TICKER_MAX_LENGTH,
     Company,
     CompanyName,
     CompanyNameIntegrityError,
     CompanyScopeError,
+    CompanyTicker,
     company_name_key,
 )
 from investment_research.modules.companies.ports import InvalidCompanyCursorError
@@ -46,6 +50,7 @@ class CompanyRow(Base):
         UniqueConstraint("workspace_id", "normalized_name"),
         ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
         CheckConstraint("char_length(name) > 0 AND name = btrim(name)", name="non_empty_name"),
+        CheckConstraint("ticker ~ '^[A-Z0-9][A-Z0-9.-]*$'", name="ticker_format"),
         CheckConstraint(
             "char_length(normalized_name) > 0 AND normalized_name = btrim(normalized_name)",
             name="non_empty_normalized_name",
@@ -55,6 +60,7 @@ class CompanyRow(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(COMPANY_NAME_MAX_LENGTH), nullable=False)
+    ticker: Mapped[str | None] = mapped_column(String(COMPANY_TICKER_MAX_LENGTH, collation="C"))
     normalized_name: Mapped[str] = mapped_column(
         String(COMPANY_NAME_KEY_MAX_LENGTH, collation="C"), nullable=False
     )
@@ -71,6 +77,7 @@ class CompanyRow(Base):
             id=company.id,
             workspace_id=company.workspace_id,
             name=company.name,
+            ticker=company.ticker,
             normalized_name=company.normalized_name,
             created_by=company.created_by,
             created_at=company.created_at,
@@ -83,6 +90,7 @@ class CompanyRow(Base):
             id=self.id,
             workspace_id=self.workspace_id,
             name=self.name,
+            ticker=self.ticker,
             created_by=self.created_by,
             created_at=self.created_at,
         )
@@ -130,14 +138,16 @@ class SqlAlchemyCompanyRepository:
         """Filter before limiting; resolve continuation names only from scoped canonical rows."""
 
         fingerprint = query.fingerprint(context.workspace_id)
+        term = query.normalized_query
         anchor = None
         if query.after is not None:
             if query.after.query_fingerprint != fingerprint:
                 raise InvalidCompanyCursorError("company cursor is invalid")
             anchor = self.get_by_id(context, query.after.company_id)
             if anchor is None or (
-                query.normalized_query is not None
-                and query.normalized_query not in anchor.normalized_name
+                term is not None
+                and term not in anchor.normalized_name
+                and term not in (anchor.ticker or "").lower()
             ):
                 raise InvalidCompanyCursorError("company cursor is invalid")
 
@@ -147,9 +157,12 @@ class SqlAlchemyCompanyRepository:
             .order_by(CompanyRow.normalized_name.asc(), CompanyRow.id.asc())
             .limit(query.page_size + 1)
         )
-        if query.normalized_query is not None:
+        if term is not None:
             statement = statement.where(
-                CompanyRow.normalized_name.contains(query.normalized_query, autoescape=True)
+                or_(
+                    CompanyRow.normalized_name.contains(term, autoescape=True),
+                    func.lower(CompanyRow.ticker).contains(term, autoescape=True),
+                )
             )
         if anchor is not None:
             statement = statement.where(
@@ -159,13 +172,21 @@ class SqlAlchemyCompanyRepository:
 
         rows = self._session.scalars(statement).all()
         companies = tuple(row.to_domain() for row in rows[: query.page_size])
-        items = tuple(
-            CompanySummary(company_id=company.id, name=company.name, created_at=company.created_at)
-            for company in companies
-        )
+        items = tuple(CompanySummary.from_company(company) for company in companies)
         cursor = (
             CompanyListCursor(company_id=items[-1].company_id, query_fingerprint=fingerprint)
             if len(rows) > query.page_size
             else None
         )
         return CompanyListPage(items=items, next_cursor=cursor)
+
+    def update_ticker(
+        self, context: WorkspaceContext, company_id: UUID, ticker: CompanyTicker | None
+    ) -> Company | None:
+        row = self._session.scalars(
+            update(CompanyRow)
+            .where(CompanyRow.workspace_id == context.workspace_id, CompanyRow.id == company_id)
+            .values(ticker=ticker)
+            .returning(CompanyRow)
+        ).one_or_none()
+        return None if row is None else row.to_domain()

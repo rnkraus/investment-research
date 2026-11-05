@@ -25,6 +25,8 @@ def _company_write_method(path: str) -> str | None:
     path = path.rstrip("/")
     if path == "/api/v1/companies":
         return "POST"
+    if re.fullmatch(r"/api/v1/companies/[^/]+/ticker", path):
+        return "PATCH"
     if re.fullmatch(r"/api/v1/documents/[^/]+/companies", path):
         return "PUT"
     return None

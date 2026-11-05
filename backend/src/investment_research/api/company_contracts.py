@@ -27,7 +27,7 @@ CompanyCursorToken = Annotated[
 
 
 class CompanyInput(CreateCompanyCommand):
-    """Accept only a canonical display name; identity and scope remain server-owned."""
+    """Accept a display name and optional ticker with server-owned identity and scope."""
 
 
 class CompanyCatalogQuery(BaseModel):

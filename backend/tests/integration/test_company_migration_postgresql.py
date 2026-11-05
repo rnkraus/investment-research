@@ -154,3 +154,31 @@ def test_company_revision_migration_retains_revision_for_an_empty_set(
     with Session(engine) as session:
         revision = session.get(DocumentCompanyRevisionRow, key)
         assert revision is not None and revision.revision == 2
+
+
+def test_ticker_migration_preserves_existing_company_and_guards_rollback(
+    company_migration_database: tuple[Engine, Config],
+) -> None:
+    engine, config = company_migration_database
+    source = seed_legacy_run(engine, ProcessingState.CAPTURED)
+    command.upgrade(config, "0017_company_link_revision")
+    company = make_company(source.context)
+    with engine.begin() as connection:
+        connection.execute(
+            text("""
+                INSERT INTO companies
+                    (id, workspace_id, name, normalized_name, created_by, created_at)
+                VALUES (:id, :workspace_id, :name, :normalized_name, :created_by, :created_at)
+            """),
+            {**company.model_dump(exclude={"ticker"}), "normalized_name": company.normalized_name},
+        )
+    command.upgrade(config, "head")
+    with Session(engine) as session, session.begin():
+        repository = SqlAlchemyCompanyRepository(session)
+        assert repository.get_by_id(source.context, company.id) == company
+        repository.update_ticker(source.context, company.id, "NVDA")
+    with pytest.raises(RuntimeError, match="company tickers exist"):
+        command.downgrade(config, "0017_company_link_revision")
+    with Session(engine) as session:
+        stored = SqlAlchemyCompanyRepository(session).get_by_id(source.context, company.id)
+        assert stored is not None and stored.ticker == "NVDA"

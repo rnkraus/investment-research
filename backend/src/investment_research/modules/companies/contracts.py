@@ -4,22 +4,36 @@ import json
 import unicodedata
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Final, Literal
+from typing import Final, Literal, Self
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-from investment_research.modules.companies.domain import CompanyName, company_name_key
+from investment_research.modules.companies.domain import (
+    Company,
+    CompanyName,
+    CompanyTicker,
+    company_name_key,
+)
 
 COMPANY_LIST_ORDER_VERSION: Final = "companies-name-v1"
 
 
 class CreateCompanyCommand(BaseModel):
-    """Accept a name while leaving identity, actor, and workspace to the server."""
+    """Accept display metadata while leaving identity, actor, and workspace to the server."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
     name: CompanyName
+    ticker: CompanyTicker | None = None
+
+
+class UpdateCompanyTickerCommand(BaseModel):
+    """Replace the optional ticker with a symbol or an explicit null."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    ticker: CompanyTicker | None
 
 
 class CompanySummary(BaseModel):
@@ -29,7 +43,17 @@ class CompanySummary(BaseModel):
 
     company_id: UUID
     name: CompanyName
+    ticker: CompanyTicker | None = None
     created_at: AwareDatetime
+
+    @classmethod
+    def from_company(cls, company: Company) -> Self:
+        return cls(
+            company_id=company.id,
+            name=company.name,
+            ticker=company.ticker,
+            created_at=company.created_at,
+        )
 
     @field_validator("created_at")
     @classmethod

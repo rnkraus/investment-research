@@ -17,6 +17,11 @@ const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus-visible:outline-2 focus-visible:outline-teal-700";
 // HTML counts UTF-16 units. Allow every 200-code-point name accepted by the API.
 const nameInputMaxLength = 400;
+const tickerMaxLength = 20;
+
+function companyLabel(company: CompanySummary): string {
+  return company.ticker ? `${company.name} (${company.ticker})` : company.name;
+}
 
 export function DocumentCompanyEditor({
   documentId,
@@ -29,6 +34,7 @@ export function DocumentCompanyEditor({
 }) {
   const searchId = useId();
   const nameId = useId();
+  const tickerId = useId();
   const [snapshot, setSnapshot] = useState<DocumentCompanyAssignment | null>(
     null,
   );
@@ -39,8 +45,13 @@ export function DocumentCompanyEditor({
     page: CompanyCatalogPage;
   } | null>(null);
   const [newName, setNewName] = useState("");
+  const [newTicker, setNewTicker] = useState("");
+  const [tickerEdit, setTickerEdit] = useState<{
+    companyId: string;
+    value: string;
+  } | null>(null);
   const [pending, setPending] = useState<
-    "load" | "search" | "create" | "save" | null
+    "load" | "search" | "create" | "save" | "ticker" | null
   >("load");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -83,6 +94,7 @@ export function DocumentCompanyEditor({
 
   async function search(query: string, cursor?: string) {
     if (isBusy) return;
+    setTickerEdit(null);
     setError(null);
     setNotice(null);
     setPending("search");
@@ -114,8 +126,11 @@ export function DocumentCompanyEditor({
     setNotice(null);
     setPending("create");
     try {
-      selectCompany(await apiClient.createCompany(name));
+      selectCompany(
+        await apiClient.createCompany(name, newTicker.trim() || undefined),
+      );
       setNewName("");
+      setNewTicker("");
       setNotice(
         "Company created and selected. Save companies to link it to this document.",
       );
@@ -123,12 +138,45 @@ export function DocumentCompanyEditor({
       if (failure instanceof ApiRequestError && failure.status === 409) {
         setError("That company already exists. Search for it to select it.");
       } else if (failure instanceof ApiRequestError && failure.status === 422) {
-        setError("Enter a valid company name of up to 200 characters.");
+        setError(
+          "Enter a valid company name and a ticker of up to 20 letters, numbers, dots or hyphens.",
+        );
       } else {
         setError(
           "Could not confirm company creation. Search for the name before retrying.",
         );
       }
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function saveTicker() {
+    if (tickerEdit === null || isBusy) return;
+    setError(null);
+    setNotice(null);
+    setPending("ticker");
+    try {
+      const updated = await apiClient.updateCompanyTicker(
+        tickerEdit.companyId,
+        tickerEdit.value.trim() || null,
+      );
+      setSelected((current) =>
+        current.map((company) =>
+          company.company_id === updated.company_id ? updated : company,
+        ),
+      );
+      setTickerEdit(null);
+      // Restart the applied search because the edited company may no longer match its ticker.
+      if (results !== null) {
+        setResults(null);
+        await search(results.query);
+      }
+      setNotice("Ticker saved.");
+    } catch {
+      setError(
+        "Could not save the ticker. Search again to check the current ticker before retrying.",
+      );
     } finally {
       setPending(null);
     }
@@ -209,7 +257,9 @@ export function DocumentCompanyEditor({
                   key={company.company_id}
                   className="flex items-center justify-between gap-2"
                 >
-                  <span className="min-w-0 break-words">{company.name}</span>
+                  <span className="min-w-0 break-words">
+                    {companyLabel(company)}
+                  </span>
                   <button
                     type="button"
                     className={buttonClass}
@@ -250,6 +300,7 @@ export function DocumentCompanyEditor({
                 id={searchId}
                 className={inputClass}
                 maxLength={nameInputMaxLength}
+                placeholder="Name or ticker"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
               />
@@ -269,22 +320,75 @@ export function DocumentCompanyEditor({
                       (item) => item.company_id === company.company_id,
                     );
                     return (
-                      <li
-                        key={company.company_id}
-                        className="flex items-center justify-between gap-2"
-                      >
-                        <span className="min-w-0 break-words">
-                          {company.name}
-                        </span>
-                        <button
-                          type="button"
-                          className={buttonClass}
-                          disabled={isSelected || atLimit}
-                          aria-label={`${isSelected ? "Selected" : "Select"} ${company.name}`}
-                          onClick={() => selectCompany(company)}
-                        >
-                          {isSelected ? "Selected" : "Select"}
-                        </button>
+                      <li key={company.company_id} className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 break-words">
+                            {companyLabel(company)}
+                          </span>
+                          <button
+                            type="button"
+                            className={buttonClass}
+                            disabled={isSelected || atLimit}
+                            aria-label={`${isSelected ? "Selected" : "Select"} ${company.name}`}
+                            onClick={() => selectCompany(company)}
+                          >
+                            {isSelected ? "Selected" : "Select"}
+                          </button>
+                        </div>
+                        {tickerEdit?.companyId === company.company_id ? (
+                          <form
+                            className="space-y-1"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void saveTicker();
+                            }}
+                          >
+                            <label
+                              className="block font-semibold"
+                              htmlFor={`${tickerId}-edit`}
+                            >
+                              Ticker for {company.name}
+                            </label>
+                            <input
+                              id={`${tickerId}-edit`}
+                              className={inputClass}
+                              maxLength={tickerMaxLength}
+                              value={tickerEdit.value}
+                              onChange={(event) =>
+                                setTickerEdit({
+                                  companyId: company.company_id,
+                                  value: event.target.value,
+                                })
+                              }
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <button type="submit" className={buttonClass}>
+                                Save ticker
+                              </button>
+                              <button
+                                type="button"
+                                className={buttonClass}
+                                onClick={() => setTickerEdit(null)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <button
+                            type="button"
+                            className="font-semibold text-teal-700 underline focus-visible:outline-2"
+                            aria-label={`Edit ticker for ${company.name}`}
+                            onClick={() =>
+                              setTickerEdit({
+                                companyId: company.company_id,
+                                value: company.ticker ?? "",
+                              })
+                            }
+                          >
+                            Edit ticker
+                          </button>
+                        )}
                       </li>
                     );
                   })}
@@ -323,6 +427,17 @@ export function DocumentCompanyEditor({
               maxLength={nameInputMaxLength}
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
+            />
+            <label htmlFor={tickerId} className="block font-semibold">
+              Ticker (optional)
+            </label>
+            <input
+              id={tickerId}
+              className={inputClass}
+              maxLength={tickerMaxLength}
+              placeholder="e.g. NVDA"
+              value={newTicker}
+              onChange={(event) => setNewTicker(event.target.value)}
             />
             <button
               type="submit"
