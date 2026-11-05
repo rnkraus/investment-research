@@ -400,6 +400,11 @@ set. The document lock serializes edits, version changes, and deletion. Revision
 `0017_company_link_revision` preserves stale-edit detection after the last link is cleared. The
 assignment HTTP interface follows this service block.
 
+**Company assignment HTTP block:** The local API exposes `GET` and `PUT` on
+`/api/v1/documents/{document_id}/companies`. The routes use trusted workspace scope, private
+responses, a bounded write body, and the revision-checked service. OpenAPI and TypeScript describe
+the two operations. The browser editing controls follow this block.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.

@@ -31,6 +31,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/api/v1/documents",
         "/api/v1/documents/text",
         "/api/v1/documents/deletions",
+        "/api/v1/documents/{document_id}/companies",
         "/api/v1/documents/{document_id}/deletion",
         "/api/v1/documents/{document_id}/versions/{version_id}/original",
         "/api/v1/evidence-spans/{evidence_span_id}",

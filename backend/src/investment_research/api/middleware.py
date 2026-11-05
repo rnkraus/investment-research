@@ -1,5 +1,6 @@
 """Transport-level safeguards applied before FastAPI parses request bodies."""
 
+import re
 from collections.abc import Sequence
 from time import perf_counter
 from uuid import uuid4
@@ -18,6 +19,15 @@ from investment_research.infrastructure.logging import (
 MULTIPART_OVERHEAD_ALLOWANCE_BYTES = 64 * 1024
 COMPANY_JSON_BODY_LIMIT_BYTES = 64 * 1024
 REQUEST_ID_HEADER = b"x-request-id"
+
+
+def _company_write_method(path: str) -> str | None:
+    path = path.rstrip("/")
+    if path == "/api/v1/companies":
+        return "POST"
+    if re.fullmatch(r"/api/v1/documents/[^/]+/companies", path):
+        return "PUT"
+    return None
 
 
 def _route_template(scope: Scope, routes: Sequence[BaseRoute]) -> str:
@@ -94,7 +104,7 @@ class RequestLoggingMiddleware:
                     if name.lower() != REQUEST_ID_HEADER
                 ]
                 headers.append((REQUEST_ID_HEADER, str(request_id).encode("ascii")))
-                if scope.get("path", "").rstrip("/") == "/api/v1/companies":
+                if _company_write_method(scope.get("path", "")) is not None:
                     headers = [
                         (name, value) for name, value in headers if name.lower() != b"cache-control"
                     ]
@@ -164,13 +174,10 @@ class RequestBodyLimitMiddleware:
             )
             return
 
-        company_create = (
-            scope.get("path", "").rstrip("/") == "/api/v1/companies"
-            and scope.get("method") == "POST"
-        )
+        company_method = _company_write_method(scope.get("path", ""))
         request_limit = (
             min(self._max_request_body_bytes, COMPANY_JSON_BODY_LIMIT_BYTES)
-            if company_create
+            if company_method is not None and scope.get("method") == company_method
             else self._max_request_body_bytes
         )
         if content_length is not None and content_length > request_limit:
@@ -243,7 +250,7 @@ class RequestBodyLimitMiddleware:
             code=ErrorCode.PAYLOAD_TOO_LARGE,
             message=(
                 "company request body exceeds the configured size limit"
-                if scope.get("path", "").rstrip("/") == "/api/v1/companies"
+                if _company_write_method(scope.get("path", "")) is not None
                 else "request body exceeds the configured upload limit"
             ),
         )
