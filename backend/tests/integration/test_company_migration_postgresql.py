@@ -16,7 +16,11 @@ from investment_research.modules.companies.persistence import (
     CompanyRow,
     SqlAlchemyCompanyRepository,
 )
-from investment_research.modules.documents.persistence import DocumentCompanyRow, DocumentRow
+from investment_research.modules.documents.persistence import (
+    DocumentCompanyRevisionRow,
+    DocumentCompanyRow,
+    DocumentRow,
+)
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import ProcessingRunRow
 from investment_research.settings import DatabaseSettings
@@ -132,3 +136,21 @@ def test_company_migration_refuses_to_discard_company_records(
         document = session.get(DocumentRow, source.document.id)
         assert document is not None and document.to_domain() == source.document
     command.check(config)
+
+
+def test_company_revision_migration_retains_revision_for_an_empty_set(
+    company_migration_database: tuple[Engine, Config],
+) -> None:
+    engine, config = company_migration_database
+    source = seed_legacy_run(engine, ProcessingState.CAPTURED)
+    command.upgrade(config, "head")
+    key = (source.context.workspace_id, source.document.id)
+    with Session(engine) as session, session.begin():
+        session.add(DocumentCompanyRevisionRow(workspace_id=key[0], document_id=key[1], revision=2))
+
+    with pytest.raises(RuntimeError, match="company assignment revisions exist"):
+        command.downgrade(config, "0016_document_companies")
+
+    with Session(engine) as session:
+        revision = session.get(DocumentCompanyRevisionRow, key)
+        assert revision is not None and revision.revision == 2

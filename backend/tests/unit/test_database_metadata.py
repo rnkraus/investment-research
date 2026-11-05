@@ -10,6 +10,7 @@ EXPECTED_TABLE_NAMES = {
     "chunks",
     "companies",
     "document_companies",
+    "document_company_revisions",
     "document_versions",
     "document_deletions",
     "documents",

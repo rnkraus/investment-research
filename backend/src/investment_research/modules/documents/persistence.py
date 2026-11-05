@@ -153,6 +153,24 @@ class DocumentCompanyRow(Base):
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class DocumentCompanyRevisionRow(Base):
+    """Preserve the edit revision when a document's last company link is removed."""
+
+    __tablename__ = "document_company_revisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "document_id"],
+            ["documents.workspace_id", "documents.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("revision > 0", name="positive_revision"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    document_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 class DocumentDeletionRow(Base):
     """Durable content-free deletion intent that survives removal of the document."""
 

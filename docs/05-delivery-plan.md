@@ -395,6 +395,11 @@ manual links with review provenance. Writes use the active-document lock to seri
 admission. Permanent purge removes the affected links in the same transaction. Rollback refuses
 to discard stored links. The assignment service and API follow this storage block.
 
+**Company assignment service block:** The service reads and replaces the complete scoped company
+set. The document lock serializes edits, version changes, and deletion. Revision storage in
+`0017_company_link_revision` preserves stale-edit detection after the last link is cleared. The
+assignment HTTP interface follows this service block.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
