@@ -24,6 +24,7 @@ from investment_research.modules.companies.contracts import (
     CompanyListQuery,
     CompanySummary,
     CreateCompanyCommand,
+    UpdateCompanyDetailsCommand,
     UpdateCompanyTickerCommand,
 )
 from investment_research.modules.companies.domain import (
@@ -99,15 +100,36 @@ def update_company_ticker(
 ) -> CompanySummary:
     """Set or clear the ticker of an existing company in the active workspace."""
 
+    return update_company_details(
+        company_id, UpdateCompanyDetailsCommand(ticker=payload.ticker), service, context
+    )
+
+
+@router.patch(
+    "/{company_id}",
+    responses={code: {"model": ErrorResponse} for code in (404, 409, 413, 422, 500)},
+)
+def update_company_details(
+    company_id: UUID,
+    payload: UpdateCompanyDetailsCommand,
+    service: CompanyServiceDependency,
+    context: WorkspaceContextDependency,
+) -> CompanySummary:
+    """Update the supplied display fields of a company in the active workspace."""
+
     try:
-        return service.update_ticker(context, company_id, payload)
+        return service.update_details(context, company_id, payload)
     except CompanyUnavailableError:
         raise ApiError(
             status_code=404, code=ErrorCode.NOT_FOUND, message="company is unavailable"
         ) from None
+    except CompanyNameConflictError:
+        raise ApiError(
+            status_code=409, code=ErrorCode.CONFLICT, message="company name already exists"
+        ) from None
     except SQLAlchemyError, CompanyCommitUncertainError, CompanyNameIntegrityError:
         raise ApiError(
-            status_code=500, code=ErrorCode.INTERNAL_ERROR, message="ticker could not be saved"
+            status_code=500, code=ErrorCode.INTERNAL_ERROR, message="company could not be updated"
         ) from None
 
 

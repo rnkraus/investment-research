@@ -28,6 +28,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/health",
         "/ready",
         "/api/v1/companies",
+        "/api/v1/companies/{company_id}",
         "/api/v1/companies/{company_id}/ticker",
         "/api/v1/documents",
         "/api/v1/documents/text",

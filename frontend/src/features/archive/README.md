@@ -218,8 +218,8 @@ The server rechecks eligibility; neither the status snapshot nor possession of a
 ## Manual company assignments
 
 Open **Edit companies** on a document to see its current links. Search by name or ticker and select
-results across pages, or create a company with an optional ticker. **Edit ticker** updates a company
-from the search results. Saving an empty ticker clears it. **Save companies** replaces the
+results across pages, or create a company with an optional ticker. **Edit company details** changes
+the name or ticker from the search results. Saving an empty ticker clears it. **Save companies** replaces the
 document's set with the selected companies. Removing every selection and saving clears the links.
 On a conflicting edit, **Reload assignments** loads the latest saved selection before another save.
 

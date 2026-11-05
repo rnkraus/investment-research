@@ -14,6 +14,7 @@ from investment_research.modules.companies.contracts import CompanyListCursor, C
 from investment_research.modules.companies.persistence import CompanyRow
 from investment_research.settings import ApiSettings
 from tests.integration.test_document_capture_postgresql import create_workspace
+from tests.integration.test_document_deletion_postgresql import persist_unclaimed_source
 
 
 def test_company_api_commits_and_paginates_without_crossing_workspace_boundaries(
@@ -142,3 +143,53 @@ def test_company_ticker_create_update_search_and_scope(
         application.dependency_overrides[get_workspace_context] = lambda: owner
         cleared = client.patch(path, json={"ticker": None})
         assert cleared.status_code == 200 and cleared.json() == existing.json()
+
+
+def test_company_rename_preserves_links_and_rejects_duplicate_names(
+    integration_database_engine: Engine,
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+) -> None:
+    source = persist_unclaimed_source(integration_database_engine)
+    foreign = create_workspace(integration_database_engine)
+    application = create_app(
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+    assignment_path = f"/api/v1/documents/{source.document.id}/companies"
+    with TestClient(application) as client:
+        original = client.post(
+            "/api/v1/companies", json={"name": "Alpha Research", "ticker": "ALP"}
+        )
+        assert original.status_code == 201
+        assert client.post("/api/v1/companies", json={"name": "Beta Research"}).status_code == 201
+        company_id = original.json()["company_id"]
+        path = f"/api/v1/companies/{company_id}"
+        saved = client.put(
+            assignment_path,
+            json={
+                "expected_document_version_id": str(source.version.id),
+                "expected_revision": 0,
+                "company_ids": [company_id],
+            },
+        )
+        assert saved.status_code == 200
+
+        duplicate = client.patch(path, json={"name": " beta  research ", "ticker": "NEW"})
+        assert duplicate.status_code == 409 and duplicate.json()["error"]["code"] == "CONFLICT"
+        assert client.get(assignment_path).json() == saved.json()
+        for invalid in ({}, {"name": None}, {"name": "   "}):
+            assert client.patch(path, json=invalid).status_code == 422
+
+        renamed = client.patch(path, json={"name": " Alpha   Energy "})
+        assert renamed.status_code == 200
+        assert renamed.json() == {**original.json(), "name": "Alpha Energy"}
+        assert renamed.headers["cache-control"] == "private, no-store"
+        assert client.get(assignment_path).json() == {**saved.json(), "companies": [renamed.json()]}
+        assert client.get("/api/v1/companies", params={"q": "Alpha Energy"}).json()["items"] == [
+            renamed.json()
+        ]
+        assert client.get("/api/v1/companies", params={"q": "Alpha Research"}).json()["items"] == []
+
+        application.dependency_overrides[get_workspace_context] = lambda: foreign
+        assert client.patch(path, json={"name": "Hidden"}).status_code == 404

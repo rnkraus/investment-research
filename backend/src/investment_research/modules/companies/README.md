@@ -44,7 +44,7 @@ The fingerprint binds trusted workspace, normalized search, page size, and fixed
 repository resolves the anchor in scope and requires it to match the filter; a changed query or
 unknown/foreign anchor yields the same `InvalidCompanyCursorError`. Tokens are untrusted positions,
 not authorization. Pagination is not a snapshot: later insertions before the current position
-require restarting the list. Company names are currently immutable and company deletion is absent.
+require restarting the list. Renames can also move a company to a different position.
 
 ## Local HTTP interface
 
@@ -52,6 +52,7 @@ require restarting the list. Company names are currently immutable and company d
 |---|---|---|
 | `POST /api/v1/companies` | JSON with `name` and optional `ticker` | `201` with the committed company summary. |
 | `GET /api/v1/companies` | Optional `q`, `page_size`, `cursor` | `200` with `items` and nullable `next_cursor`. |
+| `PATCH /api/v1/companies/{company_id}` | Supply `name`, `ticker`, or both. An explicit `null` ticker clears it. | `200` with the updated company summary. |
 | `PATCH /api/v1/companies/{company_id}/ticker` | JSON with `ticker`, where `null` clears it | `200` with the updated company summary. |
 
 Migration `0018_company_ticker` leaves the ticker empty for existing companies. Symbols are stored
@@ -70,5 +71,6 @@ oversized bodies return `413 PAYLOAD_TOO_LARGE`. Storage and uncertain-commit er
 `500 INTERNAL_ERROR` without retrying creation or disclosing database details. Request logs use
 route templates rather than submitted names, query strings, or cursors.
 
-The document company editor supports ticker creation, updates, and search. Existing backend and
+The document company editor supports name and ticker edits. Renaming keeps the company ID and
+document links. A name conflict rolls back the entire edit. Existing backend and
 PostgreSQL CI gates cover HTTP behavior, workspace isolation, pagination, and migrations.

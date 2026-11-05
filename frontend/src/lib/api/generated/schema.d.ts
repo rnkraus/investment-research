@@ -28,6 +28,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/companies/{company_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /**
+         * Update Company Details
+         * @description Update the supplied display fields of a company in the active workspace.
+         */
+        readonly patch: operations["update_company_details_api_v1_companies__company_id__patch"];
+        readonly trace?: never;
+    };
     readonly "/api/v1/companies/{company_id}/ticker": {
         readonly parameters: {
             readonly query?: never;
@@ -1099,6 +1119,16 @@ export interface components {
          */
         readonly TemporalMode: "CURRENT" | "PUBLIC_KNOWLEDGE" | "PERSONAL_ARCHIVE";
         /**
+         * UpdateCompanyDetailsCommand
+         * @description Change supplied fields only. A null ticker clears the symbol.
+         */
+        readonly UpdateCompanyDetailsCommand: {
+            /** Name */
+            readonly name?: string;
+            /** Ticker */
+            readonly ticker?: string | null;
+        };
+        /**
          * UpdateCompanyTickerCommand
          * @description Replace the optional ticker with a symbol or an explicit null.
          */
@@ -1183,6 +1213,77 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["CompanySummary"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly update_company_details_api_v1_companies__company_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly company_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["UpdateCompanyDetailsCommand"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CompanySummary"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Conflict */

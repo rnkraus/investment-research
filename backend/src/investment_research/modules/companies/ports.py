@@ -5,8 +5,12 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 from uuid import UUID
 
-from investment_research.modules.companies.contracts import CompanyListPage, CompanyListQuery
-from investment_research.modules.companies.domain import Company, CompanyName, CompanyTicker
+from investment_research.modules.companies.contracts import (
+    CompanyListPage,
+    CompanyListQuery,
+    UpdateCompanyDetailsCommand,
+)
+from investment_research.modules.companies.domain import Company, CompanyName
 from investment_research.modules.identity.domain import WorkspaceContext
 
 
@@ -34,10 +38,10 @@ class CompanyRepository(Protocol):
     def get_by_name(self, context: WorkspaceContext, name: CompanyName) -> Company | None:
         """Resolve an exact normalized name within the trusted workspace."""
 
-    def update_ticker(
-        self, context: WorkspaceContext, company_id: UUID, ticker: CompanyTicker | None
+    def update_details(
+        self, context: WorkspaceContext, company_id: UUID, command: UpdateCompanyDetailsCommand
     ) -> Company | None:
-        """Stage a ticker replacement for the scoped company."""
+        """Stage display metadata changes for the scoped company."""
 
     def list_companies(self, context: WorkspaceContext, query: CompanyListQuery) -> CompanyListPage:
         """Apply trusted scope and literal filtering before bounded keyset pagination."""

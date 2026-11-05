@@ -73,7 +73,8 @@ The local [company HTTP interface](../backend/src/investment_research/modules/co
 exposes scoped creation and listing. Aliases, exchange listings, and watchlists remain follow-up work.
 
 Each company can store one editable display ticker. The ticker is searchable and may be shared
-by companies. Exchange-specific identity belongs to `SecurityListing`.
+by companies. Exchange-specific identity belongs to `SecurityListing`. A rename updates both the
+display name and its comparison key while retaining the company ID and document links.
 
 ### 3.3 Documents and originals
 

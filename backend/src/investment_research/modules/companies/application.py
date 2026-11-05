@@ -9,7 +9,7 @@ from investment_research.modules.companies.contracts import (
     CompanyListQuery,
     CompanySummary,
     CreateCompanyCommand,
-    UpdateCompanyTickerCommand,
+    UpdateCompanyDetailsCommand,
 )
 from investment_research.modules.companies.domain import Company
 from investment_research.modules.companies.ports import CompanyUnitOfWorkFactory
@@ -60,11 +60,11 @@ class CompanyService:
             raise CompanyUnavailableError("company is unavailable")
         return CompanySummary.from_company(company)
 
-    def update_ticker(
-        self, context: WorkspaceContext, company_id: UUID, command: UpdateCompanyTickerCommand
+    def update_details(
+        self, context: WorkspaceContext, company_id: UUID, command: UpdateCompanyDetailsCommand
     ) -> CompanySummary:
         with self._write() as unit:
-            company = unit.companies.update_ticker(context, company_id, command.ticker)
+            company = unit.companies.update_details(context, company_id, command)
             if company is None:
                 raise CompanyUnavailableError("company is unavailable")
         return CompanySummary.from_company(company)

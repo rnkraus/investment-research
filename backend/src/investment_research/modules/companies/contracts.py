@@ -7,7 +7,8 @@ from hashlib import sha256
 from typing import Final, Literal, Self
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from investment_research.modules.companies.domain import (
     Company,
@@ -34,6 +35,21 @@ class UpdateCompanyTickerCommand(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
     ticker: CompanyTicker | None
+
+
+class UpdateCompanyDetailsCommand(BaseModel):
+    """Change supplied fields only. A null ticker clears the symbol."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    name: CompanyName | SkipJsonSchema[None] = None
+    ticker: CompanyTicker | None = None
+
+    @model_validator(mode="after")
+    def require_valid_changes(self) -> Self:
+        if not self.model_fields_set or ("name" in self.model_fields_set and self.name is None):
+            raise ValueError("provide a name or ticker change and keep the company name nonempty")
+        return self
 
 
 class CompanySummary(BaseModel):
