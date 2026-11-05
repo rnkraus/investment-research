@@ -2,10 +2,15 @@
 
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, cast, or_, select
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
 
-from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
+from investment_research.modules.documents.persistence import (
+    DocumentRow,
+    DocumentVersionRow,
+    document_has_company,
+)
 from investment_research.modules.evidence.contracts import (
     M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     CanonicalEvidenceSource,
@@ -176,6 +181,7 @@ class PostgresCanonicalEvidenceSourceReader:
     ) -> CanonicalEvidenceSource | None:
         """Return scoped canonical state for one candidate in one retrieval run."""
 
+        company_id = RetrievalRunRow.filter_snapshot["company_id"].as_string()
         statement = (
             select(
                 RetrievalCandidateRow,
@@ -243,6 +249,7 @@ class PostgresCanonicalEvidenceSourceReader:
                 RetrievalCandidateRow.workspace_id == context.workspace_id,
                 RetrievalCandidateRow.retrieval_run_id == retrieval_run_id,
                 RetrievalCandidateRow.id == retrieval_candidate_id,
+                or_(company_id.is_(None), document_has_company(cast(company_id, PG_UUID))),
             )
         )
         row = self._session.execute(statement).one_or_none()

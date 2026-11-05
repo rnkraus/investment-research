@@ -122,6 +122,7 @@ def test_document_catalog_exposes_bounded_pagination_without_workspace_input() -
         "page_size",
         "after_created_at",
         "after_document_id",
+        "company_id",
     }
     size_schema = next(
         parameter["schema"]

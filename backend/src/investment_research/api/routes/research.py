@@ -322,6 +322,7 @@ def answer_research_request(
     retrieval_input = ResearchRetrievalInput(
         question=request.question,
         document_ids=request.context.document_ids,
+        company_id=request.context.company_id,
         temporal_mode=request.context.temporal_mode,
         cutoff_at=request.context.cutoff_at,
         generation_model=request.generation_model,

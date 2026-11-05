@@ -1082,6 +1082,8 @@ export interface components {
          * @description Explicit archive filters supplied with a research question.
          */
         readonly ResearchRequestContext: {
+            /** Company Id */
+            readonly company_id?: string | null;
             /** Cutoff At */
             readonly cutoff_at?: string | null;
             /**
@@ -1390,6 +1392,7 @@ export interface operations {
         readonly parameters: {
             readonly query?: {
                 readonly page_size?: number;
+                readonly company_id?: string | null;
                 readonly after_created_at?: string | null;
                 readonly after_document_id?: string | null;
             };
