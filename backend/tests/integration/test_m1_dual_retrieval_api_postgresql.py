@@ -71,6 +71,7 @@ from tests.integration.factories import (
     persist_research_source,
     persist_workspace,
 )
+from tests.integration.test_document_company_service_postgresql import add_company
 
 SEMANTIC_QUESTION = "What is mainly holding back Northstar's rollout to new clients?"
 SEMANTIC_PASSAGE = (
@@ -547,6 +548,70 @@ def test_m1_api_researches_existing_archive_without_document_filter(
     assert run.filter_snapshot["document_ids"] == []
     assert {candidate.chunk_id for candidate in candidates} == {source.chunks[0].id}
     assert fakes.dense.queries[0].filters.document_ids == ()
+    assert_provider_fakes_closed(fakes)
+
+
+@pytest.mark.parametrize("dense_only", [False, True], ids=["lexical", "dense"])
+def test_company_filter_scopes_retrieval_and_respects_explicit_documents(
+    integration_api_settings: ApiSettings,
+    integration_database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    dense_only: bool,
+) -> None:
+    engine = integration_database_engine
+    fixture = M0_0_FIXTURE_ANSWER_CASE
+    source = make_searchable_source(
+        label="Synthetic company source",
+        primary_text=(
+            SEMANTIC_PASSAGE if dense_only else f"{fixture.question} {fixture.evidence_text}"
+        ),
+    )
+    persist_research_source(engine, source)
+    company = add_company(engine, source.context)
+    other_company = add_company(engine, source.context, "Unassigned")
+    fakes = install_provider_fakes(
+        monkeypatch,
+        hits=(DenseRetrievalHit(chunk_id=source.chunks[0].id, raw_score=0.95),)
+        if dense_only
+        else (),
+        statement=fixture.statement,
+    )
+    application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+    question = SEMANTIC_QUESTION if dense_only else fixture.question
+    with TestClient(application) as client:
+        assignment = client.put(
+            f"/api/v1/documents/{source.document.id}/companies",
+            json={
+                "expected_document_version_id": str(source.version.id),
+                "expected_revision": 0,
+                "company_ids": [str(company)],
+            },
+        )
+        assert assignment.status_code == 200
+        for filter_context, expected in (
+            ({"company_id": str(company)}, "answer.completed"),
+            ({"company_id": str(other_company)}, "answer.insufficient"),
+            (
+                {"company_id": str(company), "document_ids": [str(uuid4())]},
+                "answer.insufficient",
+            ),
+        ):
+            response = client.post(
+                "/api/v1/research-requests", json={"question": question, "context": filter_context}
+            )
+            assert response.status_code == 200
+            events = parse_server_sent_events(response.text)
+            assert events[-1]["event_name"] == expected
+            request_id = UUID(events[0]["payload"]["research_request_id"])
+            run, candidates = load_retrieval_result(
+                engine, workspace_id=source.context.workspace_id, research_request_id=request_id
+            )
+            assert run.filter_snapshot["company_id"] == filter_context["company_id"]
+            assert {candidate.chunk_id for candidate in candidates} == (
+                {source.chunks[0].id} if expected == "answer.completed" else set()
+            )
     assert_provider_fakes_closed(fakes)
 
 

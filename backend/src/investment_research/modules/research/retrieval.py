@@ -129,6 +129,7 @@ def build_effective_retrieval_filters(
 
     return RetrievalFilters(
         document_ids=retrieval_input.document_ids,
+        company_id=retrieval_input.company_id,
         available_at_cutoff=available_at_cutoff,
         captured_at_cutoff=captured_at_cutoff,
     )

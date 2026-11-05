@@ -67,6 +67,7 @@ class ResearchRetrievalInput(ImmutableResearchContract):
 
     question: QueryText
     document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
+    company_id: UUID | None = None
     temporal_mode: TemporalMode = TemporalMode.CURRENT
     cutoff_at: AwareDatetime | None = None
     generation_model: ResearchModel = ResearchModel.TERRA

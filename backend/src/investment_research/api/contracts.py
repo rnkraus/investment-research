@@ -120,6 +120,7 @@ class DocumentCatalogQuery(StrictContract):
     """Public pagination parameters; workspace scope is never client supplied."""
 
     page_size: int = Field(default=20, ge=1, le=100)
+    company_id: UUID | None = None
     after_created_at: AwareDatetime | None = None
     after_document_id: UUID | None = None
 
@@ -189,6 +190,7 @@ class ResearchRequestContext(StrictContract):
     """Explicit archive filters supplied with a research question."""
 
     document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
+    company_id: UUID | None = None
     temporal_mode: TemporalMode = TemporalMode.CURRENT
     cutoff_at: AwareDatetime | None = None
 

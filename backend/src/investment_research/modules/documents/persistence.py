@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    ColumnElement,
     DateTime,
     ForeignKeyConstraint,
     Index,
@@ -151,6 +152,21 @@ class DocumentCompanyRow(Base):
     )
     reviewed_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+def document_has_company(company_id: UUID | ColumnElement[UUID]) -> ColumnElement[bool]:
+    """Match a canonical reviewed link against the outer document's trusted scope."""
+
+    return (
+        select(DocumentCompanyRow.company_id)
+        .where(
+            DocumentCompanyRow.workspace_id == DocumentRow.workspace_id,
+            DocumentCompanyRow.document_id == DocumentRow.id,
+            DocumentCompanyRow.company_id == company_id,
+        )
+        .correlate_except(DocumentCompanyRow)
+        .exists()
+    )
 
 
 class DocumentCompanyRevisionRow(Base):
@@ -407,6 +423,8 @@ class SqlAlchemyDocumentRepository:
             .order_by(DocumentRow.created_at.desc(), DocumentRow.id.desc())
             .limit(query.page_size + 1)
         )
+        if query.company_id is not None:
+            statement = statement.where(document_has_company(query.company_id))
         if query.after is not None:
             statement = statement.where(
                 or_(

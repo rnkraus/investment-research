@@ -68,6 +68,7 @@ class RetrievalFilters(ImmutableSearchModel):
     """Typed snapshot of the explicit filters applied to a retrieval run."""
 
     document_ids: tuple[UUID, ...] = ()
+    company_id: UUID | None = None
     available_at_cutoff: AwareDatetime | None = None
     captured_at_cutoff: AwareDatetime | None = None
 

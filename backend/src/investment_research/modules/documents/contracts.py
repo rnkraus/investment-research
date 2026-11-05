@@ -103,6 +103,7 @@ class DocumentListQuery(ImmutableContract):
 
     page_size: int = Field(default=20, ge=1, le=100, strict=True)
     after: DocumentListCursor | None = None
+    company_id: UUID | None = None
 
 
 class DocumentListEntry(CaptureMetadata):

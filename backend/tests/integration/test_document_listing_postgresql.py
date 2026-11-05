@@ -9,6 +9,9 @@ from sqlalchemy import Engine, update
 from sqlalchemy.orm import Session
 
 from investment_research.api.dependencies import get_workspace_context
+from investment_research.infrastructure.database.document_companies import (
+    create_document_company_service,
+)
 from investment_research.infrastructure.database.session import (
     create_session_factory,
     transactional_session,
@@ -42,6 +45,7 @@ from investment_research.modules.processing.application import (
 from investment_research.modules.processing.contracts import ProcessingStatusQuery
 from investment_research.modules.processing.persistence import SqlAlchemyProcessingRepository
 from investment_research.settings import ApiSettings
+from tests.integration.test_document_company_service_postgresql import add_company, replacement
 
 CREATED_AT = datetime(2026, 10, 11, 12, tzinfo=UTC)
 
@@ -182,6 +186,59 @@ def test_document_list_keyset_handles_equal_times_and_new_imports_without_duplic
     assert newly_imported.id not in {entry.document_id for entry in second.items}
     refreshed = service.list_documents(context, DocumentListQuery(page_size=1))
     assert refreshed.items[0].document_id == newly_imported.id
+
+
+def test_company_filter_precedes_catalog_pagination_and_hides_foreign_links(
+    integration_database_engine: Engine,
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+) -> None:
+    engine = integration_database_engine
+    session_factory = create_session_factory(engine)
+    with transactional_session(session_factory) as session:
+        owner = add_workspace(session)
+        foreign = add_workspace(session)
+        older = add_document(session, owner)
+        newer = add_document(session, owner, created_at=CREATED_AT + timedelta(days=1))
+        add_document(session, owner, created_at=CREATED_AT + timedelta(days=2))
+        foreign_document = add_document(session, foreign)
+
+    company = add_company(engine, owner)
+    foreign_company = add_company(engine, foreign)
+    assignments = create_document_company_service(session_factory)
+    for context, document, company_id in (
+        (owner, older, company),
+        (owner, newer, company),
+        (foreign, foreign_document, foreign_company),
+    ):
+        snapshot = assignments.get(context, document.id)
+        assignments.replace(context, document.id, replacement(snapshot, company_id))
+
+    application = create_app(
+        integration_api_settings.model_copy(update={"object_storage_root": tmp_path / "objects"})
+    )
+    application.dependency_overrides[get_workspace_context] = lambda: owner
+    with TestClient(application) as client:
+        params = {"company_id": str(company), "page_size": "1"}
+        first = client.get("/api/v1/documents", params=params)
+        assert first.status_code == 200
+        assert [item["document_id"] for item in first.json()["items"]] == [str(newer.id)]
+        cursor = first.json()["next_cursor"]
+        second = client.get(
+            "/api/v1/documents",
+            params={
+                **params,
+                "after_created_at": cursor["created_at"],
+                "after_document_id": cursor["document_id"],
+            },
+        )
+        assert second.status_code == 200
+        assert [item["document_id"] for item in second.json()["items"]] == [str(older.id)]
+        assert second.json()["next_cursor"] is None
+        for unavailable in (foreign_company, uuid4()):
+            missing = client.get("/api/v1/documents", params={"company_id": str(unavailable)})
+            assert missing.status_code == 200
+            assert missing.json() == {"items": [], "next_cursor": None}
 
 
 def test_document_list_returns_only_the_current_version_with_an_original(

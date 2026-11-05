@@ -6,7 +6,11 @@ from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
 from investment_research.modules.documents.domain import DocumentLifecycleState, SourceLocatorKind
-from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
+from investment_research.modules.documents.persistence import (
+    DocumentRow,
+    DocumentVersionRow,
+    document_has_company,
+)
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.processing.persistence import (
@@ -140,6 +144,8 @@ class PostgresLexicalSearch:
 
         if query.filters.document_ids:
             statement = statement.where(DocumentRow.id.in_(query.filters.document_ids))
+        if query.filters.company_id is not None:
+            statement = statement.where(document_has_company(query.filters.company_id))
         if query.filters.available_at_cutoff is not None:
             statement = statement.where(
                 DocumentVersionRow.available_at.is_not(None),
@@ -289,6 +295,8 @@ class PostgresDenseCandidateQualifier:
 
         if request.filters.document_ids:
             statement = statement.where(DocumentRow.id.in_(request.filters.document_ids))
+        if request.filters.company_id is not None:
+            statement = statement.where(document_has_company(request.filters.company_id))
         if request.filters.available_at_cutoff is not None:
             statement = statement.where(
                 DocumentVersionRow.available_at.is_not(None),
