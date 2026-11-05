@@ -92,6 +92,30 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/documents/{document_id}/companies": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Document Companies
+         * @description Read the current company set and the version and revision needed for an edit.
+         */
+        readonly get: operations["get_document_companies_api_v1_documents__document_id__companies_get"];
+        /**
+         * Replace Document Companies
+         * @description Replace all company assignments after checking the observed version and revision.
+         */
+        readonly put: operations["replace_document_companies_api_v1_documents__document_id__companies_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/documents/{document_id}/deletion": {
         readonly parameters: {
             readonly query?: never;
@@ -557,6 +581,26 @@ export interface components {
             readonly next_cursor?: components["schemas"]["DocumentListCursor"] | null;
         };
         /**
+         * DocumentCompanyAssignment
+         * @description A coherent snapshot of the current document and its company links.
+         */
+        readonly DocumentCompanyAssignment: {
+            /** Companies */
+            readonly companies: readonly components["schemas"]["CompanySummary"][];
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+            /**
+             * Document Version Id
+             * Format: uuid
+             */
+            readonly document_version_id: string;
+            /** Revision */
+            readonly revision: number;
+        };
+        /**
          * DocumentDeletionInput
          * @description Explicit confirmation of permanent source and dependent-answer deletion.
          */
@@ -859,6 +903,21 @@ export interface components {
             readonly ordinal: number;
             /** Text */
             readonly text: string;
+        };
+        /**
+         * ReplaceDocumentCompaniesCommand
+         * @description Replace the complete set using the version and revision observed by the caller.
+         */
+        readonly ReplaceDocumentCompaniesCommand: {
+            /** Company Ids */
+            readonly company_ids: readonly string[];
+            /**
+             * Expected Document Version Id
+             * Format: uuid
+             */
+            readonly expected_document_version_id: string;
+            /** Expected Revision */
+            readonly expected_revision: number;
         };
         /**
          * ResearchContextEvent
@@ -1323,6 +1382,126 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["DocumentAccepted"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_document_companies_api_v1_documents__document_id__companies_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly document_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentCompanyAssignment"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly replace_document_companies_api_v1_documents__document_id__companies_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly document_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ReplaceDocumentCompaniesCommand"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentCompanyAssignment"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Conflict */

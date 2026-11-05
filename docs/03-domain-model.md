@@ -97,6 +97,11 @@ document version and assignment revision under an exclusive document lock. Each 
 advances the revision. An identical set keeps the revision and review provenance. The revision is
 stored separately from the links so it survives clearing the set. Permanent purge removes both.
 
+`GET /api/v1/documents/{document_id}/companies` returns the current version, assignment revision,
+and company summaries. `PUT` replaces the set using `expected_document_version_id`,
+`expected_revision`, and `company_ids`. An empty list clears the set. A stale edit returns `409`.
+An unavailable document or company returns `404` without revealing workspace membership.
+
 ### 3.4 Processing and retrieval content
 
 | Entity | Meaning | Important properties |

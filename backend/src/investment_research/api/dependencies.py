@@ -10,6 +10,7 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.documents.company_assignment import DocumentCompanyService
 from investment_research.modules.documents.deletion import (
     GetDocumentDeletionService,
     SubmitDocumentDeletionService,
@@ -40,6 +41,15 @@ def get_company_service(container: ContainerDependency) -> CompanyService:
 
 
 CompanyServiceDependency = Annotated[CompanyService, Depends(get_company_service)]
+
+
+def get_document_company_service(container: ContainerDependency) -> DocumentCompanyService:
+    return container.document_company_service
+
+
+DocumentCompanyServiceDependency = Annotated[
+    DocumentCompanyService, Depends(get_document_company_service)
+]
 
 
 def get_capture_document_service(

@@ -21,6 +21,9 @@ from investment_research.infrastructure.database.company_unit_of_work import (
     create_company_read_unit_of_work_factory,
     create_company_write_unit_of_work_factory,
 )
+from investment_research.infrastructure.database.document_companies import (
+    create_document_company_service,
+)
 from investment_research.infrastructure.database.document_deletion import (
     create_document_deletion_unit_of_work_factory,
 )
@@ -133,6 +136,7 @@ from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
 )
+from investment_research.modules.documents.company_assignment import DocumentCompanyService
 from investment_research.modules.documents.deletion import (
     ExecuteDocumentPurgeJobService,
     GetDocumentDeletionService,
@@ -384,6 +388,7 @@ class ApiContainer:
     open_original_service: OpenOriginalService
     list_documents_service: ListDocumentsService
     company_service: CompanyService
+    document_company_service: DocumentCompanyService
     submit_document_deletion_service: SubmitDocumentDeletionService
     get_document_deletion_service: GetDocumentDeletionService
     get_processing_run_service: GetProcessingRunService
@@ -945,6 +950,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             processing_profile=processing_profile,
         ),
         open_original_service=open_original_service,
+        document_company_service=create_document_company_service(database.session_factory),
         company_service=CompanyService(
             write_unit_of_work_factory=create_company_write_unit_of_work_factory(
                 database.session_factory

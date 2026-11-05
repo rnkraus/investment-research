@@ -541,6 +541,44 @@
         "title": "DocumentCatalogPage",
         "type": "object"
       },
+      "DocumentCompanyAssignment": {
+        "additionalProperties": false,
+        "description": "A coherent snapshot of the current document and its company links.",
+        "properties": {
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/CompanySummary"
+            },
+            "maxItems": 20,
+            "title": "Companies",
+            "type": "array"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "revision": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_id",
+          "document_version_id",
+          "revision",
+          "companies"
+        ],
+        "title": "DocumentCompanyAssignment",
+        "type": "object"
+      },
       "DocumentDeletionInput": {
         "additionalProperties": false,
         "description": "Explicit confirmation of permanent source and dependent-answer deletion.",
@@ -1193,6 +1231,39 @@
           "evidence"
         ],
         "title": "RejectedStatementDiagnostic",
+        "type": "object"
+      },
+      "ReplaceDocumentCompaniesCommand": {
+        "additionalProperties": false,
+        "description": "Replace the complete set using the version and revision observed by the caller.",
+        "properties": {
+          "company_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Company Ids",
+            "type": "array"
+          },
+          "expected_document_version_id": {
+            "format": "uuid",
+            "title": "Expected Document Version Id",
+            "type": "string"
+          },
+          "expected_revision": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_document_version_id",
+          "expected_revision",
+          "company_ids"
+        ],
+        "title": "ReplaceDocumentCompaniesCommand",
         "type": "object"
       },
       "ResearchContextEvent": {
@@ -2017,6 +2088,162 @@
           }
         },
         "summary": "Capture Pasted Text",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/companies": {
+      "get": {
+        "description": "Read the current company set and the version and revision needed for an edit.",
+        "operationId": "get_document_companies_api_v1_documents__document_id__companies_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentCompanyAssignment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Document Companies",
+        "tags": [
+          "documents"
+        ]
+      },
+      "put": {
+        "description": "Replace all company assignments after checking the observed version and revision.",
+        "operationId": "replace_document_companies_api_v1_documents__document_id__companies_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceDocumentCompaniesCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentCompanyAssignment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Replace Document Companies",
         "tags": [
           "documents"
         ]
