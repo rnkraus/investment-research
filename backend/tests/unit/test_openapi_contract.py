@@ -27,6 +27,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
     assert set(schema["paths"]) == {
         "/health",
         "/ready",
+        "/api/v1/companies",
         "/api/v1/documents",
         "/api/v1/documents/text",
         "/api/v1/documents/deletions",
@@ -51,6 +52,33 @@ def test_readiness_exposes_only_the_aggregate_state() -> None:
     }
     assert "database" not in json.dumps(operation)
     assert "postgresql" not in json.dumps(operation)
+
+
+def test_company_api_exposes_safe_creation_and_bounded_opaque_pagination() -> None:
+    schema = create_app(ApiSettings(environment="test")).openapi()
+    routes = schema["paths"]["/api/v1/companies"]
+    assert set(routes) == {"post", "get"}
+    models = schema["components"]["schemas"]
+    assert models["CompanyInput"]["additionalProperties"] is False
+    assert set(models["CompanyInput"]["properties"]) == {"name"}
+    assert set(models["CompanySummary"]["properties"]) == {"company_id", "name", "created_at"}
+    assert "201" in routes["post"]["responses"]
+    assert {parameter["name"] for parameter in routes["get"]["parameters"]} == {
+        "q",
+        "page_size",
+        "cursor",
+    }
+    size = next(p["schema"] for p in routes["get"]["parameters"] if p["name"] == "page_size")
+    assert (size["default"], size["minimum"], size["maximum"]) == (20, 1, 100)
+    assert models["CompanyCatalogPage"]["properties"]["items"]["maxItems"] == 100
+    token = models["CompanyCatalogPage"]["properties"]["next_cursor"]["anyOf"][0]
+    assert token["type"] == "string" and token["maxLength"] == 4096
+    assert "CompanyListCursor" not in models
+    for method, codes in (("post", ("409", "413", "422", "500")), ("get", ("422", "500"))):
+        for code in codes:
+            assert routes[method]["responses"][code]["content"]["application/json"]["schema"] == {
+                "$ref": "#/components/schemas/ErrorResponse"
+            }
 
 
 def test_document_capture_uses_scoped_multipart_contract() -> None:

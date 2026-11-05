@@ -4,6 +4,30 @@
  */
 
 export interface paths {
+    readonly "/api/v1/companies": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Companies
+         * @description List one scoped page and translate an untrusted continuation into internal contracts.
+         */
+        readonly get: operations["list_companies_api_v1_companies_get"];
+        readonly put?: never;
+        /**
+         * Create Company
+         * @description Create one canonical company after commit, without provider or queue work.
+         */
+        readonly post: operations["create_company_api_v1_companies_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/documents": {
         readonly parameters: {
             readonly query?: never;
@@ -408,6 +432,42 @@ export interface components {
             readonly published_at?: string | null;
             /** Title */
             readonly title: string;
+        };
+        /**
+         * CompanyCatalogPage
+         * @description Expose safe summaries and an opaque position without internal comparison keys.
+         */
+        readonly CompanyCatalogPage: {
+            /** Items */
+            readonly items: readonly components["schemas"]["CompanySummary"][];
+            /** Next Cursor */
+            readonly next_cursor?: string | null;
+        };
+        /**
+         * CompanyInput
+         * @description Accept only a canonical display name; identity and scope remain server-owned.
+         */
+        readonly CompanyInput: {
+            /** Name */
+            readonly name: string;
+        };
+        /**
+         * CompanySummary
+         * @description Expose company identity and display metadata without internal comparison keys.
+         */
+        readonly CompanySummary: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            readonly company_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Name */
+            readonly name: string;
         };
         /**
          * CoverageStatus
@@ -970,6 +1030,108 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    readonly list_companies_api_v1_companies_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly q?: string | null;
+                readonly page_size?: number;
+                readonly cursor?: string | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CompanyCatalogPage"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_company_api_v1_companies_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CompanyInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CompanySummary"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly list_documents_api_v1_documents_get: {
         readonly parameters: {
             readonly query?: {

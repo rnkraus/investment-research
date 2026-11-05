@@ -69,7 +69,9 @@ triggers an automatic creation retry. Bounded company discovery now supports lit
 name substrings with 20/default and 100/maximum page size. Internal continuation positions bind
 workspace, query, size, and name/UUID ordering, contain no names/search text, and revalidate their
 anchor against canonical scope and filters. They confer no authorization or snapshot guarantee.
-Document assignment, HTTP routes, aliases/exchange listings, and watchlists remain follow-up work.
+The local [company HTTP interface](../backend/src/investment_research/modules/companies/README.md#local-http-interface)
+exposes scoped creation and listing. Document assignment, aliases/exchange listings, and watchlists
+remain follow-up work.
 
 ### 3.3 Documents and originals
 

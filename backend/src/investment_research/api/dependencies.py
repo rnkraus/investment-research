@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from investment_research.bootstrap import ApiContainer
+from investment_research.modules.companies.application import CompanyService
 from investment_research.modules.documents.application import (
     CaptureDocumentService,
     OpenOriginalService,
@@ -30,6 +31,15 @@ def get_container(request: Request) -> ApiContainer:
 
 
 ContainerDependency = Annotated[ApiContainer, Depends(get_container)]
+
+
+def get_company_service(container: ContainerDependency) -> CompanyService:
+    """Return the provider-free company creation and discovery service."""
+
+    return container.company_service
+
+
+CompanyServiceDependency = Annotated[CompanyService, Depends(get_company_service)]
 
 
 def get_capture_document_service(

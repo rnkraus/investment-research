@@ -16,6 +16,7 @@ from investment_research.infrastructure.logging import (
 )
 
 MULTIPART_OVERHEAD_ALLOWANCE_BYTES = 64 * 1024
+COMPANY_JSON_BODY_LIMIT_BYTES = 64 * 1024
 REQUEST_ID_HEADER = b"x-request-id"
 
 
@@ -93,6 +94,11 @@ class RequestLoggingMiddleware:
                     if name.lower() != REQUEST_ID_HEADER
                 ]
                 headers.append((REQUEST_ID_HEADER, str(request_id).encode("ascii")))
+                if scope.get("path", "").rstrip("/") == "/api/v1/companies":
+                    headers = [
+                        (name, value) for name, value in headers if name.lower() != b"cache-control"
+                    ]
+                    headers.append((b"cache-control", b"private, no-store"))
                 message["headers"] = headers
             await send(message)
 
@@ -158,24 +164,39 @@ class RequestBodyLimitMiddleware:
             )
             return
 
-        if content_length is not None and content_length > self._max_request_body_bytes:
+        company_create = (
+            scope.get("path", "").rstrip("/") == "/api/v1/companies"
+            and scope.get("method") == "POST"
+        )
+        request_limit = (
+            min(self._max_request_body_bytes, COMPANY_JSON_BODY_LIMIT_BYTES)
+            if company_create
+            else self._max_request_body_bytes
+        )
+        if content_length is not None and content_length > request_limit:
             await self._send_too_large(scope, receive, send)
             return
 
         received_bytes = 0
         response_started = False
+        body_exceeded = False
 
         async def limited_receive() -> Message:
-            nonlocal received_bytes
+            nonlocal received_bytes, body_exceeded
             message = await receive()
             if message["type"] == "http.request":
                 received_bytes += len(message.get("body", b""))
-                if received_bytes > self._max_request_body_bytes:
+                if received_bytes > request_limit:
+                    body_exceeded = True
                     raise RequestBodyTooLargeError
             return message
 
         async def tracked_send(message: Message) -> None:
             nonlocal response_started
+            # FastAPI can convert a receive failure into a parsing error. Keep the transport
+            # limit authoritative before any downstream error or success response is started.
+            if body_exceeded:
+                raise RequestBodyTooLargeError
             if message["type"] == "http.response.start":
                 response_started = True
             await send(message)
@@ -220,7 +241,11 @@ class RequestBodyLimitMiddleware:
             send,
             status_code=413,
             code=ErrorCode.PAYLOAD_TOO_LARGE,
-            message="request body exceeds the configured upload limit",
+            message=(
+                "company request body exceeds the configured size limit"
+                if scope.get("path", "").rstrip("/") == "/api/v1/companies"
+                else "request body exceeds the configured upload limit"
+            ),
         )
 
     @staticmethod
