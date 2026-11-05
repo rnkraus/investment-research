@@ -9,6 +9,7 @@ EXPECTED_TABLE_NAMES = {
     "chunk_sets",
     "chunks",
     "companies",
+    "document_companies",
     "document_versions",
     "document_deletions",
     "documents",
