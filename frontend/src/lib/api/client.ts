@@ -964,11 +964,13 @@ export function createApiClient(
     async listDocuments(
       after?: DocumentListCursor,
       signal?: AbortSignal,
+      companyId?: string,
     ): Promise<DocumentCatalogPage> {
       if (after !== undefined && !isDocumentListCursor(after)) {
         throw new ApiProtocolError("The document list cursor is invalid.");
       }
       const query = new URLSearchParams({ page_size: "20" });
+      if (companyId !== undefined) query.set("company_id", companyId);
       if (after !== undefined) {
         query.set("after_created_at", after.created_at);
         query.set("after_document_id", after.document_id);

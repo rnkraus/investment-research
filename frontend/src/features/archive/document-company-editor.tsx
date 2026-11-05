@@ -27,10 +27,12 @@ export function DocumentCompanyEditor({
   documentId,
   documentTitle,
   panelId,
+  onAssignmentsSaved,
 }: {
   readonly documentId: string;
   readonly documentTitle: string;
   readonly panelId: string;
+  readonly onAssignmentsSaved?: (companies: readonly CompanySummary[]) => void;
 }) {
   const searchId = useId();
   const nameId = useId();
@@ -215,6 +217,7 @@ export function DocumentCompanyEditor({
       setSnapshot(saved);
       setSelected(saved.companies);
       setNotice("Company assignments saved.");
+      onAssignmentsSaved?.(saved.companies);
     } catch (failure) {
       setNeedsReload(true);
       setError(

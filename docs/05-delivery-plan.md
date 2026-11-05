@@ -413,6 +413,12 @@ after a conflicting save. The M1 browser suite discovers the assignment journey 
 can set or clear it in the company editor and find companies by either name or ticker. Exchange
 listings remain a separate model.
 
+**Company filter block.** Choose one company by name or ticker to scope the document catalog and
+new research requests. PostgreSQL applies reviewed assignments before catalog pagination and
+lexical ranking, during dense candidate qualification, and when validating citations. An explicit
+document selection intersects with the company filter. Dense retrieval still requests a bounded
+workspace candidate set from Pinecone, so a company-specific passage can fall outside that set.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
