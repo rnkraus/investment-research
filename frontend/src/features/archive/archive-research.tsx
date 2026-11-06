@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   apiClient,
@@ -24,6 +24,10 @@ import {
   type DocumentSelection,
 } from "./document-selection";
 import { ResearchWorkflow } from "./research-workflow";
+import {
+  PublicationDateFilter,
+  type PublicationDates,
+} from "./publication-date-filter";
 
 function displayDate(value: string | null | undefined): string {
   // Keep publication, capture, and availability distinct; never infer missing dates.
@@ -42,6 +46,15 @@ export function ArchiveResearch({
   const [isListVisible, setIsListVisible] = useState(true);
   const [company, setCompany] = useState<CompanySummary | null>(null);
   const companyId = company?.company_id;
+  const [publicationDates, setPublicationDates] = useState<PublicationDates>(
+    {},
+  );
+  const filters = useMemo(
+    () => ({ ...publicationDates, company_id: companyId }),
+    [publicationDates, companyId],
+  );
+  const hasPublicationFilter =
+    filters.published_from != null || filters.published_to != null;
   const [companyDocumentId, setCompanyDocumentId] = useState<string | null>(
     null,
   );
@@ -78,7 +91,7 @@ export function ArchiveResearch({
         const page = await apiClient.listDocuments(
           undefined,
           controller.signal,
-          companyId,
+          filters,
         );
         if (!controller.signal.aborted) {
           setDocuments(page.items);
@@ -100,7 +113,7 @@ export function ArchiveResearch({
       controller.abort();
       request.current?.abort();
     };
-  }, [refreshKey, refreshCount, companyId]);
+  }, [refreshKey, refreshCount, filters]);
 
   async function loadMore() {
     if (cursor == null || isLoading) {
@@ -115,7 +128,7 @@ export function ArchiveResearch({
       const page = await apiClient.listDocuments(
         cursor,
         controller.signal,
-        companyId,
+        filters,
       );
       if (!controller.signal.aborted) {
         setDocuments((current) => {
@@ -387,9 +400,9 @@ export function ArchiveResearch({
               ) : null}
               {!isLoading && !failed && documents.length === 0 ? (
                 <p>
-                  {companyId === undefined
-                    ? archiveCopy.catalog.empty
-                    : "No saved documents are assigned to this company."}
+                  {companyId !== undefined || hasPublicationFilter
+                    ? "No saved documents match the current filters."
+                    : archiveCopy.catalog.empty}
                 </p>
               ) : null}
               {selection.documents.length >= DOCUMENT_SELECTION_LIMIT ? (
@@ -434,9 +447,11 @@ export function ArchiveResearch({
                     className="accent-teal-700"
                   />
                   {scope === "ALL"
-                    ? companyId === undefined
-                      ? archiveCopy.research.archiveScope
-                      : "All documents for this company"
+                    ? hasPublicationFilter
+                      ? "All documents matching the filters"
+                      : companyId === undefined
+                        ? archiveCopy.research.archiveScope
+                        : "All documents for this company"
                     : archiveCopy.research.documentScope}
                 </label>
               ))}
@@ -469,7 +484,7 @@ export function ArchiveResearch({
               ) : null}
             </div>
           </fieldset>
-          <div className="border-b border-slate-200 py-4">
+          <div className="space-y-4 border-b border-slate-200 py-4">
             <CompanyFilter
               company={company}
               disabled={isResearching || isDeleting}
@@ -478,12 +493,20 @@ export function ArchiveResearch({
                 setCompany(nextCompany);
               }}
             />
+            <PublicationDateFilter
+              applied={publicationDates}
+              disabled={isResearching || isDeleting}
+              onApply={(dates) => {
+                setSelection(EMPTY_DOCUMENT_SELECTION);
+                setPublicationDates(dates);
+              }}
+            />
           </div>
           <ResearchWorkflow
             key={answerResetKey}
             documents={documents}
             documentIds={researchDocumentIds}
-            companyId={companyId}
+            filters={filters}
             onBusyChange={setIsResearching}
           />
         </div>

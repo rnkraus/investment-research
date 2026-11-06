@@ -27,6 +27,10 @@ export type PastedTextDocumentInput =
   components["schemas"]["PastedTextDocumentInput"];
 export type ResearchRequestInput =
   components["schemas"]["ResearchRequestInput"];
+export type ArchiveFilters = Pick<
+  NonNullable<ResearchRequestInput["context"]>,
+  "company_id" | "published_from" | "published_to"
+>;
 export type ResearchModel = components["schemas"]["ResearchModel"];
 export type ResearchModelOptions =
   components["schemas"]["ResearchModelOptions"];
@@ -964,13 +968,20 @@ export function createApiClient(
     async listDocuments(
       after?: DocumentListCursor,
       signal?: AbortSignal,
-      companyId?: string,
+      filters: ArchiveFilters = {},
     ): Promise<DocumentCatalogPage> {
       if (after !== undefined && !isDocumentListCursor(after)) {
         throw new ApiProtocolError("The document list cursor is invalid.");
       }
       const query = new URLSearchParams({ page_size: "20" });
-      if (companyId !== undefined) query.set("company_id", companyId);
+      for (const key of [
+        "company_id",
+        "published_from",
+        "published_to",
+      ] as const) {
+        const value = filters[key];
+        if (value != null) query.set(key, value);
+      }
       if (after !== undefined) {
         query.set("after_created_at", after.created_at);
         query.set("after_document_id", after.document_id);
