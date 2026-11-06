@@ -443,6 +443,11 @@ Title results open the current original. Passage results retain their physical P
 PDF to check exact ticker lookup, a partial ticker with no matches, title and keyword results,
 quoted phrases, company filtering, and navigation to the matching physical PDF page.
 
+**Semantic archive search.** The archive workspace offers an explicit semantic mode alongside
+the default keyword mode. It uses the existing embedding and dense retrieval configuration,
+reserves embedding cost against the shared workspace budget, and shows eligible original
+passages directly. Budget exhaustion and provider unavailability are visible in the UI.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
