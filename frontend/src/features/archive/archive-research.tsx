@@ -89,6 +89,15 @@ export function ArchiveResearch({
     setCompany(nextCompany);
   }
 
+  function toggleDocumentList() {
+    setIsListVisible(!isListVisible);
+    if (isListVisible && window.matchMedia("(width < 64rem)").matches) {
+      window.requestAnimationFrame(() => {
+        document.getElementById("research-heading")?.scrollIntoView();
+      });
+    }
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     request.current?.abort();
@@ -182,7 +191,7 @@ export function ArchiveResearch({
         aria-expanded={isListVisible}
         aria-controls={documentListId}
         disabled={isDeleting}
-        onClick={() => setIsListVisible((current) => !current)}
+        onClick={toggleDocumentList}
         className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50"
       >
         {isListVisible
