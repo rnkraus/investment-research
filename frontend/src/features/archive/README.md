@@ -39,6 +39,9 @@ Search scope and the selected count stay above the question even when documents 
 The **Company filter** searches companies by name or ticker. A selected company scopes catalog
 pages and new research requests to its assigned documents. Explicit document selections further
 narrow the company scope. Changing the company clears the document selection.
+**Publication date** lets users apply a start day, an end day, or both to the list and new
+questions. The bounds are inclusive UTC days and combine with any selected company. Applying
+or clearing the dates clears the explicit document selection.
 The sidebar shows titles, publication dates, processing status, and original links; other metadata
 and selection help are expandable. It cannot be hidden while deletion confirmation or submission
 locks selection. Permanent deletion controls remain at the top of the sidebar.

@@ -8,6 +8,7 @@ import {
   ApiTransportError,
   apiClient,
   requireLocalSourcePath,
+  type ArchiveFilters,
   type ResearchModel,
   type DocumentCatalogEntry,
   type ResearchModelOptions,
@@ -30,7 +31,7 @@ import {
 interface ResearchWorkflowProps {
   readonly documents?: readonly DocumentCatalogEntry[];
   readonly documentIds: readonly string[] | undefined;
-  readonly companyId?: string;
+  readonly filters: ArchiveFilters;
   readonly onBusyChange: (busy: boolean) => void;
 }
 
@@ -55,7 +56,7 @@ function modelLabel(model: ResearchModel): string {
 export function ResearchWorkflow({
   documents = [],
   documentIds,
-  companyId,
+  filters,
   onBusyChange,
 }: ResearchWorkflowProps) {
   const questionInputId = useId();
@@ -147,8 +148,8 @@ export function ResearchWorkflow({
             ? supportModel
             : "gpt-5.6-terra",
           context: {
+            ...filters,
             document_ids: documentIds,
-            company_id: companyId,
             temporal_mode: "CURRENT",
           },
         },

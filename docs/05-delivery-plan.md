@@ -419,6 +419,11 @@ lexical ranking, during dense candidate qualification, and when validating citat
 document selection intersects with the company filter. Dense retrieval still requests a bounded
 workspace candidate set from Pinecone, so a company-specific passage can fall outside that set.
 
+**Publication date filter block.** Optional inclusive UTC date bounds apply to the canonical
+publication timestamp of current document versions. They combine with the company and explicit
+document filters across catalog pagination, lexical retrieval, dense candidate qualification,
+and citation validation. Unknown publication dates are excluded only when a date bound is set.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.

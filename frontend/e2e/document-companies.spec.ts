@@ -156,7 +156,7 @@ test("a document can save company selections and recover from a conflicting edit
   await expect(editor.getByRole("alert")).toHaveCount(0);
 });
 
-test("the company filter scopes the catalog and research even when documents are hidden", async ({
+test("company and publication filters scope the catalog and research even when documents are hidden", async ({
   page,
   context,
 }) => {
@@ -180,15 +180,13 @@ test("the company filter scopes the catalog and research even when documents are
   };
   let submittedContext: unknown;
   await context.route("**/api/v1/documents?*", (route) => {
-    const companyId = new URL(route.request().url()).searchParams.get(
-      "company_id",
-    );
+    const params = new URL(route.request().url()).searchParams;
+    const matchesFilter =
+      params.get("company_id") === SECOND ||
+      params.get("published_to") === "2026-11-30";
     return route.fulfill({
       json: {
-        items:
-          companyId === SECOND
-            ? [filteredSource]
-            : [filteredSource, otherSource],
+        items: matchesFilter ? [filteredSource] : [filteredSource, otherSource],
         next_cursor: null,
       },
     });
@@ -233,6 +231,22 @@ test("the company filter scopes the catalog and research even when documents are
   await expect(
     page.getByText(filteredSource.title, { exact: true }),
   ).toBeVisible();
+  await page.getByLabel("Published from").fill("2026-12-01");
+  await page.getByLabel("Published through").fill("2026-11-30");
+  const applyDates = page.getByRole("button", { name: "Apply dates" });
+  await expect(applyDates).toBeDisabled();
+  await page.getByLabel("Published from").fill("2026-11-01");
+  const filteredPage = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/api/v1/documents" &&
+      url.searchParams.get("company_id") === SECOND &&
+      url.searchParams.get("published_from") === "2026-11-01" &&
+      url.searchParams.get("published_to") === "2026-11-30"
+    );
+  });
+  await applyDates.click();
+  await filteredPage;
   await page.getByRole("button", { name: "Hide documents" }).click();
   await expect(
     page.getByText("Blue Ridge (BLRG)", { exact: true }),
@@ -247,10 +261,19 @@ test("the company filter scopes the catalog and research even when documents are
   expect(submittedContext).toEqual({
     document_ids: [],
     company_id: SECOND,
+    published_from: "2026-11-01",
+    published_to: "2026-11-30",
     temporal_mode: "CURRENT",
   });
   await page.getByRole("button", { name: "Clear company filter" }).click();
   await page.getByRole("button", { name: "Show documents" }).click();
+  await expect(
+    page.getByText(filteredSource.title, { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(otherSource.title, { exact: true })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Clear dates" }).click();
   await expect(
     page.getByText(otherSource.title, { exact: true }),
   ).toBeVisible();
