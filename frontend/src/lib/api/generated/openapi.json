@@ -234,6 +234,48 @@
         "title": "AnswerStatementEvent",
         "type": "object"
       },
+      "ArchiveDocumentHit": {
+        "additionalProperties": false,
+        "description": "A current document whose title matches the query.",
+        "properties": {
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "document_version_id",
+          "title",
+          "published_at"
+        ],
+        "title": "ArchiveDocumentHit",
+        "type": "object"
+      },
       "ArchiveSearchHit": {
         "additionalProperties": false,
         "description": "A passage preview and the identifiers needed to open its current original.",
@@ -308,7 +350,7 @@
       },
       "ArchiveSearchInput": {
         "additionalProperties": false,
-        "description": "One lexical query with optional company and publication filters.",
+        "description": "One archive query with optional company and publication filters.",
         "properties": {
           "company_id": {
             "anyOf": [
@@ -362,8 +404,24 @@
       },
       "ArchiveSearchResult": {
         "additionalProperties": false,
-        "description": "A bounded ranked result set with an indication that matches remain.",
+        "description": "Bounded result groups. The has_more flag refers to passage matches.",
         "properties": {
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/CompanySummary"
+            },
+            "maxItems": 20,
+            "title": "Companies",
+            "type": "array"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveDocumentHit"
+            },
+            "maxItems": 20,
+            "title": "Documents",
+            "type": "array"
+          },
           "has_more": {
             "title": "Has More",
             "type": "boolean"
@@ -378,6 +436,8 @@
           }
         },
         "required": [
+          "companies",
+          "documents",
           "items",
           "has_more"
         ],

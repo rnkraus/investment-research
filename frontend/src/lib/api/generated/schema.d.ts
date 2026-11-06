@@ -499,6 +499,26 @@ export interface components {
             readonly text: string;
         };
         /**
+         * ArchiveDocumentHit
+         * @description A current document whose title matches the query.
+         */
+        readonly ArchiveDocumentHit: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+            /**
+             * Document Version Id
+             * Format: uuid
+             */
+            readonly document_version_id: string;
+            /** Published At */
+            readonly published_at: string | null;
+            /** Title */
+            readonly title: string;
+        };
+        /**
          * ArchiveSearchHit
          * @description A passage preview and the identifiers needed to open its current original.
          */
@@ -530,7 +550,7 @@ export interface components {
         };
         /**
          * ArchiveSearchInput
-         * @description One lexical query with optional company and publication filters.
+         * @description One archive query with optional company and publication filters.
          */
         readonly ArchiveSearchInput: {
             /** Company Id */
@@ -544,9 +564,13 @@ export interface components {
         };
         /**
          * ArchiveSearchResult
-         * @description A bounded ranked result set with an indication that matches remain.
+         * @description Bounded result groups. The has_more flag refers to passage matches.
          */
         readonly ArchiveSearchResult: {
+            /** Companies */
+            readonly companies: readonly components["schemas"]["CompanySummary"][];
+            /** Documents */
+            readonly documents: readonly components["schemas"]["ArchiveDocumentHit"][];
             /** Has More */
             readonly has_more: boolean;
             /** Items */
