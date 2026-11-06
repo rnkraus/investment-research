@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   apiClient,
+  type ArchiveSearchMode,
   type CompanySummary,
   type DocumentCatalogEntry,
   type DocumentListCursor,
@@ -48,6 +49,8 @@ export function ArchiveResearch({
   const documentListId = useId();
   const [isListVisible, setIsListVisible] = useState(true);
   const [company, setCompany] = useState<CompanySummary | null>(null);
+  const [archiveSearchMode, setArchiveSearchMode] =
+    useState<ArchiveSearchMode>("keyword");
   const companyId = company?.company_id;
   const [publicationDates, setPublicationDates] = useState<PublicationDates>(
     {},
@@ -540,6 +543,8 @@ export function ArchiveResearch({
             <ArchivePassageSearch
               key={`${JSON.stringify(filters)}:${answerResetKey}`}
               filters={filters}
+              mode={archiveSearchMode}
+              onModeChange={setArchiveSearchMode}
               disabled={isResearching || isDeleting}
               onSelectCompany={selectCompany}
             />

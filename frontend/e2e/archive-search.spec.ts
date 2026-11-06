@@ -131,3 +131,99 @@ test("archive result groups open originals and apply company filters without ask
   );
   expect(researchRequests).toBe(0);
 });
+
+test("semantic archive search is opt-in and reports provider and budget failures", async ({
+  page,
+  context,
+}) => {
+  const query = "What slowed down expansion to new customers?";
+  const searchModes: string[] = [];
+  let semanticAttempts = 0;
+  await context.route("**/api/v1/archive-search", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.query).toBe(query);
+    searchModes.push(body.mode);
+    if (body.mode === "keyword") {
+      return route.fulfill({
+        json: { companies: [], documents: [], items: [], has_more: false },
+      });
+    }
+    semanticAttempts += 1;
+    if (semanticAttempts <= 2) {
+      return route.fulfill({
+        status: semanticAttempts === 1 ? 429 : 503,
+        json: {
+          error: {
+            code: "PROVIDER_UNAVAILABLE",
+            message: "Synthetic provider failure",
+          },
+        },
+      });
+    }
+    return route.fulfill({
+      json: {
+        companies: [],
+        documents: [],
+        items: [
+          {
+            chunk_id: CHUNK,
+            document_id: DOCUMENT,
+            document_version_id: VERSION,
+            title: "Northstar earnings brief",
+            published_at: null,
+            source_locator_kind: "PDF_PAGE",
+            page_number: 2,
+            passage: "A shortage of transformers constrained deployments.",
+          },
+        ],
+        has_more: false,
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByText("Search archive", { exact: true }).click();
+  const mode = page.getByLabel("Search mode");
+  const submit = page.getByRole("button", { name: "Find matches" });
+  await expect(mode).toHaveValue("keyword");
+  await page.getByLabel("Ticker, title, or keywords").fill(query);
+  await mode.selectOption("semantic");
+  await expect(page.getByLabel("Describe the passage")).toHaveValue(query);
+  await expect(page.getByText(/uses the workspace budget/)).toBeVisible();
+  expect(searchModes).toEqual([]);
+
+  await submit.click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "The workspace provider budget is exhausted." }),
+  ).toBeVisible();
+  await submit.click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Semantic search is unavailable." }),
+  ).toBeVisible();
+  await submit.click();
+  const results = page.getByRole("region", { name: "Archive search results" });
+  await expect(
+    results.getByRole("heading", { name: "Semantic passages" }),
+  ).toBeVisible();
+  await expect(
+    results.getByText("A shortage of transformers constrained deployments."),
+  ).toBeVisible();
+  await expect(
+    results.getByRole("link", { name: "Open original" }),
+  ).toHaveAttribute("href", `${ORIGINAL}?page=2`);
+
+  await mode.selectOption("keyword");
+  await expect(results).toHaveCount(0);
+  await expect(page.getByLabel("Ticker, title, or keywords")).toHaveValue(
+    query,
+  );
+  await submit.click();
+  await expect(results.getByRole("status")).toHaveText(
+    `No matches for “${query}”.`,
+  );
+  expect(searchModes).toEqual(["semantic", "semantic", "semantic", "keyword"]);
+});

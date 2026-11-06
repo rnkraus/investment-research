@@ -16,6 +16,7 @@ export type DocumentCatalogEntry =
   components["schemas"]["DocumentCatalogEntry"];
 export type DocumentCatalogPage = components["schemas"]["DocumentCatalogPage"];
 export type ArchiveSearchInput = components["schemas"]["ArchiveSearchInput"];
+export type ArchiveSearchMode = ArchiveSearchInput["mode"];
 export type ArchiveSearchResult = components["schemas"]["ArchiveSearchResult"];
 export type DocumentListCursor = components["schemas"]["DocumentListCursor"];
 export type DocumentDeletionInput =

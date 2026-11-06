@@ -47,11 +47,15 @@ or clearing the dates clears the explicit document selection.
 company and publication filters before pagination. To research a subset shown by these list
 filters, select the documents explicitly. Changing either list filter clears the selection
 while preserving explicit selection mode.
-**Search archive** groups exact ticker matches, document title matches, and indexed
+**Search archive** defaults to **Keyword**, grouping exact ticker matches, document title matches, and indexed
 passages. A company result can set the company filter. A title result opens the
 original document. Passage results show their publication date and PDF page when
 available, and PDF links open at that page. Use quotation marks for a text phrase.
 Company and publication filters narrow title and passage results.
+**Semantic** searches for passages by meaning. Submitting the query sends it to the configured
+embedding provider under the shared workspace budget. Both modes link to original passages.
+Changing modes preserves the query and clears the previous results. Semantic unavailability
+and budget exhaustion leave keyword search available.
 The sidebar shows titles, publication dates, processing status, and original links; other metadata
 and selection help are expandable. It cannot be hidden while deletion confirmation or submission
 locks selection. Permanent deletion controls remain at the top of the sidebar.

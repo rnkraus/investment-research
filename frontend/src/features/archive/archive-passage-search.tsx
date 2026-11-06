@@ -5,7 +5,9 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import {
   apiClient,
+  ApiRequestError,
   type ArchiveFilters,
+  type ArchiveSearchMode,
   type ArchiveSearchResult,
   type CompanySummary,
 } from "@/lib/api/client";
@@ -13,27 +15,46 @@ import {
 import { formatPublicationDate } from "./publication-date";
 
 type SearchState =
-  | { readonly status: "LOADING" | "ERROR" }
+  | { readonly status: "LOADING" }
+  | { readonly status: "ERROR"; readonly message: string }
   | {
       readonly status: "RESULTS";
       readonly query: string;
       readonly result: ArchiveSearchResult;
     };
 
+function searchErrorMessage(error: unknown, mode: ArchiveSearchMode): string {
+  if (mode === "semantic" && error instanceof ApiRequestError) {
+    if (error.status === 429) {
+      return "The workspace provider budget is exhausted. Keyword search is still available.";
+    }
+    if (error.status === 503) {
+      return "Semantic search is unavailable. Keyword search is still available.";
+    }
+  }
+  return "Archive search failed. Try again.";
+}
+
 export function ArchivePassageSearch({
   filters,
+  mode,
+  onModeChange,
   disabled,
   onSelectCompany,
 }: {
   readonly filters: ArchiveFilters;
+  readonly mode: ArchiveSearchMode;
+  readonly onModeChange: (mode: ArchiveSearchMode) => void;
   readonly disabled: boolean;
   readonly onSelectCompany: (company: CompanySummary) => void;
 }) {
   const queryId = useId();
+  const modeId = useId();
   const request = useRef<AbortController | null>(null);
   const [query, setQuery] = useState("");
   const [state, setState] = useState<SearchState>();
   const loading = state?.status === "LOADING";
+  const semantic = mode === "semantic";
   const result = state?.status === "RESULTS" ? state.result : undefined;
 
   useEffect(() => () => request.current?.abort(), []);
@@ -47,34 +68,60 @@ export function ArchivePassageSearch({
     setState({ status: "LOADING" });
     try {
       const result = await apiClient.searchArchive(
-        { ...filters, query: term, mode: "keyword" },
+        { ...filters, query: term, mode },
         controller.signal,
       );
       if (!controller.signal.aborted)
         setState({ status: "RESULTS", query: term, result });
-    } catch {
-      if (!controller.signal.aborted) setState({ status: "ERROR" });
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setState({ status: "ERROR", message: searchErrorMessage(error, mode) });
     }
   }
 
   return (
     <div className="mt-3 space-y-3">
-      <p className="text-sm text-slate-600">
-        Search by ticker, document title, or keywords. Use quotation marks to
-        find a phrase in the text. The selected company and publication dates
-        narrow document and passage matches.
-      </p>
       <form
+        className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
           void search();
         }}
       >
+        <div className="flex flex-wrap items-center gap-2">
+          <label
+            htmlFor={modeId}
+            className="text-sm font-semibold text-slate-700"
+          >
+            Search mode
+          </label>
+          <select
+            id={modeId}
+            value={mode}
+            disabled={disabled || loading}
+            onChange={(event) => {
+              onModeChange(
+                event.target.value === "semantic" ? "semantic" : "keyword",
+              );
+              setState(undefined);
+            }}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="keyword">Keyword</option>
+            <option value="semantic">Semantic</option>
+          </select>
+        </div>
+        <p className="text-sm text-slate-600">
+          {semantic
+            ? "Describe the passage you want to find. Submitting sends the query to the configured embedding provider and uses the workspace budget."
+            : "Search by ticker, document title, or keywords. Use quotation marks to find a phrase in the text."}{" "}
+          The selected company and publication dates narrow the matches.
+        </p>
         <label
           htmlFor={queryId}
           className="text-sm font-semibold text-slate-700"
         >
-          Ticker, title, or keywords
+          {semantic ? "Describe the passage" : "Ticker, title, or keywords"}
         </label>
         <div className="mt-1 flex flex-wrap gap-2">
           <input
@@ -102,7 +149,7 @@ export function ArchivePassageSearch({
       )}
       {state?.status === "ERROR" && (
         <p role="alert" className="text-sm text-rose-700">
-          Archive search failed. Try again.
+          {state.message}
         </p>
       )}
       {state?.status === "RESULTS" && result && (
@@ -184,7 +231,7 @@ export function ArchivePassageSearch({
           {result.items.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-900">
-                Text passages
+                {semantic ? "Semantic passages" : "Text passages"}
               </h3>
               {result.has_more && (
                 <p className="text-xs text-slate-600">
