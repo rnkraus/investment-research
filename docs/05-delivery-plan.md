@@ -424,6 +424,12 @@ publication timestamp of current document versions. They combine with the compan
 document filters across catalog pagination, lexical retrieval, dense candidate qualification,
 and citation validation. Unknown publication dates are excluded only when a date bound is set.
 
+**Catalog format and status filters.** The document list can filter by original PDF or pasted
+text and by the latest processing run of the current version, including versions without a run.
+These list filters combine with company and publication filters before pagination. The displayed
+status comes from the same read as the filter. Research scope still uses company, dates, and any
+explicit document selection.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
