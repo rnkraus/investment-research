@@ -435,6 +435,10 @@ and quoted phrases. Company and publication filters apply. Results link to the o
 open PDFs at the matched physical page. Discovery uses PostgreSQL without creating research
 requests or calling model providers.
 
+**Archive discovery result groups.** Search displays exact display-ticker matches, title
+matches, and text passages separately. Company results can set the existing company filter.
+Title results open the current original. Passage results retain their physical PDF page links.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.

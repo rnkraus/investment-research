@@ -19,7 +19,7 @@ const VERSION_ID = "10000000-0000-4000-8000-000000000002";
 const RUN_ID = "10000000-0000-4000-8000-000000000003";
 const CREATED_AT = "2026-10-11T09:15:00.123456Z";
 
-test("archive search posts filters privately and validates PDF page locators", async () => {
+test("archive search posts filters privately and validates all result groups", async () => {
   const input = { query: '"capacity expansion"', published_from: "2026-10-01" };
   const hit = {
     chunk_id: RUN_ID,
@@ -31,7 +31,24 @@ test("archive search posts filters privately and validates PDF page locators", a
     page_number: 2,
     passage: "Capacity expansion remained on track.",
   };
-  const payload = { items: [hit], has_more: false };
+  const company = {
+    company_id: "10000000-0000-4000-8000-000000000004",
+    name: "Synthetic Grid",
+    ticker: "SGRD",
+    created_at: CREATED_AT,
+  };
+  const document = {
+    document_id: DOCUMENT_ID,
+    document_version_id: VERSION_ID,
+    title: "Synthetic report",
+    published_at: CREATED_AT,
+  };
+  const payload = {
+    companies: [company],
+    documents: [document],
+    items: [hit],
+    has_more: false,
+  };
   const client = createApiClient(async (url, options) => {
     assert.equal(url, "/api/v1/archive-search");
     assert.equal(options.method, "POST");
@@ -41,6 +58,12 @@ test("archive search posts filters privately and validates PDF page locators", a
   });
   assert.deepEqual(await client.searchArchive(input), payload);
   hit.page_number = 0;
+  await assert.rejects(client.searchArchive(input), ApiProtocolError);
+  hit.page_number = 2;
+  document.document_version_id = "invalid";
+  await assert.rejects(client.searchArchive(input), ApiProtocolError);
+  document.document_version_id = VERSION_ID;
+  company.company_id = "invalid";
   await assert.rejects(client.searchArchive(input), ApiProtocolError);
 });
 
