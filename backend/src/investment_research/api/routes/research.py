@@ -323,6 +323,8 @@ def answer_research_request(
         question=request.question,
         document_ids=request.context.document_ids,
         company_id=request.context.company_id,
+        published_from=request.context.published_from,
+        published_to=request.context.published_to,
         temporal_mode=request.context.temporal_mode,
         cutoff_at=request.context.cutoff_at,
         generation_model=request.generation_model,

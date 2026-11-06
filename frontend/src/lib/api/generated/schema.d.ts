@@ -1091,6 +1091,10 @@ export interface components {
              * @default []
              */
             readonly document_ids: readonly string[];
+            /** Published From */
+            readonly published_from?: string | null;
+            /** Published To */
+            readonly published_to?: string | null;
             /** @default CURRENT */
             readonly temporal_mode: components["schemas"]["TemporalMode"];
         };
@@ -1391,6 +1395,8 @@ export interface operations {
     readonly list_documents_api_v1_documents_get: {
         readonly parameters: {
             readonly query?: {
+                readonly published_from?: string | null;
+                readonly published_to?: string | null;
                 readonly page_size?: number;
                 readonly company_id?: string | null;
                 readonly after_created_at?: string | null;

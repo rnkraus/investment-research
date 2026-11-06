@@ -405,6 +405,17 @@ def test_generated_statement_rejects_duplicate_candidate_ranges() -> None:
         ),
         pytest.param(
             make_source(
+                version_published_at=FIXTURE_TIME,
+                retrieval_filters=RetrievalFilters(
+                    published_to=(FIXTURE_TIME - timedelta(days=1)).date()
+                ),
+            ),
+            make_answer(),
+            ValidationRule.TEMPORAL_ELIGIBILITY,
+            id="publication-date-filter",
+        ),
+        pytest.param(
+            make_source(
                 retrieval_filters=RetrievalFilters(
                     available_at_cutoff=FIXTURE_TIME - timedelta(days=1)
                 )

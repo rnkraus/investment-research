@@ -385,6 +385,8 @@ class ValidateGeneratedAnswerService:
         filters = source.retrieval_filters
         if filters.document_ids and source.document_id not in filters.document_ids:
             return False
+        if not filters.matches_publication(source.version_published_at):
+            return False
         if filters.available_at_cutoff is not None and (
             source.version_available_at is None
             or source.version_available_at > filters.available_at_cutoff

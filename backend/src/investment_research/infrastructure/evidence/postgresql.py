@@ -295,6 +295,7 @@ class PostgresCanonicalEvidenceSourceReader:
             document_lifecycle_state=document.lifecycle_state,
             document_current_version_id=document.current_version_id,
             document_version_id=document_version.id,
+            version_published_at=document_version.published_at,
             version_available_at=document_version.available_at,
             version_captured_at=document_version.captured_at,
             structure_block_id=structure_block.id,

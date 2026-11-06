@@ -18,6 +18,7 @@ from investment_research.modules.documents.domain import (
     LanguageCode,
     OriginalMediaType,
 )
+from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.processing.domain import ProcessingState
 
 OriginalFilename = Annotated[
@@ -98,7 +99,7 @@ class DocumentListCursor(ImmutableContract):
         return value.astimezone(UTC)
 
 
-class DocumentListQuery(ImmutableContract):
+class DocumentListQuery(ImmutableContract, PublicationDateBounds):
     """Bound one read page without accepting a client-controlled workspace."""
 
     page_size: int = Field(default=20, ge=1, le=100, strict=True)

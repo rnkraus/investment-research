@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from investment_research.modules.documents.domain import SourceLocatorKind
+from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.evidence.domain import (
     AnswerValidation,
     EvidenceSpan,
@@ -62,7 +63,7 @@ class ImmutableResearchContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class ResearchRetrievalInput(ImmutableResearchContract):
+class ResearchRetrievalInput(ImmutableResearchContract, PublicationDateBounds):
     """One bounded question and explicit archive context submitted for retrieval."""
 
     question: QueryText

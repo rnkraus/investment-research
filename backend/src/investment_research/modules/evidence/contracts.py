@@ -165,6 +165,7 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
     document_lifecycle_state: DocumentLifecycleState
     document_current_version_id: UUID | None
     document_version_id: UUID
+    version_published_at: AwareDatetime | None = None
     version_available_at: AwareDatetime | None
     version_captured_at: AwareDatetime
     structure_block_id: UUID
@@ -188,7 +189,7 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
             raise ValueError("canonical source text must contain a non-whitespace character")
         return value
 
-    @field_validator("version_available_at", "version_captured_at")
+    @field_validator("version_published_at", "version_available_at", "version_captured_at")
     @classmethod
     def normalize_source_times(cls, value: datetime | None) -> datetime | None:
         """Normalize canonical eligibility timestamps to UTC."""
