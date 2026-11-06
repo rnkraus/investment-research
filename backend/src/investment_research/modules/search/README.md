@@ -33,17 +33,24 @@ The arrows between modules are identifier-based contracts and database relations
 
 ## Lexical query contract
 
-The archive UI uses `POST /api/v1/archive-search` for a separate read-only search.
-It applies the configured lexical profile and canonical workspace, active-version,
+The archive UI uses `POST /api/v1/archive-search` for passage discovery.
+Keyword mode applies the configured lexical profile and canonical workspace, active-version,
 company, and publication filters. PostgreSQL ranks keywords and quoted phrases. The
 endpoint returns up to 20 passage previews with original identifiers and PDF pages.
-The request creates no research records and makes no provider calls.
+Keyword mode creates no records and makes no provider calls.
 
 The response also provides separate `companies` and `documents` groups, each capped at 20.
 Company matches require the entire stored display ticker and are scoped to the selected
 company when present. Document matches use a case-insensitive literal title substring, with
 exact titles first. They require an active current original and respect company and publication
 filters. Publication bounds apply to documents and passages.
+
+With `mode: "semantic"`, the endpoint uses the existing query embedding and dense index
+configuration. The shared workspace budget reserves the embedding cost before the call.
+Pinecone supplies bounded candidate IDs, and PostgreSQL returns only eligible current passages
+with originals, in vector rank order. This mode returns passages without exact metadata matches
+or research records. The keyword mode remains the default. An unavailable semantic runtime
+returns `503`, and a rejected budget reservation returns `429`.
 
 The application retains the user's raw question on `ResearchRequest` and `RetrievalRun`, while
 `normalize_lexical_query` derives a deterministic search-only form. It applies Unicode NFKC

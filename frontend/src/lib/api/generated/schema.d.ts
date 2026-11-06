@@ -15,7 +15,7 @@ export interface paths {
         readonly put?: never;
         /**
          * Search Archive
-         * @description Return lexical passage matches without requesting an AI answer.
+         * @description Return keyword or semantic matches without requesting an AI answer.
          */
         readonly post: operations["search_archive_api_v1_archive_search_post"];
         readonly delete?: never;
@@ -555,6 +555,12 @@ export interface components {
         readonly ArchiveSearchInput: {
             /** Company Id */
             readonly company_id?: string | null;
+            /**
+             * Mode
+             * @default keyword
+             * @enum {string}
+             */
+            readonly mode: "keyword" | "semantic";
             /** Published From */
             readonly published_from?: string | null;
             /** Published To */
@@ -1295,8 +1301,26 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

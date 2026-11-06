@@ -364,6 +364,15 @@
             ],
             "title": "Company Id"
           },
+          "mode": {
+            "default": "keyword",
+            "enum": [
+              "keyword",
+              "semantic"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "published_from": {
             "anyOf": [
               {
@@ -1945,7 +1954,7 @@
   "paths": {
     "/api/v1/archive-search": {
       "post": {
-        "description": "Return lexical passage matches without requesting an AI answer.",
+        "description": "Return keyword or semantic matches without requesting an AI answer.",
         "operationId": "search_archive_api_v1_archive_search_post",
         "requestBody": {
           "content": {
@@ -1988,6 +1997,16 @@
             },
             "description": "Unprocessable Content"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1997,6 +2016,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Search Archive",

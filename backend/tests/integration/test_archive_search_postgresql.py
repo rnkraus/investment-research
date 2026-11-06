@@ -5,14 +5,21 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from investment_research.api.dependencies import get_workspace_context
 from investment_research.main import create_app
+from investment_research.modules.operations.domain import (
+    ProviderOperationKind,
+    ProviderOperationState,
+)
+from investment_research.modules.operations.persistence import ProviderOperationRow
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.research.persistence import ResearchRequestRow
+from investment_research.modules.search.contracts import DenseRetrievalHit
 from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     FIXTURE_TIME,
@@ -20,6 +27,13 @@ from tests.integration.factories import (
     persist_research_source,
 )
 from tests.integration.test_document_company_service_postgresql import add_company
+from tests.integration.test_m1_dual_retrieval_api_postgresql import (
+    install_provider_fakes,
+    make_m1_api_settings,
+    make_searchable_source,
+)
+
+SEMANTIC_QUERY = "What difficulty slowed down expansion to new customers?"
 
 
 def test_archive_search_returns_scoped_phrase_matches_without_saving_questions(
@@ -94,6 +108,7 @@ def test_archive_search_returns_scoped_phrase_matches_without_saving_questions(
                 "has_more": False,
             }
         assert client.post(route, json={"query": "   "}).status_code == 422
+        assert client.post(route, json={**query, "mode": "semantic"}).status_code == 503
         assert client.post(route, json={**query, "workspace_id": str(uuid4())}).status_code == 422
 
     with Session(engine) as session:
@@ -177,3 +192,100 @@ def test_archive_search_finds_exact_tickers_and_literal_current_titles(
             {"published_from": (FIXTURE_TIME.date() + timedelta(days=1)).isoformat()},
         ):
             assert client.post(route, json={**title_query, **extra}).json()["documents"] == []
+
+
+def test_semantic_archive_search_returns_canonical_passages_without_chat(
+    integration_database_engine: Engine,
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = integration_database_engine
+    passage = "The primary constraint on new deployments is a shortage of transformers."
+    source, foreign = (
+        make_searchable_source(label=label, primary_text=passage)
+        for label in ("Semantic archive owner", "Semantic archive foreign")
+    )
+    for item in (source, foreign):
+        persist_research_source(engine, item)
+    fakes = install_provider_fakes(
+        monkeypatch,
+        hits=(
+            DenseRetrievalHit(chunk_id=foreign.chunks[0].id, raw_score=0.99),
+            DenseRetrievalHit(chunk_id=source.chunks[1].id, raw_score=0.98),
+            DenseRetrievalHit(chunk_id=uuid4(), raw_score=0.97),
+            DenseRetrievalHit(chunk_id=source.chunks[0].id, raw_score=0.96),
+        ),
+        statement=None,
+    )
+    application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+    published_from = FIXTURE_TIME.date().isoformat()
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/archive-search",
+            json={"query": SEMANTIC_QUERY, "mode": "semantic", "published_from": published_from},
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["companies"] == payload["documents"] == []
+    assert [item["chunk_id"] for item in payload["items"]] == [
+        str(source.chunks[1].id),
+        str(source.chunks[0].id),
+    ]
+    assert payload["items"][1]["page_number"] == 2
+    assert payload["items"][1]["passage"] == passage
+    assert payload["items"][1]["title"] == source.version.title
+    assert fakes.embedding.requests[0].inputs[0].text == SEMANTIC_QUERY
+    assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 1
+    assert fakes.dense.queries[0].filters.published_from == FIXTURE_TIME.date()
+    assert not fakes.generator.requests and not fakes.support.requests
+
+    with Session(engine) as session:
+        request_count = session.scalar(
+            select(func.count())
+            .select_from(ResearchRequestRow)
+            .where(ResearchRequestRow.workspace_id == source.context.workspace_id)
+        )
+        operation = (
+            session.scalars(
+                select(ProviderOperationRow).where(
+                    ProviderOperationRow.workspace_id == source.context.workspace_id
+                )
+            )
+            .one()
+            .to_domain()
+        )
+    assert request_count == 1
+    assert operation.operation is ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING
+    assert operation.state is ProviderOperationState.SUCCEEDED
+    assert operation.research_request_id is None
+    assert operation.reserved_cost_micro_usd > 0
+
+
+def test_archive_search_budget_rejection_precedes_all_provider_calls(
+    integration_database_engine: Engine,
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = make_searchable_source(
+        label="Archive budget guard", primary_text="Capacity expansion."
+    )
+    persist_research_source(integration_database_engine, source)
+    fakes = install_provider_fakes(monkeypatch, hits=(), statement=None)
+    settings = make_m1_api_settings(integration_api_settings, tmp_path / "objects").model_copy(
+        update={"provider_monthly_budget_micro_usd": 1}
+    )
+    application = create_app(settings)
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+    with TestClient(application) as client:
+        denied = client.post(
+            "/api/v1/archive-search", json={"query": SEMANTIC_QUERY, "mode": "semantic"}
+        )
+        keyword = client.post("/api/v1/archive-search", json={"query": "capacity expansion"})
+    assert denied.status_code == 429
+    assert denied.json()["error"]["message"] == "workspace provider budget exhausted"
+    assert keyword.status_code == 200
+    assert keyword.json()["items"][0]["document_id"] == str(source.document.id)
+    assert not fakes.embedding.requests and not fakes.dense.queries

@@ -120,8 +120,8 @@ test("archive result groups open originals and apply company filters without ask
     results.getByText("FY2025 revenue was $184.2 million."),
   ).toBeVisible();
   expect(searchBodies).toEqual([
-    { query: '"FY2025 revenue"' },
-    { company_id: COMPANY, query: '"FY2025 revenue"' },
+    { query: '"FY2025 revenue"', mode: "keyword" },
+    { company_id: COMPANY, query: '"FY2025 revenue"', mode: "keyword" },
   ]);
   await results.getByRole("link", { name: "Open original" }).click();
   await expect(page).toHaveURL(new RegExp(`${ORIGINAL}\\?page=2$`));

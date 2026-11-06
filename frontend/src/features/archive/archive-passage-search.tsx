@@ -47,7 +47,7 @@ export function ArchivePassageSearch({
     setState({ status: "LOADING" });
     try {
       const result = await apiClient.searchArchive(
-        { ...filters, query: term },
+        { ...filters, query: term, mode: "keyword" },
         controller.signal,
       );
       if (!controller.signal.aborted)
