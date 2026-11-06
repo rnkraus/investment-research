@@ -11,14 +11,26 @@ interface OriginalPageProps {
     readonly documentId: string;
     readonly documentVersionId: string;
   }>;
+  readonly searchParams: Promise<{ readonly page?: string | string[] }>;
 }
 
-export default async function OriginalPage({ params }: OriginalPageProps) {
-  const { documentId, documentVersionId } = await params;
+export default async function OriginalPage({
+  params,
+  searchParams,
+}: OriginalPageProps) {
+  const [{ documentId, documentVersionId }, { page }] = await Promise.all([
+    params,
+    searchParams,
+  ]);
+  const pageNumber =
+    typeof page === "string" && /^[1-9]\d*$/.test(page)
+      ? Number(page)
+      : undefined;
   return (
     <OriginalViewer
       documentId={documentId}
       documentVersionId={documentVersionId}
+      page={Number.isSafeInteger(pageNumber) ? pageNumber : undefined}
     />
   );
 }

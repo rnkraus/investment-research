@@ -10,6 +10,7 @@ import {
   type DocumentListFilters,
 } from "@/lib/api/client";
 
+import { ArchivePassageSearch } from "./archive-passage-search";
 import { archiveCopy } from "./copy";
 import { CompanyFilter } from "./company-filter";
 import { DocumentCompanyEditor } from "./document-company-editor";
@@ -521,6 +522,16 @@ export function ArchiveResearch({
               }}
             />
           </div>
+          <details className="border-b border-slate-200 py-4">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-900 focus-visible:outline-2 focus-visible:outline-teal-700">
+              Search archive
+            </summary>
+            <ArchivePassageSearch
+              key={`${JSON.stringify(filters)}:${answerResetKey}`}
+              filters={filters}
+              disabled={isDeleting}
+            />
+          </details>
           <ResearchWorkflow
             key={answerResetKey}
             documents={documents}
