@@ -2,11 +2,16 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from pathlib import Path
 from threading import Barrier, Event
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Engine
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.script import ScriptDirectory
+from sqlalchemy import Engine, update
 from sqlalchemy.exc import IntegrityError
 
 from investment_research.infrastructure.database.session import (
@@ -27,6 +32,7 @@ from investment_research.modules.operations.domain import (
     ProviderOperationState,
 )
 from investment_research.modules.operations.persistence import (
+    ProviderOperationRow,
     SqlAlchemyProviderOperationRepository,
 )
 from tests.integration.factories import (
@@ -150,6 +156,68 @@ def test_provider_operations_are_scoped_finalized_and_summarized(
     assert summary.actual_cost_micro_usd == 12
     assert summary.active_reserved_cost_micro_usd == 30
     assert summary.accounted_cost_micro_usd == 42
+
+
+def test_archive_embedding_reservation_counts_against_the_same_workspace_budget(
+    integration_database_engine: Engine,
+) -> None:
+    session_factory = create_session_factory(integration_database_engine)
+    source = make_research_source(label="Archive embedding budget")
+    persist_research_source(integration_database_engine, source)
+    research_embedding = make_started_operation(
+        source,
+        operation_id=uuid4(),
+        correlation_id=uuid4(),
+        operation=ProviderOperationKind.QUERY_EMBEDDING,
+        reserved_cost_micro_usd=15,
+        offset_seconds=0,
+    )
+    archive_embedding = ProviderOperation.model_validate(
+        {
+            **research_embedding.model_dump(),
+            "id": uuid4(),
+            "correlation_id": uuid4(),
+            "research_request_id": None,
+            "operation": ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING,
+            "reserved_cost_micro_usd": 20,
+        }
+    )
+    reserve = ReserveProviderOperationService(
+        unit_of_work_factory=create_provider_operation_unit_of_work_factory(session_factory),
+        budget_policy=ProviderBudgetPolicy(monthly_limit_micro_usd=30),
+    )
+    assert reserve.reserve(source.context, archive_embedding) == archive_embedding
+    with pytest.raises(ProviderBudgetExceededError):
+        reserve.reserve(source.context, research_embedding)
+
+    completed = succeed_operation(
+        archive_embedding, actual_cost_micro_usd=12, input_units=80, output_units=0
+    )
+    with transactional_session(session_factory) as session:
+        repository = SqlAlchemyProviderOperationRepository(session)
+        assert repository.finalize(source.context, completed)
+    assert reserve.reserve(source.context, research_embedding) == research_embedding
+
+    with pytest.raises(IntegrityError), transactional_session(session_factory) as session:
+        session.execute(
+            update(ProviderOperationRow)
+            .where(ProviderOperationRow.id == archive_embedding.id)
+            .values(research_request_id=source.request.id)
+        )
+
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    migration = ScriptDirectory.from_config(config).get_revision("0019_archive_query_embedding")
+    assert migration is not None
+    with (
+        pytest.raises(IntegrityError),
+        integration_database_engine.begin() as connection,
+        Operations.context(MigrationContext.configure(connection)),
+    ):
+        migration.module.downgrade()
+
+    with transactional_session(session_factory) as session:
+        repository = SqlAlchemyProviderOperationRepository(session)
+        assert repository.get_by_id(source.context, archive_embedding.id) == completed
 
 
 def test_database_rejects_provider_operation_linked_to_foreign_request(

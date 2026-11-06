@@ -88,3 +88,7 @@ after canonical exclusion. The deferred current-version FK uses `NO ACTION` rath
 non-deferrable `RESTRICT` enforcement so both sides can be removed atomically. These migrations
 do not themselves delete archive content or activate a public endpoint. See
 [ADR-0019](../../docs/adr/0019-permanent-local-document-deletion.md).
+
+Revision `0019_archive_query_embedding` admits workspace-owned archive embedding operations in
+the existing ledger. It changes two check constraints and preserves historical records.
+Downgrade refuses to discard the operation kind while archive embedding records exist.

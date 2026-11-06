@@ -48,10 +48,11 @@ DurationMilliseconds = Annotated[int, Field(ge=0, le=9_223_372_036_854_775_807)]
 
 
 class ProviderOperationKind(StrEnum):
-    """External provider operations attributable during M1 and the M1.5 experiment."""
+    """External provider operations attributable to a workspace."""
 
     DOCUMENT_EMBEDDING = "DOCUMENT_EMBEDDING"
     QUERY_EMBEDDING = "QUERY_EMBEDDING"
+    ARCHIVE_QUERY_EMBEDDING = "ARCHIVE_QUERY_EMBEDDING"
     RERANKING = "RERANKING"
     ANSWER_GENERATION = "ANSWER_GENERATION"
     STATEMENT_SUPPORT = "STATEMENT_SUPPORT"
@@ -175,7 +176,10 @@ class ProviderOperation(BaseModel):
 
         has_research_request = self.research_request_id is not None
         has_processing_run = self.processing_run_id is not None
-        if self.owner_deleted:
+        if self.operation is ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING:
+            if self.owner_deleted or has_research_request or has_processing_run:
+                raise ValueError("archive query embedding must be owned only by its workspace")
+        elif self.owner_deleted:
             if has_research_request or has_processing_run:
                 raise ValueError("deleted operation owner must not retain source relationships")
         elif has_research_request == has_processing_run:

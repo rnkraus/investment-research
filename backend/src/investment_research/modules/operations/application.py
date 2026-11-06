@@ -39,7 +39,7 @@ def _provider_operation_span_name(operation: ProviderOperationKind) -> Operation
     match operation:
         case ProviderOperationKind.DOCUMENT_EMBEDDING:
             return "embedding.document"
-        case ProviderOperationKind.QUERY_EMBEDDING:
+        case ProviderOperationKind.QUERY_EMBEDDING | ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING:
             return "embedding.query"
         case ProviderOperationKind.RERANKING:
             return "search.rerank"

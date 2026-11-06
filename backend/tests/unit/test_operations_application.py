@@ -639,6 +639,13 @@ def test_execute_provider_operation_reserves_calls_and_finalizes_success() -> No
             id="query-embedding",
         ),
         pytest.param(
+            ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING,
+            None,
+            None,
+            "embedding.query",
+            id="archive-query-embedding",
+        ),
+        pytest.param(
             ProviderOperationKind.ANSWER_GENERATION,
             REQUEST_ID,
             None,
