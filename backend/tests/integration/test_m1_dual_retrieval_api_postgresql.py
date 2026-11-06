@@ -3,6 +3,7 @@
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -552,7 +553,7 @@ def test_m1_api_researches_existing_archive_without_document_filter(
 
 
 @pytest.mark.parametrize("dense_only", [False, True], ids=["lexical", "dense"])
-def test_company_filter_scopes_retrieval_and_respects_explicit_documents(
+def test_company_and_publication_filters_scope_retrieval_and_respect_explicit_documents(
     integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
@@ -565,6 +566,12 @@ def test_company_filter_scopes_retrieval_and_respects_explicit_documents(
         label="Synthetic company source",
         primary_text=(
             SEMANTIC_PASSAGE if dense_only else f"{fixture.question} {fixture.evidence_text}"
+        ),
+    )
+    source = replace(
+        source,
+        version=source.version.model_copy(
+            update={"published_at": datetime(2026, 10, 11, 23, 59, 59, tzinfo=UTC)}
         ),
     )
     persist_research_source(engine, source)
@@ -594,6 +601,18 @@ def test_company_filter_scopes_retrieval_and_respects_explicit_documents(
             ({"company_id": str(company)}, "answer.completed"),
             ({"company_id": str(other_company)}, "answer.insufficient"),
             (
+                {
+                    "company_id": str(company),
+                    "published_from": "2026-10-11",
+                    "published_to": "2026-10-11",
+                },
+                "answer.completed",
+            ),
+            (
+                {"company_id": str(company), "published_to": "2026-10-10"},
+                "answer.insufficient",
+            ),
+            (
                 {"company_id": str(company), "document_ids": [str(uuid4())]},
                 "answer.insufficient",
             ),
@@ -609,9 +628,15 @@ def test_company_filter_scopes_retrieval_and_respects_explicit_documents(
                 engine, workspace_id=source.context.workspace_id, research_request_id=request_id
             )
             assert run.filter_snapshot["company_id"] == filter_context["company_id"]
+            assert run.filter_snapshot["published_to"] == filter_context.get("published_to")
             assert {candidate.chunk_id for candidate in candidates} == (
                 {source.chunks[0].id} if expected == "answer.completed" else set()
             )
+        invalid = client.post(
+            "/api/v1/research-requests",
+            json={"question": question, "context": {"published_from": 1791676800}},
+        )
+        assert invalid.status_code == 422
     assert_provider_fakes_closed(fakes)
 
 

@@ -395,6 +395,8 @@ def test_retrieval_run_preserves_query_and_round_trips_filter_snapshot() -> None
     assert row.filter_snapshot == {
         "document_ids": [str(DOCUMENT_ID)],
         "company_id": None,
+        "published_from": None,
+        "published_to": None,
         "available_at_cutoff": "2026-02-19T12:00:00Z",
         "captured_at_cutoff": None,
     }

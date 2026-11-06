@@ -73,6 +73,7 @@ def add_document(
     context: WorkspaceContext,
     *,
     created_at: datetime = CREATED_AT,
+    published_at: datetime | None = None,
     title: str = "Synthetic catalog source",
     media_type: OriginalMediaType = OriginalMediaType.PDF,
     with_original: bool = True,
@@ -95,6 +96,7 @@ def add_document(
         title=title,
         language="en",
         content_sha256="a" * 64,
+        published_at=published_at,
         captured_at=created_at,
     )
     original = OriginalArtifact(
@@ -188,7 +190,7 @@ def test_document_list_keyset_handles_equal_times_and_new_imports_without_duplic
     assert refreshed.items[0].document_id == newly_imported.id
 
 
-def test_company_filter_precedes_catalog_pagination_and_hides_foreign_links(
+def test_company_and_publication_filters_precede_catalog_pagination(
     integration_database_engine: Engine,
     integration_api_settings: ApiSettings,
     tmp_path: Path,
@@ -198,10 +200,22 @@ def test_company_filter_precedes_catalog_pagination_and_hides_foreign_links(
     with transactional_session(session_factory) as session:
         owner = add_workspace(session)
         foreign = add_workspace(session)
-        older = add_document(session, owner)
-        newer = add_document(session, owner, created_at=CREATED_AT + timedelta(days=1))
-        add_document(session, owner, created_at=CREATED_AT + timedelta(days=2))
-        foreign_document = add_document(session, foreign)
+        older = add_document(session, owner, published_at=CREATED_AT.replace(hour=0))
+        newer = add_document(
+            session,
+            owner,
+            created_at=CREATED_AT + timedelta(days=1),
+            published_at=CREATED_AT.replace(hour=23, minute=59, second=59, microsecond=999999),
+        )
+        add_document(session, owner, published_at=CREATED_AT)
+        unknown = add_document(session, owner, created_at=CREATED_AT + timedelta(days=2))
+        outside = add_document(
+            session,
+            owner,
+            created_at=CREATED_AT + timedelta(days=3),
+            published_at=CREATED_AT.replace(hour=0) + timedelta(days=1),
+        )
+        foreign_document = add_document(session, foreign, published_at=CREATED_AT)
 
     company = add_company(engine, owner)
     foreign_company = add_company(engine, foreign)
@@ -209,6 +223,8 @@ def test_company_filter_precedes_catalog_pagination_and_hides_foreign_links(
     for context, document, company_id in (
         (owner, older, company),
         (owner, newer, company),
+        (owner, unknown, company),
+        (owner, outside, company),
         (foreign, foreign_document, foreign_company),
     ):
         snapshot = assignments.get(context, document.id)
@@ -219,7 +235,12 @@ def test_company_filter_precedes_catalog_pagination_and_hides_foreign_links(
     )
     application.dependency_overrides[get_workspace_context] = lambda: owner
     with TestClient(application) as client:
-        params = {"company_id": str(company), "page_size": "1"}
+        params = {
+            "company_id": str(company),
+            "page_size": "1",
+            "published_from": "2026-10-11",
+            "published_to": "2026-10-11",
+        }
         first = client.get("/api/v1/documents", params=params)
         assert first.status_code == 200
         assert [item["document_id"] for item in first.json()["items"]] == [str(newer.id)]
@@ -239,6 +260,12 @@ def test_company_filter_precedes_catalog_pagination_and_hides_foreign_links(
             missing = client.get("/api/v1/documents", params={"company_id": str(unavailable)})
             assert missing.status_code == 200
             assert missing.json() == {"items": [], "next_cursor": None}
+        assert (
+            client.get(
+                "/api/v1/documents", params={**params, "published_from": "2026-10-12"}
+            ).status_code
+            == 422
+        )
 
 
 def test_document_list_returns_only_the_current_version_with_an_original(

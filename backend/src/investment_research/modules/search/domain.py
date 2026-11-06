@@ -15,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 QueryText = Annotated[str, StringConstraints(min_length=1, max_length=2_000)]
@@ -64,7 +65,7 @@ class ImmutableSearchModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class RetrievalFilters(ImmutableSearchModel):
+class RetrievalFilters(ImmutableSearchModel, PublicationDateBounds):
     """Typed snapshot of the explicit filters applied to a retrieval run."""
 
     document_ids: tuple[UUID, ...] = ()

@@ -101,7 +101,13 @@ def list_documents(
     try:
         page = service.list_documents(
             context,
-            DocumentListQuery(page_size=query.page_size, after=cursor, company_id=query.company_id),
+            DocumentListQuery(
+                page_size=query.page_size,
+                after=cursor,
+                company_id=query.company_id,
+                published_from=query.published_from,
+                published_to=query.published_to,
+            ),
         )
         runs = processing_service.get_latest_for_versions(
             context,

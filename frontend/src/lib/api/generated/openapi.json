@@ -1541,6 +1541,30 @@
             "title": "Document Ids",
             "type": "array"
           },
+          "published_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published From"
+          },
+          "published_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published To"
+          },
           "temporal_mode": {
             "$ref": "#/components/schemas/TemporalMode",
             "default": "CURRENT"
@@ -2055,6 +2079,40 @@
         "description": "Compose current metadata and latest status through scoped application services.",
         "operationId": "list_documents_api_v1_documents_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "published_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Published From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "published_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Published To"
+            }
+          },
           {
             "in": "query",
             "name": "page_size",

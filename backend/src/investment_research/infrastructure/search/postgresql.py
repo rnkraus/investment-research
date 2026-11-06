@@ -10,6 +10,7 @@ from investment_research.modules.documents.persistence import (
     DocumentRow,
     DocumentVersionRow,
     document_has_company,
+    publication_date_predicates,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
@@ -139,6 +140,7 @@ class PostgresLexicalSearch:
                 ProcessingRunRow.lexical_config_version == query.lexical_config_version,
                 ChunkRow.search_vector.bool_op("@@")(text_query),
                 raw_score > 0,
+                *publication_date_predicates(query.filters),
             )
         )
 
@@ -290,6 +292,7 @@ class PostgresDenseCandidateQualifier:
                 ProcessingRunRow.lexical_config_version == request.lexical_config_version,
                 ProcessingRunRow.embedding_config_version == request.embedding_config_version,
                 ProcessingRunRow.dense_index_config_version == request.dense_index_config_version,
+                *publication_date_predicates(request.filters),
             )
         )
 

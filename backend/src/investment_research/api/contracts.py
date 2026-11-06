@@ -24,6 +24,7 @@ from investment_research.modules.documents.deletion_contracts import (
     DeleteDocumentsCommand,
     DocumentDeletionState,
 )
+from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import (
@@ -116,7 +117,7 @@ class ProcessingRunResult(StrictContract):
     error_summary: SafeMessage | None = None
 
 
-class DocumentCatalogQuery(StrictContract):
+class DocumentCatalogQuery(StrictContract, PublicationDateBounds):
     """Public pagination parameters; workspace scope is never client supplied."""
 
     page_size: int = Field(default=20, ge=1, le=100)
@@ -186,7 +187,7 @@ class DocumentDeletionsAccepted(StrictContract):
     )
 
 
-class ResearchRequestContext(StrictContract):
+class ResearchRequestContext(StrictContract, PublicationDateBounds):
     """Explicit archive filters supplied with a research question."""
 
     document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)

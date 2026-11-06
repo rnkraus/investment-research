@@ -44,6 +44,7 @@ from investment_research.modules.documents.domain import (
     OriginalArtifact,
     OriginalMediaType,
 )
+from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.identity.domain import WorkspaceContext
 
 
@@ -299,6 +300,17 @@ class DocumentVersionRow(Base):
         )
 
 
+def publication_date_predicates(bounds: PublicationDateBounds) -> tuple[ColumnElement[bool], ...]:
+    """Apply UTC bounds to the version timestamp while preserving unknown values unfiltered."""
+
+    predicates: list[ColumnElement[bool]] = []
+    if (start := bounds.publication_start) is not None:
+        predicates.append(DocumentVersionRow.published_at >= start)
+    if (end := bounds.publication_end) is not None:
+        predicates.append(DocumentVersionRow.published_at <= end)
+    return tuple(predicates)
+
+
 class OriginalArtifactRow(Base):
     """Persisted immutable metadata for one captured source artifact."""
 
@@ -419,6 +431,7 @@ class SqlAlchemyDocumentRepository:
                 DocumentVersionRow.workspace_id == context.workspace_id,
                 OriginalArtifactRow.workspace_id == context.workspace_id,
                 DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                *publication_date_predicates(query),
             )
             .order_by(DocumentRow.created_at.desc(), DocumentRow.id.desc())
             .limit(query.page_size + 1)
