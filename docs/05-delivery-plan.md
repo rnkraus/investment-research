@@ -448,6 +448,12 @@ the default keyword mode. It uses the existing embedding and dense retrieval con
 reserves embedding cost against the shared workspace budget, and shows eligible original
 passages directly. Budget exhaustion and provider unavailability are visible in the UI.
 
+**Archive search comparison.** The isolated runtime sends the same keyword and paraphrase to
+both modes, under identical publication bounds. It checks the rank of the same canonical
+fixture passage and reports elapsed request time. The deterministic embedding aliases prove
+the end-to-end search contract. Live retrieval quality and provider latency require a
+separate measurement with real provider responses.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
