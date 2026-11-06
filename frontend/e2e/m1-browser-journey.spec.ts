@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import type { DocumentAccepted } from "../src/lib/api/client";
+
 const REPOSITORY_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
@@ -57,6 +59,71 @@ async function openCitation(page: Page): Promise<Page> {
   return sourcePage;
 }
 
+async function verifyArchiveDiscovery(page: Page, capture: DocumentAccepted) {
+  const companyName = "Northstar Archive Discovery";
+  const ticker = "M3NSTAR.Q4";
+  const company = await page.request.post("/api/v1/companies", {
+    data: { name: companyName, ticker },
+  });
+  await expect(company).toBeOK();
+  const { company_id } = await company.json();
+  const assigned = await page.request.put(
+    `/api/v1/documents/${capture.document_id}/companies`,
+    {
+      data: {
+        expected_document_version_id: capture.document_version_id,
+        expected_revision: 0,
+        company_ids: [company_id],
+      },
+    },
+  );
+  await expect(assigned).toBeOK();
+
+  await page.getByText("Search archive", { exact: true }).click();
+  const input = page.getByLabel("Ticker, title, or keywords");
+  const results = page.getByRole("region", { name: "Archive search results" });
+  async function find(query: string, matches = true) {
+    await input.fill(query);
+    await page.getByRole("button", { name: "Find matches" }).click();
+    await expect(results.getByRole("status")).toHaveText(
+      `${matches ? "Matches" : "No matches"} for “${query}”.`,
+    );
+  }
+
+  await find("M3NSTAR", false);
+  await find(ticker.toLowerCase());
+  await expect(results.getByText(`${companyName} (${ticker})`)).toBeVisible();
+  await results
+    .getByRole("button", { name: `Use as company filter for ${companyName}` })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Clear company filter" }),
+  ).toBeVisible();
+
+  const original = `/documents/${capture.document_id}/versions/${capture.document_version_id}`;
+  await find(PDF_TITLE);
+  await expect(results.getByRole("link", { name: PDF_TITLE })).toHaveAttribute(
+    "href",
+    original,
+  );
+  await find("revenue");
+  await expect(
+    results.getByRole("heading", { name: "Text passages" }),
+  ).toBeVisible();
+  await find('"FY2025 revenue"');
+  const evidencePassage = results
+    .getByRole("listitem")
+    .filter({ hasText: PDF_EVIDENCE });
+  await evidencePassage
+    .getByRole("link", { name: "Open original", exact: true })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`${original}\\?page=2$`));
+  await expect(page.locator("iframe")).toHaveAttribute(
+    "src",
+    /^blob:.*#page=2$/,
+  );
+}
+
 test.describe("M1 visible browser journey", () => {
   test("a PDF answer opens the immutable original at its physical page", async ({
     page,
@@ -65,7 +132,14 @@ test.describe("M1 visible browser journey", () => {
     await page.getByRole("button", { name: "Add source", exact: true }).click();
     await page.getByLabel("PDF document").setInputFiles(PDF_FIXTURE);
     await page.getByLabel("Document title").fill(PDF_TITLE);
+    const captured = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/v1/documents" &&
+        response.request().method() === "POST" &&
+        response.status() === 202,
+    );
     await page.getByRole("button", { name: "Import document" }).click();
+    const capture: DocumentAccepted = await (await captured).json();
     await waitUntilSearchable(page);
 
     await page
@@ -143,6 +217,7 @@ test.describe("M1 visible browser journey", () => {
       .check();
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
+    await verifyArchiveDiscovery(page, capture);
   });
 
   test("a pasted-text answer highlights its exact verified source range", async ({

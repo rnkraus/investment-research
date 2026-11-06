@@ -439,6 +439,10 @@ requests or calling model providers.
 matches, and text passages separately. Company results can set the existing company filter.
 Title results open the current original. Passage results retain their physical PDF page links.
 
+**Archive discovery acceptance.** The isolated M1 browser journey reuses the indexed synthetic
+PDF to check exact ticker lookup, a partial ticker with no matches, title and keyword results,
+quoted phrases, company filtering, and navigation to the matching physical PDF page.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.
