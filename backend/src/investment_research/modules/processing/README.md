@@ -238,12 +238,13 @@ The API maps a visible snapshot to `ProcessingRunResult`, which contains no work
 processing configuration. `error_summary` is present only for `FAILED` and was sanitized by the
 processing service before persistence.
 
-For the saved-document catalog, `get_latest_for_versions` accepts a `ProcessingStatusQuery` with
-at most 100 version IDs supplied by the scoped document-list result. It opens one short read
+`get_latest_for_versions` accepts a `ProcessingStatusQuery` with at most 100 version IDs. It opens one short read
 session and asks `list_latest_runs_for_versions` for a single batch. An empty batch opens no
 session. The repository filters by workspace before ranking each version's runs by `created_at`
 descending and UUID descending, then returns only the first run per version. Missing, foreign,
 and unknown versions produce no entry; no state is invented for them.
+The document catalog applies that same ordering in its own query so the displayed status
+and the status filter use the same snapshot.
 
 `ProcessingReadUnitOfWork` exposes the narrow `ProcessingStatusRepository` port rather than the
 write-capable processing repository. Both ports use the same SQLAlchemy implementation, but status

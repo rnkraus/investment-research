@@ -9,6 +9,9 @@ from sqlalchemy import Engine, update
 from sqlalchemy.orm import Session
 
 from investment_research.api.dependencies import get_workspace_context
+from investment_research.infrastructure.database.document_catalog import (
+    PostgresDocumentCatalogReader,
+)
 from investment_research.infrastructure.database.document_companies import (
     create_document_company_service,
 )
@@ -17,7 +20,6 @@ from investment_research.infrastructure.database.session import (
     transactional_session,
 )
 from investment_research.infrastructure.database.unit_of_work import (
-    create_document_read_unit_of_work_factory,
     create_processing_read_unit_of_work_factory,
 )
 from investment_research.main import create_app
@@ -119,12 +121,10 @@ def add_document(
 
 
 def make_service(engine: Engine) -> ListDocumentsService:
-    """Use the production short-lived read unit of work against migrated PostgreSQL."""
+    """Use the production catalog reader against migrated PostgreSQL."""
 
     return ListDocumentsService(
-        unit_of_work_factory=create_document_read_unit_of_work_factory(
-            create_session_factory(engine)
-        )
+        catalog=PostgresDocumentCatalogReader(create_session_factory(engine))
     )
 
 
@@ -422,6 +422,15 @@ def test_document_catalog_api_paginates_statuses_and_hides_foreign_sources(
         )
         repository.add_run(owner, failed)
         repository.add_run(
+            owner,
+            create_captured_processing_run(
+                context=owner,
+                document_version_id=failed_document.current_version_id,
+                processing_run_id=uuid4(),
+                created_at=CREATED_AT - timedelta(days=1),
+            ),
+        )
+        repository.add_run(
             foreign,
             create_captured_processing_run(
                 context=foreign,
@@ -448,6 +457,22 @@ def test_document_catalog_api_paginates_statuses_and_hides_foreign_sources(
                 "after_document_id": cursor["document_id"],
             },
         )
+        for filters, expected_id in (
+            ({"processing_state": "FAILED"}, failed_document.id),
+            ({"processing_state": "NO_STATUS"}, pending_document.id),
+            ({"media_type": "text/plain"}, pending_document.id),
+        ):
+            filtered = client.get("/api/v1/documents", params={**filters, "page_size": "1"})
+            assert filtered.status_code == 200
+            assert [item["document_id"] for item in filtered.json()["items"]] == [str(expected_id)]
+            assert filtered.json()["next_cursor"] is None
+        for filters in (
+            {"processing_state": "CAPTURED"},
+            {"media_type": "text/plain", "processing_state": "FAILED"},
+        ):
+            filtered = client.get("/api/v1/documents", params=filters)
+            assert filtered.status_code == 200
+            assert filtered.json() == {"items": [], "next_cursor": None}
         application.dependency_overrides[get_workspace_context] = lambda: foreign
         foreign_response = client.get("/api/v1/documents")
         application.dependency_overrides[get_workspace_context] = lambda: empty

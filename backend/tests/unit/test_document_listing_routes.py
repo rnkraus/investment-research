@@ -1,4 +1,4 @@
-"""HTTP checks for bounded document metadata and batched processing status."""
+"""HTTP checks for bounded document metadata and current processing status."""
 
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -13,7 +13,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from investment_research.api.dependencies import (
     get_list_documents_service,
-    get_processing_run_service,
     get_workspace_context,
 )
 from investment_research.main import create_app
@@ -22,15 +21,12 @@ from investment_research.modules.documents.contracts import (
     DocumentListEntry,
     DocumentListPage,
     DocumentListQuery,
+    DocumentProcessingSnapshot,
 )
 from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.listing import ListDocumentsService
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.processing.application import (
-    GetProcessingRunService,
-    create_captured_processing_run,
-)
-from investment_research.modules.processing.contracts import ProcessingStatusQuery
+from investment_research.modules.processing.domain import ProcessingState
 from investment_research.settings import ApiSettings
 
 CREATED_AT = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -53,7 +49,7 @@ def make_entry() -> DocumentListEntry:
 
 
 @pytest.fixture
-def catalog_client(tmp_path: Path) -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
+def catalog_client(tmp_path: Path) -> Iterator[tuple[TestClient, MagicMock]]:
     """Exercise the real route without storage, database, queue, or paid-provider calls."""
 
     application = create_app(
@@ -67,35 +63,34 @@ def catalog_client(tmp_path: Path) -> Iterator[tuple[TestClient, MagicMock, Magi
         )
     )
     documents = create_autospec(ListDocumentsService, instance=True)
-    processing = create_autospec(GetProcessingRunService, instance=True)
     documents.list_documents.return_value = DocumentListPage(items=(make_entry(),))
-    processing.get_latest_for_versions.return_value = ()
     application.dependency_overrides[get_list_documents_service] = lambda: cast(
         ListDocumentsService, documents
-    )
-    application.dependency_overrides[get_processing_run_service] = lambda: cast(
-        GetProcessingRunService, processing
     )
     application.dependency_overrides[get_workspace_context] = lambda: CONTEXT
 
     with TestClient(application) as client:
-        yield client, documents, processing
+        yield client, documents
 
 
 def test_document_catalog_composes_safe_status_and_current_original_link(
-    catalog_client: tuple[TestClient, MagicMock, MagicMock],
+    catalog_client: tuple[TestClient, MagicMock],
 ) -> None:
-    client, documents, processing = catalog_client
+    client, documents = catalog_client
     entry = make_entry()
-    run = create_captured_processing_run(
-        context=CONTEXT,
+    run = DocumentProcessingSnapshot(
         document_version_id=entry.document_version_id,
         processing_run_id=UUID(int=5),
-        created_at=CREATED_AT,
+        state=ProcessingState.CAPTURED,
     )
-    processing.get_latest_for_versions.return_value = (run,)
+    documents.list_documents.return_value = DocumentListPage(
+        items=(entry.model_copy(update={"processing": run}),)
+    )
 
-    response = client.get("/api/v1/documents")
+    response = client.get(
+        "/api/v1/documents",
+        params={"media_type": "application/pdf", "processing_state": "CAPTURED"},
+    )
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "private, no-store"
@@ -104,7 +99,7 @@ def test_document_catalog_composes_safe_status_and_current_original_link(
             {
                 **entry.model_dump(mode="json"),
                 "processing": {
-                    "processing_run_id": str(run.id),
+                    "processing_run_id": str(run.processing_run_id),
                     "document_version_id": str(entry.document_version_id),
                     "state": "CAPTURED",
                     "error_summary": None,
@@ -117,18 +112,20 @@ def test_document_catalog_composes_safe_status_and_current_original_link(
         ],
         "next_cursor": None,
     }
-    documents.list_documents.assert_called_once_with(CONTEXT, DocumentListQuery())
-    processing.get_latest_for_versions.assert_called_once_with(
-        CONTEXT, ProcessingStatusQuery(document_version_ids=(entry.document_version_id,))
+    documents.list_documents.assert_called_once_with(
+        CONTEXT,
+        DocumentListQuery(
+            media_type=OriginalMediaType.PDF, processing_state=ProcessingState.CAPTURED
+        ),
     )
     for private_field in ("workspace_id", "storage_key", "checksum_sha256", "parser_version"):
         assert private_field not in response.text
 
 
 def test_document_catalog_preserves_missing_status_and_maps_cursor_to_utc(
-    catalog_client: tuple[TestClient, MagicMock, MagicMock],
+    catalog_client: tuple[TestClient, MagicMock],
 ) -> None:
-    client, documents, _ = catalog_client
+    client, documents = catalog_client
     entry = make_entry()
     cursor = DocumentListCursor(created_at=CREATED_AT, document_id=entry.document_id)
     documents.list_documents.return_value = DocumentListPage(items=(entry,), next_cursor=cursor)
@@ -162,12 +159,14 @@ def test_document_catalog_preserves_missing_status_and_maps_cursor_to_utc(
         "?after_created_at=invalid&after_document_id=invalid",
         f"?workspace_id={UUID(int=99)}",
         "?unexpected=private-value",
+        "?media_type=text/html",
+        "?processing_state=ACTIVE",
     ],
 )
 def test_document_catalog_rejects_invalid_or_client_scoped_queries_before_services(
-    catalog_client: tuple[TestClient, MagicMock, MagicMock], query_string: str
+    catalog_client: tuple[TestClient, MagicMock], query_string: str
 ) -> None:
-    client, documents, processing = catalog_client
+    client, documents = catalog_client
 
     response = client.get(f"/api/v1/documents{query_string}")
 
@@ -175,18 +174,13 @@ def test_document_catalog_rejects_invalid_or_client_scoped_queries_before_servic
     assert response.json()["error"]["code"] == "INVALID_REQUEST"
     assert "private-value" not in response.text
     documents.list_documents.assert_not_called()
-    processing.get_latest_for_versions.assert_not_called()
 
 
-@pytest.mark.parametrize("fails_in_processing", [False, True])
 def test_document_catalog_hides_database_details_without_partial_success(
-    catalog_client: tuple[TestClient, MagicMock, MagicMock], fails_in_processing: bool
+    catalog_client: tuple[TestClient, MagicMock],
 ) -> None:
-    client, documents, processing = catalog_client
-    failing_method = (
-        processing.get_latest_for_versions if fails_in_processing else documents.list_documents
-    )
-    failing_method.side_effect = SQLAlchemyError("private database detail")
+    client, documents = catalog_client
+    documents.list_documents.side_effect = SQLAlchemyError("private database detail")
 
     response = client.get("/api/v1/documents")
 
@@ -198,15 +192,13 @@ def test_document_catalog_hides_database_details_without_partial_success(
 
 
 def test_document_catalog_empty_page_returns_empty_items(
-    catalog_client: tuple[TestClient, MagicMock, MagicMock],
+    catalog_client: tuple[TestClient, MagicMock],
 ) -> None:
-    client, documents, processing = catalog_client
+    client, documents = catalog_client
     documents.list_documents.return_value = DocumentListPage(items=())
 
     response = client.get("/api/v1/documents")
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "next_cursor": None}
-    processing.get_latest_for_versions.assert_called_once_with(
-        CONTEXT, ProcessingStatusQuery(document_version_ids=())
-    )
+    documents.list_documents.assert_called_once_with(CONTEXT, DocumentListQuery())

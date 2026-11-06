@@ -77,7 +77,7 @@ export interface paths {
         };
         /**
          * List Documents
-         * @description Compose current metadata and latest status through scoped application services.
+         * @description Return current metadata and processing status from the same scoped catalog page.
          */
         readonly get: operations["list_documents_api_v1_documents_get"];
         readonly put?: never;
@@ -1399,6 +1399,8 @@ export interface operations {
                 readonly published_to?: string | null;
                 readonly page_size?: number;
                 readonly company_id?: string | null;
+                readonly media_type?: components["schemas"]["OriginalMediaType"] | null;
+                readonly processing_state?: components["schemas"]["ProcessingState"] | "NO_STATUS" | null;
                 readonly after_created_at?: string | null;
                 readonly after_document_id?: string | null;
             };

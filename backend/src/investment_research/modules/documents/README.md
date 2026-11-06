@@ -121,31 +121,19 @@ on a read-only request.
 ```mermaid
 flowchart LR
     INPUT[Trusted WorkspaceContext and DocumentListQuery] --> SERVICE[ListDocumentsService]
-    SERVICE --> READ[DocumentReadUnitOfWork]
-    READ --> REPOSITORY[DocumentRepository.list_current_documents]
-    REPOSITORY --> JOIN[Active document and its current version and original metadata]
-    JOIN --> ORDER[Creation time and document UUID descending]
+    SERVICE --> REPOSITORY[DocumentCatalogReader.list_current_documents]
+    REPOSITORY --> JOIN[Active document, current version, original and latest processing run]
+    JOIN --> FILTER[Company, publication date, format and processing status]
+    FILTER --> ORDER[Creation time and document UUID descending]
     ORDER --> BOUND[Page size plus one lookahead row]
     BOUND --> PAGE[DocumentListPage and optional next cursor]
 ```
 
 The owner approved a small read-only document-selection follow-up ahead of the broader M3 archive
-work. `GET /api/v1/documents` now composes this module's metadata page with Processing's bounded
-latest-run status service. The website consumes this contract for saved-document listing,
+work. `GET /api/v1/documents` returns current metadata and latest processing status from one
+scoped query. The website consumes this contract for saved-document listing,
 independent original views, and explicit multi-source research selection; its UI flow is documented
 in the [archive feature guide](../../../../../frontend/src/features/archive/README.md).
-
-```mermaid
-flowchart LR
-    API[GET /api/v1/documents] --> DOCUMENTS[ListDocumentsService]
-    DOCUMENTS --> PAGE[Scoped current metadata page]
-    PAGE --> VERSIONS[At most 100 current version IDs]
-    VERSIONS --> PROCESSING[GetProcessingRunService.get_latest_for_versions]
-    PROCESSING --> STATUS[Latest scoped run per version]
-    PAGE --> RESPONSE[DocumentCatalogPage]
-    STATUS --> RESPONSE
-    RESPONSE --> ORIGINAL[Authorized original route per entry]
-```
 
 `DocumentListQuery` defaults to 20 entries and accepts 1–100. Its optional `after` cursor contains
 the last returned document's timezone-aware creation time and UUID. The next query uses an
@@ -160,8 +148,10 @@ Unknown source times stay null. Storage keys, checksums, original bytes, and pro
 selected or exposed. Listing original metadata does not replace integrity and eligibility checks
 when the original is subsequently opened.
 
-The service closes its read session before returning and performs no writes, storage access,
-processing-table reads, or paid-provider calls. The existing schema is unchanged. Unit tests cover
+The catalog reader closes its read session before returning. It uses the same latest run for
+status filtering and the returned status. `media_type` matches the original format. The
+`processing_state` filter accepts a canonical state or `NO_STATUS` for versions without a run.
+The read requires no schema changes, storage access, writes, or paid-provider calls. Unit tests cover
 query bounds, field allowlists, SQL scope and ordering, and read-session cleanup; PostgreSQL tests
 cover workspace isolation, equal-time pagination with concurrent newer imports, missing originals,
 and current-version selection. Broader M3 browsing and lifecycle gates remain separate.

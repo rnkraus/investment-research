@@ -19,7 +19,7 @@ from investment_research.modules.documents.domain import (
     OriginalMediaType,
 )
 from investment_research.modules.documents.publication import PublicationDateBounds
-from investment_research.modules.processing.domain import ProcessingState
+from investment_research.modules.processing.domain import ProcessingState, SafeErrorSummary
 
 OriginalFilename = Annotated[
     str,
@@ -99,12 +99,26 @@ class DocumentListCursor(ImmutableContract):
         return value.astimezone(UTC)
 
 
+CatalogProcessingState = ProcessingState | Literal["NO_STATUS"]
+
+
 class DocumentListQuery(ImmutableContract, PublicationDateBounds):
     """Bound one read page without accepting a client-controlled workspace."""
 
     page_size: int = Field(default=20, ge=1, le=100, strict=True)
     after: DocumentListCursor | None = None
     company_id: UUID | None = None
+    media_type: OriginalMediaType | None = None
+    processing_state: CatalogProcessingState | None = None
+
+
+class DocumentProcessingSnapshot(ImmutableContract):
+    """Display metadata from the current version's latest processing run."""
+
+    processing_run_id: UUID
+    document_version_id: UUID
+    state: ProcessingState
+    error_summary: SafeErrorSummary | None = None
 
 
 class DocumentListEntry(CaptureMetadata):
@@ -116,6 +130,7 @@ class DocumentListEntry(CaptureMetadata):
     byte_size: int = Field(gt=0)
     created_at: AwareDatetime
     captured_at: AwareDatetime
+    processing: DocumentProcessingSnapshot | None = None
 
     @field_validator("created_at", "captured_at")
     @classmethod

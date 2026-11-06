@@ -16,17 +16,19 @@ from pydantic import (
 
 from investment_research.modules.documents.contracts import (
     MAX_PASTED_TEXT_CHARACTERS,
+    CatalogProcessingState,
     DocumentListCursor,
     DocumentListEntry,
+    DocumentProcessingSnapshot,
 )
 from investment_research.modules.documents.deletion_contracts import (
     DOCUMENT_DELETION_LIMIT,
     DeleteDocumentsCommand,
     DocumentDeletionState,
 )
+from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.evidence.domain import ValidationRule
-from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import (
     AnswerGenerationSource,
     ResearchModel,
@@ -108,12 +110,9 @@ class DocumentAccepted(StrictContract):
     processing_status_url: str
 
 
-class ProcessingRunResult(StrictContract):
+class ProcessingRunResult(DocumentProcessingSnapshot):
     """Safe processing status visible to the owning workspace."""
 
-    processing_run_id: UUID
-    document_version_id: UUID
-    state: ProcessingState
     error_summary: SafeMessage | None = None
 
 
@@ -122,6 +121,8 @@ class DocumentCatalogQuery(StrictContract, PublicationDateBounds):
 
     page_size: int = Field(default=20, ge=1, le=100)
     company_id: UUID | None = None
+    media_type: OriginalMediaType | None = None
+    processing_state: CatalogProcessingState | None = None
     after_created_at: AwareDatetime | None = None
     after_document_id: UUID | None = None
 
