@@ -35,6 +35,7 @@ catalog after capture and observed processing-state transitions.
 On desktop, a collapsible document sidebar sits beside the question and answer area. On narrow
 screens, the areas stack and the document toggle remains available. Hiding documents expands the
 research area without remounting research, losing selection, or fetching another catalog page.
+On narrow screens, hiding the list scrolls to the question area.
 Search scope and the selected count stay above the question even when documents are hidden.
 The **Company filter** searches companies by name or ticker. A selected company scopes catalog
 pages and new research requests to its assigned documents. Explicit document selections further
