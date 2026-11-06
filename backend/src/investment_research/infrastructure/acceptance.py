@@ -25,6 +25,7 @@ M1_ACCEPTANCE_GENERATION_PROFILE = AnswerGenerationProfile(
     prompt_version="deterministic-m1-acceptance-prompt-v1",
 )
 M1_ACCEPTANCE_SUPPORT_CONFIG_VERSION = "deterministic-m1-acceptance-support-v1"
+M1_ARCHIVE_KEYWORD_QUERY = "transformers"
 M1_TEXT_FIXTURE_ANSWER_CASE = FixtureAnswerCase(
     question="What is mainly holding back Northstar's rollout to new clients?",
     statement=(
@@ -39,11 +40,17 @@ M1_TEXT_FIXTURE_ANSWER_CASE = FixtureAnswerCase(
 
 
 def create_m1_acceptance_embedding_provider() -> DeterministicRuleEmbeddingProvider:
-    """Return the frozen semantic alias plus deterministic unrelated-input fallbacks."""
+    """Return the frozen query aliases plus deterministic unrelated-input fallbacks."""
 
     return DeterministicRuleEmbeddingProvider(
         embedding_config_version=M1_PROCESSING_PROFILE.embedding_config_version,
         rules=(
+            DeterministicEmbeddingRule(
+                purpose=EmbeddingPurpose.QUERY,
+                text=M1_ARCHIVE_KEYWORD_QUERY,
+                match=DeterministicTextMatch.EXACT,
+                dimension=0,
+            ),
             DeterministicEmbeddingRule(
                 purpose=EmbeddingPurpose.QUERY,
                 text=M1_TEXT_FIXTURE_ANSWER_CASE.question,

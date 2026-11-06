@@ -14,11 +14,15 @@ from investment_research.api.contracts import (
     EvidenceSpanResult,
     ProcessingRunResult,
 )
-from investment_research.infrastructure.acceptance import M1_TEXT_FIXTURE_ANSWER_CASE
+from investment_research.infrastructure.acceptance import (
+    M1_ARCHIVE_KEYWORD_QUERY,
+    M1_TEXT_FIXTURE_ANSWER_CASE,
+)
 from investment_research.infrastructure.generation.deterministic import (
     M0_0_FIXTURE_ANSWER_CASE,
     M0_0_INSUFFICIENT_MESSAGE,
 )
+from investment_research.modules.search.archive import ArchiveSearchResult
 from tests.acceptance.research_stream import parse_answer_events
 
 FIXTURE_PDF = Path("/verification-fixture.pdf")
@@ -34,6 +38,10 @@ PROMPT_INJECTION_QUESTION = (
 )
 PROCESSING_TIMEOUT_SECONDS = 90.0
 POLL_INTERVAL_SECONDS = 0.25
+ARCHIVE_SEARCH_CASES = (
+    ("keyword", M1_ARCHIVE_KEYWORD_QUERY, 1),
+    ("paraphrase", M1_TEXT_FIXTURE_ANSWER_CASE.question, None),
+)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get(RUNTIME_ACCEPTANCE_ENVIRONMENT) != "1",
@@ -172,6 +180,51 @@ def assert_insufficient(
     assert events[0]["data"]["message"] == M0_0_INSUFFICIENT_MESSAGE
 
 
+def assert_archive_search_comparison(
+    client: httpx2.Client,
+    capture: DocumentAccepted,
+) -> None:
+    """Compare identical scoped requests against one predeclared fixture passage."""
+
+    publication_day = EXPECTED_TEXT_PUBLICATION_TIME[:10]
+    for case, query, expected_keyword_rank in ARCHIVE_SEARCH_CASES:
+        for mode, expected_rank in (("keyword", expected_keyword_rank), ("semantic", 1)):
+            started = time.perf_counter()
+            response = client.post(
+                "/api/v1/archive-search",
+                json={
+                    "query": query,
+                    "mode": mode,
+                    "published_from": publication_day,
+                    "published_to": publication_day,
+                },
+            )
+            elapsed_ms = (time.perf_counter() - started) * 1_000
+            assert response.status_code == 200
+            result = ArchiveSearchResult.model_validate(response.json())
+            assert all(
+                hit.document_id == capture.document_id
+                and hit.document_version_id == capture.document_version_id
+                for hit in result.items
+            )
+            observed_rank = next(
+                (
+                    rank
+                    for rank, hit in enumerate(result.items, start=1)
+                    if M1_TEXT_FIXTURE_ANSWER_CASE.evidence_text in hit.passage
+                    and hit.source_locator_kind == "TEXT_PASSAGE"
+                ),
+                None,
+            )
+            assert observed_rank == expected_rank, (case, mode)
+            print(
+                f"Observed archive search: case={case} mode={mode} "
+                f"rank={observed_rank if observed_rank is not None else 'miss'} "
+                f"elapsed_ms={elapsed_ms:.2f}",
+                flush=True,
+            )
+
+
 def test_complete_m1_runtime_journey_is_searchable_and_evidence_grounded() -> None:
     """Prove both M1 media paths plus semantic retrieval and safe insufficiency."""
 
@@ -215,6 +268,7 @@ def test_complete_m1_runtime_journey_is_searchable_and_evidence_grounded() -> No
 
         assert_searchable(client, pdf_capture, label="PDF")
         assert_searchable(client, text_capture, label="text")
+        assert_archive_search_comparison(client, text_capture)
 
         pdf_evidence_span_id, pdf_answer_seconds = assert_answer_and_open_evidence(
             client,
