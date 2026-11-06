@@ -234,6 +234,156 @@
         "title": "AnswerStatementEvent",
         "type": "object"
       },
+      "ArchiveSearchHit": {
+        "additionalProperties": false,
+        "description": "A passage preview and the identifiers needed to open its current original.",
+        "properties": {
+          "chunk_id": {
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "passage": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Passage",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "source_locator_kind": {
+            "$ref": "#/components/schemas/SourceLocatorKind"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "document_id",
+          "document_version_id",
+          "title",
+          "published_at",
+          "source_locator_kind",
+          "page_number",
+          "passage"
+        ],
+        "title": "ArchiveSearchHit",
+        "type": "object"
+      },
+      "ArchiveSearchInput": {
+        "additionalProperties": false,
+        "description": "One lexical query with optional company and publication filters.",
+        "properties": {
+          "company_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Id"
+          },
+          "published_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published From"
+          },
+          "published_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published To"
+          },
+          "query": {
+            "maxLength": 300,
+            "minLength": 1,
+            "pattern": "^[^\\x00]+$",
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "ArchiveSearchInput",
+        "type": "object"
+      },
+      "ArchiveSearchResult": {
+        "additionalProperties": false,
+        "description": "A bounded ranked result set with an indication that matches remain.",
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveSearchHit"
+            },
+            "maxItems": 20,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "title": "ArchiveSearchResult",
+        "type": "object"
+      },
       "Body_capture_document_api_v1_documents_post": {
         "properties": {
           "available_at": {
@@ -1733,6 +1883,68 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/archive-search": {
+      "post": {
+        "description": "Return lexical passage matches without requesting an AI answer.",
+        "operationId": "search_archive_api_v1_archive_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveSearchInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveSearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Search Archive",
+        "tags": [
+          "archive-search"
+        ]
+      }
+    },
     "/api/v1/companies": {
       "get": {
         "description": "List one scoped page and translate an untrusted continuation into internal contracts.",

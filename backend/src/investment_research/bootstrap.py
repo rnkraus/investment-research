@@ -128,6 +128,7 @@ from investment_research.infrastructure.search.pinecone import (
     create_pinecone_dense_index_writer,
     create_pinecone_dense_retriever,
 )
+from investment_research.infrastructure.search.postgresql import PostgresArchiveSearchReader
 from investment_research.modules.companies.application import CompanyService
 from investment_research.modules.delivery.application import DrainOutboxService
 from investment_research.modules.delivery.dispatch import DispatchCapturedProcessingService
@@ -197,6 +198,7 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.ports import AnswerGenerator
+from investment_research.modules.search.archive import SearchArchiveService
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
     DenseRetrievalProfile,
@@ -390,6 +392,7 @@ class ApiContainer:
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
     list_documents_service: ListDocumentsService
+    search_archive_service: SearchArchiveService
     company_service: CompanyService
     document_company_service: DocumentCompanyService
     submit_document_deletion_service: SubmitDocumentDeletionService
@@ -964,6 +967,10 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         ),
         list_documents_service=ListDocumentsService(
             catalog=PostgresDocumentCatalogReader(database.session_factory),
+        ),
+        search_archive_service=SearchArchiveService(
+            reader=PostgresArchiveSearchReader(database.session_factory),
+            lexical_config_version=processing_profile.lexical_config_version,
         ),
         submit_document_deletion_service=SubmitDocumentDeletionService(
             request_service=RequestDocumentDeletionService(

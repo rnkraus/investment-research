@@ -7,6 +7,7 @@ This module owns reproducible retrieval records and ranked candidates from eligi
 | File             | Responsibility                                                                 |
 | ---------------- | ------------------------------------------------------------------------------ |
 | `application.py` | Normalizes raw questions and builds bounded lexical-search queries.            |
+| `archive.py` | Defines and runs read-only lexical passage discovery. |
 | `contracts.py`   | Defines immutable lexical and provider-neutral retrieval boundary values.      |
 | `domain.py`      | Defines retrieval runs, filter snapshots, candidates, origins, and invariants. |
 | `indexing.py`    | Orchestrates bounded embedding, deterministic writes, and vector readiness.    |
@@ -31,6 +32,12 @@ flowchart LR
 The arrows between modules are identifier-based contracts and database relationships. Search does not import another module's persistence implementation. `research_request_id` connects a run to the initiating request, while `chunk_id` connects a candidate to canonical retrieval content.
 
 ## Lexical query contract
+
+The archive UI uses `POST /api/v1/archive-search` for a separate read-only search.
+It applies the configured lexical profile and canonical workspace, active-version,
+company, and publication filters. PostgreSQL ranks keywords and quoted phrases. The
+endpoint returns up to 20 passage previews with original identifiers and PDF pages.
+The request creates no research records and makes no provider calls.
 
 The application retains the user's raw question on `ResearchRequest` and `RetrievalRun`, while
 `normalize_lexical_query` derives a deterministic search-only form. It applies Unicode NFKC

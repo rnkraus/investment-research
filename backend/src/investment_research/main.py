@@ -14,6 +14,7 @@ from investment_research.api.errors import (
 )
 from investment_research.api.middleware import RequestBodyLimitMiddleware, RequestLoggingMiddleware
 from investment_research.api.openapi import install_openapi
+from investment_research.api.routes.archive_search import router as archive_search_router
 from investment_research.api.routes.companies import router as companies_router
 from investment_research.api.routes.document_companies import router as document_companies_router
 from investment_research.api.routes.document_deletions import router as document_deletions_router
@@ -54,6 +55,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         RequestValidationError,
         request_validation_error_handler,
     )
+    application.include_router(archive_search_router)
     application.include_router(companies_router)
     application.include_router(document_companies_router)
     application.include_router(documents_router)

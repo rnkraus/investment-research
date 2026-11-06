@@ -27,6 +27,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
     assert set(schema["paths"]) == {
         "/health",
         "/ready",
+        "/api/v1/archive-search",
         "/api/v1/companies",
         "/api/v1/companies/{company_id}",
         "/api/v1/companies/{company_id}/ticker",
