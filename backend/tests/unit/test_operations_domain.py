@@ -80,7 +80,14 @@ def test_started_operation_is_content_free_and_normalizes_safe_values() -> None:
     }.isdisjoint(operation.model_fields_set)
 
 
-@pytest.mark.parametrize("kind", list(ProviderOperationKind))
+@pytest.mark.parametrize(
+    "kind",
+    [
+        kind
+        for kind in ProviderOperationKind
+        if kind is not ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING
+    ],
+)
 def test_deleted_owner_preserves_accounting_without_source_relationships(
     kind: ProviderOperationKind,
 ) -> None:
@@ -91,6 +98,36 @@ def test_deleted_owner_preserves_accounting_without_source_relationships(
     assert operation.research_request_id is None
     assert operation.processing_run_id is None
     assert operation.reserved_cost_micro_usd == 20
+
+
+def test_archive_query_embedding_accepts_workspace_only_ownership() -> None:
+    operation = ProviderOperation.model_validate(
+        operation_values(
+            operation=ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING,
+            research_request_id=None,
+        )
+    )
+    assert operation.workspace_id == WORKSPACE_ID
+    assert operation.research_request_id is None
+    assert operation.processing_run_id is None
+    assert not operation.owner_deleted
+
+
+@pytest.mark.parametrize(
+    "owner",
+    [
+        {"research_request_id": RESEARCH_REQUEST_ID},
+        {"processing_run_id": PROCESSING_RUN_ID},
+        {"owner_deleted": True},
+    ],
+)
+def test_archive_query_embedding_rejects_other_owners(owner: dict[str, object]) -> None:
+    values = operation_values(
+        operation=ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING,
+        research_request_id=None,
+    )
+    with pytest.raises(ValidationError, match="must be owned only by its workspace"):
+        ProviderOperation.model_validate(values | owner)
 
 
 @pytest.mark.parametrize("owner", ["research_request_id", "processing_run_id"])

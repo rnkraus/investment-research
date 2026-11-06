@@ -47,8 +47,11 @@ flowchart LR
     FAILURE --> BUDGET
 ```
 
-Each new operation belongs to exactly one research request or processing run. The repository requires a
-`WorkspaceContext`, and PostgreSQL composite foreign keys reject cross-workspace ownership even if
+Most operations belong to exactly one research request or processing run. An
+`ARCHIVE_QUERY_EMBEDDING` operation belongs directly to its workspace and has no request or run
+foreign key. It uses the same combined monthly budget and carries only a correlation identifier
+and content-free accounting metadata. The repository requires a
+`WorkspaceContext`, and PostgreSQL composite foreign keys reject cross-workspace relationships even if
 application code is wrong. Repositories participate in the caller's transaction and never commit
 independently. A workspace-scoped PostgreSQL transaction lock makes the combined monthly check and
 reservation safe under concurrency without blocking unrelated workspaces.
