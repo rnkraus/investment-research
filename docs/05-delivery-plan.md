@@ -430,6 +430,11 @@ These list filters combine with company and publication filters before paginatio
 status comes from the same read as the filter. Research scope still uses company, dates, and any
 explicit document selection.
 
+**Lexical archive search block.** The archive can return ranked passages directly for keywords
+and quoted phrases. Company and publication filters apply. Results link to the original and
+open PDFs at the matched physical page. Discovery uses PostgreSQL without creating research
+requests or calling model providers.
+
 ### Build
 
 - Document list, detail, version, processing-status, and original-document views.

@@ -15,9 +15,11 @@ type OriginalViewerState =
 export function OriginalViewer({
   documentId,
   documentVersionId,
+  page,
 }: {
   readonly documentId: string;
   readonly documentVersionId: string;
+  readonly page?: number;
 }) {
   const [state, setState] = useState<OriginalViewerState>({
     status: "LOADING",
@@ -41,7 +43,10 @@ export function OriginalViewer({
         }
         if (original.kind === "PDF") {
           objectUrl = URL.createObjectURL(original.content);
-          setState({ status: "PDF", url: objectUrl });
+          setState({
+            status: "PDF",
+            url: page === undefined ? objectUrl : `${objectUrl}#page=${page}`,
+          });
         } else {
           setState({ status: "TEXT", text: original.content });
         }
@@ -59,7 +64,7 @@ export function OriginalViewer({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [documentId, documentVersionId]);
+  }, [documentId, documentVersionId, page]);
 
   return (
     <main className="min-h-screen px-5 py-6 sm:px-8 lg:px-12">

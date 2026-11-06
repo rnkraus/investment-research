@@ -15,6 +15,8 @@ export type DocumentAccepted = components["schemas"]["DocumentAccepted"];
 export type DocumentCatalogEntry =
   components["schemas"]["DocumentCatalogEntry"];
 export type DocumentCatalogPage = components["schemas"]["DocumentCatalogPage"];
+export type ArchiveSearchInput = components["schemas"]["ArchiveSearchInput"];
+export type ArchiveSearchResult = components["schemas"]["ArchiveSearchResult"];
 export type DocumentListCursor = components["schemas"]["DocumentListCursor"];
 export type DocumentDeletionInput =
   components["schemas"]["DocumentDeletionInput"];
@@ -153,6 +155,31 @@ function isUuid(value: unknown): value is string {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+function isArchiveSearchResult(value: unknown): value is ArchiveSearchResult {
+  return (
+    isRecord(value) &&
+    typeof value.has_more === "boolean" &&
+    Array.isArray(value.items) &&
+    value.items.length <= 20 &&
+    value.items.every(
+      (item: unknown) =>
+        isRecord(item) &&
+        isUuid(item.chunk_id) &&
+        isUuid(item.document_id) &&
+        isUuid(item.document_version_id) &&
+        isNonEmptyString(item.title) &&
+        isNonEmptyString(item.passage) &&
+        (item.published_at === null || isTimestamp(item.published_at)) &&
+        ((item.source_locator_kind === "PDF_PAGE" &&
+          typeof item.page_number === "number" &&
+          Number.isSafeInteger(item.page_number) &&
+          item.page_number > 0) ||
+          (item.source_locator_kind === "TEXT_PASSAGE" &&
+            item.page_number === null)),
+    )
+  );
 }
 
 function isResearchModel(value: unknown): value is ResearchModel {
@@ -967,6 +994,24 @@ export function createApiClient(
         throw new ApiProtocolError();
       }
       return result;
+    },
+
+    searchArchive(
+      input: ArchiveSearchInput,
+      signal?: AbortSignal,
+    ): Promise<ArchiveSearchResult> {
+      return requestJson(
+        fetchImplementation,
+        "/api/v1/archive-search",
+        isArchiveSearchResult,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+          signal,
+          cache: "no-store",
+        },
+      );
     },
 
     async listDocuments(
