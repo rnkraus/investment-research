@@ -198,7 +198,10 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.ports import AnswerGenerator
-from investment_research.modules.search.archive import SearchArchiveService
+from investment_research.modules.search.archive import (
+    ArchiveSemanticRetrieval,
+    SearchArchiveService,
+)
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
     DenseRetrievalProfile,
@@ -214,6 +217,7 @@ from investment_research.modules.search.ports import (
     DenseIndexWriter,
     EmbeddingProvider,
 )
+from investment_research.modules.search.query_embedding import AccountedQueryEmbedding
 from investment_research.settings import (
     ApiSettings,
     DatabaseSettings,
@@ -971,6 +975,19 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         search_archive_service=SearchArchiveService(
             reader=PostgresArchiveSearchReader(database.session_factory),
             lexical_config_version=processing_profile.lexical_config_version,
+            semantic=(
+                ArchiveSemanticRetrieval(
+                    embedding=AccountedQueryEmbedding(
+                        provider=m1_query_retrieval.embedding_provider,
+                        executor=m1_query_retrieval.provider_operation_executor,
+                        accounting=m1_query_retrieval.embedding_accounting,
+                    ),
+                    retriever=m1_query_retrieval.dense_retriever,
+                    profile=m1_query_retrieval.dense_profile,
+                )
+                if m1_query_retrieval is not None
+                else None
+            ),
         ),
         submit_document_deletion_service=SubmitDocumentDeletionService(
             request_service=RequestDocumentDeletionService(

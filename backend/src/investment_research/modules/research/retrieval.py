@@ -10,14 +10,7 @@ from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
     ProviderBudgetExceededError,
-    ProviderCostPolicy,
-    ProviderOperationAttempt,
     ProviderUsageExceededReservationError,
-)
-from investment_research.modules.operations.domain import (
-    ProviderOperationErrorCode,
-    ProviderOperationKind,
-    ProviderUsage,
 )
 from investment_research.modules.research.contracts import (
     CanonicalCandidateSource,
@@ -29,11 +22,7 @@ from investment_research.modules.research.domain import ResearchRequest, Tempora
 from investment_research.modules.research.errors import ResearchProviderUnavailableError
 from investment_research.modules.research.ports import ResearchRetrievalUnitOfWorkFactory
 from investment_research.modules.research.reranking import AccountedRerankingService
-from investment_research.modules.search.application import (
-    EmbeddingResponseContractError,
-    build_lexical_search_query,
-    validate_embedding_response,
-)
+from investment_research.modules.search.application import build_lexical_search_query
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
     M1_PROVIDER_MAX_ATTEMPTS,
@@ -41,9 +30,6 @@ from investment_research.modules.search.contracts import (
     DenseQualificationRequest,
     DenseRetrievalProfile,
     DenseRetrievalQuery,
-    EmbeddingInput,
-    EmbeddingPurpose,
-    EmbeddingRequest,
     LexicalSearchHit,
     LexicalSearchProfile,
     LexicalSearchQuery,
@@ -64,10 +50,13 @@ from investment_research.modules.search.fusion_contracts import RrfSelectionProf
 from investment_research.modules.search.ports import (
     DenseRetriever,
     EmbeddingProvider,
-    SearchProviderConfigurationError,
     SearchProviderContractError,
     SearchProviderError,
     SearchProviderTransientError,
+)
+from investment_research.modules.search.query_embedding import AccountedQueryEmbedding
+from investment_research.modules.search.query_embedding import (
+    QueryEmbeddingAccountingProfile as QueryEmbeddingAccountingProfile,
 )
 from investment_research.modules.search.reranking import prepare_rrf_reranking
 from investment_research.modules.search.reranking_contracts import (
@@ -80,15 +69,6 @@ type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
 type Sleeper = Callable[[float], None]
 type CanonicalRetrievalHit = LexicalSearchHit | QualifiedDenseHit
-
-
-@dataclass(frozen=True, slots=True)
-class QueryEmbeddingAccountingProfile:
-    """Provider identity and reviewed unit pricing for M1 query embeddings."""
-
-    provider: str
-    model: str
-    cost_policy: ProviderCostPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,43 +283,19 @@ class RetrieveResearchService:
 
         if progress is not None:
             progress(request.id, "EMBEDDING_QUESTION")
-        embedding_request = EmbeddingRequest(
-            inputs=(
-                EmbeddingInput(
-                    input_id=request.id,
-                    text=request.question,
-                    purpose=EmbeddingPurpose.QUERY,
-                ),
-            ),
-            embedding_config_version=dependencies.dense_profile.embedding_config_version,
-        )
-        embedding_attempt = ProviderOperationAttempt(
-            correlation_id=request.id,
-            research_request_id=request.id,
-            processing_run_id=None,
-            operation=ProviderOperationKind.QUERY_EMBEDDING,
-            provider=dependencies.embedding_accounting.provider,
-            model=dependencies.embedding_accounting.model,
-            configuration_version=dependencies.dense_profile.embedding_config_version,
-            maximum_usage=ProviderUsage(
-                input_units=sum(
-                    len(item.text.encode("utf-8")) for item in embedding_request.inputs
-                ),
-                output_units=0,
-            ),
-            cost_policy=dependencies.embedding_accounting.cost_policy,
+        query_embedding = AccountedQueryEmbedding(
+            provider=dependencies.embedding_provider,
+            executor=dependencies.provider_operation_executor,
+            accounting=dependencies.embedding_accounting,
         )
         try:
             embedding_result = self._call_with_retry(
-                lambda: dependencies.provider_operation_executor.execute(
+                lambda: query_embedding.embed(
                     context,
-                    embedding_attempt,
-                    lambda: validate_embedding_response(
-                        embedding_request,
-                        dependencies.embedding_provider.embed(embedding_request),
-                    ),
-                    lambda result: result.usage,
-                    self._classify_query_embedding_error,
+                    text=request.question,
+                    configuration_version=dependencies.dense_profile.embedding_config_version,
+                    correlation_id=request.id,
+                    research_request_id=request.id,
                 ),
                 dependencies,
             )
@@ -589,18 +545,6 @@ class RetrieveResearchService:
                     raise
                 dependencies.sleeper(dependencies.retry_delay_seconds)
         raise RuntimeError("query provider retry loop terminated without a result")
-
-    @staticmethod
-    def _classify_query_embedding_error(error: Exception) -> ProviderOperationErrorCode:
-        """Map query-embedding failures to content-free canonical categories."""
-
-        if isinstance(error, SearchProviderTransientError):
-            return ProviderOperationErrorCode.UNAVAILABLE
-        if isinstance(error, (SearchProviderContractError, EmbeddingResponseContractError)):
-            return ProviderOperationErrorCode.CONTRACT
-        if isinstance(error, SearchProviderConfigurationError):
-            return ProviderOperationErrorCode.CONFIGURATION
-        return ProviderOperationErrorCode.UNAVAILABLE
 
     def _aware_utc_now(self) -> datetime:
         """Require an aware clock and normalize its instant before any write."""

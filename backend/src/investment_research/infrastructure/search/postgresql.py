@@ -178,7 +178,7 @@ class PostgresLexicalSearch:
 
 
 class PostgresArchiveSearchReader:
-    """Read display metadata in the same statement as lexical eligibility and ranking."""
+    """Read passage metadata together with canonical search eligibility."""
 
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._session_factory = session_factory
@@ -229,6 +229,58 @@ class PostgresArchiveSearchReader:
                 items=items,
                 has_more=len(rows) > ARCHIVE_SEARCH_LIMIT,
             )
+
+    def search_semantic(
+        self, context: WorkspaceContext, request: DenseQualificationRequest
+    ) -> ArchiveSearchResult:
+        if not request.provider_hits:
+            return ArchiveSearchResult(companies=(), documents=(), items=(), has_more=False)
+        statement = (
+            PostgresDenseCandidateQualifier.build_statement(context, request)
+            .add_columns(DocumentVersionRow.title, DocumentVersionRow.published_at)
+            .join(
+                OriginalArtifactRow,
+                and_(
+                    OriginalArtifactRow.workspace_id == DocumentVersionRow.workspace_id,
+                    OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
+                ),
+            )
+        )
+        with self._session_factory() as session:
+            by_chunk_id = {
+                chunk_id: ArchiveSearchHit(
+                    chunk_id=chunk_id,
+                    document_id=document_id,
+                    document_version_id=document_version_id,
+                    title=title,
+                    published_at=published_at,
+                    source_locator_kind=locator,
+                    page_number=page_number,
+                    passage=text[:ARCHIVE_PASSAGE_LIMIT],
+                )
+                for (
+                    chunk_id,
+                    document_id,
+                    document_version_id,
+                    _,
+                    locator,
+                    page_number,
+                    text,
+                    title,
+                    published_at,
+                ) in session.execute(statement).tuples()
+            }
+        items = tuple(
+            by_chunk_id[hit.chunk_id]
+            for hit in request.provider_hits
+            if hit.chunk_id in by_chunk_id
+        )
+        return ArchiveSearchResult(
+            companies=(),
+            documents=(),
+            items=items[:ARCHIVE_SEARCH_LIMIT],
+            has_more=len(items) > ARCHIVE_SEARCH_LIMIT,
+        )
 
     @staticmethod
     def _find_companies(
@@ -314,7 +366,7 @@ class PostgresDenseCandidateQualifier:
 
         if not request.provider_hits:
             return ()
-        rows = self._session.execute(self._build_statement(context, request)).tuples()
+        rows = self._session.execute(self.build_statement(context, request)).tuples()
         canonical_by_chunk_id = {
             chunk_id: (
                 document_id,
@@ -362,7 +414,7 @@ class PostgresDenseCandidateQualifier:
         return tuple(qualified)
 
     @staticmethod
-    def _build_statement(
+    def build_statement(
         context: WorkspaceContext,
         request: DenseQualificationRequest,
     ) -> Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str]]:
