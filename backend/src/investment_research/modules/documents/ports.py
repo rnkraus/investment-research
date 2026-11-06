@@ -81,8 +81,8 @@ class ObjectStorage(Protocol):
         """Remove a newly stored object after its canonical transaction fails."""
 
 
-class DocumentRepository(Protocol):
-    """Persist and retrieve document aggregates within one trusted workspace."""
+class DocumentCatalogReader(Protocol):
+    """Read the workspace catalog, including its latest processing snapshots."""
 
     def list_current_documents(
         self,
@@ -90,6 +90,10 @@ class DocumentRepository(Protocol):
         query: DocumentListQuery,
     ) -> DocumentListPage:
         """Return a bounded metadata page for active current originals in scope."""
+
+
+class DocumentRepository(Protocol):
+    """Persist and retrieve document aggregates within one trusted workspace."""
 
     def add_capture(
         self,

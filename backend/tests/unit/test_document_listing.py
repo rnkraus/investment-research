@@ -1,7 +1,5 @@
 """Deterministic contracts, query, and lifecycle checks for the document catalog."""
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import create_autospec
@@ -12,6 +10,9 @@ from pydantic import ValidationError
 from sqlalchemy import Select
 from sqlalchemy.orm import Session
 
+from investment_research.infrastructure.database.document_catalog import (
+    PostgresDocumentCatalogReader,
+)
 from investment_research.modules.documents.contracts import (
     DocumentListCursor,
     DocumentListEntry,
@@ -20,8 +21,7 @@ from investment_research.modules.documents.contracts import (
 )
 from investment_research.modules.documents.domain import OriginalMediaType
 from investment_research.modules.documents.listing import ListDocumentsService
-from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
-from investment_research.modules.documents.ports import DocumentReadUnitOfWork, DocumentRepository
+from investment_research.modules.documents.ports import DocumentCatalogReader
 from investment_research.modules.identity.domain import WorkspaceContext
 
 CREATED_AT = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -79,6 +79,7 @@ def test_document_list_entry_excludes_private_artifact_metadata() -> None:
         "byte_size",
         "created_at",
         "captured_at",
+        "processing",
     }
     with pytest.raises(ValidationError):
         DocumentListEntry.model_validate({**make_entry(3).model_dump(), "storage_key": "private"})
@@ -89,12 +90,14 @@ def test_document_repository_bounds_the_page_and_only_returns_a_cursor_for_more_
     row_count: int,
 ) -> None:
     session = create_autospec(Session, instance=True)
+    session.__enter__.return_value = session
     entries = tuple(make_entry(identifier) for identifier in (4, 3))[:row_count]
     session.execute.return_value.mappings.return_value.all.return_value = [
-        entry.model_dump() for entry in entries
+        {**entry.model_dump(), "run_id": None, "run_state": None, "run_error": None}
+        for entry in entries
     ]
 
-    page = SqlAlchemyDocumentRepository(session).list_current_documents(
+    page = PostgresDocumentCatalogReader(lambda: session).list_current_documents(
         CONTEXT, DocumentListQuery(page_size=1)
     )
 
@@ -105,14 +108,16 @@ def test_document_repository_bounds_the_page_and_only_returns_a_cursor_for_more_
         else None
     )
     session.commit.assert_not_called()
+    session.__exit__.assert_called_once()
 
 
 def test_document_repository_query_is_scoped_current_and_keyset_ordered() -> None:
     session = create_autospec(Session, instance=True)
+    session.__enter__.return_value = session
     session.execute.return_value.mappings.return_value.all.return_value = []
     cursor = DocumentListCursor(created_at=CREATED_AT, document_id=UUID(int=4))
 
-    SqlAlchemyDocumentRepository(session).list_current_documents(
+    PostgresDocumentCatalogReader(lambda: session).list_current_documents(
         CONTEXT, DocumentListQuery(page_size=5, after=cursor)
     )
 
@@ -135,32 +140,18 @@ def test_document_repository_query_is_scoped_current_and_keyset_ordered() -> Non
 
 
 @pytest.mark.parametrize("fails", [False, True])
-def test_document_listing_service_propagates_scope_and_closes_its_read_session(fails: bool) -> None:
-    repository_mock = create_autospec(DocumentRepository, instance=True)
+def test_document_listing_service_propagates_scope_and_read_failures(fails: bool) -> None:
+    repository_mock = create_autospec(DocumentCatalogReader, instance=True)
     query = DocumentListQuery(page_size=5)
     expected = DocumentListPage(items=(make_entry(3),))
     repository_mock.list_current_documents.return_value = expected
     if fails:
         repository_mock.list_current_documents.side_effect = RuntimeError("synthetic read failure")
-    lifecycle: list[str] = []
-
-    class ReadUnitOfWork:
-        documents = cast(DocumentRepository, repository_mock)
-
-    @contextmanager
-    def open_read() -> Iterator[DocumentReadUnitOfWork]:
-        lifecycle.append("enter")
-        try:
-            yield ReadUnitOfWork()
-        finally:
-            lifecycle.append("exit")
-
-    service = ListDocumentsService(unit_of_work_factory=open_read)
+    service = ListDocumentsService(catalog=cast(DocumentCatalogReader, repository_mock))
     if fails:
         with pytest.raises(RuntimeError, match="synthetic read failure"):
             service.list_documents(CONTEXT, query)
     else:
         assert service.list_documents(CONTEXT, query) == expected
 
-    assert lifecycle == ["enter", "exit"]
     repository_mock.list_current_documents.assert_called_once_with(CONTEXT, query)

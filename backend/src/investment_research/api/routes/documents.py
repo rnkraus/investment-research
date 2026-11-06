@@ -19,12 +19,10 @@ from investment_research.api.contracts import (
     ErrorResponse,
     LanguageCode,
     PastedTextDocumentInput,
-    ProcessingRunResult,
     TrimmedTitle,
 )
 from investment_research.api.dependencies import (
     CaptureDocumentServiceDependency,
-    GetProcessingRunServiceDependency,
     ListDocumentsServiceDependency,
     OpenOriginalServiceDependency,
     WorkspaceContextDependency,
@@ -49,7 +47,6 @@ from investment_research.modules.documents.ports import (
     ObjectAlreadyExistsError,
     ObjectStorageError,
 )
-from investment_research.modules.processing.contracts import ProcessingStatusQuery
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -87,11 +84,10 @@ DocumentMetadataDependency = Annotated[
 def list_documents(
     query: Annotated[DocumentCatalogQuery, Query()],
     service: ListDocumentsServiceDependency,
-    processing_service: GetProcessingRunServiceDependency,
     context: WorkspaceContextDependency,
     response: Response,
 ) -> DocumentCatalogPage:
-    """Compose current metadata and latest status through scoped application services."""
+    """Return current metadata and processing status from the same scoped catalog page."""
 
     cursor = (
         DocumentListCursor(created_at=query.after_created_at, document_id=query.after_document_id)
@@ -107,12 +103,8 @@ def list_documents(
                 company_id=query.company_id,
                 published_from=query.published_from,
                 published_to=query.published_to,
-            ),
-        )
-        runs = processing_service.get_latest_for_versions(
-            context,
-            ProcessingStatusQuery(
-                document_version_ids=tuple(entry.document_version_id for entry in page.items)
+                media_type=query.media_type,
+                processing_state=query.processing_state,
             ),
         )
     except SQLAlchemyError as error:
@@ -122,22 +114,12 @@ def list_documents(
             message="document list could not be read",
         ) from error
 
-    statuses = {
-        run.document_version_id: ProcessingRunResult(
-            processing_run_id=run.id,
-            document_version_id=run.document_version_id,
-            state=run.state,
-            error_summary=run.error_summary,
-        )
-        for run in runs
-    }
     response.headers["cache-control"] = "private, no-store"
     return DocumentCatalogPage(
         items=tuple(
             DocumentCatalogEntry.model_validate(
                 {
                     **entry.model_dump(),
-                    "processing": statuses.get(entry.document_version_id),
                     "original_url": (
                         f"/api/v1/documents/{entry.document_id}"
                         f"/versions/{entry.document_version_id}/original"

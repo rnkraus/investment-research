@@ -2076,7 +2076,7 @@
     },
     "/api/v1/documents": {
       "get": {
-        "description": "Compose current metadata and latest status through scoped application services.",
+        "description": "Return current metadata and processing status from the same scoped catalog page.",
         "operationId": "list_documents_api_v1_documents_get",
         "parameters": [
           {
@@ -2140,6 +2140,42 @@
                 }
               ],
               "title": "Company Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "media_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OriginalMediaType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Media Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "processing_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProcessingState"
+                },
+                {
+                  "const": "NO_STATUS",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Processing State"
             }
           },
           {

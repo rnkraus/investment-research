@@ -125,6 +125,8 @@ def test_document_catalog_exposes_bounded_pagination_without_workspace_input() -
         "company_id",
         "published_from",
         "published_to",
+        "media_type",
+        "processing_state",
     }
     size_schema = next(
         parameter["schema"]

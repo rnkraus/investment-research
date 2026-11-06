@@ -21,6 +21,9 @@ from investment_research.infrastructure.database.company_unit_of_work import (
     create_company_read_unit_of_work_factory,
     create_company_write_unit_of_work_factory,
 )
+from investment_research.infrastructure.database.document_catalog import (
+    PostgresDocumentCatalogReader,
+)
 from investment_research.infrastructure.database.document_companies import (
     create_document_company_service,
 )
@@ -960,9 +963,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             ),
         ),
         list_documents_service=ListDocumentsService(
-            unit_of_work_factory=create_document_read_unit_of_work_factory(
-                database.session_factory
-            ),
+            catalog=PostgresDocumentCatalogReader(database.session_factory),
         ),
         submit_document_deletion_service=SubmitDocumentDeletionService(
             request_service=RequestDocumentDeletionService(

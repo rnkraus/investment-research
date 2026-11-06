@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    ColumnElement,
     Computed,
     DateTime,
     ForeignKeyConstraint,
@@ -448,6 +449,12 @@ class ChunkRow(Base):
         )
 
 
+def latest_processing_run_order() -> tuple[ColumnElement[datetime], ColumnElement[UUID]]:
+    """Choose the same latest run in catalog and batched status reads."""
+
+    return ProcessingRunRow.created_at.desc(), ProcessingRunRow.id.desc()
+
+
 class SqlAlchemyProcessingRepository:
     """Processing repository bound to one caller-owned SQLAlchemy session."""
 
@@ -491,7 +498,7 @@ class SqlAlchemyProcessingRepository:
                 func.row_number()
                 .over(
                     partition_by=ProcessingRunRow.document_version_id,
-                    order_by=(ProcessingRunRow.created_at.desc(), ProcessingRunRow.id.desc()),
+                    order_by=latest_processing_run_order(),
                 )
                 .label("position"),
             )
