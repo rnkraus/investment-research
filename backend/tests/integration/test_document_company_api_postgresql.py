@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from investment_research.api.dependencies import get_workspace_context
-from investment_research.api.middleware import COMPANY_JSON_BODY_LIMIT_BYTES
+from investment_research.api.middleware import PRIVATE_JSON_BODY_LIMIT_BYTES
 from investment_research.main import create_app
 from investment_research.settings import ApiSettings
 from tests.integration.test_document_company_service_postgresql import add_company
@@ -105,7 +105,7 @@ def test_document_company_api_rejects_untrusted_input_and_oversize_bodies(
         assert invalid.headers["cache-control"] == "private, no-store"
         assert client.get(path, params={"workspace_id": workspace_id}).status_code == 422
 
-        body = b" " * (COMPANY_JSON_BODY_LIMIT_BYTES + 1)
+        body = b" " * (PRIVATE_JSON_BODY_LIMIT_BYTES + 1)
         for content in (body, iter((body[:32000], body[32000:]))):
             oversized = client.put(
                 path, content=content, headers={"content-type": "application/json"}

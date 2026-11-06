@@ -20,6 +20,7 @@ from investment_research.modules.evidence.application import ResolveEvidenceSpan
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import GetProcessingRunService
 from investment_research.modules.research.application import AnswerResearchRequestService
+from investment_research.modules.search.archive import SearchArchiveService
 
 
 def get_container(request: Request) -> ApiContainer:
@@ -89,6 +90,15 @@ def get_list_documents_service(container: ContainerDependency) -> ListDocumentsS
 ListDocumentsServiceDependency = Annotated[
     ListDocumentsService,
     Depends(get_list_documents_service),
+]
+
+
+def get_search_archive_service(container: ContainerDependency) -> SearchArchiveService:
+    return container.search_archive_service
+
+
+SearchArchiveServiceDependency = Annotated[
+    SearchArchiveService, Depends(get_search_archive_service)
 ]
 
 

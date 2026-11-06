@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    readonly "/api/v1/archive-search": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Search Archive
+         * @description Return lexical passage matches without requesting an AI answer.
+         */
+        readonly post: operations["search_archive_api_v1_archive_search_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/companies": {
         readonly parameters: {
             readonly query?: never;
@@ -477,6 +497,60 @@ export interface components {
             readonly statement_id: string;
             /** Text */
             readonly text: string;
+        };
+        /**
+         * ArchiveSearchHit
+         * @description A passage preview and the identifiers needed to open its current original.
+         */
+        readonly ArchiveSearchHit: {
+            /**
+             * Chunk Id
+             * Format: uuid
+             */
+            readonly chunk_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+            /**
+             * Document Version Id
+             * Format: uuid
+             */
+            readonly document_version_id: string;
+            /** Page Number */
+            readonly page_number: number | null;
+            /** Passage */
+            readonly passage: string;
+            /** Published At */
+            readonly published_at: string | null;
+            readonly source_locator_kind: components["schemas"]["SourceLocatorKind"];
+            /** Title */
+            readonly title: string;
+        };
+        /**
+         * ArchiveSearchInput
+         * @description One lexical query with optional company and publication filters.
+         */
+        readonly ArchiveSearchInput: {
+            /** Company Id */
+            readonly company_id?: string | null;
+            /** Published From */
+            readonly published_from?: string | null;
+            /** Published To */
+            readonly published_to?: string | null;
+            /** Query */
+            readonly query: string;
+        };
+        /**
+         * ArchiveSearchResult
+         * @description A bounded ranked result set with an indication that matches remain.
+         */
+        readonly ArchiveSearchResult: {
+            /** Has More */
+            readonly has_more: boolean;
+            /** Items */
+            readonly items: readonly components["schemas"]["ArchiveSearchHit"][];
         };
         /** Body_capture_document_api_v1_documents_post */
         readonly Body_capture_document_api_v1_documents_post: {
@@ -1157,6 +1231,57 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    readonly search_archive_api_v1_archive_search_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ArchiveSearchInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ArchiveSearchResult"];
+                };
+            };
+            /** @description Content Too Large */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly list_companies_api_v1_companies_get: {
         readonly parameters: {
             readonly query?: {

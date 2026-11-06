@@ -17,13 +17,13 @@ from investment_research.infrastructure.logging import (
 )
 
 MULTIPART_OVERHEAD_ALLOWANCE_BYTES = 64 * 1024
-COMPANY_JSON_BODY_LIMIT_BYTES = 64 * 1024
+PRIVATE_JSON_BODY_LIMIT_BYTES = 64 * 1024
 REQUEST_ID_HEADER = b"x-request-id"
 
 
-def _company_write_method(path: str) -> str | None:
+def _private_json_method(path: str) -> str | None:
     path = path.rstrip("/")
-    if path == "/api/v1/companies":
+    if path in {"/api/v1/companies", "/api/v1/archive-search"}:
         return "POST"
     if re.fullmatch(r"/api/v1/companies/[^/]+(?:/ticker)?", path):
         return "PATCH"
@@ -106,7 +106,7 @@ class RequestLoggingMiddleware:
                     if name.lower() != REQUEST_ID_HEADER
                 ]
                 headers.append((REQUEST_ID_HEADER, str(request_id).encode("ascii")))
-                if _company_write_method(scope.get("path", "")) is not None:
+                if _private_json_method(scope.get("path", "")) is not None:
                     headers = [
                         (name, value) for name, value in headers if name.lower() != b"cache-control"
                     ]
@@ -176,10 +176,10 @@ class RequestBodyLimitMiddleware:
             )
             return
 
-        company_method = _company_write_method(scope.get("path", ""))
+        private_method = _private_json_method(scope.get("path", ""))
         request_limit = (
-            min(self._max_request_body_bytes, COMPANY_JSON_BODY_LIMIT_BYTES)
-            if company_method is not None and scope.get("method") == company_method
+            min(self._max_request_body_bytes, PRIVATE_JSON_BODY_LIMIT_BYTES)
+            if private_method is not None and scope.get("method") == private_method
             else self._max_request_body_bytes
         )
         if content_length is not None and content_length > request_limit:
@@ -251,8 +251,8 @@ class RequestBodyLimitMiddleware:
             status_code=413,
             code=ErrorCode.PAYLOAD_TOO_LARGE,
             message=(
-                "company request body exceeds the configured size limit"
-                if _company_write_method(scope.get("path", "")) is not None
+                "request body exceeds the configured size limit"
+                if _private_json_method(scope.get("path", "")) is not None
                 else "request body exceeds the configured upload limit"
             ),
         )

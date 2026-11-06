@@ -1,5 +1,6 @@
 """PostgreSQL adapters for canonical lexical retrieval and dense qualification."""
 
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlalchemy import Select, and_, func, select
@@ -9,6 +10,7 @@ from investment_research.modules.documents.domain import DocumentLifecycleState,
 from investment_research.modules.documents.persistence import (
     DocumentRow,
     DocumentVersionRow,
+    OriginalArtifactRow,
     document_has_company,
     publication_date_predicates,
 )
@@ -20,6 +22,7 @@ from investment_research.modules.processing.persistence import (
     ProcessingRunRow,
     StructureBlockRow,
 )
+from investment_research.modules.search.archive import ARCHIVE_PASSAGE_LIMIT, ArchiveSearchHit
 from investment_research.modules.search.contracts import (
     DenseQualificationRequest,
     LexicalSearchHit,
@@ -41,7 +44,7 @@ class PostgresLexicalSearch:
     ) -> tuple[LexicalSearchHit, ...]:
         """Return bounded hits after all canonical eligibility predicates pass."""
 
-        statement = self._build_statement(context, query)
+        statement = self.build_statement(context, query)
         rows = self._session.execute(statement).tuples()
         return tuple(
             LexicalSearchHit(
@@ -67,7 +70,7 @@ class PostgresLexicalSearch:
         )
 
     @staticmethod
-    def _build_statement(
+    def build_statement(
         context: WorkspaceContext,
         query: LexicalSearchQuery,
     ) -> Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str, float]]:
@@ -159,6 +162,53 @@ class PostgresLexicalSearch:
             )
 
         return statement.order_by(raw_score.desc(), ChunkRow.id.asc()).limit(query.candidate_limit)
+
+
+class PostgresArchiveSearchReader:
+    """Read display metadata in the same statement as lexical eligibility and ranking."""
+
+    def __init__(self, session_factory: Callable[[], Session]) -> None:
+        self._session_factory = session_factory
+
+    def search(
+        self, context: WorkspaceContext, query: LexicalSearchQuery
+    ) -> tuple[ArchiveSearchHit, ...]:
+        statement = (
+            PostgresLexicalSearch.build_statement(context, query)
+            .add_columns(DocumentVersionRow.title, DocumentVersionRow.published_at)
+            .join(
+                OriginalArtifactRow,
+                and_(
+                    OriginalArtifactRow.workspace_id == DocumentVersionRow.workspace_id,
+                    OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
+                ),
+            )
+        )
+        with self._session_factory() as session:
+            return tuple(
+                ArchiveSearchHit(
+                    chunk_id=chunk_id,
+                    document_id=document_id,
+                    document_version_id=document_version_id,
+                    title=title,
+                    published_at=published_at,
+                    source_locator_kind=locator,
+                    page_number=page_number,
+                    passage=text[:ARCHIVE_PASSAGE_LIMIT],
+                )
+                for (
+                    chunk_id,
+                    document_id,
+                    document_version_id,
+                    _,
+                    locator,
+                    page_number,
+                    text,
+                    _,
+                    title,
+                    published_at,
+                ) in session.execute(statement).tuples()
+            )
 
 
 class PostgresDenseCandidateQualifier:
