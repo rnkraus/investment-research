@@ -84,6 +84,11 @@ export function ArchiveResearch({
   const [selectionWasReset, setSelectionWasReset] = useState(false);
   const request = useRef<AbortController | null>(null);
 
+  function selectCompany(nextCompany: CompanySummary | null) {
+    setSelection(EMPTY_DOCUMENT_SELECTION);
+    setCompany(nextCompany);
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     request.current?.abort();
@@ -508,10 +513,7 @@ export function ArchiveResearch({
             <CompanyFilter
               company={company}
               disabled={isResearching || isDeleting}
-              onChange={(nextCompany) => {
-                setSelection(EMPTY_DOCUMENT_SELECTION);
-                setCompany(nextCompany);
-              }}
+              onChange={selectCompany}
             />
             <PublicationDateFilter
               applied={publicationDates}
@@ -529,7 +531,8 @@ export function ArchiveResearch({
             <ArchivePassageSearch
               key={`${JSON.stringify(filters)}:${answerResetKey}`}
               filters={filters}
-              disabled={isDeleting}
+              disabled={isResearching || isDeleting}
+              onSelectCompany={selectCompany}
             />
           </details>
           <ResearchWorkflow

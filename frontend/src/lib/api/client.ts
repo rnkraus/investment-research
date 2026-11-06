@@ -157,10 +157,28 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+function isArchiveDocumentHit(
+  value: unknown,
+): value is ArchiveSearchResult["documents"][number] {
+  return (
+    isRecord(value) &&
+    isUuid(value.document_id) &&
+    isUuid(value.document_version_id) &&
+    isNonEmptyString(value.title) &&
+    (value.published_at === null || isTimestamp(value.published_at))
+  );
+}
+
 function isArchiveSearchResult(value: unknown): value is ArchiveSearchResult {
   return (
     isRecord(value) &&
     typeof value.has_more === "boolean" &&
+    Array.isArray(value.companies) &&
+    value.companies.length <= 20 &&
+    value.companies.every(isCompanySummary) &&
+    Array.isArray(value.documents) &&
+    value.documents.length <= 20 &&
+    value.documents.every(isArchiveDocumentHit) &&
     Array.isArray(value.items) &&
     value.items.length <= 20 &&
     value.items.every(

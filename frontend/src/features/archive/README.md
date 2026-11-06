@@ -46,10 +46,11 @@ or clearing the dates clears the explicit document selection.
 company and publication filters before pagination. To research a subset shown by these list
 filters, select the documents explicitly. Changing either list filter clears the selection
 while preserving explicit selection mode.
-**Search archive** finds indexed passages directly. Use keywords or put a phrase in
-quotation marks. Results show the document title, publication date when known, and
-the physical PDF page when available. PDF links open at that page. Company and
-publication filters apply, and the results are separate from generated answers.
+**Search archive** groups exact ticker matches, document title matches, and indexed
+passages. A company result can set the company filter. A title result opens the
+original document. Passage results show their publication date and PDF page when
+available, and PDF links open at that page. Use quotation marks for a text phrase.
+Company and publication filters narrow title and passage results.
 The sidebar shows titles, publication dates, processing status, and original links; other metadata
 and selection help are expandable. It cannot be hidden while deletion confirmation or submission
 locks selection. Permanent deletion controls remain at the top of the sidebar.
