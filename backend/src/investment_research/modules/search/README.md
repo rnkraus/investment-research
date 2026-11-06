@@ -39,6 +39,12 @@ company, and publication filters. PostgreSQL ranks keywords and quoted phrases. 
 endpoint returns up to 20 passage previews with original identifiers and PDF pages.
 The request creates no research records and makes no provider calls.
 
+The response also provides separate `companies` and `documents` groups, each capped at 20.
+Company matches require the entire stored display ticker and are scoped to the selected
+company when present. Document matches use a case-insensitive literal title substring, with
+exact titles first. They require an active current original and respect company and publication
+filters. Publication bounds apply to documents and passages.
+
 The application retains the user's raw question on `ResearchRequest` and `RetrievalRun`, while
 `normalize_lexical_query` derives a deterministic search-only form. It applies Unicode NFKC
 normalization, collapses whitespace, and case-folds text. The normalized value, effective filters,

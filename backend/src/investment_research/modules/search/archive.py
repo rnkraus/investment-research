@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, StringConstraints, field_validator, model_validator
 
+from investment_research.modules.companies.contracts import CompanySummary
 from investment_research.modules.documents.domain import DocumentTitle, SourceLocatorKind
 from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -20,7 +21,7 @@ ARCHIVE_PASSAGE_LIMIT = 4_000
 
 
 class ArchiveSearchInput(ImmutableSearchContract, PublicationDateBounds):
-    """One lexical query with optional company and publication filters."""
+    """One archive query with optional company and publication filters."""
 
     query: Annotated[
         str,
@@ -32,8 +33,18 @@ class ArchiveSearchInput(ImmutableSearchContract, PublicationDateBounds):
 
     @field_validator("query")
     @classmethod
-    def normalize_query(cls, query: str) -> str:
-        return normalize_lexical_query(query)
+    def validate_lexical_query(cls, query: str) -> str:
+        normalize_lexical_query(query)
+        return query
+
+
+class ArchiveDocumentHit(ImmutableSearchContract):
+    """A current document whose title matches the query."""
+
+    document_id: UUID
+    document_version_id: UUID
+    title: DocumentTitle
+    published_at: AwareDatetime | None
 
 
 class ArchiveSearchHit(ImmutableSearchContract):
@@ -58,17 +69,19 @@ class ArchiveSearchHit(ImmutableSearchContract):
 
 
 class ArchiveSearchResult(ImmutableSearchContract):
-    """A bounded ranked result set with an indication that matches remain."""
+    """Bounded result groups. The has_more flag refers to passage matches."""
 
+    companies: tuple[CompanySummary, ...] = Field(max_length=ARCHIVE_SEARCH_LIMIT)
+    documents: tuple[ArchiveDocumentHit, ...] = Field(max_length=ARCHIVE_SEARCH_LIMIT)
     items: tuple[ArchiveSearchHit, ...] = Field(max_length=ARCHIVE_SEARCH_LIMIT)
     has_more: bool
 
 
 class ArchiveSearchReader(Protocol):
     def search(
-        self, context: WorkspaceContext, query: LexicalSearchQuery
-    ) -> tuple[ArchiveSearchHit, ...]:
-        """Return current eligible passages with display metadata in lexical rank order."""
+        self, context: WorkspaceContext, query: LexicalSearchQuery, *, metadata_term: str
+    ) -> ArchiveSearchResult:
+        """Find exact ticker, literal title, and ranked passage matches."""
 
 
 class SearchArchiveService:
@@ -80,7 +93,7 @@ class SearchArchiveService:
 
     def search(self, context: WorkspaceContext, command: ArchiveSearchInput) -> ArchiveSearchResult:
         query = LexicalSearchQuery(
-            normalized_query=command.query,
+            normalized_query=normalize_lexical_query(command.query),
             filters=RetrievalFilters(
                 company_id=command.company_id,
                 published_from=command.published_from,
@@ -89,7 +102,7 @@ class SearchArchiveService:
             lexical_config_version=self._lexical_config_version,
             candidate_limit=ARCHIVE_SEARCH_LIMIT + 1,
         )
-        hits = self._reader.search(context, query)
-        return ArchiveSearchResult(
-            items=hits[:ARCHIVE_SEARCH_LIMIT], has_more=len(hits) > ARCHIVE_SEARCH_LIMIT
-        )
+        term = command.query
+        if term.startswith('"') and term.endswith('"'):
+            term = term[1:-1].strip()
+        return self._reader.search(context, query, metadata_term=term)

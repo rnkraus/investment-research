@@ -3,9 +3,13 @@
 from collections.abc import Callable
 from uuid import UUID
 
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
+from investment_research.modules.companies.contracts import CompanySummary
+from investment_research.modules.companies.domain import CompanyTicker
+from investment_research.modules.companies.persistence import CompanyRow
 from investment_research.modules.documents.domain import DocumentLifecycleState, SourceLocatorKind
 from investment_research.modules.documents.persistence import (
     DocumentRow,
@@ -22,13 +26,22 @@ from investment_research.modules.processing.persistence import (
     ProcessingRunRow,
     StructureBlockRow,
 )
-from investment_research.modules.search.archive import ARCHIVE_PASSAGE_LIMIT, ArchiveSearchHit
+from investment_research.modules.search.archive import (
+    ARCHIVE_PASSAGE_LIMIT,
+    ARCHIVE_SEARCH_LIMIT,
+    ArchiveDocumentHit,
+    ArchiveSearchHit,
+    ArchiveSearchResult,
+)
 from investment_research.modules.search.contracts import (
     DenseQualificationRequest,
     LexicalSearchHit,
     LexicalSearchQuery,
     QualifiedDenseHit,
 )
+from investment_research.modules.search.domain import RetrievalFilters
+
+TICKER_ADAPTER = TypeAdapter(CompanyTicker)
 
 
 class PostgresLexicalSearch:
@@ -171,8 +184,8 @@ class PostgresArchiveSearchReader:
         self._session_factory = session_factory
 
     def search(
-        self, context: WorkspaceContext, query: LexicalSearchQuery
-    ) -> tuple[ArchiveSearchHit, ...]:
+        self, context: WorkspaceContext, query: LexicalSearchQuery, *, metadata_term: str
+    ) -> ArchiveSearchResult:
         statement = (
             PostgresLexicalSearch.build_statement(context, query)
             .add_columns(DocumentVersionRow.title, DocumentVersionRow.published_at)
@@ -185,7 +198,8 @@ class PostgresArchiveSearchReader:
             )
         )
         with self._session_factory() as session:
-            return tuple(
+            rows = session.execute(statement).tuples().all()
+            items = tuple(
                 ArchiveSearchHit(
                     chunk_id=chunk_id,
                     document_id=document_id,
@@ -207,8 +221,82 @@ class PostgresArchiveSearchReader:
                     _,
                     title,
                     published_at,
-                ) in session.execute(statement).tuples()
+                ) in rows[:ARCHIVE_SEARCH_LIMIT]
             )
+            return ArchiveSearchResult(
+                companies=self._find_companies(session, context, query.filters, metadata_term),
+                documents=self._find_documents(session, context, query.filters, metadata_term),
+                items=items,
+                has_more=len(rows) > ARCHIVE_SEARCH_LIMIT,
+            )
+
+    @staticmethod
+    def _find_companies(
+        session: Session, context: WorkspaceContext, filters: RetrievalFilters, term: str
+    ) -> tuple[CompanySummary, ...]:
+        try:
+            ticker = TICKER_ADAPTER.validate_python(term)
+        except ValidationError:
+            return ()
+        statement = (
+            select(CompanyRow)
+            .where(CompanyRow.workspace_id == context.workspace_id, CompanyRow.ticker == ticker)
+            .order_by(CompanyRow.normalized_name, CompanyRow.id)
+            .limit(ARCHIVE_SEARCH_LIMIT)
+        )
+        if filters.company_id is not None:
+            statement = statement.where(CompanyRow.id == filters.company_id)
+        return tuple(
+            CompanySummary.from_company(row.to_domain()) for row in session.scalars(statement)
+        )
+
+    @staticmethod
+    def _find_documents(
+        session: Session, context: WorkspaceContext, filters: RetrievalFilters, term: str
+    ) -> tuple[ArchiveDocumentHit, ...]:
+        if not term:
+            return ()
+        statement = (
+            select(
+                DocumentRow.id.label("document_id"),
+                DocumentVersionRow.id.label("document_version_id"),
+                DocumentVersionRow.title,
+                DocumentVersionRow.published_at,
+            )
+            .select_from(DocumentRow)
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == DocumentRow.workspace_id,
+                    DocumentVersionRow.document_id == DocumentRow.id,
+                    DocumentVersionRow.id == DocumentRow.current_version_id,
+                ),
+            )
+            .join(
+                OriginalArtifactRow,
+                and_(
+                    OriginalArtifactRow.workspace_id == DocumentVersionRow.workspace_id,
+                    OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
+                ),
+            )
+            .where(
+                DocumentRow.workspace_id == context.workspace_id,
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                DocumentVersionRow.title.icontains(term, autoescape=True),
+                *publication_date_predicates(filters),
+            )
+            .order_by(
+                (func.lower(DocumentVersionRow.title) == func.lower(term)).desc(),
+                DocumentVersionRow.title,
+                DocumentRow.id,
+            )
+            .limit(ARCHIVE_SEARCH_LIMIT)
+        )
+        if filters.company_id is not None:
+            statement = statement.where(document_has_company(filters.company_id))
+        return tuple(
+            ArchiveDocumentHit.model_validate(row) for row in session.execute(statement).mappings()
+        )
 
 
 class PostgresDenseCandidateQualifier:
