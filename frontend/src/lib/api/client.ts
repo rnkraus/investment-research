@@ -1,4 +1,4 @@
-import type { components } from "./generated/schema";
+import type { components, paths } from "./generated/schema";
 
 export type CompanySummary = components["schemas"]["CompanySummary"];
 export type CompanyCatalogPage = components["schemas"]["CompanyCatalogPage"];
@@ -30,6 +30,10 @@ export type ResearchRequestInput =
 export type ArchiveFilters = Pick<
   NonNullable<ResearchRequestInput["context"]>,
   "company_id" | "published_from" | "published_to"
+>;
+export type DocumentListFilters = Pick<
+  NonNullable<paths["/api/v1/documents"]["get"]["parameters"]["query"]>,
+  "media_type" | "processing_state"
 >;
 export type ResearchModel = components["schemas"]["ResearchModel"];
 export type ResearchModelOptions =
@@ -968,7 +972,7 @@ export function createApiClient(
     async listDocuments(
       after?: DocumentListCursor,
       signal?: AbortSignal,
-      filters: ArchiveFilters = {},
+      filters: ArchiveFilters & DocumentListFilters = {},
     ): Promise<DocumentCatalogPage> {
       if (after !== undefined && !isDocumentListCursor(after)) {
         throw new ApiProtocolError("The document list cursor is invalid.");
@@ -978,6 +982,8 @@ export function createApiClient(
         "company_id",
         "published_from",
         "published_to",
+        "media_type",
+        "processing_state",
       ] as const) {
         const value = filters[key];
         if (value != null) query.set(key, value);

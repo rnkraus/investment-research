@@ -247,6 +247,19 @@ test("company and publication filters scope the catalog and research even when d
   });
   await applyDates.click();
   await filteredPage;
+  await page.getByLabel("Source format").selectOption("text/plain");
+  const listFiltered = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/api/v1/documents" &&
+      url.searchParams.get("company_id") === SECOND &&
+      url.searchParams.get("published_to") === "2026-11-30" &&
+      url.searchParams.get("media_type") === "text/plain" &&
+      url.searchParams.get("processing_state") === "NO_STATUS"
+    );
+  });
+  await page.getByLabel("Processing status").selectOption("NO_STATUS");
+  await listFiltered;
   await page.getByRole("button", { name: "Hide documents" }).click();
   await expect(
     page.getByText("Blue Ridge (BLRG)", { exact: true }),
@@ -273,6 +286,8 @@ test("company and publication filters scope the catalog and research even when d
   await expect(page.getByText(otherSource.title, { exact: true })).toHaveCount(
     0,
   );
+  await page.getByLabel("Source format").selectOption("");
+  await page.getByLabel("Processing status").selectOption("");
   await page.getByRole("button", { name: "Clear dates" }).click();
   await expect(
     page.getByText(otherSource.title, { exact: true }),

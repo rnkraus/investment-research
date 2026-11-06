@@ -7,12 +7,14 @@ import {
   type CompanySummary,
   type DocumentCatalogEntry,
   type DocumentListCursor,
+  type DocumentListFilters,
 } from "@/lib/api/client";
 
 import { archiveCopy } from "./copy";
 import { CompanyFilter } from "./company-filter";
 import { DocumentCompanyEditor } from "./document-company-editor";
 import { DocumentDeletionPanel } from "./document-deletion-panel";
+import { DocumentListFilterControls } from "./document-list-filters";
 import {
   DOCUMENT_SELECTION_LIMIT,
   EMPTY_DOCUMENT_SELECTION,
@@ -55,6 +57,13 @@ export function ArchiveResearch({
   );
   const hasPublicationFilter =
     filters.published_from != null || filters.published_to != null;
+  const [listFilters, setListFilters] = useState<DocumentListFilters>({});
+  const catalogFilters = useMemo(
+    () => ({ ...filters, ...listFilters }),
+    [filters, listFilters],
+  );
+  const hasListFilter =
+    listFilters.media_type != null || listFilters.processing_state != null;
   const [companyDocumentId, setCompanyDocumentId] = useState<string | null>(
     null,
   );
@@ -91,7 +100,7 @@ export function ArchiveResearch({
         const page = await apiClient.listDocuments(
           undefined,
           controller.signal,
-          filters,
+          catalogFilters,
         );
         if (!controller.signal.aborted) {
           setDocuments(page.items);
@@ -113,7 +122,7 @@ export function ArchiveResearch({
       controller.abort();
       request.current?.abort();
     };
-  }, [refreshKey, refreshCount, filters]);
+  }, [refreshKey, refreshCount, catalogFilters]);
 
   async function loadMore() {
     if (cursor == null || isLoading) {
@@ -128,7 +137,7 @@ export function ArchiveResearch({
       const page = await apiClient.listDocuments(
         cursor,
         controller.signal,
-        filters,
+        catalogFilters,
       );
       if (!controller.signal.aborted) {
         setDocuments((current) => {
@@ -208,6 +217,14 @@ export function ArchiveResearch({
               </button>
             </div>
 
+            <DocumentListFilterControls
+              filters={listFilters}
+              disabled={isResearching || isDeleting}
+              onChange={(nextFilters) => {
+                setSelection(resetDocumentSelection);
+                setListFilters(nextFilters);
+              }}
+            />
             <DocumentDeletionPanel
               documents={
                 deletionDocumentIds === undefined ? [] : selection.documents
@@ -400,7 +417,9 @@ export function ArchiveResearch({
               ) : null}
               {!isLoading && !failed && documents.length === 0 ? (
                 <p>
-                  {companyId !== undefined || hasPublicationFilter
+                  {companyId !== undefined ||
+                  hasPublicationFilter ||
+                  hasListFilter
                     ? "No saved documents match the current filters."
                     : archiveCopy.catalog.empty}
                 </p>

@@ -42,6 +42,10 @@ narrow the company scope. Changing the company clears the document selection.
 **Publication date** lets users apply a start day, an end day, or both to the list and new
 questions. The bounds are inclusive UTC days and combine with any selected company. Applying
 or clearing the dates clears the explicit document selection.
+**Source format** and **Processing status** filter only the document list. They combine with
+company and publication filters before pagination. To research a subset shown by these list
+filters, select the documents explicitly. Changing either list filter clears the selection
+while preserving explicit selection mode.
 The sidebar shows titles, publication dates, processing status, and original links; other metadata
 and selection help are expandable. It cannot be hidden while deletion confirmation or submission
 locks selection. Permanent deletion controls remain at the top of the sidebar.

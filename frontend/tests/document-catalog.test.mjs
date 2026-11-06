@@ -51,7 +51,7 @@ function clientWithPage(page) {
   );
 }
 
-test("catalog requests bounded pages with both exact cursor fields, no cache, and cancellation", async () => {
+test("catalog sends filters with both exact cursor fields, no cache, and cancellation", async () => {
   const cursor = {
     created_at: "2026-10-11T10:00:00.123456+01:00",
     document_id: RUN_ID,
@@ -68,11 +68,16 @@ test("catalog requests bounded pages with both exact cursor fields, no cache, an
     receivedInit = init;
     return new Response(JSON.stringify(page));
   });
-  assert.deepEqual(await client.listDocuments(cursor, controller.signal), page);
+  const filters = { media_type: "text/plain", processing_state: "NO_STATUS" };
+  assert.deepEqual(
+    await client.listDocuments(cursor, controller.signal, filters),
+    page,
+  );
   const query = new URL(receivedPath, "http://local.invalid");
   assert.equal(query.pathname, "/api/v1/documents");
   assert.deepEqual(Object.fromEntries(query.searchParams), {
     page_size: "20",
+    ...filters,
     after_created_at: cursor.created_at,
     after_document_id: cursor.document_id,
   });
