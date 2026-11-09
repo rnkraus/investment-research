@@ -89,6 +89,7 @@ export function DocumentWorkflow({
   const textInputId = useId();
   const titleInputId = useId();
   const publicationDateInputId = useId();
+  const attributionInputId = useId();
   const uploadController = useRef<AbortController | null>(null);
   const [inputMode, setInputMode] = useState<SourceInputMode>("pdf");
   const [file, setFile] = useState<File>();
@@ -194,6 +195,11 @@ export function DocumentWorkflow({
     setErrorMessage(undefined);
 
     try {
+      const metadata = new FormData(event.currentTarget);
+      const authorName =
+        String(metadata.get("author_name") ?? "").trim() || undefined;
+      const xHandle =
+        String(metadata.get("x_handle") ?? "").trim() || undefined;
       const publishedAt = publicationDate
         ? `${publicationDate}T00:00:00Z`
         : undefined;
@@ -207,6 +213,8 @@ export function DocumentWorkflow({
             file,
             title,
             language: fixtureDefaults.language,
+            authorName,
+            xHandle,
             publishedAt,
           },
           controller.signal,
@@ -217,6 +225,8 @@ export function DocumentWorkflow({
             title,
             text,
             language: fixtureDefaults.language,
+            author_name: authorName,
+            x_handle: xHandle,
             published_at: publishedAt,
           },
           controller.signal,
@@ -365,6 +375,42 @@ export function DocumentWorkflow({
                 value={title}
               />
             </div>
+
+            {[
+              {
+                name: "author_name",
+                label: archiveCopy.upload.authorLabel,
+                maxLength: 200,
+              },
+              {
+                name: "x_handle",
+                label: archiveCopy.upload.xHandleLabel,
+                maxLength: 16,
+                pattern: "@?[A-Za-z0-9_]{1,15}",
+                placeholder: archiveCopy.upload.xHandlePlaceholder,
+              },
+            ].map(({ name, label, maxLength, pattern, placeholder }) => {
+              const id = `${attributionInputId}-${name}`;
+              return (
+                <div key={name}>
+                  <label
+                    className="text-sm font-semibold text-slate-800"
+                    htmlFor={id}
+                  >
+                    {label}
+                  </label>
+                  <input
+                    className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-xs outline-none placeholder:text-slate-400 focus:border-teal-600 focus:ring-3 focus:ring-teal-100"
+                    id={id}
+                    name={name}
+                    maxLength={maxLength}
+                    pattern={pattern}
+                    placeholder={placeholder}
+                    type="text"
+                  />
+                </div>
+              );
+            })}
 
             <div>
               <label

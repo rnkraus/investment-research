@@ -9,6 +9,8 @@ import {
   requireLocalSourcePath,
 } from "@/lib/api/client";
 
+import { formatSourceAttribution } from "./source-attribution";
+
 import { archiveCopy } from "./copy";
 import { type VerifiedTextAnchor, verifyTextAnchor } from "./source-anchor";
 
@@ -21,12 +23,14 @@ type SourceViewerState =
   | { readonly status: "ERROR" }
   | {
       readonly status: "PDF";
+      readonly attribution?: string;
       readonly exactText: string;
       readonly page: number;
       readonly viewerUrl: string;
     }
   | {
       readonly status: "TEXT";
+      readonly attribution?: string;
       readonly anchor: VerifiedTextAnchor;
       readonly startCharacter: number;
       readonly endCharacter: number;
@@ -60,6 +64,7 @@ export function SourceViewer({ evidenceSpanId }: SourceViewerProps) {
           return;
         }
 
+        const attribution = formatSourceAttribution(source);
         if (source.locator.kind === "PDF_PAGE") {
           if (original.kind !== "PDF") {
             throw new ApiProtocolError("The source media type does not match.");
@@ -67,6 +72,7 @@ export function SourceViewer({ evidenceSpanId }: SourceViewerProps) {
           objectUrl = URL.createObjectURL(original.content);
           setState({
             status: "PDF",
+            attribution,
             exactText: source.exact_text,
             page: source.locator.page,
             viewerUrl: `${objectUrl}#page=${source.locator.page}`,
@@ -87,6 +93,7 @@ export function SourceViewer({ evidenceSpanId }: SourceViewerProps) {
         if (!controller.signal.aborted) {
           setState({
             status: "TEXT",
+            attribution,
             anchor,
             startCharacter: source.locator.start_character,
             endCharacter: source.locator.end_character,
@@ -158,6 +165,11 @@ export function SourceViewer({ evidenceSpanId }: SourceViewerProps) {
                     {archiveCopy.source.pageLabel} {state.page}
                   </span>
                 </div>
+                {state.attribution && (
+                  <p className="mt-2 text-sm text-slate-600">
+                    {state.attribution}
+                  </p>
+                )}
                 <p className="mt-5 text-xs font-bold tracking-wide text-slate-500 uppercase">
                   {archiveCopy.source.exactEvidence}
                 </p>
@@ -185,6 +197,11 @@ export function SourceViewer({ evidenceSpanId }: SourceViewerProps) {
                   {state.endCharacter}
                 </span>
               </div>
+              {state.attribution && (
+                <p className="mt-2 text-sm text-slate-600">
+                  {state.attribution}
+                </p>
+              )}
               <pre className="mt-6 overflow-x-auto rounded-2xl bg-slate-950 p-5 font-mono text-sm leading-7 whitespace-pre-wrap text-slate-100">
                 {state.anchor.before}
                 <mark

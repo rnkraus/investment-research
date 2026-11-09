@@ -132,6 +132,10 @@ test.describe("M1 visible browser journey", () => {
     await page.getByRole("button", { name: "Add source", exact: true }).click();
     await page.getByLabel("PDF document").setInputFiles(PDF_FIXTURE);
     await page.getByLabel("Document title").fill(PDF_TITLE);
+    await page
+      .getByLabel("Author or organization (optional)")
+      .fill("Northstar Research");
+    await page.getByLabel("X handle (optional)").fill("@NorthstarIR");
     const captured = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === "/api/v1/documents" &&
@@ -150,6 +154,14 @@ test.describe("M1 visible browser journey", () => {
       .check();
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Northstar Research (@NorthstarIR)", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(`${PDF_TITLE} · Northstar Research (@NorthstarIR)`, {
+        exact: false,
+      }),
+    ).toBeVisible();
 
     const researchDetails = page.getByTestId("research-details");
     await expect(researchDetails).not.toHaveAttribute("open", "");
@@ -175,6 +187,11 @@ test.describe("M1 visible browser journey", () => {
     const sourcePage = await openCitation(page);
     await expect(
       sourcePage.getByRole("heading", { name: "Original PDF" }),
+    ).toBeVisible();
+    await expect(
+      sourcePage.getByText("Northstar Research (@NorthstarIR)", {
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(sourcePage.locator("[data-pdf-page='2']")).toBeVisible();
     await expect(
@@ -231,6 +248,7 @@ test.describe("M1 visible browser journey", () => {
     await expect(page.getByLabel("Paste text")).toBeChecked();
     await page.getByLabel("Research text").fill(sourceText);
     await page.getByLabel("Document title").fill(TEXT_TITLE);
+    await page.getByLabel("X handle (optional)").fill("NorthstarNews");
     await page.getByLabel("Publication date").fill("2026-07-22");
     await page.getByRole("button", { name: "Import document" }).click();
     await waitUntilSearchable(page);
@@ -247,6 +265,9 @@ test.describe("M1 visible browser journey", () => {
     const sourcePage = await openCitation(page);
     await expect(
       sourcePage.getByRole("heading", { name: "Original pasted text" }),
+    ).toBeVisible();
+    await expect(
+      sourcePage.getByText("@NorthstarNews", { exact: true }),
     ).toBeVisible();
     const highlight = sourcePage.getByTestId("source-highlight");
     await expect(highlight).toHaveText(TEXT_EVIDENCE);

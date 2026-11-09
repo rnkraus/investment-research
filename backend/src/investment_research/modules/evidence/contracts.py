@@ -9,7 +9,9 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from investment_research.modules.documents.domain import (
     DocumentLifecycleState,
     DocumentTitle,
+    SourceAuthorName,
     SourceLocatorKind,
+    SourceXHandle,
 )
 from investment_research.modules.evidence.domain import (
     ConfigurationVersion,
@@ -93,6 +95,8 @@ class CanonicalEvidenceSpanSource(ImmutableEvidenceContract):
     span: EvidenceSpan
     document_id: UUID
     document_title: DocumentTitle
+    author_name: SourceAuthorName | None = None
+    x_handle: SourceXHandle | None = None
     published_at: AwareDatetime | None = None
     document_lifecycle_state: DocumentLifecycleState
     document_current_version_id: UUID | None
@@ -105,6 +109,8 @@ class ResolvedEvidenceSpan(ImmutableEvidenceContract):
     span: EvidenceSpan
     document_id: UUID
     document_title: DocumentTitle
+    author_name: SourceAuthorName | None = None
+    x_handle: SourceXHandle | None = None
     published_at: AwareDatetime | None = None
 
 

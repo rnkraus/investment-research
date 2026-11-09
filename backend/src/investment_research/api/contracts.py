@@ -26,7 +26,11 @@ from investment_research.modules.documents.deletion_contracts import (
     DeleteDocumentsCommand,
     DocumentDeletionState,
 )
-from investment_research.modules.documents.domain import OriginalMediaType
+from investment_research.modules.documents.domain import (
+    OriginalMediaType,
+    SourceAuthorName,
+    SourceXHandle,
+)
 from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.research.contracts import (
@@ -89,6 +93,8 @@ class DocumentMetadataInput(StrictContract):
 
     title: TrimmedTitle
     language: LanguageCode = "en"
+    author_name: SourceAuthorName | None = None
+    x_handle: SourceXHandle | None = None
     published_at: AwareDatetime | None = None
     available_at: AwareDatetime | None = None
 
@@ -267,6 +273,8 @@ class EvidenceSpanResult(StrictContract):
     document_id: UUID
     document_version_id: UUID
     document_title: TrimmedTitle
+    author_name: SourceAuthorName | None = None
+    x_handle: SourceXHandle | None = None
     published_at: AwareDatetime | None = None
     start_character: int = Field(ge=0)
     end_character: int = Field(gt=0)

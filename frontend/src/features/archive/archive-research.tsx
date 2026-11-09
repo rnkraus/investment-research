@@ -12,6 +12,8 @@ import {
 } from "@/lib/api/client";
 
 import { ArchivePassageSearch } from "./archive-passage-search";
+import { formatSourceAttribution } from "./source-attribution";
+
 import { archiveCopy } from "./copy";
 import { CompanyFilter } from "./company-filter";
 import { DocumentCompanyEditor } from "./document-company-editor";
@@ -266,6 +268,7 @@ export function ArchiveResearch({
                       (item) => item.document_id === document.document_id,
                     );
                     const selectable = isDocumentSelectable(document);
+                    const attribution = formatSourceAttribution(document);
                     const editingCompanies =
                       companyDocumentId === document.document_id;
                     const companyPanelId = `${documentListId}-companies-${document.document_id}`;
@@ -306,6 +309,11 @@ export function ArchiveResearch({
                               {document.title}
                             </label>
                           </h3>
+                          {attribution && (
+                            <p className="mt-2 break-words text-xs text-slate-600">
+                              {attribution}
+                            </p>
+                          )}
                           <p className="mt-2 text-xs text-slate-600">
                             {archiveCopy.catalog.published}:{" "}
                             {displayDate(document.published_at)}

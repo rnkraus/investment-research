@@ -455,6 +455,20 @@
       },
       "Body_capture_document_api_v1_documents_post": {
         "properties": {
+          "author_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
           "available_at": {
             "anyOf": [
               {
@@ -496,6 +510,18 @@
             "minLength": 1,
             "title": "Title",
             "type": "string"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "pattern": "^@?[A-Za-z0-9_]{1,15}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Handle"
           }
         },
         "required": [
@@ -666,6 +692,20 @@
         "additionalProperties": false,
         "description": "Current metadata with a safe status snapshot and authorized original route.",
         "properties": {
+          "author_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
           "available_at": {
             "anyOf": [
               {
@@ -743,6 +783,18 @@
             "minLength": 1,
             "title": "Title",
             "type": "string"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "pattern": "^@?[A-Za-z0-9_]{1,15}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Handle"
           }
         },
         "required": [
@@ -964,6 +1016,21 @@
         "additionalProperties": false,
         "description": "Validated metadata fields submitted alongside an uploaded document.",
         "properties": {
+          "author_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Author Name"
+          },
           "available_at": {
             "anyOf": [
               {
@@ -1001,6 +1068,19 @@
             "minLength": 1,
             "title": "Title",
             "type": "string"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "pattern": "^@?[A-Za-z0-9_]{1,15}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "X Handle"
           }
         },
         "required": [
@@ -1108,6 +1188,20 @@
         "additionalProperties": false,
         "description": "Exact source location returned for an authorized citation.",
         "properties": {
+          "author_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
           "document_id": {
             "format": "uuid",
             "title": "Document Id",
@@ -1182,6 +1276,18 @@
           "viewer_url": {
             "title": "Viewer Url",
             "type": "string"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "pattern": "^@?[A-Za-z0-9_]{1,15}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Handle"
           }
         },
         "required": [
@@ -1265,6 +1371,20 @@
         "additionalProperties": false,
         "description": "Bounded JSON body for one immutable English pasted-text original.",
         "properties": {
+          "author_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
           "available_at": {
             "anyOf": [
               {
@@ -1305,6 +1425,18 @@
             "minLength": 1,
             "title": "Title",
             "type": "string"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "pattern": "^@?[A-Za-z0-9_]{1,15}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Handle"
           }
         },
         "required": [

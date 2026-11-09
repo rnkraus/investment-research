@@ -427,11 +427,16 @@ def test_capture_text_normalizes_and_preserves_canonical_utf8_original(tmp_path:
     dispatcher = RecordingProcessingDispatcher(unit_of_work)
     service = make_service(tmp_path, unit_of_work, processing_dispatcher=dispatcher)
 
-    result = service.capture_text(make_context(), make_text_input())
+    capture_input = make_text_input().model_copy(
+        update={"author_name": "Northstar Research", "x_handle": "NorthstarIR"},
+    )
+    result = service.capture_text(make_context(), capture_input)
 
     assert result.state is ProcessingState.CAPTURED
     context, _, version, original = unit_of_work.document_mock.add_capture.call_args.args
     assert context == make_context()
+    assert version.author_name == "Northstar Research"
+    assert version.x_handle == "NorthstarIR"
     assert original.media_type is OriginalMediaType.PLAIN_TEXT
     assert original.storage_key == f"workspaces/{WORKSPACE_ID}/originals/{ORIGINAL_ID}.txt"
     assert original.byte_size == len(NORMALIZED_TEXT_BYTES)

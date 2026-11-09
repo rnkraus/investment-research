@@ -584,6 +584,8 @@ export interface components {
         };
         /** Body_capture_document_api_v1_documents_post */
         readonly Body_capture_document_api_v1_documents_post: {
+            /** Author Name */
+            readonly author_name?: string | null;
             /** Available At */
             readonly available_at?: string | null;
             /**
@@ -600,6 +602,8 @@ export interface components {
             readonly published_at?: string | null;
             /** Title */
             readonly title: string;
+            /** X Handle */
+            readonly x_handle?: string | null;
         };
         /**
          * CompanyCatalogPage
@@ -681,6 +685,8 @@ export interface components {
          * @description Current metadata with a safe status snapshot and authorized original route.
          */
         readonly DocumentCatalogEntry: {
+            /** Author Name */
+            readonly author_name?: string | null;
             /** Available At */
             readonly available_at?: string | null;
             /** Byte Size */
@@ -718,6 +724,8 @@ export interface components {
             readonly published_at?: string | null;
             /** Title */
             readonly title: string;
+            /** X Handle */
+            readonly x_handle?: string | null;
         };
         /**
          * DocumentCatalogPage
@@ -824,6 +832,11 @@ export interface components {
          */
         readonly DocumentMetadataInput: {
             /**
+             * Author Name
+             * @default null
+             */
+            readonly author_name: string | null;
+            /**
              * Available At
              * @default null
              */
@@ -840,6 +853,11 @@ export interface components {
             readonly published_at: string | null;
             /** Title */
             readonly title: string;
+            /**
+             * X Handle
+             * @default null
+             */
+            readonly x_handle: string | null;
         };
         /**
          * ErrorCode
@@ -889,6 +907,8 @@ export interface components {
          * @description Exact source location returned for an authorized citation.
          */
         readonly EvidenceSpanResult: {
+            /** Author Name */
+            readonly author_name?: string | null;
             /**
              * Document Id
              * Format: uuid
@@ -920,6 +940,8 @@ export interface components {
             readonly text_sha256: string;
             /** Viewer Url */
             readonly viewer_url: string;
+            /** X Handle */
+            readonly x_handle?: string | null;
         };
         /**
          * EvidenceTextPassageLocator
@@ -963,6 +985,8 @@ export interface components {
          * @description Bounded JSON body for one immutable English pasted-text original.
          */
         readonly PastedTextDocumentInput: {
+            /** Author Name */
+            readonly author_name?: string | null;
             /** Available At */
             readonly available_at?: string | null;
             /**
@@ -977,6 +1001,8 @@ export interface components {
             readonly text: string;
             /** Title */
             readonly title: string;
+            /** X Handle */
+            readonly x_handle?: string | null;
         };
         /**
          * ProcessingRunResult

@@ -21,6 +21,16 @@ DocumentTitle = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=300),
 ]
+SourceAuthorName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=200, pattern=r"^[^\x00-\x1f\x7f]+$"
+    ),
+]
+SourceXHandle = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=r"^@?[A-Za-z0-9_]{1,15}$"),
+]
 LanguageCode = Annotated[
     str,
     StringConstraints(pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"),
@@ -95,6 +105,8 @@ class DocumentVersion(ImmutableDocumentModel):
     title: DocumentTitle
     language: LanguageCode
     content_sha256: Sha256Hex
+    author_name: SourceAuthorName | None = None
+    x_handle: SourceXHandle | None = None
     published_at: AwareDatetime | None = None
     available_at: AwareDatetime | None = None
     captured_at: AwareDatetime

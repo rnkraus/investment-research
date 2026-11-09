@@ -77,6 +77,8 @@ class PostgresCanonicalEvidenceSpanReader:
                 EvidenceSpanRow,
                 DocumentVersionRow.document_id,
                 DocumentVersionRow.title,
+                DocumentVersionRow.author_name,
+                DocumentVersionRow.x_handle,
                 DocumentVersionRow.published_at,
                 DocumentRow.lifecycle_state,
                 DocumentRow.current_version_id,
@@ -105,11 +107,23 @@ class PostgresCanonicalEvidenceSpanReader:
         if row is None:
             return None
 
-        span, document_id, title, published_at, lifecycle_state, current_version_id, is_linked = row
+        (
+            span,
+            document_id,
+            title,
+            author_name,
+            x_handle,
+            published_at,
+            lifecycle_state,
+            current_version_id,
+            is_linked,
+        ) = row
         return CanonicalEvidenceSpanSource(
             span=span.to_domain(),
             document_id=document_id,
             document_title=title,
+            author_name=author_name,
+            x_handle=x_handle,
             published_at=published_at,
             document_lifecycle_state=lifecycle_state,
             document_current_version_id=current_version_id,

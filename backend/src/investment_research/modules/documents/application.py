@@ -448,6 +448,8 @@ class CaptureDocumentService:
             title=capture_input.title,
             language=capture_input.language,
             content_sha256=checksum,
+            author_name=capture_input.author_name,
+            x_handle=capture_input.x_handle,
             published_at=capture_input.published_at,
             available_at=capture_input.available_at,
             captured_at=captured_at,

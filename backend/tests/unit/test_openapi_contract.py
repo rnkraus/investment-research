@@ -101,6 +101,8 @@ def test_document_capture_uses_scoped_multipart_contract() -> None:
         "file",
         "title",
         "language",
+        "author_name",
+        "x_handle",
         "published_at",
         "available_at",
     }

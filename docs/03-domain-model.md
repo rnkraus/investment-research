@@ -81,7 +81,7 @@ display name and its comparison key while retaining the company ID and document 
 | Entity | Meaning | Important properties |
 |---|---|---|
 | `Document` | Logical archive item visible to the user | Type, lifecycle state, current version reference |
-| `DocumentVersion` | Immutable captured content edition | Version number, content hash, language, captured time |
+| `DocumentVersion` | Immutable captured content edition | Version number, content hash, language, captured time, optional author or organization and X handle |
 | `OriginalArtifact` | Immutable PDF or submitted-text original | Storage key, media type, byte size, checksum |
 | `PublicationMetadata` | Source-time description of a version | Title, publication time, public-availability time, publisher text |
 | `DocumentCompany` | Association between a document and company | Method, confidence, review status, reviewer |

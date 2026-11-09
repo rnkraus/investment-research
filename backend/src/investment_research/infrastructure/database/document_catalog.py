@@ -57,6 +57,8 @@ class PostgresDocumentCatalogReader:
                 DocumentVersionRow.id.label("document_version_id"),
                 DocumentVersionRow.title,
                 DocumentVersionRow.language,
+                DocumentVersionRow.author_name,
+                DocumentVersionRow.x_handle,
                 DocumentVersionRow.published_at,
                 DocumentVersionRow.available_at,
                 DocumentVersionRow.captured_at,

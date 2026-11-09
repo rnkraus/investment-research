@@ -73,6 +73,8 @@ def test_document_list_entry_excludes_private_artifact_metadata() -> None:
         "document_version_id",
         "title",
         "language",
+        "author_name",
+        "x_handle",
         "published_at",
         "available_at",
         "media_type",
