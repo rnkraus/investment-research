@@ -23,7 +23,6 @@ from investment_research.infrastructure.health import REQUIRED_DATABASE_REVISION
 from investment_research.modules.delivery.domain import DeliveryErrorCategory, OutboxEvent
 from investment_research.modules.delivery.persistence import OutboxEventRow
 from investment_research.modules.documents.deletion_contracts import DeleteDocumentsCommand
-from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
 from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
 from investment_research.modules.processing.persistence import (
     ProcessingRunRow,
@@ -33,6 +32,7 @@ from investment_research.settings import DatabaseSettings
 from tests.integration.factories import (
     FIXTURE_TIME,
     ResearchSource,
+    add_legacy_document_capture,
     make_research_source,
     persist_workspace,
 )
@@ -59,9 +59,7 @@ def seed_legacy_run(
     source = replace(source, processing_run=ProcessingRun.model_validate(values))
     persist_workspace(engine, source)
     with transactional_session(create_session_factory(engine)) as session:
-        SqlAlchemyDocumentRepository(session).add_capture(
-            source.context, source.document, source.version, source.original
-        )
+        add_legacy_document_capture(session, source)
         SqlAlchemyProcessingRepository(session).add_run(source.context, source.processing_run)
     if excluded:
         with transactional_session(create_session_factory(engine)) as session:

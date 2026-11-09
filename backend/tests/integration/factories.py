@@ -4,7 +4,8 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, insert
+from sqlalchemy.orm import Session
 
 from investment_research.infrastructure.database.session import (
     create_session_factory,
@@ -18,7 +19,12 @@ from investment_research.modules.documents.domain import (
     OriginalMediaType,
     SourceLocatorKind,
 )
-from investment_research.modules.documents.persistence import SqlAlchemyDocumentRepository
+from investment_research.modules.documents.persistence import (
+    DocumentRow,
+    DocumentVersionRow,
+    OriginalArtifactRow,
+    SqlAlchemyDocumentRepository,
+)
 from investment_research.modules.identity.domain import (
     Workspace,
     WorkspaceContext,
@@ -280,18 +286,36 @@ def persist_workspace(engine: Engine, source: ResearchSource) -> None:
         SqlAlchemyWorkspaceRepository(session).add(source.context, source.workspace)
 
 
-def persist_research_source(engine: Engine, source: ResearchSource) -> None:
-    """Persist a source graph through module repositories in dependency order."""
+def add_legacy_document_capture(session: Session, source: ResearchSource) -> None:
+    """Seed a capture in a migration test before attribution columns exist."""
+
+    session.add(DocumentRow.from_domain(source.document))
+    session.flush()
+    session.execute(
+        insert(DocumentVersionRow.__table__).values(
+            source.version.model_dump(exclude={"author_name", "x_handle"})
+        )
+    )
+    session.add(OriginalArtifactRow.from_domain(source.original))
+
+
+def persist_research_source(
+    engine: Engine, source: ResearchSource, *, legacy_document_schema: bool = False
+) -> None:
+    """Persist a source graph in dependency order."""
 
     session_factory = create_session_factory(engine)
     persist_workspace(engine, source)
     with transactional_session(session_factory) as session:
-        SqlAlchemyDocumentRepository(session).add_capture(
-            source.context,
-            source.document,
-            source.version,
-            source.original,
-        )
+        if legacy_document_schema:
+            add_legacy_document_capture(session, source)
+        else:
+            SqlAlchemyDocumentRepository(session).add_capture(
+                source.context,
+                source.document,
+                source.version,
+                source.original,
+            )
     with transactional_session(session_factory) as session:
         SqlAlchemyProcessingRepository(session).add_run(
             source.context,

@@ -91,7 +91,7 @@ def test_lifecycle_migration_preserves_historical_terminal_m1_run(
                 }
             ),
         )
-        persist_research_source(migration_engine, source)
+        persist_research_source(migration_engine, source, legacy_document_schema=True)
         before = _read_processing_run(
             migration_engine,
             processing_run_id=source.processing_run.id,
