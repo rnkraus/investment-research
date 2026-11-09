@@ -1089,6 +1089,56 @@
         "title": "DocumentMetadataInput",
         "type": "object"
       },
+      "DocumentSourceAttribution": {
+        "additionalProperties": false,
+        "description": "The effective attribution saved for the requested document version.",
+        "properties": {
+          "author_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "pattern": "^@?[A-Za-z0-9_]{1,15}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Handle"
+          }
+        },
+        "required": [
+          "document_version_id",
+          "author_name",
+          "x_handle",
+          "document_id"
+        ],
+        "title": "DocumentSourceAttribution",
+        "type": "object"
+      },
       "ErrorCode": {
         "description": "Stable public error categories without internal details.",
         "enum": [
@@ -1643,6 +1693,50 @@
           "company_ids"
         ],
         "title": "ReplaceDocumentCompaniesCommand",
+        "type": "object"
+      },
+      "ReplaceDocumentSourceAttribution": {
+        "additionalProperties": false,
+        "description": "Replace both display fields for the version observed in the archive.",
+        "properties": {
+          "author_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "document_version_id": {
+            "format": "uuid",
+            "title": "Document Version Id",
+            "type": "string"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "pattern": "^@?[A-Za-z0-9_]{1,15}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Handle"
+          }
+        },
+        "required": [
+          "document_version_id",
+          "author_name",
+          "x_handle"
+        ],
+        "title": "ReplaceDocumentSourceAttribution",
         "type": "object"
       },
       "ResearchContextEvent": {
@@ -3123,6 +3217,100 @@
           }
         },
         "summary": "Get Document Deletion",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/source-attribution": {
+      "put": {
+        "description": "Save corrected display metadata for an active document's current version.",
+        "operationId": "replace_source_attribution_api_v1_documents__document_id__source_attribution_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceDocumentSourceAttribution"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSourceAttribution"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Replace Source Attribution",
         "tags": [
           "documents"
         ]

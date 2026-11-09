@@ -27,7 +27,7 @@ def _private_json_method(path: str) -> str | None:
         return "POST"
     if re.fullmatch(r"/api/v1/companies/[^/]+(?:/ticker)?", path):
         return "PATCH"
-    if re.fullmatch(r"/api/v1/documents/[^/]+/companies", path):
+    if re.fullmatch(r"/api/v1/documents/[^/]+/(?:companies|source-attribution)", path):
         return "PUT"
     return None
 

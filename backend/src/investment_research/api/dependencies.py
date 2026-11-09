@@ -16,6 +16,7 @@ from investment_research.modules.documents.deletion import (
     SubmitDocumentDeletionService,
 )
 from investment_research.modules.documents.listing import ListDocumentsService
+from investment_research.modules.documents.source_attribution import DocumentSourceAttributionWriter
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import GetProcessingRunService
@@ -90,6 +91,17 @@ def get_list_documents_service(container: ContainerDependency) -> ListDocumentsS
 ListDocumentsServiceDependency = Annotated[
     ListDocumentsService,
     Depends(get_list_documents_service),
+]
+
+
+def get_source_attribution_writer(
+    container: ContainerDependency,
+) -> DocumentSourceAttributionWriter:
+    return container.source_attribution_writer
+
+
+SourceAttributionWriterDependency = Annotated[
+    DocumentSourceAttributionWriter, Depends(get_source_attribution_writer)
 ]
 
 

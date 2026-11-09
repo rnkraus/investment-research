@@ -19,6 +19,7 @@ import { CompanyFilter } from "./company-filter";
 import { DocumentCompanyEditor } from "./document-company-editor";
 import { DocumentDeletionPanel } from "./document-deletion-panel";
 import { DocumentListFilterControls } from "./document-list-filters";
+import { DocumentSourceAttributionEditor } from "./document-source-attribution-editor";
 import {
   DOCUMENT_SELECTION_LIMIT,
   EMPTY_DOCUMENT_SELECTION,
@@ -367,6 +368,26 @@ export function ArchiveResearch({
                               ))}
                             </dl>
                           </details>
+                          <DocumentSourceAttributionEditor
+                            key={document.document_version_id}
+                            document={document}
+                            onSaved={({
+                              document_id,
+                              document_version_id,
+                              author_name,
+                              x_handle,
+                            }) => {
+                              setDocuments((current) =>
+                                current.map((entry) =>
+                                  entry.document_id === document_id &&
+                                  entry.document_version_id ===
+                                    document_version_id
+                                    ? { ...entry, author_name, x_handle }
+                                    : entry,
+                                ),
+                              );
+                            }}
+                          />
                           <button
                             type="button"
                             aria-expanded={editingCompanies}

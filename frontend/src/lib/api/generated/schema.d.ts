@@ -196,6 +196,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/documents/{document_id}/source-attribution": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /**
+         * Replace Source Attribution
+         * @description Save corrected display metadata for an active document's current version.
+         */
+        readonly put: operations["replace_source_attribution_api_v1_documents__document_id__source_attribution_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/documents/{document_id}/versions/{version_id}/original": {
         readonly parameters: {
             readonly query?: never;
@@ -860,6 +880,26 @@ export interface components {
             readonly x_handle: string | null;
         };
         /**
+         * DocumentSourceAttribution
+         * @description The effective attribution saved for the requested document version.
+         */
+        readonly DocumentSourceAttribution: {
+            /** Author Name */
+            readonly author_name: string | null;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            readonly document_id: string;
+            /**
+             * Document Version Id
+             * Format: uuid
+             */
+            readonly document_version_id: string;
+            /** X Handle */
+            readonly x_handle: string | null;
+        };
+        /**
          * ErrorCode
          * @description Stable public error categories without internal details.
          * @enum {string}
@@ -1092,6 +1132,21 @@ export interface components {
             readonly expected_document_version_id: string;
             /** Expected Revision */
             readonly expected_revision: number;
+        };
+        /**
+         * ReplaceDocumentSourceAttribution
+         * @description Replace both display fields for the version observed in the archive.
+         */
+        readonly ReplaceDocumentSourceAttribution: {
+            /** Author Name */
+            readonly author_name: string | null;
+            /**
+             * Document Version Id
+             * Format: uuid
+             */
+            readonly document_version_id: string;
+            /** X Handle */
+            readonly x_handle: string | null;
         };
         /**
          * ResearchContextEvent
@@ -1969,6 +2024,77 @@ export interface operations {
             };
             /** @description Not Found */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly replace_source_attribution_api_v1_documents__document_id__source_attribution_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly document_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ReplaceDocumentSourceAttribution"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DocumentSourceAttribution"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            readonly 413: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

@@ -89,6 +89,11 @@ display name and its comparison key while retaining the company ID and document 
 
 `Document` owns user-facing lifecycle. `DocumentVersion` owns immutable content. A text edit or corrected edition creates a new version; parsing or chunking changes do not.
 
+Source-attribution edits are separate from the captured version and scoped to its workspace
+and version. A saved edit can explicitly clear either display field. The archive and citation
+viewer read the effective values. Edits do not change original bytes, processing runs, or
+evidence spans, and permanent version deletion removes its edits.
+
 Automatic company assignments remain reviewable suggestions. A duplicate relation never silently deletes either archive item.
 
 Migration `0016_document_companies` stores manual, reviewed links on logical documents. Each link

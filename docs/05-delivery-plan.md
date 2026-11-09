@@ -455,8 +455,9 @@ the end-to-end search contract. Live retrieval quality and provider latency requ
 separate measurement with real provider responses.
 
 **Source attribution.** PDF and pasted-text imports accept an optional author or organization and
-X handle. The catalog and resolved citations display the metadata of the captured version. A
-handle alone supplies the visible byline. These values are entered by the user and do not verify
+X handle. The archive allows the owner to correct or clear both fields on the current version of
+an existing document. The catalog and resolved citations display the version's effective
+attribution. A handle alone supplies the visible byline. These user-entered values do not verify
 identity or affect company assignments, search ranking, or evidence validation.
 
 ### Build

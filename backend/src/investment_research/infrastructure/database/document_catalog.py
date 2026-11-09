@@ -15,9 +15,11 @@ from investment_research.modules.documents.contracts import (
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import (
     DocumentRow,
+    DocumentSourceAttributionRow,
     DocumentVersionRow,
     OriginalArtifactRow,
     document_has_company,
+    document_source_attribution_columns,
     publication_date_predicates,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -57,8 +59,7 @@ class PostgresDocumentCatalogReader:
                 DocumentVersionRow.id.label("document_version_id"),
                 DocumentVersionRow.title,
                 DocumentVersionRow.language,
-                DocumentVersionRow.author_name,
-                DocumentVersionRow.x_handle,
+                *document_source_attribution_columns(),
                 DocumentVersionRow.published_at,
                 DocumentVersionRow.available_at,
                 DocumentVersionRow.captured_at,
@@ -85,6 +86,7 @@ class PostgresDocumentCatalogReader:
                     OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
                 ),
             )
+            .outerjoin_from(DocumentVersionRow, DocumentSourceAttributionRow)
             .outerjoin(latest, true())
             .where(
                 DocumentRow.workspace_id == context.workspace_id,

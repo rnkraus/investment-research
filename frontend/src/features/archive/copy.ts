@@ -80,6 +80,14 @@ export const archiveCopy = {
     description: "Open originals or select sources for your next question.",
     selectionHelp: "Selection help",
     metadataDetails: "Document details",
+    editSourceAttribution: "Edit source attribution",
+    saveSourceAttribution: "Save source attribution",
+    savingSourceAttribution: "Saving…",
+    sourceAttributionSaved: "Source attribution saved.",
+    sourceAttributionStale:
+      "This document has changed or is unavailable. Refresh the document list.",
+    sourceAttributionFailed:
+      "Source attribution could not be saved. Try again.",
     loading: "Loading saved documents…",
     refresh: "Refresh documents",
     hideDocuments: "Hide documents",

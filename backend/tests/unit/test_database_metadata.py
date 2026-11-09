@@ -11,6 +11,7 @@ EXPECTED_TABLE_NAMES = {
     "companies",
     "document_companies",
     "document_company_revisions",
+    "document_source_attribution_edits",
     "document_versions",
     "document_deletions",
     "documents",

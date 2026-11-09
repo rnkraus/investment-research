@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from investment_research.modules.documents.persistence import (
     DocumentRow,
+    DocumentSourceAttributionRow,
     DocumentVersionRow,
     document_has_company,
+    document_source_attribution_columns,
 )
 from investment_research.modules.evidence.contracts import (
     M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
@@ -77,8 +79,7 @@ class PostgresCanonicalEvidenceSpanReader:
                 EvidenceSpanRow,
                 DocumentVersionRow.document_id,
                 DocumentVersionRow.title,
-                DocumentVersionRow.author_name,
-                DocumentVersionRow.x_handle,
+                *document_source_attribution_columns(),
                 DocumentVersionRow.published_at,
                 DocumentRow.lifecycle_state,
                 DocumentRow.current_version_id,
@@ -98,6 +99,7 @@ class PostgresCanonicalEvidenceSpanReader:
                     DocumentRow.id == DocumentVersionRow.document_id,
                 ),
             )
+            .outerjoin_from(DocumentVersionRow, DocumentSourceAttributionRow)
             .where(
                 EvidenceSpanRow.workspace_id == context.workspace_id,
                 EvidenceSpanRow.id == evidence_span_id,
