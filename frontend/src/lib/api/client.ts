@@ -18,6 +18,10 @@ export type DocumentSourceAttribution =
   components["schemas"]["DocumentSourceAttribution"];
 export type ReplaceDocumentSourceAttribution =
   components["schemas"]["ReplaceDocumentSourceAttribution"];
+export type SourceAttributionChoice =
+  components["schemas"]["SourceAttributionChoice"];
+export type SourceAttributionPage =
+  components["schemas"]["SourceAttributionPage"];
 export type DocumentCatalogPage = components["schemas"]["DocumentCatalogPage"];
 export type ArchiveSearchInput = components["schemas"]["ArchiveSearchInput"];
 export type ArchiveSearchMode = ArchiveSearchInput["mode"];
@@ -36,7 +40,11 @@ export type ResearchRequestInput =
   components["schemas"]["ResearchRequestInput"];
 export type ArchiveFilters = Pick<
   NonNullable<ResearchRequestInput["context"]>,
-  "company_id" | "published_from" | "published_to"
+  | "company_id"
+  | "published_from"
+  | "published_to"
+  | "source_attribution"
+  | "source_attribution_kind"
 >;
 export type DocumentListFilters = Pick<
   NonNullable<paths["/api/v1/documents"]["get"]["parameters"]["query"]>,
@@ -399,6 +407,31 @@ function isDocumentSourceAttribution(
     value.author_name !== undefined &&
     value.x_handle !== undefined &&
     hasValidSourceAttribution(value)
+  );
+}
+
+function isSourceAttributionCursor(value: unknown): value is string {
+  return isNonEmptyString(value) && Array.from(value).length <= 207;
+}
+
+function isSourceAttributionPage(
+  value: unknown,
+): value is SourceAttributionPage {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.items) &&
+    value.items.length <= 20 &&
+    value.items.every(
+      (choice: unknown) =>
+        isRecord(choice) &&
+        isNonEmptyString(choice.value) &&
+        (choice.kind === "author"
+          ? choice.value.trim().length > 0 &&
+            Array.from(choice.value).length <= 200
+          : choice.kind === "handle" &&
+            /^@[A-Za-z0-9_]{1,15}$/.test(choice.value)),
+    ) &&
+    (value.next_cursor === null || isSourceAttributionCursor(value.next_cursor))
   );
 }
 
@@ -1093,6 +1126,28 @@ export function createApiClient(
       );
     },
 
+    async findSourceAttributions(
+      query: string,
+      cursor?: string,
+    ): Promise<SourceAttributionPage> {
+      if (cursor !== undefined && !isSourceAttributionCursor(cursor)) {
+        throw new ApiProtocolError();
+      }
+      const params = new URLSearchParams();
+      if (query !== "") params.set("q", query);
+      if (cursor !== undefined) params.set("cursor", cursor);
+      const page = await requestJson(
+        fetchImplementation,
+        `/api/v1/documents/source-attributions?${params}`,
+        isSourceAttributionPage,
+        { cache: "no-store" },
+      );
+      if (cursor !== undefined && page.next_cursor === cursor) {
+        throw new ApiProtocolError("The attribution list did not advance.");
+      }
+      return page;
+    },
+
     async listDocuments(
       after?: DocumentListCursor,
       signal?: AbortSignal,
@@ -1108,6 +1163,8 @@ export function createApiClient(
         "published_to",
         "media_type",
         "processing_state",
+        "source_attribution",
+        "source_attribution_kind",
       ] as const) {
         const value = filters[key];
         if (value != null) query.set(key, value);

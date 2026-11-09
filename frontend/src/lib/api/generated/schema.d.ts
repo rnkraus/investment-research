@@ -132,6 +132,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/documents/source-attributions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Find Source Attributions
+         * @description Discover author names and handles that can be selected as a source filter.
+         */
+        readonly get: operations["find_source_attributions_api_v1_documents_source_attributions_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/documents/text": {
         readonly parameters: {
             readonly query?: never;
@@ -587,6 +607,10 @@ export interface components {
             readonly published_to?: string | null;
             /** Query */
             readonly query: string;
+            /** Source Attribution */
+            readonly source_attribution?: string | null;
+            /** Source Attribution Kind */
+            readonly source_attribution_kind?: ("author" | "handle") | null;
         };
         /**
          * ArchiveSearchResult
@@ -1280,6 +1304,10 @@ export interface components {
             readonly published_from?: string | null;
             /** Published To */
             readonly published_to?: string | null;
+            /** Source Attribution */
+            readonly source_attribution?: string | null;
+            /** Source Attribution Kind */
+            readonly source_attribution_kind?: ("author" | "handle") | null;
             /** @default CURRENT */
             readonly temporal_mode: components["schemas"]["TemporalMode"];
         };
@@ -1297,6 +1325,23 @@ export interface components {
             readonly support_model: components["schemas"]["ResearchModel"];
         };
         readonly ResearchStreamEvent: components["schemas"]["ResearchProgressEvent"] | components["schemas"]["ResearchContextEvent"] | components["schemas"]["AnswerStatementEvent"] | components["schemas"]["AnswerCitationEvent"] | components["schemas"]["AnswerCompletedEvent"] | components["schemas"]["AnswerInsufficientEvent"] | components["schemas"]["ResearchFailedEvent"];
+        /** SourceAttributionChoice */
+        readonly SourceAttributionChoice: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            readonly kind: "author" | "handle";
+            /** Value */
+            readonly value: string;
+        };
+        /** SourceAttributionPage */
+        readonly SourceAttributionPage: {
+            /** Items */
+            readonly items: readonly components["schemas"]["SourceAttributionChoice"][];
+            /** Next Cursor */
+            readonly next_cursor?: string | null;
+        };
         /**
          * SourceLocatorKind
          * @description Stable ways to locate exact content inside an immutable original.
@@ -1649,6 +1694,8 @@ export interface operations {
     readonly list_documents_api_v1_documents_get: {
         readonly parameters: {
             readonly query?: {
+                readonly source_attribution?: string | null;
+                readonly source_attribution_kind?: ("author" | "handle") | null;
                 readonly published_from?: string | null;
                 readonly published_to?: string | null;
                 readonly page_size?: number;
@@ -1800,6 +1847,47 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly find_source_attributions_api_v1_documents_source_attributions_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly q?: string | null;
+                readonly cursor?: string | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SourceAttributionPage"];
                 };
             };
             /** @description Unprocessable Content */

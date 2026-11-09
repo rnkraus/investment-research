@@ -17,6 +17,8 @@ from investment_research.modules.documents.domain import (
     DocumentTitle,
     LanguageCode,
     OriginalMediaType,
+    SourceAttributionKind,
+    SourceAttributionScope,
     SourceAuthorName,
     SourceXHandle,
 )
@@ -106,7 +108,7 @@ class DocumentListCursor(ImmutableContract):
 CatalogProcessingState = ProcessingState | Literal["NO_STATUS"]
 
 
-class DocumentListQuery(ImmutableContract, PublicationDateBounds):
+class DocumentListQuery(ImmutableContract, PublicationDateBounds, SourceAttributionScope):
     """Bound one read page without accepting a client-controlled workspace."""
 
     page_size: int = Field(default=20, ge=1, le=100, strict=True)
@@ -114,6 +116,27 @@ class DocumentListQuery(ImmutableContract, PublicationDateBounds):
     company_id: UUID | None = None
     media_type: OriginalMediaType | None = None
     processing_state: CatalogProcessingState | None = None
+
+
+SOURCE_ATTRIBUTION_PAGE_SIZE = 20
+SourceAttributionCursor = Annotated[
+    str, StringConstraints(min_length=1, max_length=207, pattern=r"^[^\x00-\x1f\x7f]+$")
+]
+
+
+class SourceAttributionLookup(ImmutableContract):
+    q: SourceAuthorName | None = None
+    cursor: SourceAttributionCursor | None = None
+
+
+class SourceAttributionChoice(ImmutableContract):
+    kind: SourceAttributionKind
+    value: SourceAuthorName
+
+
+class SourceAttributionPage(ImmutableContract):
+    items: tuple[SourceAttributionChoice, ...] = Field(max_length=SOURCE_ATTRIBUTION_PAGE_SIZE)
+    next_cursor: SourceAttributionCursor | None = None
 
 
 class DocumentProcessingSnapshot(ImmutableContract):

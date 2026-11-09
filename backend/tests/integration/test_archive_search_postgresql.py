@@ -137,7 +137,11 @@ def test_archive_search_finds_exact_tickers_and_literal_current_titles(
     )
     for item in (source, foreign):
         persist_research_source(
-            engine, replace(item, version=item.version.model_copy(update={"title": title}))
+            engine,
+            replace(
+                item,
+                version=item.version.model_copy(update={"title": title, "x_handle": "@Grid_IR"}),
+            ),
         )
 
     application = create_app(
@@ -178,8 +182,27 @@ def test_archive_search_finds_exact_tickers_and_literal_current_titles(
         assert ticker_result.status_code == 200
         assert ticker_result.json()["companies"] == [created.json()]
         assert client.post(route, json={"query": "ngri"}).json()["companies"] == []
+        filtered = client.post(route, json={"query": "ngrid", "source_attribution": "@grid_ir"})
+        assert filtered.status_code == 200
+        assert filtered.json()["companies"] == [created.json()]
+        assert (
+            client.post(route, json={"query": "ngrid", "source_attribution": "@grid%"}).json()[
+                "companies"
+            ]
+            == []
+        )
+        for term, expected in (("@grid_ir", True), ("@missing", False)):
+            passages = client.post(
+                route, json={"query": "capacity expansion", "source_attribution": term}
+            )
+            assert passages.status_code == 200
+            assert bool(passages.json()["items"]) is expected
 
-        title_query = {"query": '"100%_straße"', "company_id": company_id}
+        title_query = {
+            "query": '"100%_straße"',
+            "company_id": company_id,
+            "source_attribution": "@grid_ir",
+        }
         title_result = client.post(route, json=title_query)
         assert title_result.status_code == 200
         assert title_result.json()["items"] == []
@@ -190,6 +213,7 @@ def test_archive_search_finds_exact_tickers_and_literal_current_titles(
         for extra in (
             {"company_id": str(uuid4())},
             {"published_from": (FIXTURE_TIME.date() + timedelta(days=1)).isoformat()},
+            {"source_attribution": "@missing"},
         ):
             assert client.post(route, json={**title_query, **extra}).json()["documents"] == []
 
@@ -206,6 +230,7 @@ def test_semantic_archive_search_returns_canonical_passages_without_chat(
         make_searchable_source(label=label, primary_text=passage)
         for label in ("Semantic archive owner", "Semantic archive foreign")
     )
+    source = replace(source, version=source.version.model_copy(update={"author_name": "Grid IR"}))
     for item in (source, foreign):
         persist_research_source(engine, item)
     fakes = install_provider_fakes(
@@ -224,7 +249,12 @@ def test_semantic_archive_search_returns_canonical_passages_without_chat(
     with TestClient(application) as client:
         response = client.post(
             "/api/v1/archive-search",
-            json={"query": SEMANTIC_QUERY, "mode": "semantic", "published_from": published_from},
+            json={
+                "query": SEMANTIC_QUERY,
+                "mode": "semantic",
+                "published_from": published_from,
+                "source_attribution": "grid ir",
+            },
         )
     assert response.status_code == 200
     payload = response.json()
@@ -239,6 +269,7 @@ def test_semantic_archive_search_returns_canonical_passages_without_chat(
     assert fakes.embedding.requests[0].inputs[0].text == SEMANTIC_QUERY
     assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 1
     assert fakes.dense.queries[0].filters.published_from == FIXTURE_TIME.date()
+    assert fakes.dense.queries[0].filters.source_attribution == "grid ir"
     assert not fakes.generator.requests and not fakes.support.requests
 
     with Session(engine) as session:

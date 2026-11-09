@@ -11,6 +11,7 @@ from investment_research.modules.documents.persistence import (
     DocumentSourceAttributionRow,
     DocumentVersionRow,
     document_has_company,
+    document_matches_source_attribution,
     document_source_attribution_columns,
 )
 from investment_research.modules.evidence.contracts import (
@@ -198,6 +199,8 @@ class PostgresCanonicalEvidenceSourceReader:
         """Return scoped canonical state for one candidate in one retrieval run."""
 
         company_id = RetrievalRunRow.filter_snapshot["company_id"].as_string()
+        attribution = RetrievalRunRow.filter_snapshot["source_attribution"].as_string()
+        attribution_kind = RetrievalRunRow.filter_snapshot["source_attribution_kind"].as_string()
         statement = (
             select(
                 RetrievalCandidateRow,
@@ -261,11 +264,16 @@ class PostgresCanonicalEvidenceSourceReader:
                     DocumentRow.id == DocumentVersionRow.document_id,
                 ),
             )
+            .outerjoin_from(DocumentVersionRow, DocumentSourceAttributionRow)
             .where(
                 RetrievalCandidateRow.workspace_id == context.workspace_id,
                 RetrievalCandidateRow.retrieval_run_id == retrieval_run_id,
                 RetrievalCandidateRow.id == retrieval_candidate_id,
                 or_(company_id.is_(None), document_has_company(cast(company_id, PG_UUID))),
+                or_(
+                    attribution.is_(None),
+                    document_matches_source_attribution(attribution, attribution_kind),
+                ),
             )
         )
         row = self._session.execute(statement).one_or_none()

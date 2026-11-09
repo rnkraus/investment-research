@@ -3,10 +3,18 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Annotated
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 DocumentType = Annotated[
     str,
@@ -27,6 +35,23 @@ SourceAuthorName = Annotated[
         strip_whitespace=True, min_length=1, max_length=200, pattern=r"^[^\x00-\x1f\x7f]+$"
     ),
 ]
+SourceAttributionFilter = SourceAuthorName
+SourceAttributionKind = Literal["author", "handle"]
+
+
+class SourceAttributionScope(BaseModel):
+    """Keep free-text matching compatible and allow exact catalog selections."""
+
+    source_attribution: SourceAttributionFilter | None = None
+    source_attribution_kind: SourceAttributionKind | None = None
+
+    @model_validator(mode="after")
+    def require_attribution_for_kind(self) -> Self:
+        if self.source_attribution_kind is not None and self.source_attribution is None:
+            raise ValueError("source_attribution_kind requires source_attribution")
+        return self
+
+
 SourceXHandle = Annotated[
     str,
     StringConstraints(strip_whitespace=True, pattern=r"^@?[A-Za-z0-9_]{1,15}$"),

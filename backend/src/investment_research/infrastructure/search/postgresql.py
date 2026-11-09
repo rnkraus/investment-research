@@ -12,10 +12,13 @@ from investment_research.modules.companies.domain import CompanyTicker
 from investment_research.modules.companies.persistence import CompanyRow
 from investment_research.modules.documents.domain import DocumentLifecycleState, SourceLocatorKind
 from investment_research.modules.documents.persistence import (
+    DocumentCompanyRow,
     DocumentRow,
+    DocumentSourceAttributionRow,
     DocumentVersionRow,
     OriginalArtifactRow,
     document_has_company,
+    document_matches_source_attribution,
     publication_date_predicates,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
@@ -164,6 +167,14 @@ class PostgresLexicalSearch:
             statement = statement.where(DocumentRow.id.in_(query.filters.document_ids))
         if query.filters.company_id is not None:
             statement = statement.where(document_has_company(query.filters.company_id))
+        if (attribution := query.filters.source_attribution) is not None:
+            statement = statement.outerjoin_from(
+                DocumentVersionRow, DocumentSourceAttributionRow
+            ).where(
+                document_matches_source_attribution(
+                    attribution, query.filters.source_attribution_kind
+                )
+            )
         if query.filters.available_at_cutoff is not None:
             statement = statement.where(
                 DocumentVersionRow.available_at.is_not(None),
@@ -298,6 +309,37 @@ class PostgresArchiveSearchReader:
         )
         if filters.company_id is not None:
             statement = statement.where(CompanyRow.id == filters.company_id)
+        if (attribution := filters.source_attribution) is not None:
+            matching_document = (
+                select(DocumentRow.id)
+                .select_from(DocumentCompanyRow)
+                .join(
+                    DocumentRow,
+                    and_(
+                        DocumentRow.workspace_id == DocumentCompanyRow.workspace_id,
+                        DocumentRow.id == DocumentCompanyRow.document_id,
+                    ),
+                )
+                .join(
+                    DocumentVersionRow,
+                    and_(
+                        DocumentVersionRow.workspace_id == DocumentRow.workspace_id,
+                        DocumentVersionRow.id == DocumentRow.current_version_id,
+                    ),
+                )
+                .outerjoin_from(DocumentVersionRow, DocumentSourceAttributionRow)
+                .where(
+                    DocumentCompanyRow.workspace_id == CompanyRow.workspace_id,
+                    DocumentCompanyRow.company_id == CompanyRow.id,
+                    DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                    document_matches_source_attribution(
+                        attribution, filters.source_attribution_kind
+                    ),
+                    *publication_date_predicates(filters),
+                )
+                .exists()
+            )
+            statement = statement.where(matching_document)
         return tuple(
             CompanySummary.from_company(row.to_domain()) for row in session.scalars(statement)
         )
@@ -346,6 +388,12 @@ class PostgresArchiveSearchReader:
         )
         if filters.company_id is not None:
             statement = statement.where(document_has_company(filters.company_id))
+        if (attribution := filters.source_attribution) is not None:
+            statement = statement.outerjoin_from(
+                DocumentVersionRow, DocumentSourceAttributionRow
+            ).where(
+                document_matches_source_attribution(attribution, filters.source_attribution_kind)
+            )
         return tuple(
             ArchiveDocumentHit.model_validate(row) for row in session.execute(statement).mappings()
         )
@@ -490,6 +538,14 @@ class PostgresDenseCandidateQualifier:
             statement = statement.where(DocumentRow.id.in_(request.filters.document_ids))
         if request.filters.company_id is not None:
             statement = statement.where(document_has_company(request.filters.company_id))
+        if (attribution := request.filters.source_attribution) is not None:
+            statement = statement.outerjoin_from(
+                DocumentVersionRow, DocumentSourceAttributionRow
+            ).where(
+                document_matches_source_attribution(
+                    attribution, request.filters.source_attribution_kind
+                )
+            )
         if request.filters.available_at_cutoff is not None:
             statement = statement.where(
                 DocumentVersionRow.available_at.is_not(None),

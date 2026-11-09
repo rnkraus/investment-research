@@ -42,6 +42,8 @@ from investment_research.modules.documents.contracts import (
     DocumentListQuery,
     PastedTextCaptureInput,
     PdfCaptureInput,
+    SourceAttributionLookup,
+    SourceAttributionPage,
 )
 from investment_research.modules.documents.domain import SourceAuthorName, SourceXHandle
 from investment_research.modules.documents.ports import (
@@ -117,6 +119,8 @@ def list_documents(
                 published_to=query.published_to,
                 media_type=query.media_type,
                 processing_state=query.processing_state,
+                source_attribution=query.source_attribution,
+                source_attribution_kind=query.source_attribution_kind,
             ),
         )
     except SQLAlchemyError as error:
@@ -142,6 +146,27 @@ def list_documents(
         ),
         next_cursor=page.next_cursor,
     )
+
+
+@router.get(
+    "/source-attributions", responses={code: {"model": ErrorResponse} for code in (422, 500)}
+)
+def find_source_attributions(
+    query: Annotated[SourceAttributionLookup, Query()],
+    service: ListDocumentsServiceDependency,
+    context: WorkspaceContextDependency,
+    response: Response,
+) -> SourceAttributionPage:
+    """Discover author names and handles that can be selected as a source filter."""
+
+    try:
+        page = service.find_source_attributions(context, query)
+    except SQLAlchemyError:
+        raise ApiError(
+            status_code=500, code=ErrorCode.INTERNAL_ERROR, message="source attribution list failed"
+        ) from None
+    response.headers["cache-control"] = "private, no-store"
+    return page
 
 
 @router.put(

@@ -18,6 +18,8 @@ from sqlalchemy import (
     and_,
     case,
     func,
+    literal,
+    or_,
     select,
 )
 from sqlalchemy import Enum as SqlEnum
@@ -318,7 +320,9 @@ class DocumentSourceAttributionRow(Base):
     x_handle: Mapped[str | None] = mapped_column(String(16))
 
 
-def document_source_attribution_columns() -> tuple[ColumnElement[str | None], ...]:
+def document_source_attribution_columns() -> tuple[
+    ColumnElement[str | None], ColumnElement[str | None]
+]:
     """Project owner overrides when present, even when their values are null."""
 
     edited = DocumentSourceAttributionRow.document_version_id.is_not(None)
@@ -331,6 +335,41 @@ def document_source_attribution_columns() -> tuple[ColumnElement[str | None], ..
             (edited, DocumentSourceAttributionRow.x_handle),
             else_=DocumentVersionRow.x_handle,
         ).label("x_handle"),
+    )
+
+
+def document_matches_source_attribution(
+    term: str | ColumnElement[str],
+    kind: str | ColumnElement[str] | None = None,
+) -> ColumnElement[bool]:
+    """Match a literal substring in the effective metadata of an outer-joined version."""
+
+    author_name, x_handle = document_source_attribution_columns()
+    query = literal(term) if isinstance(term, str) else term
+    handle_only = func.left(query, 1) == "@"
+    handle_term = case(
+        (handle_only, func.coalesce(func.nullif(func.substr(query, 2), ""), query)),
+        else_=query,
+    )
+
+    def substring(value: ColumnElement[str]) -> ColumnElement[str]:
+        escaped = func.replace(func.replace(func.replace(value, "/", "//"), "%", "/%"), "_", "/_")
+        return func.concat("%", escaped, "%")
+
+    partial_match = or_(
+        and_(~handle_only, author_name.ilike(substring(query), escape="/")),
+        x_handle.ilike(substring(handle_term), escape="/"),
+    )
+    exact_author = func.lower(author_name) == func.lower(query)
+    exact_handle = func.lower(func.ltrim(x_handle, "@")) == func.lower(handle_term)
+    if kind is None:
+        return partial_match
+    if isinstance(kind, str):
+        return exact_author if kind == "author" else exact_handle
+    return case(
+        (kind == "author", exact_author),
+        (kind == "handle", exact_handle),
+        else_=partial_match,
     )
 
 
