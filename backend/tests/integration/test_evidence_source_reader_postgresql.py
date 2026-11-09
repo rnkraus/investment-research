@@ -6,9 +6,15 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import Engine
 
+from investment_research.infrastructure.database.document_source_attribution import (
+    PostgresDocumentSourceAttributionWriter,
+)
 from investment_research.infrastructure.database.session import create_session_factory
 from investment_research.infrastructure.evidence.postgresql import (
     PostgresCanonicalEvidenceSourceReader,
+)
+from investment_research.modules.documents.source_attribution import (
+    ReplaceDocumentSourceAttribution,
 )
 from investment_research.modules.evidence.contracts import M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
 from investment_research.modules.processing.persistence import (
@@ -64,6 +70,35 @@ def test_reader_reloads_complete_canonical_candidate_state(
     assert result.retrieval_lexical_config_version == retrieval.run.lexical_config_version
     assert result.processing_run_id == source.processing_run.id
     assert result.document_attribution_context is None
+
+
+def test_reader_rechecks_current_attribution_before_using_a_candidate(
+    integration_database_engine: Engine,
+) -> None:
+    source = make_research_source(label="Canonical attribution filter")
+    source = replace(source, version=source.version.model_copy(update={"x_handle": "@Grid_IR"}))
+    retrieval = make_retrieval_result(source)
+    filters = retrieval.run.filters.model_copy(
+        update={"source_attribution": "@grid_ir", "source_attribution_kind": "handle"}
+    )
+    retrieval = replace(retrieval, run=retrieval.run.model_copy(update={"filters": filters}))
+    persist_research_source(integration_database_engine, source)
+    persist_retrieval_result(integration_database_engine, source, retrieval)
+    factory = create_session_factory(integration_database_engine)
+    target = (source.context, retrieval.run.id, retrieval.candidates[0].id)
+
+    with factory() as session:
+        assert PostgresCanonicalEvidenceSourceReader(session).get_source(*target) is not None
+
+    PostgresDocumentSourceAttributionWriter(factory).replace(
+        source.context,
+        source.document.id,
+        ReplaceDocumentSourceAttribution(
+            document_version_id=source.version.id, author_name="Grid IR", x_handle="@Grid_IRextra"
+        ),
+    )
+    with factory() as session:
+        assert PostgresCanonicalEvidenceSourceReader(session).get_source(*target) is None
 
 
 @pytest.mark.parametrize(

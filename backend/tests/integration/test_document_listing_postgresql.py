@@ -77,6 +77,7 @@ def add_document(
     created_at: datetime = CREATED_AT,
     published_at: datetime | None = None,
     title: str = "Synthetic catalog source",
+    author_name: str | None = None,
     media_type: OriginalMediaType = OriginalMediaType.PDF,
     with_original: bool = True,
 ) -> Document:
@@ -96,6 +97,7 @@ def add_document(
         document_id=document.id,
         version_number=1,
         title=title,
+        author_name=author_name,
         language="en",
         content_sha256="a" * 64,
         published_at=published_at,

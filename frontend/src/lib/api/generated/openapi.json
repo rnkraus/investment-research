@@ -403,6 +403,35 @@
             "pattern": "^[^\\x00]+$",
             "title": "Query",
             "type": "string"
+          },
+          "source_attribution": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Attribution"
+          },
+          "source_attribution_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "author",
+                  "handle"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Attribution Kind"
           }
         },
         "required": [
@@ -2010,6 +2039,35 @@
             ],
             "title": "Published To"
           },
+          "source_attribution": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Attribution"
+          },
+          "source_attribution_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "author",
+                  "handle"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Attribution Kind"
+          },
           "temporal_mode": {
             "$ref": "#/components/schemas/TemporalMode",
             "default": "CURRENT"
@@ -2082,6 +2140,64 @@
             "$ref": "#/components/schemas/ResearchFailedEvent"
           }
         ]
+      },
+      "SourceAttributionChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "author",
+              "handle"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "SourceAttributionChoice",
+        "type": "object"
+      },
+      "SourceAttributionPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceAttributionChoice"
+            },
+            "maxItems": 20,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 207,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SourceAttributionPage",
+        "type": "object"
       },
       "SourceLocatorKind": {
         "description": "Stable ways to locate exact content inside an immutable original.",
@@ -2608,6 +2724,45 @@
         "parameters": [
           {
             "in": "query",
+            "name": "source_attribution",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Attribution"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_attribution_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "author",
+                    "handle"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Attribution Kind"
+            }
+          },
+          {
+            "in": "query",
             "name": "published_from",
             "required": false,
             "schema": {
@@ -2925,6 +3080,88 @@
           }
         },
         "summary": "Request Document Deletions",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/source-attributions": {
+      "get": {
+        "description": "Discover author names and handles that can be selected as a source filter.",
+        "operationId": "find_source_attributions_api_v1_documents_source_attributions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 207,
+                  "minLength": 1,
+                  "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceAttributionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Find Source Attributions",
         "tags": [
           "documents"
         ]

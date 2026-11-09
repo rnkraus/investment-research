@@ -7,7 +7,11 @@ from uuid import UUID, uuid4
 from pydantic import AwareDatetime, Field, StringConstraints, ValidationError, model_validator
 
 from investment_research.modules.companies.contracts import CompanySummary
-from investment_research.modules.documents.domain import DocumentTitle, SourceLocatorKind
+from investment_research.modules.documents.domain import (
+    DocumentTitle,
+    SourceAttributionScope,
+    SourceLocatorKind,
+)
 from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.search.application import normalize_lexical_query
@@ -30,7 +34,7 @@ ARCHIVE_SEARCH_LIMIT = 20
 ARCHIVE_PASSAGE_LIMIT = 4_000
 
 
-class ArchiveSearchInput(ImmutableSearchContract, PublicationDateBounds):
+class ArchiveSearchInput(ImmutableSearchContract, PublicationDateBounds, SourceAttributionScope):
     """One archive query with optional company and publication filters."""
 
     query: Annotated[
@@ -160,6 +164,8 @@ class SearchArchiveService:
     def search(self, context: WorkspaceContext, command: ArchiveSearchInput) -> ArchiveSearchResult:
         filters = RetrievalFilters(
             company_id=command.company_id,
+            source_attribution=command.source_attribution,
+            source_attribution_kind=command.source_attribution_kind,
             published_from=command.published_from,
             published_to=command.published_to,
         )

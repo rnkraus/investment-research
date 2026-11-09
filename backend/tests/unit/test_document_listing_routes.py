@@ -89,7 +89,11 @@ def test_document_catalog_composes_safe_status_and_current_original_link(
 
     response = client.get(
         "/api/v1/documents",
-        params={"media_type": "application/pdf", "processing_state": "CAPTURED"},
+        params={
+            "media_type": "application/pdf",
+            "processing_state": "CAPTURED",
+            "source_attribution": "  Northstar  ",
+        },
     )
 
     assert response.status_code == 200
@@ -115,7 +119,9 @@ def test_document_catalog_composes_safe_status_and_current_original_link(
     documents.list_documents.assert_called_once_with(
         CONTEXT,
         DocumentListQuery(
-            media_type=OriginalMediaType.PDF, processing_state=ProcessingState.CAPTURED
+            media_type=OriginalMediaType.PDF,
+            processing_state=ProcessingState.CAPTURED,
+            source_attribution="Northstar",
         ),
     )
     for private_field in ("workspace_id", "storage_key", "checksum_sha256", "parser_version"):
@@ -161,6 +167,7 @@ def test_document_catalog_preserves_missing_status_and_maps_cursor_to_utc(
         "?unexpected=private-value",
         "?media_type=text/html",
         "?processing_state=ACTIVE",
+        "?source_attribution=%20%20",
     ],
 )
 def test_document_catalog_rejects_invalid_or_client_scoped_queries_before_services(

@@ -34,6 +34,7 @@ def test_openapi_advertises_only_implemented_product_routes() -> None:
         "/api/v1/documents",
         "/api/v1/documents/text",
         "/api/v1/documents/deletions",
+        "/api/v1/documents/source-attributions",
         "/api/v1/documents/{document_id}/companies",
         "/api/v1/documents/{document_id}/source-attribution",
         "/api/v1/documents/{document_id}/deletion",
@@ -131,6 +132,8 @@ def test_document_catalog_exposes_bounded_pagination_without_workspace_input() -
         "published_to",
         "media_type",
         "processing_state",
+        "source_attribution",
+        "source_attribution_kind",
     }
     size_schema = next(
         parameter["schema"]

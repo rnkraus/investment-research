@@ -2,15 +2,19 @@
 
 from collections.abc import Callable
 
-from sqlalchemy import and_, or_, select, true
+from sqlalchemy import and_, func, literal, or_, select, true, union_all
 from sqlalchemy.orm import Session
 
 from investment_research.modules.documents.contracts import (
+    SOURCE_ATTRIBUTION_PAGE_SIZE,
     DocumentListCursor,
     DocumentListEntry,
     DocumentListPage,
     DocumentListQuery,
     DocumentProcessingSnapshot,
+    SourceAttributionChoice,
+    SourceAttributionLookup,
+    SourceAttributionPage,
 )
 from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import (
@@ -19,6 +23,7 @@ from investment_research.modules.documents.persistence import (
     DocumentVersionRow,
     OriginalArtifactRow,
     document_has_company,
+    document_matches_source_attribution,
     document_source_attribution_columns,
     publication_date_predicates,
 )
@@ -53,13 +58,15 @@ class PostgresDocumentCatalogReader:
             .limit(1)
             .lateral("latest_processing")
         )
+        author_name, x_handle = document_source_attribution_columns()
         statement = (
             select(
                 DocumentRow.id.label("document_id"),
                 DocumentVersionRow.id.label("document_version_id"),
                 DocumentVersionRow.title,
                 DocumentVersionRow.language,
-                *document_source_attribution_columns(),
+                author_name,
+                x_handle,
                 DocumentVersionRow.published_at,
                 DocumentVersionRow.available_at,
                 DocumentVersionRow.captured_at,
@@ -106,6 +113,10 @@ class PostgresDocumentCatalogReader:
             statement = statement.where(latest.c.id.is_(None))
         elif query.processing_state is not None:
             statement = statement.where(latest.c.state == query.processing_state)
+        if (attribution := query.source_attribution) is not None:
+            statement = statement.where(
+                document_matches_source_attribution(attribution, query.source_attribution_kind)
+            )
         if query.after is not None:
             statement = statement.where(
                 or_(
@@ -142,3 +153,56 @@ class PostgresDocumentCatalogReader:
                 document_id=last.document_id,
             )
         return DocumentListPage(items=items, next_cursor=next_cursor)
+
+    def find_source_attributions(
+        self, context: WorkspaceContext, query: SourceAttributionLookup
+    ) -> SourceAttributionPage:
+        """Read a stable page of distinct names and handles from active versions."""
+
+        author, handle = document_source_attribution_columns()
+        sources = (
+            select(author, handle)
+            .select_from(DocumentRow)
+            .join(
+                DocumentVersionRow,
+                and_(
+                    DocumentVersionRow.workspace_id == DocumentRow.workspace_id,
+                    DocumentVersionRow.id == DocumentRow.current_version_id,
+                ),
+            )
+            .join_from(DocumentVersionRow, OriginalArtifactRow)
+            .outerjoin_from(DocumentVersionRow, DocumentSourceAttributionRow)
+            .where(
+                DocumentRow.workspace_id == context.workspace_id,
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+            )
+            .cte("active_source_attributions")
+        )
+        choices = union_all(
+            select(literal("author").label("kind"), sources.c.author_name.label("value")),
+            select(
+                literal("handle").label("kind"),
+                func.concat("@", func.ltrim(sources.c.x_handle, "@")).label("value"),
+            ).where(sources.c.x_handle.is_not(None)),
+        ).subquery()
+        key = func.concat(choices.c.kind, ":", func.lower(choices.c.value)).collate("C")
+        statement = (
+            select(choices.c.kind, func.min(choices.c.value.collate("C")), key)
+            .where(choices.c.value.is_not(None))
+            .group_by(choices.c.kind, key)
+            .order_by(key)
+            .limit(SOURCE_ATTRIBUTION_PAGE_SIZE + 1)
+        )
+        if query.q is not None:
+            statement = statement.where(choices.c.value.icontains(query.q, autoescape=True))
+            if query.q.startswith("@"):
+                statement = statement.where(choices.c.kind == "handle")
+        if query.cursor is not None:
+            statement = statement.where(key > query.cursor)
+        with self._session_factory() as session:
+            rows = session.execute(statement).tuples().all()
+        page = rows[:SOURCE_ATTRIBUTION_PAGE_SIZE]
+        return SourceAttributionPage(
+            items=tuple(SourceAttributionChoice(kind=kind, value=value) for kind, value, _ in page),
+            next_cursor=page[-1][2] if len(rows) > SOURCE_ATTRIBUTION_PAGE_SIZE else None,
+        )

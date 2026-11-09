@@ -269,6 +269,37 @@ test.describe("M1 visible browser journey", () => {
       .check();
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
+
+    const filter = page.getByRole("searchbox", { name: "Author or X handle" });
+    const find = page.getByRole("button", { name: "Find authors or handles" });
+    await filter.fill("Northstar Research");
+    await find.click();
+    await expect(
+      page.getByText("No matching authors or handles."),
+    ).toBeVisible();
+    await filter.fill("@northstar");
+    await find.click();
+    await page
+      .getByRole("button", { name: "@NorthstarPR", exact: true })
+      .click();
+    await expect(page.getByText("X handle:", { exact: false })).toContainText(
+      "@NorthstarPR",
+    );
+    const researchRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/v1/research-requests",
+    );
+    await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
+    expect((await researchRequest).postDataJSON().context).toMatchObject({
+      source_attribution: "@NorthstarPR",
+      source_attribution_kind: "handle",
+    });
+    await page
+      .getByRole("button", { name: "Clear attribution filter" })
+      .click();
+    await expect(filter).toHaveValue("");
+
     await verifyArchiveDiscovery(page, capture);
   });
 

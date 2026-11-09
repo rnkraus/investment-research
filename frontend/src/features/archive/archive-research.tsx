@@ -9,6 +9,7 @@ import {
   type DocumentCatalogEntry,
   type DocumentListCursor,
   type DocumentListFilters,
+  type SourceAttributionChoice,
 } from "@/lib/api/client";
 
 import { ArchivePassageSearch } from "./archive-passage-search";
@@ -31,6 +32,7 @@ import {
   type DocumentSelection,
 } from "./document-selection";
 import { ResearchWorkflow } from "./research-workflow";
+import { SourceAttributionFilter } from "./source-attribution-filter";
 import {
   PublicationDateFilter,
   type PublicationDates,
@@ -58,9 +60,16 @@ export function ArchiveResearch({
   const [publicationDates, setPublicationDates] = useState<PublicationDates>(
     {},
   );
+  const [sourceAttribution, setSourceAttribution] =
+    useState<SourceAttributionChoice | null>(null);
   const filters = useMemo(
-    () => ({ ...publicationDates, company_id: companyId }),
-    [publicationDates, companyId],
+    () => ({
+      ...publicationDates,
+      company_id: companyId,
+      source_attribution: sourceAttribution?.value,
+      source_attribution_kind: sourceAttribution?.kind,
+    }),
+    [publicationDates, companyId, sourceAttribution],
   );
   const hasPublicationFilter =
     filters.published_from != null || filters.published_to != null;
@@ -377,6 +386,10 @@ export function ArchiveResearch({
                               author_name,
                               x_handle,
                             }) => {
+                              if (sourceAttribution !== null) {
+                                setRefreshCount((current) => current + 1);
+                                return;
+                              }
                               setDocuments((current) =>
                                 current.map((entry) =>
                                   entry.document_id === document_id &&
@@ -466,6 +479,7 @@ export function ArchiveResearch({
                 <p>
                   {companyId !== undefined ||
                   hasPublicationFilter ||
+                  sourceAttribution !== null ||
                   hasListFilter
                     ? "No saved documents match the current filters."
                     : archiveCopy.catalog.empty}
@@ -562,6 +576,14 @@ export function ArchiveResearch({
               onApply={(dates) => {
                 setSelection(EMPTY_DOCUMENT_SELECTION);
                 setPublicationDates(dates);
+              }}
+            />
+            <SourceAttributionFilter
+              selected={sourceAttribution}
+              disabled={isResearching || isDeleting}
+              onChange={(attribution) => {
+                setSelection(EMPTY_DOCUMENT_SELECTION);
+                setSourceAttribution(attribution);
               }}
             />
           </div>

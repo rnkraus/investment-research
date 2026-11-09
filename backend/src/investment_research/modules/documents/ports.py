@@ -7,7 +7,12 @@ from typing import BinaryIO, Protocol
 from uuid import UUID
 
 from investment_research.modules.delivery.ports import OutboxRepository
-from investment_research.modules.documents.contracts import DocumentListPage, DocumentListQuery
+from investment_research.modules.documents.contracts import (
+    DocumentListPage,
+    DocumentListQuery,
+    SourceAttributionLookup,
+    SourceAttributionPage,
+)
 from investment_research.modules.documents.domain import (
     Document,
     DocumentVersion,
@@ -90,6 +95,11 @@ class DocumentCatalogReader(Protocol):
         query: DocumentListQuery,
     ) -> DocumentListPage:
         """Return a bounded metadata page for active current originals in scope."""
+
+    def find_source_attributions(
+        self, context: WorkspaceContext, query: SourceAttributionLookup
+    ) -> SourceAttributionPage:
+        """Return distinct effective author names and handles from current sources."""
 
 
 class DocumentRepository(Protocol):

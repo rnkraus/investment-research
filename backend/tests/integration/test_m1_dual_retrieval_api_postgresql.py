@@ -553,7 +553,7 @@ def test_m1_api_researches_existing_archive_without_document_filter(
 
 
 @pytest.mark.parametrize("dense_only", [False, True], ids=["lexical", "dense"])
-def test_company_and_publication_filters_scope_retrieval_and_respect_explicit_documents(
+def test_archive_filters_scope_retrieval_and_respect_explicit_documents(
     integration_api_settings: ApiSettings,
     integration_database_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
@@ -571,7 +571,11 @@ def test_company_and_publication_filters_scope_retrieval_and_respect_explicit_do
     source = replace(
         source,
         version=source.version.model_copy(
-            update={"published_at": datetime(2026, 10, 11, 23, 59, 59, tzinfo=UTC)}
+            update={
+                "published_at": datetime(2026, 10, 11, 23, 59, 59, tzinfo=UTC),
+                "author_name": "Northstar Investor Relations",
+                "x_handle": "NorthstarIR",
+            }
         ),
     )
     persist_research_source(engine, source)
@@ -605,8 +609,18 @@ def test_company_and_publication_filters_scope_retrieval_and_respect_explicit_do
                     "company_id": str(company),
                     "published_from": "2026-10-11",
                     "published_to": "2026-10-11",
+                    "source_attribution": "@northstarir",
+                    "source_attribution_kind": "handle",
                 },
                 "answer.completed",
+            ),
+            (
+                {
+                    "company_id": str(company),
+                    "source_attribution": "northstar",
+                    "source_attribution_kind": "author",
+                },
+                "answer.insufficient",
             ),
             (
                 {"company_id": str(company), "published_to": "2026-10-10"},
@@ -629,6 +643,9 @@ def test_company_and_publication_filters_scope_retrieval_and_respect_explicit_do
             )
             assert run.filter_snapshot["company_id"] == filter_context["company_id"]
             assert run.filter_snapshot["published_to"] == filter_context.get("published_to")
+            assert run.filter_snapshot["source_attribution"] == filter_context.get(
+                "source_attribution"
+            )
             assert {candidate.chunk_id for candidate in candidates} == (
                 {source.chunks[0].id} if expected == "answer.completed" else set()
             )

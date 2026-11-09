@@ -426,12 +426,12 @@ and citation validation. Unknown publication dates are excluded only when a date
 
 **Catalog format and status filters.** The document list can filter by original PDF or pasted
 text and by the latest processing run of the current version, including versions without a run.
-These list filters combine with company and publication filters before pagination. The displayed
-status comes from the same read as the filter. Research scope still uses company, dates, and any
-explicit document selection.
+These list filters combine with company, publication, and source-attribution filters before
+pagination. The displayed status comes from the same read as the filter. Research scope uses
+company, publication, source attribution, and any explicit document selection.
 
 **Lexical archive search block.** The archive can return ranked passages directly for keywords
-and quoted phrases. Company and publication filters apply. Results link to the original and
+and quoted phrases. Company, publication, and source-attribution filters apply. Results link to the original and
 open PDFs at the matched physical page. Discovery uses PostgreSQL without creating research
 requests or calling model providers.
 
@@ -457,8 +457,14 @@ separate measurement with real provider responses.
 **Source attribution.** PDF and pasted-text imports accept an optional author or organization and
 X handle. The archive allows the owner to correct or clear both fields on the current version of
 an existing document. The catalog and resolved citations display the version's effective
-attribution. A handle alone supplies the visible byline. These user-entered values do not verify
-identity or affect company assignments, search ranking, or evidence validation.
+attribution. A handle alone supplies the visible byline. The optional scope filter matches
+literal substrings in the current author or X handle without regard to case. The website lists
+distinct active authors and handles in bounded pages. Search by a substring or start with `@`
+to find handles, then select an exact author or handle. The filter combines with the other applicable filters in the
+catalog, in keyword and semantic archive search, and in lexical and dense research retrieval.
+Ticker results with this filter require an assigned current document that matches the scope.
+Research stores the filter with the retrieval run and reapplies it when validating evidence.
+Claim support continues to come from the original source text.
 
 ### Build
 

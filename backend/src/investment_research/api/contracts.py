@@ -28,6 +28,7 @@ from investment_research.modules.documents.deletion_contracts import (
 )
 from investment_research.modules.documents.domain import (
     OriginalMediaType,
+    SourceAttributionScope,
     SourceAuthorName,
     SourceXHandle,
 )
@@ -122,7 +123,7 @@ class ProcessingRunResult(DocumentProcessingSnapshot):
     error_summary: SafeMessage | None = None
 
 
-class DocumentCatalogQuery(StrictContract, PublicationDateBounds):
+class DocumentCatalogQuery(StrictContract, PublicationDateBounds, SourceAttributionScope):
     """Public pagination parameters; workspace scope is never client supplied."""
 
     page_size: int = Field(default=20, ge=1, le=100)
@@ -194,7 +195,7 @@ class DocumentDeletionsAccepted(StrictContract):
     )
 
 
-class ResearchRequestContext(StrictContract, PublicationDateBounds):
+class ResearchRequestContext(StrictContract, PublicationDateBounds, SourceAttributionScope):
     """Explicit archive filters supplied with a research question."""
 
     document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
