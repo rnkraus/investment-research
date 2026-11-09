@@ -21,6 +21,8 @@ import {
 import { archiveCopy, fixtureDefaults } from "./copy";
 import { shouldPollProcessing } from "./processing-state";
 import { getLocalPublicationDate } from "./publication-date";
+import { readSourceAttribution } from "./source-attribution";
+import { SourceAttributionFields } from "./source-attribution-fields";
 
 const PROCESSING_POLL_INTERVAL_MS = 2_000;
 type SourceInputMode = "pdf" | "text";
@@ -89,7 +91,6 @@ export function DocumentWorkflow({
   const textInputId = useId();
   const titleInputId = useId();
   const publicationDateInputId = useId();
-  const attributionInputId = useId();
   const uploadController = useRef<AbortController | null>(null);
   const [inputMode, setInputMode] = useState<SourceInputMode>("pdf");
   const [file, setFile] = useState<File>();
@@ -195,11 +196,8 @@ export function DocumentWorkflow({
     setErrorMessage(undefined);
 
     try {
-      const metadata = new FormData(event.currentTarget);
-      const authorName =
-        String(metadata.get("author_name") ?? "").trim() || undefined;
-      const xHandle =
-        String(metadata.get("x_handle") ?? "").trim() || undefined;
+      const { author_name: authorName, x_handle: xHandle } =
+        readSourceAttribution(event.currentTarget);
       const publishedAt = publicationDate
         ? `${publicationDate}T00:00:00Z`
         : undefined;
@@ -213,8 +211,8 @@ export function DocumentWorkflow({
             file,
             title,
             language: fixtureDefaults.language,
-            authorName,
-            xHandle,
+            authorName: authorName ?? undefined,
+            xHandle: xHandle ?? undefined,
             publishedAt,
           },
           controller.signal,
@@ -225,8 +223,8 @@ export function DocumentWorkflow({
             title,
             text,
             language: fixtureDefaults.language,
-            author_name: authorName,
-            x_handle: xHandle,
+            author_name: authorName ?? undefined,
+            x_handle: xHandle ?? undefined,
             published_at: publishedAt,
           },
           controller.signal,
@@ -376,41 +374,7 @@ export function DocumentWorkflow({
               />
             </div>
 
-            {[
-              {
-                name: "author_name",
-                label: archiveCopy.upload.authorLabel,
-                maxLength: 200,
-              },
-              {
-                name: "x_handle",
-                label: archiveCopy.upload.xHandleLabel,
-                maxLength: 16,
-                pattern: "@?[A-Za-z0-9_]{1,15}",
-                placeholder: archiveCopy.upload.xHandlePlaceholder,
-              },
-            ].map(({ name, label, maxLength, pattern, placeholder }) => {
-              const id = `${attributionInputId}-${name}`;
-              return (
-                <div key={name}>
-                  <label
-                    className="text-sm font-semibold text-slate-800"
-                    htmlFor={id}
-                  >
-                    {label}
-                  </label>
-                  <input
-                    className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-xs outline-none placeholder:text-slate-400 focus:border-teal-600 focus:ring-3 focus:ring-teal-100"
-                    id={id}
-                    name={name}
-                    maxLength={maxLength}
-                    pattern={pattern}
-                    placeholder={placeholder}
-                    type="text"
-                  />
-                </div>
-              );
-            })}
+            <SourceAttributionFields />
 
             <div>
               <label

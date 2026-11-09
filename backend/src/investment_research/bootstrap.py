@@ -30,6 +30,9 @@ from investment_research.infrastructure.database.document_companies import (
 from investment_research.infrastructure.database.document_deletion import (
     create_document_deletion_unit_of_work_factory,
 )
+from investment_research.infrastructure.database.document_source_attribution import (
+    PostgresDocumentSourceAttributionWriter,
+)
 from investment_research.infrastructure.database.metadata import get_model_metadata
 from investment_research.infrastructure.database.outbox_unit_of_work import (
     create_outbox_delivery_unit_of_work_factory,
@@ -151,6 +154,7 @@ from investment_research.modules.documents.deletion import (
 from investment_research.modules.documents.deletion_ports import OriginalPurger
 from investment_research.modules.documents.listing import ListDocumentsService
 from investment_research.modules.documents.ports import ObjectStorage
+from investment_research.modules.documents.source_attribution import DocumentSourceAttributionWriter
 from investment_research.modules.evidence.application import ResolveEvidenceSpanService
 from investment_research.modules.evidence.contracts import (
     EvidenceValidationDecision,
@@ -395,6 +399,7 @@ class ApiContainer:
     processing_dispatcher: ProcessingDispatcher
     capture_document_service: CaptureDocumentService
     open_original_service: OpenOriginalService
+    source_attribution_writer: DocumentSourceAttributionWriter
     list_documents_service: ListDocumentsService
     search_archive_service: SearchArchiveService
     company_service: CompanyService
@@ -969,6 +974,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 database.session_factory
             ),
         ),
+        source_attribution_writer=PostgresDocumentSourceAttributionWriter(database.session_factory),
         list_documents_service=ListDocumentsService(
             catalog=PostgresDocumentCatalogReader(database.session_factory),
         ),

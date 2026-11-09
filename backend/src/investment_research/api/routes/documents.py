@@ -25,6 +25,7 @@ from investment_research.api.dependencies import (
     CaptureDocumentServiceDependency,
     ListDocumentsServiceDependency,
     OpenOriginalServiceDependency,
+    SourceAttributionWriterDependency,
     WorkspaceContextDependency,
 )
 from investment_research.api.errors import ApiError
@@ -47,6 +48,12 @@ from investment_research.modules.documents.ports import (
     CaptureCommitUncertainError,
     ObjectAlreadyExistsError,
     ObjectStorageError,
+)
+from investment_research.modules.documents.source_attribution import (
+    DocumentSourceAttribution,
+    ReplaceDocumentSourceAttribution,
+    SourceAttributionConflictError,
+    SourceAttributionUnavailableError,
 )
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
@@ -135,6 +142,36 @@ def list_documents(
         ),
         next_cursor=page.next_cursor,
     )
+
+
+@router.put(
+    "/{document_id}/source-attribution",
+    responses={code: {"model": ErrorResponse} for code in (404, 409, 413, 422, 500)},
+)
+def replace_source_attribution(
+    document_id: UUID,
+    payload: ReplaceDocumentSourceAttribution,
+    writer: SourceAttributionWriterDependency,
+    context: WorkspaceContextDependency,
+) -> DocumentSourceAttribution:
+    """Save corrected display metadata for an active document's current version."""
+
+    try:
+        return writer.replace(context, document_id, payload)
+    except SourceAttributionUnavailableError:
+        raise ApiError(
+            status_code=404, code=ErrorCode.NOT_FOUND, message="document is unavailable"
+        ) from None
+    except SourceAttributionConflictError:
+        raise ApiError(
+            status_code=409, code=ErrorCode.CONFLICT, message="document version has changed"
+        ) from None
+    except SQLAlchemyError:
+        raise ApiError(
+            status_code=500,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="source attribution could not be saved",
+        ) from None
 
 
 @router.post(

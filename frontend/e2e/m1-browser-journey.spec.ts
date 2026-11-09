@@ -133,9 +133,14 @@ test.describe("M1 visible browser journey", () => {
     await page.getByLabel("PDF document").setInputFiles(PDF_FIXTURE);
     await page.getByLabel("Document title").fill(PDF_TITLE);
     await page
-      .getByLabel("Author or organization (optional)")
+      .getByRole("textbox", {
+        name: "Author or organization (optional)",
+        exact: true,
+      })
       .fill("Northstar Research");
-    await page.getByLabel("X handle (optional)").fill("@NorthstarIR");
+    await page
+      .getByRole("textbox", { name: "X handle (optional)", exact: true })
+      .fill("@NorthstarIR");
     const captured = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === "/api/v1/documents" &&
@@ -146,6 +151,31 @@ test.describe("M1 visible browser journey", () => {
     const capture: DocumentAccepted = await (await captured).json();
     await waitUntilSearchable(page);
 
+    const source = page.getByRole("listitem").filter({
+      has: page.getByRole("checkbox", {
+        name: `Select document: ${PDF_TITLE}`,
+        exact: true,
+      }),
+    });
+    await source.getByText("Edit source attribution", { exact: true }).click();
+    const author = source.getByLabel("Author or organization (optional)");
+    const handle = source.getByLabel("X handle (optional)");
+    await expect(author).toHaveValue("Northstar Research");
+    await expect(handle).toHaveValue("@NorthstarIR");
+    await author.fill("Northstar Investor Relations");
+    await handle.fill("@NorthstarOfficial");
+    expect(
+      await handle.evaluate(
+        (input: HTMLInputElement) => input.validity.patternMismatch,
+      ),
+    ).toBe(true);
+    await handle.fill("@NorthstarPR");
+    await source
+      .getByRole("button", { name: "Save source attribution" })
+      .click();
+    await expect(source.getByText("Source attribution saved.")).toBeVisible();
+    await source.getByText("Edit source attribution", { exact: true }).click();
+
     await page
       .getByRole("checkbox", {
         name: `Select document: ${PDF_TITLE}`,
@@ -155,12 +185,17 @@ test.describe("M1 visible browser journey", () => {
     await askQuestion(page, PDF_QUESTION, PDF_STATEMENT);
     await expect(page.getByText(PDF_EVIDENCE, { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Northstar Research (@NorthstarIR)", { exact: true }),
+      page.getByText("Northstar Investor Relations (@NorthstarPR)", {
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
-      page.getByText(`${PDF_TITLE} · Northstar Research (@NorthstarIR)`, {
-        exact: false,
-      }),
+      page.getByText(
+        `${PDF_TITLE} · Northstar Investor Relations (@NorthstarPR)`,
+        {
+          exact: false,
+        },
+      ),
     ).toBeVisible();
 
     const researchDetails = page.getByTestId("research-details");
@@ -189,7 +224,7 @@ test.describe("M1 visible browser journey", () => {
       sourcePage.getByRole("heading", { name: "Original PDF" }),
     ).toBeVisible();
     await expect(
-      sourcePage.getByText("Northstar Research (@NorthstarIR)", {
+      sourcePage.getByText("Northstar Investor Relations (@NorthstarPR)", {
         exact: true,
       }),
     ).toBeVisible();
@@ -248,7 +283,9 @@ test.describe("M1 visible browser journey", () => {
     await expect(page.getByLabel("Paste text")).toBeChecked();
     await page.getByLabel("Research text").fill(sourceText);
     await page.getByLabel("Document title").fill(TEXT_TITLE);
-    await page.getByLabel("X handle (optional)").fill("NorthstarNews");
+    await page
+      .getByRole("textbox", { name: "X handle (optional)", exact: true })
+      .fill("NorthstarNews");
     await page.getByLabel("Publication date").fill("2026-07-22");
     await page.getByRole("button", { name: "Import document" }).click();
     await waitUntilSearchable(page);
@@ -259,6 +296,24 @@ test.describe("M1 visible browser journey", () => {
         exact: true,
       })
       .check();
+    const source = page.getByRole("listitem").filter({
+      has: page.getByRole("checkbox", {
+        name: `Select document: ${TEXT_TITLE}`,
+        exact: true,
+      }),
+    });
+    await source.getByText("Edit source attribution", { exact: true }).click();
+    const handle = source.getByLabel("X handle (optional)");
+    await expect(handle).toHaveValue("NorthstarNews");
+    await handle.clear();
+    await source
+      .getByRole("button", { name: "Save source attribution" })
+      .click();
+    await expect(source.getByText("Source attribution saved.")).toBeVisible();
+    await expect(
+      source.getByText("@NorthstarNews", { exact: true }),
+    ).toHaveCount(0);
+
     await askQuestion(page, TEXT_QUESTION, TEXT_STATEMENT);
     await expect(page.getByText(TEXT_EVIDENCE, { exact: true })).toBeVisible();
 
@@ -268,7 +323,7 @@ test.describe("M1 visible browser journey", () => {
     ).toBeVisible();
     await expect(
       sourcePage.getByText("@NorthstarNews", { exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     const highlight = sourcePage.getByTestId("source-highlight");
     await expect(highlight).toHaveText(TEXT_EVIDENCE);
     await expect(highlight).toHaveCount(1);

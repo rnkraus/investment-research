@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     and_,
+    case,
     func,
     select,
 )
@@ -297,6 +298,40 @@ class DocumentVersionRow(Base):
             available_at=self.available_at,
             captured_at=self.captured_at,
         )
+
+
+class DocumentSourceAttributionRow(Base):
+    """Version-scoped display override, including explicit removal of captured metadata."""
+
+    __tablename__ = "document_source_attribution_edits"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "document_version_id"],
+            ["document_versions.workspace_id", "document_versions.id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    document_version_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    author_name: Mapped[str | None] = mapped_column(String(200))
+    x_handle: Mapped[str | None] = mapped_column(String(16))
+
+
+def document_source_attribution_columns() -> tuple[ColumnElement[str | None], ...]:
+    """Project owner overrides when present, even when their values are null."""
+
+    edited = DocumentSourceAttributionRow.document_version_id.is_not(None)
+    return (
+        case(
+            (edited, DocumentSourceAttributionRow.author_name),
+            else_=DocumentVersionRow.author_name,
+        ).label("author_name"),
+        case(
+            (edited, DocumentSourceAttributionRow.x_handle),
+            else_=DocumentVersionRow.x_handle,
+        ).label("x_handle"),
+    )
 
 
 def publication_date_predicates(bounds: PublicationDateBounds) -> tuple[ColumnElement[bool], ...]:

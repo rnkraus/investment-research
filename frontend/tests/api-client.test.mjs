@@ -268,6 +268,39 @@ test("streamResearch rejects invalid, duplicate, or oversized selected context",
   ]);
 });
 
+test("source attribution sends an explicit clear and rejects a mismatched version", async () => {
+  const fields = {
+    document_version_id: VERSION_ID,
+    author_name: "Northstar",
+    x_handle: null,
+  };
+  const client = createApiClient(async (path, init) => {
+    assert.equal(path, `/api/v1/documents/${DOCUMENT_ID}/source-attribution`);
+    assert.equal(init.method, "PUT");
+    assert.deepEqual(JSON.parse(init.body), fields);
+    return jsonResponse({ ...fields, document_id: DOCUMENT_ID });
+  });
+  assert.deepEqual(
+    await client.replaceDocumentSourceAttribution(DOCUMENT_ID, fields),
+    {
+      ...fields,
+      document_id: DOCUMENT_ID,
+    },
+  );
+
+  const mismatched = createApiClient(async () =>
+    jsonResponse({
+      ...fields,
+      document_id: DOCUMENT_ID,
+      document_version_id: DOCUMENT_ID,
+    }),
+  );
+  await assert.rejects(
+    mismatched.replaceDocumentSourceAttribution(DOCUMENT_ID, fields),
+    ApiProtocolError,
+  );
+});
+
 test("captureDocument sends the exact multipart API fields", async () => {
   let capturedPath;
   let capturedInit;

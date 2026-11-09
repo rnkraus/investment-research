@@ -14,6 +14,10 @@ const COMPANY_PAGE_SIZE = 20;
 export type DocumentAccepted = components["schemas"]["DocumentAccepted"];
 export type DocumentCatalogEntry =
   components["schemas"]["DocumentCatalogEntry"];
+export type DocumentSourceAttribution =
+  components["schemas"]["DocumentSourceAttribution"];
+export type ReplaceDocumentSourceAttribution =
+  components["schemas"]["ReplaceDocumentSourceAttribution"];
 export type DocumentCatalogPage = components["schemas"]["DocumentCatalogPage"];
 export type ArchiveSearchInput = components["schemas"]["ArchiveSearchInput"];
 export type ArchiveSearchMode = ArchiveSearchInput["mode"];
@@ -382,6 +386,19 @@ function hasValidSourceAttribution(value: JsonRecord): boolean {
         Array.from(author).length <= 200)) &&
     (handle == null ||
       (typeof handle === "string" && /^@?[A-Za-z0-9_]{1,15}$/.test(handle)))
+  );
+}
+
+function isDocumentSourceAttribution(
+  value: unknown,
+): value is DocumentSourceAttribution {
+  return (
+    isRecord(value) &&
+    isUuid(value.document_id) &&
+    isUuid(value.document_version_id) &&
+    value.author_name !== undefined &&
+    value.x_handle !== undefined &&
+    hasValidSourceAttribution(value)
   );
 }
 
@@ -915,6 +932,33 @@ export function createApiClient(
       if (company.company_id !== companyId.toLowerCase())
         throw new ApiProtocolError();
       return company;
+    },
+
+    async replaceDocumentSourceAttribution(
+      documentId: string,
+      command: ReplaceDocumentSourceAttribution,
+    ): Promise<DocumentSourceAttribution> {
+      if (!isUuid(documentId) || !isUuid(command.document_version_id)) {
+        throw new ApiProtocolError("The document identifier is invalid.");
+      }
+      const attribution = await requestJson(
+        fetchImplementation,
+        `/api/v1/documents/${documentId}/source-attribution`,
+        isDocumentSourceAttribution,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(command),
+        },
+      );
+      if (
+        attribution.document_id !== documentId.toLowerCase() ||
+        attribution.document_version_id !==
+          command.document_version_id.toLowerCase()
+      ) {
+        throw new ApiProtocolError("The source attribution does not match.");
+      }
+      return attribution;
     },
 
     async getDocumentCompanies(
