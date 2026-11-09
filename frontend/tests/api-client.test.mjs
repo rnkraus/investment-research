@@ -293,6 +293,8 @@ test("captureDocument sends the exact multipart API fields", async () => {
     file,
     title: "FY2025 earnings",
     language: "en",
+    authorName: "Northstar Research",
+    xHandle: "@NorthstarIR",
     publishedAt: "2026-02-20T12:00:00Z",
   });
 
@@ -302,6 +304,8 @@ test("captureDocument sends the exact multipart API fields", async () => {
   assert.equal(capturedInit.body.get("file").name, "earnings.pdf");
   assert.equal(capturedInit.body.get("title"), "FY2025 earnings");
   assert.equal(capturedInit.body.get("language"), "en");
+  assert.equal(capturedInit.body.get("author_name"), "Northstar Research");
+  assert.equal(capturedInit.body.get("x_handle"), "@NorthstarIR");
   assert.equal(capturedInit.body.get("published_at"), "2026-02-20T12:00:00Z");
   assert.equal(capturedInit.body.get("available_at"), null);
   assert.equal(result.processing_run_id, PROCESSING_RUN_ID);

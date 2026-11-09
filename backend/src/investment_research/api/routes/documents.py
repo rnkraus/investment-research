@@ -42,6 +42,7 @@ from investment_research.modules.documents.contracts import (
     PastedTextCaptureInput,
     PdfCaptureInput,
 )
+from investment_research.modules.documents.domain import SourceAuthorName, SourceXHandle
 from investment_research.modules.documents.ports import (
     CaptureCommitUncertainError,
     ObjectAlreadyExistsError,
@@ -56,12 +57,16 @@ def document_metadata_from_form(
     language: Annotated[LanguageCode, Form()] = "en",
     published_at: Annotated[AwareDatetime | None, Form()] = None,
     available_at: Annotated[AwareDatetime | None, Form()] = None,
+    author_name: Annotated[SourceAuthorName | None, Form()] = None,
+    x_handle: Annotated[SourceXHandle | None, Form()] = None,
 ) -> DocumentMetadataInput:
     """Assemble validated application-neutral metadata from multipart fields."""
 
     return DocumentMetadataInput(
         title=title,
         language=language,
+        author_name=author_name,
+        x_handle=x_handle,
         published_at=published_at,
         available_at=available_at,
     )
@@ -161,6 +166,8 @@ def capture_document(
             media_type=file.content_type or "",
             title=metadata.title,
             language=metadata.language,
+            author_name=metadata.author_name,
+            x_handle=metadata.x_handle,
             published_at=metadata.published_at,
             available_at=metadata.available_at,
         )
@@ -228,6 +235,8 @@ def capture_pasted_text(
             PastedTextCaptureInput(
                 title=payload.title,
                 language=payload.language,
+                author_name=payload.author_name,
+                x_handle=payload.x_handle,
                 published_at=payload.published_at,
                 available_at=payload.available_at,
                 text=payload.text,

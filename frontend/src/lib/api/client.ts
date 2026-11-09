@@ -63,6 +63,8 @@ export interface CaptureDocumentInput {
   readonly file: File;
   readonly title: string;
   readonly language?: string;
+  readonly authorName?: string;
+  readonly xHandle?: string;
   readonly publishedAt?: string;
   readonly availableAt?: string;
 }
@@ -371,6 +373,18 @@ function isDocumentListCursor(value: unknown): value is DocumentListCursor {
   );
 }
 
+function hasValidSourceAttribution(value: JsonRecord): boolean {
+  const { author_name: author, x_handle: handle } = value;
+  return (
+    (author == null ||
+      (isNonEmptyString(author) &&
+        author.trim().length > 0 &&
+        Array.from(author).length <= 200)) &&
+    (handle == null ||
+      (typeof handle === "string" && /^@?[A-Za-z0-9_]{1,15}$/.test(handle)))
+  );
+}
+
 function isDocumentCatalogEntry(value: unknown): value is DocumentCatalogEntry {
   return (
     isRecord(value) &&
@@ -386,6 +400,7 @@ function isDocumentCatalogEntry(value: unknown): value is DocumentCatalogEntry {
     isTimestamp(value.captured_at) &&
     isOptionalTimestamp(value.published_at) &&
     isOptionalTimestamp(value.available_at) &&
+    hasValidSourceAttribution(value) &&
     (value.processing === null ||
       (isProcessingRunResult(value.processing) &&
         value.processing.document_version_id === value.document_version_id)) &&
@@ -426,6 +441,7 @@ function isEvidenceSpanResult(value: unknown): value is EvidenceSpanResult {
     isNonEmptyString(value.document_title) &&
     value.document_title.trim().length > 0 &&
     Array.from(value.document_title).length <= 300 &&
+    hasValidSourceAttribution(value) &&
     isOptionalTimestamp(value.published_at) &&
     isNonNegativeInteger(value.start_character) &&
     Number.isInteger(value.end_character) &&
@@ -1081,6 +1097,12 @@ export function createApiClient(
       body.set("file", input.file);
       body.set("title", input.title);
       body.set("language", input.language ?? "en");
+      if (input.authorName) {
+        body.set("author_name", input.authorName);
+      }
+      if (input.xHandle) {
+        body.set("x_handle", input.xHandle);
+      }
       if (input.publishedAt) {
         body.set("published_at", input.publishedAt);
       }

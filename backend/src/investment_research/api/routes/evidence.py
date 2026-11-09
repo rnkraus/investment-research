@@ -82,6 +82,8 @@ def resolve_evidence_span(
         document_id=resolved.document_id,
         document_version_id=span.document_version_id,
         document_title=resolved.document_title,
+        author_name=resolved.author_name,
+        x_handle=resolved.x_handle,
         published_at=resolved.published_at,
         start_character=span.start_character,
         end_character=span.end_character,

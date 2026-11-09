@@ -255,6 +255,8 @@ class DocumentVersionRow(Base):
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     language: Mapped[str] = mapped_column(String(35), nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    author_name: Mapped[str | None] = mapped_column(String(200))
+    x_handle: Mapped[str | None] = mapped_column(String(16))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -271,6 +273,8 @@ class DocumentVersionRow(Base):
             title=version.title,
             language=version.language,
             content_sha256=version.content_sha256,
+            author_name=version.author_name,
+            x_handle=version.x_handle,
             published_at=version.published_at,
             available_at=version.available_at,
             captured_at=version.captured_at,
@@ -287,6 +291,8 @@ class DocumentVersionRow(Base):
             title=self.title,
             language=self.language,
             content_sha256=self.content_sha256,
+            author_name=self.author_name,
+            x_handle=self.x_handle,
             published_at=self.published_at,
             available_at=self.available_at,
             captured_at=self.captured_at,

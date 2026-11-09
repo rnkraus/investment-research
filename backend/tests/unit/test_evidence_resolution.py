@@ -111,6 +111,8 @@ def make_source() -> CanonicalEvidenceSpanSource:
         span=make_span(),
         document_id=DOCUMENT_ID,
         document_title=DOCUMENT_TITLE,
+        author_name="Northstar Research",
+        x_handle="@NorthstarIR",
         published_at=PUBLISHED_AT,
         document_lifecycle_state=DocumentLifecycleState.ACTIVE,
         document_current_version_id=VERSION_ID,
@@ -135,6 +137,8 @@ def test_resolve_returns_only_a_current_linked_workspace_span() -> None:
 
     assert result.document_id == DOCUMENT_ID
     assert result.document_title == DOCUMENT_TITLE
+    assert result.author_name == "Northstar Research"
+    assert result.x_handle == "@NorthstarIR"
     assert result.published_at == PUBLISHED_AT
     assert result.span == make_span()
     assert unit_of_work.reader.calls == [(make_context(), SPAN_ID)]

@@ -74,6 +74,8 @@ def make_result() -> ResolvedEvidenceSpan:
     return ResolvedEvidenceSpan(
         document_id=DOCUMENT_ID,
         document_title=DOCUMENT_TITLE,
+        author_name="Northstar Research",
+        x_handle="@NorthstarIR",
         published_at=PUBLISHED_AT,
         span=EvidenceSpan(
             id=SPAN_ID,
@@ -158,6 +160,8 @@ def test_evidence_route_returns_exact_location_and_protected_viewer_target(
         "document_id": str(DOCUMENT_ID),
         "document_version_id": str(VERSION_ID),
         "document_title": DOCUMENT_TITLE,
+        "author_name": "Northstar Research",
+        "x_handle": "@NorthstarIR",
         "published_at": "2026-02-18T00:00:00Z",
         "start_character": 0,
         "end_character": len(EVIDENCE_TEXT),

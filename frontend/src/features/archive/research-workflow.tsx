@@ -14,6 +14,8 @@ import {
   type ResearchModelOptions,
 } from "@/lib/api/client";
 
+import { formatSourceAttribution } from "./source-attribution";
+
 import { archiveCopy } from "./copy";
 import { formatPublicationDate } from "./publication-date";
 import { RetrievalContext } from "./retrieval-context";
@@ -472,7 +474,13 @@ export function ResearchWorkflow({
                             </blockquote>
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                               <span className="text-xs font-semibold text-slate-500">
-                                {citation.source.document_title} ·{" "}
+                                {[
+                                  citation.source.document_title,
+                                  formatSourceAttribution(citation.source),
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                                {" · "}
                                 {citation.source.published_at == null ? (
                                   archiveCopy.citation.unknownDate
                                 ) : (
