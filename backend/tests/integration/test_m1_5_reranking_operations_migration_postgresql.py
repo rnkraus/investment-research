@@ -61,8 +61,8 @@ def test_reranking_migration_preserves_history_and_enforces_owner_and_workspace(
         session_factory = create_session_factory(migration_engine)
         source = make_research_source(label="Reranking migration source")
         foreign = make_research_source(label="Foreign reranking migration source")
-        persist_research_source(migration_engine, source)
-        persist_research_source(migration_engine, foreign)
+        persist_research_source(migration_engine, source, legacy_document_schema=True)
+        persist_research_source(migration_engine, foreign, legacy_document_schema=True)
         historical = ProviderOperation(
             id=uuid4(),
             workspace_id=source.context.workspace_id,

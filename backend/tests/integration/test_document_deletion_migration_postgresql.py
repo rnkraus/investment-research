@@ -62,7 +62,7 @@ def test_deletion_migration_preserves_sources_costs_and_irreversible_receipts(
         migration_engine = create_engine(migration_url, hide_parameters=True)
         session_factory = create_session_factory(migration_engine)
         source = make_research_source(label="Deletion migration synthetic source")
-        persist_research_source(migration_engine, source)
+        persist_research_source(migration_engine, source, legacy_document_schema=True)
         operation = ProviderOperation(
             id=uuid4(),
             workspace_id=source.context.workspace_id,

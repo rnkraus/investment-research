@@ -44,7 +44,7 @@ def test_context_migration_preserves_history_and_guards_downgrade(
         engine = create_engine(url, hide_parameters=True)
         source = make_research_source(label="RAG tuning migration")
         retrieval = make_retrieval_result(source)
-        persist_research_source(engine, source)
+        persist_research_source(engine, source, legacy_document_schema=True)
         persist_retrieval_result(engine, source, retrieval)
         statement = (
             update(RetrievalRunRow)
