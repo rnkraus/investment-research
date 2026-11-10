@@ -291,10 +291,9 @@ def add_legacy_document_capture(session: Session, source: ResearchSource) -> Non
 
     session.add(DocumentRow.from_domain(source.document))
     session.flush()
+    version_table = DocumentVersionRow.metadata.tables[DocumentVersionRow.__tablename__]
     session.execute(
-        insert(DocumentVersionRow.__table__).values(
-            source.version.model_dump(exclude={"author_name", "x_handle"})
-        )
+        insert(version_table).values(source.version.model_dump(exclude={"author_name", "x_handle"}))
     )
     session.add(OriginalArtifactRow.from_domain(source.original))
 
