@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 
 from investment_research.api.dependencies import get_workspace_context
 from investment_research.main import create_app
+from investment_research.modules.documents.contracts import (
+    SourceAttributionChoice,
+    SourceAttributionPage,
+)
 from investment_research.modules.documents.persistence import DocumentVersionRow
 from investment_research.settings import ApiSettings
 from tests.integration.test_document_listing_postgresql import add_document, add_workspace
@@ -47,15 +51,15 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
             assert response.status_code == 200
             return [entry["document_id"] for entry in response.json()["items"]]
 
-        def choices(term: str | None = None) -> list[dict[str, str]]:
+        def choices(term: str | None = None) -> tuple[SourceAttributionChoice, ...]:
             params = {} if term is None else {"q": term}
             response = client.get("/api/v1/documents/source-attributions", params=params)
             assert response.status_code == 200
             assert response.headers["cache-control"] == "private, no-store"
-            return response.json()["items"]
+            return SourceAttributionPage.model_validate(response.json()).items
 
         assert matches("CAPTURED") == [document_id]
-        assert choices() == [{"kind": "author", "value": "Captured author"}]
+        assert choices() == (SourceAttributionChoice(kind="author", value="Captured author"),)
         payload = {
             "document_version_id": version_id,
             "author_name": "Corrected author",
@@ -90,9 +94,11 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
         assert matches("corrected", source_attribution_kind="author") == []
         assert matches("corrected author", source_attribution_kind="author") == [document_id]
         assert matches("NORTHSTARIR", source_attribution_kind="handle") == [document_id]
-        assert choices("northstar") == [{"kind": "handle", "value": "@NorthstarIR"}]
-        assert choices("captured") == []
-        assert choices("%") == []
+        assert choices("northstar") == (
+            SourceAttributionChoice(kind="handle", value="@NorthstarIR"),
+        )
+        assert choices("captured") == ()
+        assert choices("%") == ()
         assert matches("@northstarir", media_type="text/plain") == [document_id]
         assert matches("northstarir", media_type="application/pdf") == []
         assert matches("northstarir") == [document_id]
@@ -100,7 +106,7 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
         assert matches("%") == []
         application.dependency_overrides[get_workspace_context] = lambda: other
         assert matches("@northstarir") == []
-        assert choices() == []
+        assert choices() == ()
         application.dependency_overrides[get_workspace_context] = lambda: owner
 
         assert (
@@ -111,7 +117,7 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
         assert cleared["author_name"] is None
         assert cleared["x_handle"] is None
         assert matches("corrected") == matches("@northstarir") == []
-        assert choices() == []
+        assert choices() == ()
 
     with Session(integration_database_engine) as session:
         version = session.get(DocumentVersionRow, UUID(version_id))
