@@ -95,6 +95,11 @@ class DenseRetriever(Protocol):
 class DenseCandidateQualifier(Protocol):
     """Rehydrate provider hits only through eligible canonical PostgreSQL state."""
 
+    def current_document_version_ids(
+        self, context: WorkspaceContext, document_ids: tuple[UUID, ...]
+    ) -> tuple[UUID, ...]:
+        """Resolve selected active documents before the provider applies its result limit."""
+
     def qualify(
         self,
         context: WorkspaceContext,
