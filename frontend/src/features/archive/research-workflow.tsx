@@ -62,10 +62,12 @@ export function ResearchWorkflow({
   onBusyChange,
 }: ResearchWorkflowProps) {
   const questionInputId = useId();
+  const searchModeId = useId();
   const generationModelId = useId();
   const supportModelId = useId();
   const requestController = useRef<AbortController | null>(null);
   const [question, setQuestion] = useState<string>("");
+  const [decomposeQuery, setDecomposeQuery] = useState(false);
   const [session, setSession] = useState<ResearchSession>(
     EMPTY_RESEARCH_SESSION,
   );
@@ -143,6 +145,8 @@ export function ResearchWorkflow({
       for await (const researchEvent of apiClient.streamResearch(
         {
           question,
+          decompose_query:
+            modelOptions.query_decomposition_enabled && decomposeQuery,
           generation_model: modelOptions.provider_enabled
             ? generationModel
             : "gpt-5.6-terra",
@@ -245,6 +249,43 @@ export function ResearchWorkflow({
           required
           value={question}
         />
+        {modelOptions?.query_decomposition_enabled ? (
+          <div className="mt-4">
+            <label
+              className="block text-sm font-semibold text-slate-800"
+              htmlFor={searchModeId}
+            >
+              {archiveCopy.research.searchModeLabel}
+            </label>
+            <select
+              aria-describedby={
+                decomposeQuery ? `${searchModeId}-hint` : undefined
+              }
+              className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 sm:w-auto"
+              disabled={isBusy}
+              id={searchModeId}
+              onChange={(event) =>
+                setDecomposeQuery(event.target.value === "decomposition")
+              }
+              value={decomposeQuery ? "decomposition" : "standard"}
+            >
+              <option value="standard">
+                {archiveCopy.research.standardSearch}
+              </option>
+              <option value="decomposition">
+                {archiveCopy.research.decomposedSearch}
+              </option>
+            </select>
+            {decomposeQuery ? (
+              <p
+                className="mt-1 text-xs text-slate-600"
+                id={`${searchModeId}-hint`}
+              >
+                {archiveCopy.research.decomposedSearchHint}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {isLoadingModelOptions ? (
           <p className="mt-5 text-sm text-slate-600" role="status">
             {archiveCopy.research.modelOptionsLoading}
