@@ -126,6 +126,24 @@ After actors and claims exist, add explicit filters for:
 
 These filters should become acceptance-tested product behavior rather than incidental search metadata.
 
+### F-25 — Optional query planning for RAG
+
+Offer a selectable research mode in which a model can keep the original search or add focused
+search queries. The plan may use three techniques.
+
+- **Query decomposition** splits a multi-part question into focused searches.
+- **Query rewriting** reformulates a search query to improve retrieval.
+- **Query expansion** adds related search terms such as synonyms or abbreviations.
+
+Use the original question for answer generation. Apply the same workspace, document, company,
+and temporal filters to every search. Bound the number of additional searches and record their
+effect on latency and provider cost.
+
+Evaluate query decomposition first on multi-part questions across the full archive. Compare
+whether the required passages are retrieved and whether the final answer covers each requested
+detail against the [first app evaluation](../eval/first-app-run.md). Test reranking separately
+for cases where the required passage is retrieved but ranks below the answer context cutoff.
+
 ## 5. Answer presentation
 
 ### F-15 — List-first answer mode
