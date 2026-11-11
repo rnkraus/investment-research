@@ -31,7 +31,7 @@ LangSmith-Evaluation ist kein Bestandteil der implementierten Qualitätsnachweis
 Zielarchitektur.
 
 [Architektur](docs/14-m1-5-portfolio.md#1-implemented-architecture) ·
-[Evaluationsergebnisse](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim) ·
+[Evaluation](eval/README.md) ·
 [Lokale Demo](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) ·
 [Entwicklungsumgebung](docs/development.md)
 
@@ -269,6 +269,11 @@ Unternehmensberichten. Sie sind vom folgenden synthetischen Evaluationskorpus ge
 keine zusätzlichen Qualitätsmessungen.
 
 ## Evaluationsergebnisse
+
+Der [erste App-Messlauf mit öffentlichen Quellen](eval/first-app-run.md) bewertet Archivsuche,
+Antwortvollständigkeit, Zitatgenauigkeit und Enthaltung in 19 geprüften Fällen.
+
+### Frühere synthetische Evaluation
 
 Die dokumentierte, vom Projektverantwortlichen ausgeführte Evaluation umfasst **zwölf geprüfte
 Fragen zu drei synthetischen Originaldokumenten**. Dazu gehören beantwortbare Fragen, fehlende

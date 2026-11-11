@@ -29,7 +29,7 @@ is not part of the implemented quality evidence. The [system design](docs/02-sys
 separates current behavior from the broader target architecture.
 
 [Architecture](docs/14-m1-5-portfolio.md#1-implemented-architecture) ·
-[Evaluation evidence](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim) ·
+[Evaluation](eval/README.md) ·
 [Local demo](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) ·
 [Developer setup](docs/development.md)
 
@@ -248,6 +248,11 @@ The screenshots show owner-provided local UI examples with company reports. They
 from the synthetic evaluation corpus below and are not additional quality measurements.
 
 ## Evaluation evidence
+
+The [first app run on public sources](eval/first-app-run.md) covers archive discovery, answer
+completeness, citation validity, and abstention across 19 reviewed cases.
+
+### Earlier synthetic evaluation
 
 The recorded owner-run evaluation uses **12 reviewed questions across three synthetic originals**.
 It includes answerable questions, missing information, partial coverage, conflicting reports,
