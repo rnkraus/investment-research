@@ -221,6 +221,7 @@ class ResearchRequestInput(StrictContract):
     context: ResearchRequestContext = Field(default_factory=ResearchRequestContext)
     generation_model: ResearchModel = ResearchModel.TERRA
     support_model: ResearchModel = ResearchModel.TERRA
+    decompose_query: bool = False
 
 
 class ResearchModelOptions(StrictContract):
@@ -229,6 +230,7 @@ class ResearchModelOptions(StrictContract):
     provider_enabled: bool
     generation_models: tuple[ResearchModel, ...]
     support_models: tuple[ResearchModel, ...]
+    query_decomposition_enabled: bool = False
 
 
 class EvidenceRelationship(StrEnum):

@@ -448,6 +448,15 @@ All accepted lane candidates are persisted with their own `origin`, origin-local
 score. The same chunk may therefore have one `LEXICAL` and one `DENSE` candidate record. Raw scores
 from different origins are never compared.
 
+The provider-backed M1.5 source-ID profile offers an experimental `decompose_query` option.
+The models endpoint advertises it as `query_decomposition_enabled`. The default request path
+uses the original search. With the option enabled, Terra receives only the original question
+and can add at most two short lexical queries. The app applies the original filters to each,
+combines their rank lists within the lexical lane, and then applies the existing hybrid fusion.
+The original question remains the input for embedding and answering. The planner uses one
+budgeted `QUERY_PLANNING` call outside database transactions. The original search runs when
+the planner cannot supply a usable plan.
+
 The selector produces model context as follows:
 
 1. read lexical rank 1, then dense rank 1, lexical rank 2, dense rank 2, and so on;

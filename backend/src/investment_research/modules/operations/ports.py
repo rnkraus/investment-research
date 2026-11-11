@@ -26,6 +26,7 @@ type OperationSpanName = Literal[
     "processing.index",
     "processing.parse",
     "research.generate",
+    "research.plan_query",
     "research.retrieve",
     "search.rerank",
 ]
@@ -42,6 +43,7 @@ APPROVED_OPERATION_SPAN_NAMES: frozenset[OperationSpanName] = frozenset(
         "processing.index",
         "processing.parse",
         "research.generate",
+        "research.plan_query",
         "research.retrieve",
         "search.rerank",
     }

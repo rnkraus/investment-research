@@ -60,6 +60,8 @@ class SelectingGenerator:
 
     def __init__(self, model: ResearchModel, *, unknown_id: bool) -> None:
         self.model = model
+        self.plan_responses = RecordingResponses(payload={"queries": ["customer deployments"]})
+        self.client = cast(OpenAI, RecordingClient(self.plan_responses))
         self.unknown_id = unknown_id
         self.requests: list[CitableAnswerGenerationInput] = []
         self.closed = False
@@ -181,6 +183,7 @@ def citable_settings(settings: ApiSettings, root: Path) -> ApiSettings:
 
 
 @pytest.mark.parametrize("pasted_text", [False, True], ids=["pdf", "pasted-text"])
+@pytest.mark.parametrize("decompose_query", [False, True])
 @pytest.mark.parametrize("generation_model", list(ResearchModel))
 @pytest.mark.parametrize("support_model", list(ResearchModel))
 def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
@@ -189,6 +192,7 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     pasted_text: bool,
+    decompose_query: bool,
     generation_model: ResearchModel,
     support_model: ResearchModel,
 ) -> None:
@@ -214,6 +218,7 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
                 "question": QUESTION,
                 "generation_model": generation_model.value,
                 "support_model": support_model.value,
+                "decompose_query": decompose_query,
             },
         )
         events = parse_server_sent_events(response.text)
@@ -273,8 +278,19 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
     operations = load_provider_operations(
         integration_database_engine, context=source.context, research_request_id=request_id
     )
-    assert len(operations) == 3
+    assert len(operations) == (4 if decompose_query else 3)
     assert all(operation.state is ProviderOperationState.SUCCEEDED for operation in operations)
+    planning = [
+        operation
+        for operation in operations
+        if operation.operation is ProviderOperationKind.QUERY_PLANNING
+    ]
+    planner_calls = generators[ResearchModel.TERRA].plan_responses.calls
+    assert len(planning) == len(planner_calls) == int(decompose_query)
+    if decompose_query:
+        assert planner_calls[0]["input"] == QUESTION
+        assert planner_calls[0]["store"] is False
+        assert planning[0].model == ResearchModel.TERRA.value
     generation = next(
         operation
         for operation in operations

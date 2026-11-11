@@ -1238,6 +1238,11 @@ export interface components {
             readonly generation_models: readonly components["schemas"]["ResearchModel"][];
             /** Provider Enabled */
             readonly provider_enabled: boolean;
+            /**
+             * Query Decomposition Enabled
+             * @default false
+             */
+            readonly query_decomposition_enabled: boolean;
             /** Support Models */
             readonly support_models: readonly components["schemas"]["ResearchModel"][];
         };
@@ -1317,6 +1322,11 @@ export interface components {
          */
         readonly ResearchRequestInput: {
             readonly context?: components["schemas"]["ResearchRequestContext"];
+            /**
+             * Decompose Query
+             * @default false
+             */
+            readonly decompose_query: boolean;
             /** @default gpt-5.6-terra */
             readonly generation_model: components["schemas"]["ResearchModel"];
             /** Question */

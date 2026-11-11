@@ -60,7 +60,7 @@ class ProviderOperationRow(Base):
             "(owner_deleted IS FALSE AND ((operation = 'DOCUMENT_EMBEDDING' "
             "AND processing_run_id IS NOT NULL AND research_request_id IS NULL) OR "
             "(operation IN ('QUERY_EMBEDDING', 'ANSWER_GENERATION', 'STATEMENT_SUPPORT', "
-            "'RERANKING') "
+            "'RERANKING', 'QUERY_PLANNING') "
             "AND research_request_id IS NOT NULL AND processing_run_id IS NULL) OR "
             "(operation = 'ARCHIVE_QUERY_EMBEDDING' "
             "AND research_request_id IS NULL AND processing_run_id IS NULL)))",
@@ -68,7 +68,8 @@ class ProviderOperationRow(Base):
         ),
         CheckConstraint(
             "operation IN ('DOCUMENT_EMBEDDING', 'QUERY_EMBEDDING', "
-            "'ANSWER_GENERATION', 'STATEMENT_SUPPORT', 'RERANKING', 'ARCHIVE_QUERY_EMBEDDING')",
+            "'ANSWER_GENERATION', 'STATEMENT_SUPPORT', 'RERANKING', 'ARCHIVE_QUERY_EMBEDDING', "
+            "'QUERY_PLANNING')",
             name="operation",
         ),
         CheckConstraint(

@@ -32,10 +32,16 @@ from investment_research.modules.research.ports import (
     ResearchRetrievalUnitOfWork,
     ResearchRetrievalUnitOfWorkFactory,
 )
+from investment_research.modules.research.query_planning import (
+    AccountedQueryPlanner,
+    QueryPlan,
+    search_lexical_queries,
+)
 from investment_research.modules.research.reranking import (
     AccountedRerankingService,
     RerankingAccountingProfile,
 )
+from investment_research.modules.search.application import build_lexical_search_query
 from investment_research.modules.search.contracts import (
     M1_EMBEDDING_DIMENSIONS,
     DenseRetrievalHit,
@@ -51,7 +57,11 @@ from investment_research.modules.search.contracts import (
     RerankResponse,
     RerankResult,
 )
-from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
+from investment_research.modules.search.domain import (
+    RetrievalFilters,
+    RetrievalMode,
+    RetrievalOrigin,
+)
 from investment_research.modules.search.fusion_contracts import (
     RRF_CONFIG_VERSION,
     RrfSelectionProfile,
@@ -149,6 +159,45 @@ def make_lexical_hit() -> LexicalSearchHit:
         text="FY2025 revenue was $184.2 million.",
         raw_score=0.8,
     )
+
+
+def test_decomposition_fuses_keyword_hits_under_the_same_scope_and_limit() -> None:
+    reader = create_autospec(LexicalSearch, instance=True)
+    first = make_lexical_hit()
+    repeated = first.model_copy(update={"chunk_id": SECOND_CHUNK_ID})
+    reader.search.side_effect = [(first,), (repeated,), (repeated,)]
+    query = build_lexical_search_query(
+        query_text="How did sales and profitability develop?",
+        filters=RetrievalFilters(document_ids=(DOCUMENT_ID,), available_at_cutoff=STARTED_AT),
+        lexical_config_version="m1-english-lexical-v1",
+        candidate_limit=1,
+    )
+
+    assert search_lexical_queries(reader, make_context(), query, ("sales", "margin")) == (repeated,)
+    searches = [call.args[1] for call in reader.search.call_args_list]
+    assert [item.normalized_query for item in searches] == [
+        query.normalized_query,
+        "sales",
+        "margin",
+    ]
+    assert all(item.filters == query.filters and item.candidate_limit == 1 for item in searches)
+
+
+def test_query_planner_keeps_original_search_when_budget_reservation_fails() -> None:
+    executor = make_provider_operation_executor()
+    executor.execute.side_effect = ProviderBudgetExceededError
+    provider = Mock(
+        return_value=QueryPlan(("sales",), ProviderUsage(input_units=5, output_units=3))
+    )
+    planner = AccountedQueryPlanner(
+        provider=provider,
+        executor=executor,
+        model="gpt-5.6-terra",
+        cost_policy=ProviderCostPolicy(2_000_000, 12_000_000),
+    )
+
+    assert planner.plan(make_context(), REQUEST_ID, "What were sales?") == ()
+    provider.assert_not_called()
 
 
 def make_qualified_dense_hit(

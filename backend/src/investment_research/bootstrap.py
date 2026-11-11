@@ -90,6 +90,7 @@ from investment_research.infrastructure.generation.openai_citable_units import (
     citable_answer_profile,
     create_openai_citable_unit_answer_generator,
 )
+from investment_research.infrastructure.generation.openai_query_planner import OpenAIQueryPlanner
 from investment_research.infrastructure.health import (
     CompositeReadinessProbe,
     PostgreSQLReadinessProbe,
@@ -202,6 +203,7 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedAnswer,
 )
 from investment_research.modules.research.ports import AnswerGenerator
+from investment_research.modules.research.query_planning import AccountedQueryPlanner
 from investment_research.modules.search.archive import (
     ArchiveSemanticRetrieval,
     SearchArchiveService,
@@ -802,6 +804,19 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             if citable_units_enabled
             else M1_EVIDENCE_VALIDATION_PROFILE
         )
+    query_planner = None
+    if settings.query_providers is not None and citable_units_enabled:
+        assert answer_generator_provider is not None
+        assert provider_operation_executor is not None
+        query_planner = AccountedQueryPlanner(
+            provider=OpenAIQueryPlanner(answer_generator_provider.client, OPENAI_ANSWER_MODEL),
+            executor=provider_operation_executor,
+            model=OPENAI_ANSWER_MODEL,
+            cost_policy=ProviderCostPolicy(
+                input_micro_usd_per_million_units=OPENAI_ANSWER_INPUT_MICRO_USD_PER_MILLION_TOKENS,
+                output_micro_usd_per_million_units=OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS,
+            ),
+        )
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
             database.session_factory
@@ -811,6 +826,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             candidate_limit=lexical_candidate_limit,
         ),
         m1_query_retrieval=m1_query_retrieval,
+        query_planner=query_planner,
     )
     answer_unit_of_work_factory = create_answer_validation_unit_of_work_factory(
         database.session_factory,

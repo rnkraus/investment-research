@@ -8,6 +8,7 @@ from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
 
@@ -98,6 +99,7 @@ class FakeAnswerResearchRequestService:
         self.rejection: tuple[UnvalidatedGeneratedAnswer, EvidenceValidationDecision] | None = None
         self.calls: list[tuple[WorkspaceContext, ResearchRetrievalInput]] = []
         self.model_services: dict[tuple[ResearchModel, ResearchModel], object] | None = None
+        self.retrieval_service = SimpleNamespace(query_decomposition_enabled=False)
 
     def answer(
         self,
@@ -462,11 +464,13 @@ def test_research_models_endpoint_reports_actual_runtime_availability(
         "provider_enabled": False,
         "generation_models": [],
         "support_models": [],
+        "query_decomposition_enabled": False,
     }
 
     service.model_services = {
         (answer, support): object() for answer in ResearchModel for support in ResearchModel
     }
+    service.retrieval_service.query_decomposition_enabled = True
     provider_response = client.get("/api/v1/research-requests/models")
 
     assert provider_response.status_code == 200
@@ -474,7 +478,23 @@ def test_research_models_endpoint_reports_actual_runtime_availability(
         "provider_enabled": True,
         "generation_models": [model.value for model in ResearchModel],
         "support_models": [model.value for model in ResearchModel],
+        "query_decomposition_enabled": True,
     }
+
+
+def test_research_decomposition_requires_the_runtime_and_preserves_the_question(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+) -> None:
+    client, service = research_client
+    body = {"question": QUESTION, "decompose_query": True}
+    assert client.post("/api/v1/research-requests", json=body).status_code == 422
+    assert service.calls == []
+
+    service.retrieval_service.query_decomposition_enabled = True
+    assert client.post("/api/v1/research-requests", json=body).status_code == 200
+    assert service.calls == [
+        (make_context(), ResearchRetrievalInput(question=QUESTION, decompose_query=True))
+    ]
 
 
 def test_research_route_streams_progress_before_validated_answer(

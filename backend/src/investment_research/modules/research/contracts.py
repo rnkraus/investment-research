@@ -75,6 +75,7 @@ class ResearchRetrievalInput(
     cutoff_at: AwareDatetime | None = None
     generation_model: ResearchModel = ResearchModel.TERRA
     support_model: ResearchModel = ResearchModel.TERRA
+    decompose_query: bool = False
 
     @field_validator("question")
     @classmethod
