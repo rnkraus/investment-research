@@ -33,6 +33,7 @@ USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
 CHUNK_ID = UUID("10000000-0000-4000-8000-000000000001")
 OTHER_CHUNK_ID = UUID("10000000-0000-4000-8000-000000000002")
+VERSION_ID = UUID("10000000-0000-4000-8000-000000000003")
 EMBEDDING_CONFIG_VERSION = "openai-text-embedding-3-small-1536-v1"
 DENSE_INDEX_CONFIG_VERSION = "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
 
@@ -78,7 +79,9 @@ def make_context() -> WorkspaceContext:
     return WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID)
 
 
-def make_query(*, candidate_limit: int = 10) -> DenseRetrievalQuery:
+def make_query(
+    *, candidate_limit: int = 10, document_version_ids: tuple[UUID, ...] | None = None
+) -> DenseRetrievalQuery:
     """Build one bounded provider-neutral query."""
 
     return DenseRetrievalQuery(
@@ -87,6 +90,7 @@ def make_query(*, candidate_limit: int = 10) -> DenseRetrievalQuery:
         embedding_config_version=EMBEDDING_CONFIG_VERSION,
         dense_index_config_version=DENSE_INDEX_CONFIG_VERSION,
         candidate_limit=candidate_limit,
+        document_version_ids=document_version_ids,
     )
 
 
@@ -150,6 +154,27 @@ def test_retrieve_uses_workspace_namespace_versions_and_provider_order() -> None
             "timeout": PINECONE_OPERATION_TIMEOUT_SECONDS,
         }
     ]
+
+
+def test_retrieve_limits_provider_ranking_to_selected_versions() -> None:
+    index = RecordingGrpcIndex()
+    query = make_query(candidate_limit=1, document_version_ids=(VERSION_ID,))
+
+    make_retriever(index).retrieve(make_context(), query)
+
+    assert index.query_calls[0]["top_k"] == 1
+    assert index.query_calls[0]["filter"] == {
+        "embedding_config_version": {"$eq": EMBEDDING_CONFIG_VERSION},
+        "dense_index_config_version": {"$eq": DENSE_INDEX_CONFIG_VERSION},
+        "document_version_id": {"$in": [str(VERSION_ID)]},
+    }
+
+
+def test_retrieve_skips_provider_when_selection_has_no_current_versions() -> None:
+    index = RecordingGrpcIndex()
+
+    assert make_retriever(index).retrieve(make_context(), make_query(document_version_ids=())) == ()
+    assert index.query_calls == []
 
 
 @pytest.mark.parametrize(

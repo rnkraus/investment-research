@@ -13,6 +13,7 @@ from investment_research.infrastructure.database.session import (
 from investment_research.infrastructure.search.postgresql import (
     PostgresDenseCandidateQualifier,
 )
+from investment_research.modules.documents.domain import DocumentLifecycleState
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.search.contracts import (
@@ -81,6 +82,27 @@ def qualify(
     session_factory = create_session_factory(engine)
     with session_factory() as session:
         return PostgresDenseCandidateQualifier(session).qualify(source.context, request)
+
+
+def test_provider_scope_resolves_only_selected_active_workspace_versions(
+    integration_database_engine: Engine,
+) -> None:
+    source = make_dense_source("Selected Dense Source")
+    foreign = make_dense_source("Other Workspace Dense Source")
+    persist_research_source(integration_database_engine, source)
+    persist_research_source(integration_database_engine, foreign)
+    session_factory = create_session_factory(integration_database_engine)
+    with transactional_session(session_factory) as session:
+        qualifier = PostgresDenseCandidateQualifier(session)
+        requested = (source.document.id, foreign.document.id, uuid4())
+        assert qualifier.current_document_version_ids(source.context, requested) == (
+            source.version.id,
+        )
+        row = session.get(DocumentRow, source.document.id)
+        assert row is not None
+        row.lifecycle_state = DocumentLifecycleState.PURGE_PENDING
+        session.flush()
+        assert qualifier.current_document_version_ids(source.context, requested) == ()
 
 
 def test_qualification_preserves_provider_order_scores_and_canonical_text(

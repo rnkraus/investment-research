@@ -437,7 +437,9 @@ The two lanes execute independently:
 1. PostgreSQL returns already eligible lexical hits in descending lexical rank.
 2. OpenAI returns one query embedding.
 3. Pinecone returns dense identifiers and finite similarity scores from the trusted workspace
-   namespace.
+   namespace. When a research request explicitly selects documents, PostgreSQL resolves their
+   active current versions and Pinecone filters by those version IDs before applying its
+   candidate limit. A selection that resolves to no versions yields no dense candidates.
 4. Every dense hit is reloaded from PostgreSQL and rejected unless workspace, active document
    version, lifecycle, processing state, chunk set, temporal filters, and configuration versions are
    eligible.

@@ -652,6 +652,7 @@ def test_dual_lane_retrieval_persists_request_before_providers_and_result_afterw
         dense_hits=dense_hits,
         events=events,
     )
+    unit_of_work.dense_qualifier_mock.current_document_version_ids.return_value = (VERSION_ID,)
     provider_operation_executor = make_provider_operation_executor()
     service = make_service(
         unit_of_work,
@@ -729,6 +730,10 @@ def test_dual_lane_retrieval_persists_request_before_providers_and_result_afterw
     dense_context, dense_query = dense_mock.retrieve.call_args.args
     assert dense_context == make_context()
     assert dense_query.filters.document_ids == (DOCUMENT_ID,)
+    assert dense_query.document_version_ids == (VERSION_ID,)
+    unit_of_work.dense_qualifier_mock.current_document_version_ids.assert_called_once_with(
+        make_context(), (DOCUMENT_ID,)
+    )
     qualification_context, qualification_request = (
         unit_of_work.dense_qualifier_mock.qualify.call_args.args
     )

@@ -219,11 +219,14 @@ class DeterministicSqliteDenseIndex:
     ) -> Sequence[DenseRetrievalHit]:
         """Rank safe workspace-scoped vector records by deterministic cosine similarity."""
 
+        if query.document_version_ids == ():
+            return ()
+        selected_versions = {str(version_id) for version_id in query.document_version_ids or ()}
         try:
             with self._connect() as connection:
                 rows = connection.execute(
                     """
-                    SELECT vector_id, chunk_id, vector_values
+                    SELECT vector_id, chunk_id, document_version_id, vector_values
                     FROM dense_vectors
                     WHERE namespace = ?
                       AND embedding_config_version = ?
@@ -241,7 +244,9 @@ class DeterministicSqliteDenseIndex:
             ) from None
 
         ranked: list[tuple[float, UUID]] = []
-        for vector_id_value, chunk_id_value, encoded_values in rows:
+        for vector_id_value, chunk_id_value, version_id_value, encoded_values in rows:
+            if selected_versions and version_id_value not in selected_versions:
+                continue
             try:
                 chunk_id = UUID(str(chunk_id_value))
                 vector_id = DENSE_VECTOR_ID_ADAPTER.validate_python(str(vector_id_value))

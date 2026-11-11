@@ -99,6 +99,19 @@ infrastructure costs. The provider invoice is the billing record.
   cited that passage. The generated answer said January 2027. The citation supported the
   month, while the rubric required the exact date. [IREN Q1 FY2027 presentation][i-q1]
 
+### Targeted A05 recheck
+
+The app was updated to apply explicit document selection in Pinecone before ranking and
+limiting vector matches. The recheck used the same question, document scope, and Terra model
+pair. The 19-case results above describe the original run.
+
+| Run | Qualified dense hits | Rank of maturity and spread passage in answer context | Result | Time |
+| --- | ---: | ---: | --- | ---: |
+| First run | 3 | Absent | 🟠 Citi and $3.5 billion only | 3.165 s |
+| Scoped vector search | 11 | 6 | 🟢 Also cited the 364-day maturity and initial spread of 2.75 percentage points over Term SOFR | 10.960 s |
+
+This recheck covered A05 only. Each timing is one observation. [Nebius Citi release][n-citi]
+
 ## Source references
 
 | ID | Publisher or author |

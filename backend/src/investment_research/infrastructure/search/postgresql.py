@@ -405,6 +405,24 @@ class PostgresDenseCandidateQualifier:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def current_document_version_ids(
+        self, context: WorkspaceContext, document_ids: tuple[UUID, ...]
+    ) -> tuple[UUID, ...]:
+        """Resolve current versions within the trusted workspace."""
+
+        statement = (
+            select(DocumentRow.current_version_id)
+            .where(
+                DocumentRow.workspace_id == context.workspace_id,
+                DocumentRow.lifecycle_state == DocumentLifecycleState.ACTIVE,
+                DocumentRow.id.in_(document_ids),
+            )
+            .order_by(DocumentRow.id)
+        )
+        return tuple(
+            version_id for version_id in self._session.scalars(statement) if version_id is not None
+        )
+
     def qualify(
         self,
         context: WorkspaceContext,

@@ -282,6 +282,13 @@ class RetrieveResearchService:
 
         with self._unit_of_work_factory() as unit_of_work:
             unit_of_work.research.add_request(context, request)
+            document_version_ids = (
+                unit_of_work.dense_qualifier.current_document_version_ids(
+                    context, query.filters.document_ids
+                )
+                if query.filters.document_ids
+                else None
+            )
 
         if progress is not None:
             progress(request.id, "EMBEDDING_QUESTION")
@@ -317,6 +324,7 @@ class RetrieveResearchService:
             embedding_config_version=dependencies.dense_profile.embedding_config_version,
             dense_index_config_version=dependencies.dense_profile.dense_index_config_version,
             candidate_limit=dependencies.dense_profile.candidate_limit,
+            document_version_ids=document_version_ids,
         )
         if progress is not None:
             progress(request.id, "SEARCHING_SOURCES")

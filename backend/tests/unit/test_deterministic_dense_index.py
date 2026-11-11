@@ -29,6 +29,7 @@ FOREIGN_WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000003")
 FIRST_CHUNK_ID = UUID("10000000-0000-4000-8000-000000000001")
 SECOND_CHUNK_ID = UUID("10000000-0000-4000-8000-000000000002")
 DOCUMENT_VERSION_ID = UUID("20000000-0000-4000-8000-000000000001")
+OTHER_DOCUMENT_VERSION_ID = UUID("20000000-0000-4000-8000-000000000002")
 CHUNK_SET_ID = UUID("30000000-0000-4000-8000-000000000001")
 EMBEDDING_CONFIG_VERSION = "openai-text-embedding-3-small-1536-v1"
 DENSE_INDEX_CONFIG_VERSION = "pinecone-serverless-cosine-1536-aws-us-east-1-v1"
@@ -51,6 +52,7 @@ def make_vector(
     values: tuple[float, ...],
     *,
     context: WorkspaceContext | None = None,
+    document_version_id: UUID = DOCUMENT_VERSION_ID,
     embedding_config_version: str = EMBEDDING_CONFIG_VERSION,
     dense_index_config_version: str = DENSE_INDEX_CONFIG_VERSION,
 ) -> DenseIndexVector:
@@ -65,7 +67,7 @@ def make_vector(
         ),
         values=values,
         chunk_id=chunk_id,
-        document_version_id=DOCUMENT_VERSION_ID,
+        document_version_id=document_version_id,
         chunk_set_id=CHUNK_SET_ID,
         embedding_config_version=embedding_config_version,
         dense_index_config_version=dense_index_config_version,
@@ -143,6 +145,22 @@ def test_retrieval_ranks_similarity_and_scopes_workspace_and_versions(tmp_path: 
         update={"embedding_config_version": "m1-other-embedding-v1"}
     )
     assert index.retrieve(make_context(), mismatched_query) == ()
+
+
+def test_selected_document_version_is_filtered_before_top_k(tmp_path: Path) -> None:
+    index = DeterministicSqliteDenseIndex(tmp_path / "dense-index.sqlite3")
+    selected = make_vector(FIRST_CHUNK_ID, basis_vector(0))
+    distractor = make_vector(
+        SECOND_CHUNK_ID, basis_vector(1), document_version_id=OTHER_DOCUMENT_VERSION_ID
+    )
+    index.upsert(make_context(), make_request(selected, distractor))
+    query = make_query(basis_vector(1)).model_copy(update={"candidate_limit": 1})
+
+    assert [hit.chunk_id for hit in index.retrieve(make_context(), query)] == [SECOND_CHUNK_ID]
+    scoped = query.model_copy(update={"document_version_ids": (DOCUMENT_VERSION_ID,)})
+    assert [hit.chunk_id for hit in index.retrieve(make_context(), scoped)] == [FIRST_CHUNK_ID]
+    empty_scope = query.model_copy(update={"document_version_ids": ()})
+    assert index.retrieve(make_context(), empty_scope) == ()
 
 
 def test_upsert_rejects_inconsistent_vector_identity(tmp_path: Path) -> None:

@@ -201,19 +201,23 @@ class PineconeDenseRetriever:
     ) -> Sequence[DenseRetrievalHit]:
         """Return ordered untrusted IDs only after validating the provider response shape."""
 
+        if query.document_version_ids == ():
+            return ()
+        metadata_filter: dict[str, object] = {
+            "embedding_config_version": {"$eq": query.embedding_config_version},
+            "dense_index_config_version": {"$eq": query.dense_index_config_version},
+        }
+        if query.document_version_ids is not None:
+            metadata_filter["document_version_id"] = {
+                "$in": [str(version_id) for version_id in query.document_version_ids]
+            }
+
         try:
             response = self.index.query(
                 top_k=query.candidate_limit,
                 vector=list(query.query_vector),
                 namespace=dense_index_namespace(context),
-                filter={
-                    "embedding_config_version": {
-                        "$eq": query.embedding_config_version,
-                    },
-                    "dense_index_config_version": {
-                        "$eq": query.dense_index_config_version,
-                    },
-                },
+                filter=metadata_filter,
                 include_values=False,
                 include_metadata=True,
                 timeout=self.operation_timeout_seconds,

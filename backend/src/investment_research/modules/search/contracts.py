@@ -255,6 +255,8 @@ class DenseRetrievalQuery(ImmutableSearchContract):
     embedding_config_version: ConfigurationVersion
     dense_index_config_version: ConfigurationVersion
     candidate_limit: int = Field(ge=1, le=100)
+    # None means workspace-wide. An empty resolved scope must match no vectors.
+    document_version_ids: tuple[UUID, ...] | None = Field(default=None, max_length=100)
 
     @field_validator("query_vector")
     @classmethod
