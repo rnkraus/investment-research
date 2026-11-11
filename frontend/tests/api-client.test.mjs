@@ -444,6 +444,7 @@ test("processing status accepts the complete M1 indexing lifecycle", async () =>
 test("research model options accept only the active runtime's allowlisted models", async () => {
   const options = {
     provider_enabled: true,
+    query_decomposition_enabled: true,
     generation_models: ["gpt-5.6-terra", "gpt-5.6-luna"],
     support_models: ["gpt-5.6-terra", "gpt-5.6-luna"],
   };
@@ -471,6 +472,12 @@ test("research model options accept only the active runtime's allowlisted models
 
 test("research model options reject unapproved or inconsistent values", async () => {
   for (const options of [
+    {
+      provider_enabled: false,
+      query_decomposition_enabled: true,
+      generation_models: [],
+      support_models: [],
+    },
     {
       provider_enabled: true,
       generation_models: ["unknown-model"],
@@ -750,6 +757,7 @@ test("streamResearch sends independently selected answer and support models", as
 
   for await (const event of client.streamResearch({
     question: "What changed?",
+    decompose_query: true,
     generation_model: "gpt-5.6-luna",
     support_model: "gpt-5.6-terra",
     context: { document_ids: [DOCUMENT_ID], temporal_mode: "CURRENT" },
@@ -760,6 +768,7 @@ test("streamResearch sends independently selected answer and support models", as
   assert.equal(requestPath, "/api/v1/research-requests");
   assert.deepEqual(requestBody, {
     question: "What changed?",
+    decompose_query: true,
     generation_model: "gpt-5.6-luna",
     support_model: "gpt-5.6-terra",
     context: { document_ids: [DOCUMENT_ID], temporal_mode: "CURRENT" },

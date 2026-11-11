@@ -178,6 +178,11 @@ export const archiveCopy = {
       "Only current, eligible evidence in this workspace is searched. The server checks source eligibility again for every question.",
     questionLabel: "Research question",
     questionPlaceholder: "What would you like to know about your sources?",
+    searchModeLabel: "Search mode",
+    standardSearch: "Standard",
+    decomposedSearch: "Query decomposition (experimental)",
+    decomposedSearchHint:
+      "An extra model call can add up to two keyword searches for multi-part questions.",
     modelSettingsLabel: "Model settings",
     detailsLabel: "Research details",
     generationModelLabel: "Answer model",
