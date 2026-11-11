@@ -1877,6 +1877,11 @@
             "title": "Provider Enabled",
             "type": "boolean"
           },
+          "query_decomposition_enabled": {
+            "default": false,
+            "title": "Query Decomposition Enabled",
+            "type": "boolean"
+          },
           "support_models": {
             "items": {
               "$ref": "#/components/schemas/ResearchModel"
@@ -2082,6 +2087,11 @@
         "properties": {
           "context": {
             "$ref": "#/components/schemas/ResearchRequestContext"
+          },
+          "decompose_query": {
+            "default": false,
+            "title": "Decompose Query",
+            "type": "boolean"
           },
           "generation_model": {
             "$ref": "#/components/schemas/ResearchModel",

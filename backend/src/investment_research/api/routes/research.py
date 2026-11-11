@@ -35,6 +35,7 @@ from investment_research.api.dependencies import (
     ContainerDependency,
     WorkspaceContextDependency,
 )
+from investment_research.api.errors import ApiError
 from investment_research.api.research_diagnostics import build_rejection_diagnostic
 from investment_research.infrastructure.logging import current_request_id
 from investment_research.modules.evidence.contracts import EvidenceValidationDecision
@@ -66,6 +67,7 @@ def get_research_models(
         provider_enabled=model_services is not None,
         generation_models=(tuple(ResearchModel) if model_services is not None else ()),
         support_models=(tuple(ResearchModel) if model_services is not None else ()),
+        query_decomposition_enabled=service.retrieval_service.query_decomposition_enabled,
     )
 
 
@@ -319,6 +321,12 @@ def answer_research_request(
 ) -> StreamingResponse:
     """Stream selected source context separately from fully validated answer content."""
 
+    if request.decompose_query and not service.retrieval_service.query_decomposition_enabled:
+        raise ApiError(
+            status_code=422,
+            code=ErrorCode.INVALID_REQUEST,
+            message="query decomposition is unavailable",
+        )
     retrieval_input = ResearchRetrievalInput(
         question=request.question,
         document_ids=request.context.document_ids,
@@ -331,6 +339,7 @@ def answer_research_request(
         cutoff_at=request.context.cutoff_at,
         generation_model=request.generation_model,
         support_model=request.support_model,
+        decompose_query=request.decompose_query,
     )
     return StreamingResponse(
         stream_research_events(

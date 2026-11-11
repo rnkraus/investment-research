@@ -41,6 +41,8 @@ def _provider_operation_span_name(operation: ProviderOperationKind) -> Operation
             return "embedding.document"
         case ProviderOperationKind.QUERY_EMBEDDING | ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING:
             return "embedding.query"
+        case ProviderOperationKind.QUERY_PLANNING:
+            return "research.plan_query"
         case ProviderOperationKind.RERANKING:
             return "search.rerank"
         case ProviderOperationKind.ANSWER_GENERATION:

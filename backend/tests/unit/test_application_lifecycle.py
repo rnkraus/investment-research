@@ -256,6 +256,7 @@ def install_api_provider_fakes(
     dense_retriever = create_autospec(PineconeDenseRetriever, instance=True)
     generator_type = OpenAICitableUnitAnswerGenerator if citable_units else OpenAIAnswerGenerator
     answer_generator = create_autospec(generator_type, instance=True)
+    answer_generator.client = Mock()
     support_evaluator = create_autospec(OpenAIStatementSupportEvaluator, instance=True)
     luna_answer_generator = create_autospec(generator_type, instance=True)
     luna_support_evaluator = create_autospec(OpenAIStatementSupportEvaluator, instance=True)

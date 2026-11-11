@@ -21,6 +21,10 @@ from investment_research.modules.research.contracts import (
 from investment_research.modules.research.domain import ResearchRequest, TemporalMode
 from investment_research.modules.research.errors import ResearchProviderUnavailableError
 from investment_research.modules.research.ports import ResearchRetrievalUnitOfWorkFactory
+from investment_research.modules.research.query_planning import (
+    AccountedQueryPlanner,
+    search_lexical_queries,
+)
 from investment_research.modules.research.reranking import AccountedRerankingService
 from investment_research.modules.search.application import build_lexical_search_query
 from investment_research.modules.search.contracts import (
@@ -128,6 +132,7 @@ class RetrieveResearchService:
         unit_of_work_factory: ResearchRetrievalUnitOfWorkFactory,
         search_profile: LexicalSearchProfile,
         m1_query_retrieval: M1QueryRetrievalDependencies | None = None,
+        query_planner: AccountedQueryPlanner | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
@@ -146,8 +151,13 @@ class RetrieveResearchService:
         self._unit_of_work_factory = unit_of_work_factory
         self._search_profile = search_profile
         self._m1_query_retrieval = m1_query_retrieval
+        self._query_planner = query_planner
         self._clock = clock
         self._identifier_factory = identifier_factory
+
+    @property
+    def query_decomposition_enabled(self) -> bool:
+        return self._m1_query_retrieval is not None and self._query_planner is not None
 
     def retrieve(
         self,
@@ -158,6 +168,8 @@ class RetrieveResearchService:
     ) -> ResearchRetrievalResult:
         """Run the configured bounded retrieval mode and persist one coherent result."""
 
+        if retrieval_input.decompose_query and not self.query_decomposition_enabled:
+            raise ValueError("query decomposition is unavailable")
         started_at = self._aware_utc_now()
         request = ResearchRequest(
             id=self._identifier_factory(),
@@ -185,6 +197,7 @@ class RetrieveResearchService:
                 retrieval_run_id=retrieval_run_id,
                 started_at=started_at,
                 progress=progress,
+                decompose_query=retrieval_input.decompose_query,
             )
 
         return self._retrieve_lexical(
@@ -274,6 +287,7 @@ class RetrieveResearchService:
         retrieval_run_id: UUID,
         started_at: datetime,
         progress: Callable[[UUID, ResearchProgressStage], None] | None,
+        decompose_query: bool,
     ) -> ResearchRetrievalResult:
         """Run external query providers first, then commit canonical selection atomically."""
         dependencies = self._m1_query_retrieval
@@ -290,6 +304,11 @@ class RetrieveResearchService:
                 else None
             )
 
+        additional_queries = (
+            self._query_planner.plan(context, request.id, request.question)
+            if decompose_query and self._query_planner is not None
+            else ()
+        )
         if progress is not None:
             progress(request.id, "EMBEDDING_QUESTION")
         query_embedding = AccountedQueryEmbedding(
@@ -351,7 +370,9 @@ class RetrieveResearchService:
         dense_snapshot: tuple[QualifiedDenseHit, ...] = ()
         if isinstance(dependencies.selection_profile, RrfRerankingProfile):
             with self._unit_of_work_factory() as unit_of_work:
-                lexical_snapshot = tuple(unit_of_work.lexical_search.search(context, query))
+                lexical_snapshot = search_lexical_queries(
+                    unit_of_work.lexical_search, context, query, additional_queries
+                )
                 dense_snapshot = tuple(
                     unit_of_work.dense_qualifier.qualify(context, qualification_request)
                 )
@@ -372,7 +393,9 @@ class RetrieveResearchService:
             reranked = dependencies.reranking.select(context, request.id, prepared)
 
         with self._unit_of_work_factory() as unit_of_work:
-            lexical_hits = tuple(unit_of_work.lexical_search.search(context, query))
+            lexical_hits = search_lexical_queries(
+                unit_of_work.lexical_search, context, query, additional_queries
+            )
             dense_hits = tuple(unit_of_work.dense_qualifier.qualify(context, qualification_request))
             reranker_scores: dict[UUID, float] = {}
             if reranked is not None:

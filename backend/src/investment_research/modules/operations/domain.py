@@ -53,6 +53,7 @@ class ProviderOperationKind(StrEnum):
     DOCUMENT_EMBEDDING = "DOCUMENT_EMBEDDING"
     QUERY_EMBEDDING = "QUERY_EMBEDDING"
     ARCHIVE_QUERY_EMBEDDING = "ARCHIVE_QUERY_EMBEDDING"
+    QUERY_PLANNING = "QUERY_PLANNING"
     RERANKING = "RERANKING"
     ANSWER_GENERATION = "ANSWER_GENERATION"
     STATEMENT_SUPPORT = "STATEMENT_SUPPORT"
@@ -187,6 +188,7 @@ class ProviderOperation(BaseModel):
 
         research_operations = {
             ProviderOperationKind.QUERY_EMBEDDING,
+            ProviderOperationKind.QUERY_PLANNING,
             ProviderOperationKind.RERANKING,
             ProviderOperationKind.ANSWER_GENERATION,
             ProviderOperationKind.STATEMENT_SUPPORT,
