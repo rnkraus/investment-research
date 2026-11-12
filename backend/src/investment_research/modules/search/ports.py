@@ -78,6 +78,7 @@ class LexicalSearch(Protocol):
         index: DenseQualificationRequest,
         metric: str,
         observation_date: date,
+        selected_pages: Sequence[tuple[UUID, int]],
     ) -> LexicalSearchHit | None:
         """Select a metric passage that also contains the requested observation date."""
 

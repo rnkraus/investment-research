@@ -103,12 +103,19 @@ comparison boundary.
 
 ### Live source-ID context expansion
 
-The normal source-ID runtime uses `m1-5-rrf-k60-text-neighbors-v1` with a maximum of eight
-chunks and the configured character ceiling. For explanatory questions it checks up to two
+The normal source-ID runtime uses `m1-5-rrf-k60-page-context-v1` with a maximum of eight
+chunks and the configured character ceiling. It ranks complete PDF pages and text documents
+by lexical overlap and allocates up to four slots after the leading RRF selections. A dated
+question with a named metric can add one passage through a local follow-up search. The follow-up
+weights the metric above the date, requires the full requested date in the added passage, and
+skips PDF pages already selected. For a question that asks only for a dated observation, new
+passages must qualify through this follow-up. These stages make no additional provider calls.
+
+For explanatory questions the runtime also checks up to two
 neighbors on either side of the first four selected text anchors. PostgreSQL reads the
 same active chunk set under the original workspace, document, and temporal filters. One
 relevant pair can replace lower-ranked passages. The existing lexical and dense ranks
-remain auditable; added neighbors are stored as structured selections and pass canonical
+remain auditable; added pages and neighbors are stored as structured selections and pass canonical
 source-ID and statement-support validation.
 
 An explicit observation date in the question is preserved in lexical query refinements and

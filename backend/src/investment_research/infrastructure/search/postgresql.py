@@ -1,12 +1,13 @@
 """PostgreSQL adapters for canonical lexical retrieval and dense qualification."""
 
+from calendar import month_abbr, month_name
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from datetime import date
 from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, and_, func, select, tuple_
 from sqlalchemy.orm import Session, aliased
 
 from investment_research.modules.companies.contracts import CompanySummary
@@ -275,10 +276,16 @@ class PostgresLexicalSearch:
         index: DenseQualificationRequest,
         metric: str,
         observation_date: date,
+        selected_pages: Sequence[tuple[UUID, int]],
     ) -> LexicalSearchHit | None:
         """Weight the named metric above date terms and require the full date in the passage."""
         metric_query = func.plainto_tsquery("english", metric)
-        date_query = func.plainto_tsquery("english", observation_date.isoformat().replace("-", " "))
+        suffix = f"{observation_date.day} {observation_date.year}"
+        date_query = func.websearch_to_tsquery(
+            "english",
+            f"{month_name[observation_date.month]} {suffix} OR "
+            f"{month_abbr[observation_date.month]} {suffix}",
+        )
         score = (
             3 * func.ts_rank_cd(ChunkRow.search_vector, metric_query)
             + func.ts_rank_cd(ChunkRow.search_vector, date_query)
@@ -293,6 +300,12 @@ class PostgresLexicalSearch:
             .order_by(score.desc(), ChunkRow.id.asc())
             .limit(32)
         )
+        if selected_pages:
+            statement = statement.where(
+                tuple_(
+                    ChunkRow.document_version_id, func.coalesce(StructureBlockRow.page_number, 0)
+                ).not_in(selected_pages)
+            )
         for row in self._session.execute(statement).tuples():
             if contains_observation_date(row[6], observation_date):
                 return _page_hit(*row)

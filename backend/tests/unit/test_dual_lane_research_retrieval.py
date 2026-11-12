@@ -66,6 +66,7 @@ from investment_research.modules.search.fusion_contracts import (
     RRF_CONFIG_VERSION,
     RrfSelectionProfile,
 )
+from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSION
 from investment_research.modules.search.ports import (
     DenseCandidateQualifier,
     DenseRetriever,
@@ -303,6 +304,7 @@ def make_service(
     dense_limit: int = 10,
     reranking: AccountedRerankingService | None = None,
     expand_text_neighbors: bool = False,
+    expand_page_context: bool = False,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -343,6 +345,7 @@ def make_service(
         clock=clock_values.__next__,
         identifier_factory=identifier_values.__next__,
         expand_text_neighbors=expand_text_neighbors,
+        expand_page_context=expand_page_context,
     )
 
 
@@ -1086,3 +1089,46 @@ def test_rrf_text_neighbors_keep_fusion_and_enforce_observation_scope(
             item.origin is RetrievalOrigin.STRUCTURED and item.fused_rank is None
             for item in result.candidates[1:]
         )
+
+
+@pytest.mark.parametrize("compound", [True, False])
+def test_rrf_page_context_preserves_observation_date_and_fusion(compound: bool) -> None:
+    question = (
+        "What operating ARR did IREN report as of September 30, 2026, and when is the target?"
+        if compound
+        else "What exact operating ARR did IREN report for November 6, 2026?"
+    )
+    anchor = make_lexical_hit()
+    target = anchor.model_copy(update={"chunk_id": UUID(int=601), "page_number": 24})
+    measurement = anchor.model_copy(update={"chunk_id": UUID(int=602), "page_number": 22})
+    uow = RecordingUnitOfWork(lexical_hits=(anchor,))
+    uow.lexical_search_mock.search_pages.return_value = (target,)
+    uow.lexical_search_mock.search_observation.return_value = measurement if compound else None
+    embedder, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedder,
+        dense_retriever=dense,
+        identifiers=(REQUEST_ID, RUN_ID, *(UUID(int=700 + index) for index in range(3))),
+        selection_profile=RrfSelectionProfile(context_chunk_limit=16),
+        expand_page_context=True,
+    )
+
+    result = service.retrieve(make_context(), ResearchRetrievalInput(question=question))
+
+    assert result.retrieval_run.selector_config_version == PAGE_SELECTOR_VERSION
+    assert result.retrieval_run.context_chunk_limit == 8
+    assert result.candidates[0].fused_rank == 1
+    _, _, _, metric, date, selected_pages = (
+        uow.lexical_search_mock.search_observation.call_args.args
+    )
+    assert metric == "operating ARR"
+    assert date.isoformat() == ("2026-09-30" if compound else "2026-11-06")
+    if compound:
+        assert (target.document_version_id, 24) in selected_pages
+        assert [item.page_number for item in result.sources] == [2, 24, 22]
+        assert [item.rank for item in result.candidates[1:]] == [1, 2]
+        assert all(item.origin is RetrievalOrigin.STRUCTURED for item in result.candidates[1:])
+    else:
+        uow.lexical_search_mock.search_pages.assert_not_called()
+        assert [item.chunk_id for item in result.sources] == [anchor.chunk_id]
