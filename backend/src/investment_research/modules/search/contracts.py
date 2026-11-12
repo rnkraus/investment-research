@@ -384,15 +384,6 @@ class SelectedRetrievalCandidate(ImmutableSearchContract):
             raise ValueError("text must contain a non-whitespace character")
         return value
 
-    @field_validator("origin")
-    @classmethod
-    def require_m1_lane(cls, value: RetrievalOrigin) -> RetrievalOrigin:
-        """Keep the M1 selector limited to its lexical and dense lanes."""
-
-        if value not in {RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE}:
-            raise ValueError("M1 selection supports only lexical and dense candidates")
-        return value
-
     @model_validator(mode="after")
     def require_media_appropriate_locator(self) -> SelectedRetrievalCandidate:
         """Require a physical page only for PDF-backed selected candidates."""
@@ -415,6 +406,8 @@ class M1SelectionResult(ImmutableSearchContract):
     def require_coherent_selection(self) -> M1SelectionResult:
         """Require unique chunks, contiguous order, and the configured context bounds."""
 
+        if any(candidate.origin is RetrievalOrigin.STRUCTURED for candidate in self.candidates):
+            raise ValueError("M1 selection supports only lexical and dense candidates")
         chunk_ids = [candidate.chunk_id for candidate in self.candidates]
         if len(chunk_ids) != len(set(chunk_ids)):
             raise ValueError("selected chunk IDs must be unique")

@@ -477,6 +477,8 @@ Claim support continues to come from the original source text.
 - Search-result explanations showing route, filters, document, page, and passage.
 - Expand the M1.5 evaluation core with public or sanitized representative document forms,
   discovery cases, reviewed expected evidence, and failure categories.
+- The local source-ID research path uses bounded text-neighbor expansion after RRF and
+  preserves explicit observation dates in search refinements and date-specific answer prompts.
 
 ### Exit gate
 

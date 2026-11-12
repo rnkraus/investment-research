@@ -827,6 +827,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         ),
         m1_query_retrieval=m1_query_retrieval,
         query_planner=query_planner,
+        expand_text_neighbors=citable_units_enabled,
+        expand_page_context=citable_units_enabled,
     )
     answer_unit_of_work_factory = create_answer_validation_unit_of_work_factory(
         database.session_factory,

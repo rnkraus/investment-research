@@ -30,6 +30,8 @@ from investment_research.modules.research.contracts import (
 )
 from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
+from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSION
+from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_SELECTOR_VERSION
 
 
 class EvidenceSpanUnavailableError(Exception):
@@ -324,8 +326,18 @@ class ValidateGeneratedAnswerService:
             )
 
         if source.retrieval_mode is RetrievalMode.DUAL_LANE:
+            eligible_origin = source.origin in {RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE} or (
+                source.origin is RetrievalOrigin.STRUCTURED
+                and (
+                    source.retrieval_selector_config_version == PAGE_SELECTOR_VERSION
+                    or (
+                        source.retrieval_selector_config_version == TEXT_NEIGHBOR_SELECTOR_VERSION
+                        and source.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+                    )
+                )
+            )
             return (
-                source.origin in {RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE}
+                eligible_origin
                 and source.selection_rank is not None
                 and source.processing_state is ProcessingState.SEARCHABLE
                 and source.retrieval_embedding_config_version is not None

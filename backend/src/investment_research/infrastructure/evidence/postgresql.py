@@ -293,6 +293,7 @@ class PostgresCanonicalEvidenceSourceReader:
         return CanonicalEvidenceSource(
             workspace_id=context.workspace_id,
             retrieval_candidate_id=candidate.id,
+            retrieval_selector_config_version=retrieval_run.selector_config_version,
             retrieval_run_id=retrieval_run.id,
             origin=candidate.origin,
             selection_rank=candidate.selection_rank,

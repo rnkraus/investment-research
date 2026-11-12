@@ -35,9 +35,15 @@ from investment_research.modules.research.contracts import (
     UnvalidatedGeneratedStatement,
 )
 from investment_research.modules.research.domain import CoverageStatus, StatementText
+from investment_research.modules.search.observation_dates import requested_observation_date
 
 M1_5_CITABLE_ANSWER_GENERATOR_VERSION = "openai-responses-citable-units-v3"
-M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v8"
+M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v9"
+_OBSERVATION_DATE_INSTRUCTIONS = (
+    "\nPreserve the exact day in reported values and target dates when cited evidence supplies it. "
+    "Distinguish observation dates, publication dates, and target dates. If the evidence does "
+    "not establish the value on the requested observation date, explicitly withhold that value."
+)
 # Leave dedicated margins inside the configured reservation for framing and schema expansion.
 _REQUEST_FRAMING_OVERHEAD_UNITS = 512
 _STRICT_SCHEMA_OVERHEAD_UNITS = 512
@@ -200,11 +206,11 @@ def citable_answer_schema(catalog: CitableUnitCatalog) -> type[_CitableAnswer]:
 
 
 def citable_answer_profile(model: ResearchModel) -> AnswerGenerationProfile:
-    """Identify the v8 English-answer prompt, unchanged v3 transport, and v3 unit boundaries."""
+    """Identify the English answer prompt, v3 transport, and v3 unit boundaries."""
 
     return AnswerGenerationProfile(
         generator_version=M1_5_CITABLE_ANSWER_GENERATOR_VERSION,
-        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v8",
+        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v9",
         prompt_version=M1_5_CITABLE_ANSWER_PROMPT_VERSION,
     )
 
@@ -228,13 +234,18 @@ class OpenAICitableUnitAnswerGenerator(OpenAIAnswerGenerator):
     __slots__ = ()
     instructions: ClassVar[str] = _CITABLE_ANSWER_INSTRUCTIONS
 
+    def _request_instructions(self, generation_input: AnswerGenerationInput) -> str:
+        if requested_observation_date(generation_input.question) is None:
+            return self.instructions
+        return self.instructions + _OBSERVATION_DATE_INSTRUCTIONS
+
     def _proposal_schema(self, generation_input: AnswerGenerationInput) -> type[BaseModel]:
         scoped = _require_citable_input(generation_input)
         schema = citable_answer_schema(scoped.catalog)
         serialized = self._serialize_input(scoped)
         # One token per UTF-8 byte is a conservative input ceiling, as in M1 accounting.
         overhead = (
-            len(self.instructions.encode("utf-8"))
+            len(self._request_instructions(scoped).encode("utf-8"))
             + len(serialized.encode("utf-8"))
             + len(json.dumps(schema.model_json_schema()).encode("utf-8"))
             - len(scoped.question.encode("utf-8"))

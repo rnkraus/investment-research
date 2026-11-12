@@ -23,6 +23,10 @@ from investment_research.modules.operations.domain import (
 from investment_research.modules.search.application import normalize_lexical_query
 from investment_research.modules.search.contracts import LexicalSearchHit, LexicalSearchQuery
 from investment_research.modules.search.fusion_contracts import RRF_RANK_CONSTANT
+from investment_research.modules.search.observation_dates import (
+    preserve_observation_date,
+    requested_observation_date,
+)
 from investment_research.modules.search.ports import LexicalSearch
 
 QUERY_PLAN_VERSION = "openai-terra-lexical-decomposition-v1"
@@ -83,12 +87,20 @@ class AccountedQueryPlanner:
             return ()
         try:
             original = normalize_lexical_query(question)
+            observation_date = requested_observation_date(question)
             normalized = tuple(
-                dict.fromkeys(normalize_lexical_query(query) for query in result.queries)
+                dict.fromkeys(
+                    normalize_lexical_query(
+                        preserve_observation_date(query, observation_date)
+                        if observation_date is not None
+                        else query
+                    )
+                    for query in result.queries
+                )
             )
         except ValidationError:
             return ()
-        return tuple(query for query in normalized if query != original)
+        return tuple(query for query in normalized if query != original and len(query) <= 100)
 
 
 def search_lexical_queries(

@@ -155,6 +155,7 @@ class CanonicalEvidenceSource(ImmutableEvidenceContract):
     workspace_id: UUID
     retrieval_candidate_id: UUID
     retrieval_run_id: UUID
+    retrieval_selector_config_version: ConfigurationVersion | None = None
     origin: RetrievalOrigin
     selection_rank: int | None = Field(default=None, ge=1)
     chunk_id: UUID

@@ -399,6 +399,19 @@ def test_request_instructions_cover_independent_claims_and_evidence_gaps() -> No
     assert len(client.responses.calls) == 1
 
 
+def test_explicit_observation_date_gets_date_precision_instructions() -> None:
+    generation_input = make_input().model_copy(
+        update={"question": "What exact operating ARR did IREN report for November 6, 2026?"}
+    )
+    generator, client = make_generator(generation_input)
+
+    generator.generate(generation_input)
+
+    instructions = cast(str, client.responses.calls[0]["instructions"])
+    assert "Distinguish observation dates, publication dates, and target dates" in instructions
+    assert "explicitly withhold that value" in instructions
+
+
 @pytest.mark.parametrize("model", list(ResearchModel))
 def test_focused_prompt_preserves_qualifications_and_needed_attribution(
     model: ResearchModel,
@@ -739,8 +752,8 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v3"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v8"
-    assert "citable-units-en-v8" in profile.generation_config_version
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v9"
+    assert "citable-units-en-v9" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v3"
 
 

@@ -139,6 +139,23 @@ def make_dual_lane_source(**changes: object) -> CanonicalEvidenceSource:
     return make_source(**(defaults | changes))
 
 
+def test_structured_text_neighbor_requires_its_recorded_selector() -> None:
+    source = make_dual_lane_source(
+        origin=RetrievalOrigin.STRUCTURED,
+        source_locator_kind=SourceLocatorKind.TEXT_PASSAGE,
+        page_number=None,
+    )
+    context = WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID)
+    assert not ValidateGeneratedAnswerService.is_source_eligible(context, RUN_ID, source)
+    current = source.model_copy(
+        update={"retrieval_selector_config_version": "m1-5-rrf-k60-text-neighbors-v1"}
+    )
+    assert ValidateGeneratedAnswerService.is_source_eligible(context, RUN_ID, current)
+    assert not ValidateGeneratedAnswerService.is_source_eligible(
+        context, RUN_ID, current.model_copy(update={"chunk_set_is_active": False})
+    )
+
+
 def make_answer(
     *,
     candidate_id: UUID = CANDIDATE_ID,

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from time import sleep
 from uuid import UUID, uuid4
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
@@ -51,9 +52,20 @@ from investment_research.modules.search.domain import (
 )
 from investment_research.modules.search.fusion import select_rrf_context
 from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
+from investment_research.modules.search.observation_dates import (
+    ends_with_observation_date,
+    requested_observation_date,
+)
+from investment_research.modules.search.page_context import (
+    PAGE_SELECTOR_VERSION,
+    add_observation_context,
+    add_page_context,
+    observation_metric,
+)
 from investment_research.modules.search.ports import (
     DenseRetriever,
     EmbeddingProvider,
+    LexicalSearch,
     SearchProviderContractError,
     SearchProviderError,
     SearchProviderTransientError,
@@ -68,6 +80,13 @@ from investment_research.modules.search.reranking_contracts import (
     RrfRerankingSelectionResult,
 )
 from investment_research.modules.search.selection import select_m1_context
+from investment_research.modules.search.text_neighbors import (
+    TEXT_NEIGHBOR_ANCHOR_LIMIT,
+    TEXT_NEIGHBOR_CONTEXT_LIMIT,
+    TEXT_NEIGHBOR_SELECTOR_VERSION,
+    seeks_explanation,
+    select_text_neighbors,
+)
 
 type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
@@ -133,6 +152,8 @@ class RetrieveResearchService:
         search_profile: LexicalSearchProfile,
         m1_query_retrieval: M1QueryRetrievalDependencies | None = None,
         query_planner: AccountedQueryPlanner | None = None,
+        expand_text_neighbors: bool = False,
+        expand_page_context: bool = False,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
@@ -152,6 +173,8 @@ class RetrieveResearchService:
         self._search_profile = search_profile
         self._m1_query_retrieval = m1_query_retrieval
         self._query_planner = query_planner
+        self._expand_text_neighbors = expand_text_neighbors
+        self._expand_page_context = expand_page_context
         self._clock = clock
         self._identifier_factory = identifier_factory
 
@@ -398,6 +421,9 @@ class RetrieveResearchService:
             )
             dense_hits = tuple(unit_of_work.dense_qualifier.qualify(context, qualification_request))
             reranker_scores: dict[UUID, float] = {}
+            structured_hits: tuple[LexicalSearchHit, ...] = ()
+            selector_version = dependencies.selection_profile.selector_config_version
+            chunk_limit = dependencies.selection_profile.context_chunk_limit
             if reranked is not None:
                 # Reject any changed lane membership, order, provenance, text, or score.
                 # Do not rerank again, substitute new sources, or reuse stale evidence.
@@ -432,9 +458,54 @@ class RetrieveResearchService:
                 profile = dependencies.selection_profile
                 if isinstance(profile, RrfRerankingProfile):
                     raise RuntimeError("reranking selection was not prepared")
+                if (self._expand_text_neighbors or self._expand_page_context) and isinstance(
+                    profile, RrfSelectionProfile
+                ):
+                    chunk_limit = min(profile.context_chunk_limit, TEXT_NEIGHBOR_CONTEXT_LIMIT)
+                    profile = profile.model_copy(update={"context_chunk_limit": chunk_limit})
+                    selector_version = (
+                        PAGE_SELECTOR_VERSION
+                        if self._expand_page_context
+                        else TEXT_NEIGHBOR_SELECTOR_VERSION
+                    )
                 selected_candidates, fused_ranks = self._select_context(
                     lexical_hits=lexical_hits, dense_hits=dense_hits, profile=profile
                 )
+                if selector_version == PAGE_SELECTOR_VERSION:
+                    selected_candidates = self._expand_pages(
+                        context,
+                        query,
+                        qualification_request,
+                        request.question,
+                        profile,
+                        unit_of_work.lexical_search,
+                        selected_candidates,
+                    )
+                if (
+                    self._expand_text_neighbors
+                    and isinstance(profile, RrfSelectionProfile)
+                    and seeks_explanation(request.question)
+                ):
+                    anchors = tuple(
+                        item.chunk_id
+                        for item in selected_candidates[:TEXT_NEIGHBOR_ANCHOR_LIMIT]
+                        if item.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+                    )
+                    if anchors:
+                        selected_candidates, _ = select_text_neighbors(
+                            request.question,
+                            selected_candidates,
+                            unit_of_work.lexical_search.text_neighbors(
+                                context,
+                                query,
+                                anchors,
+                                embedding_config_version=dense_query.embedding_config_version,
+                                dense_index_config_version=dense_query.dense_index_config_version,
+                            ),
+                            chunk_limit=profile.context_chunk_limit,
+                            character_limit=profile.context_character_limit,
+                        )
+                selected_candidates, structured_hits = self._number_structured(selected_candidates)
             completed_at = self._aware_utc_now()
             run = RetrievalRun(
                 id=retrieval_run_id,
@@ -447,10 +518,10 @@ class RetrieveResearchService:
                 lexical_config_version=query.lexical_config_version,
                 embedding_config_version=dense_query.embedding_config_version,
                 dense_index_config_version=dense_query.dense_index_config_version,
-                selector_config_version=dependencies.selection_profile.selector_config_version,
+                selector_config_version=selector_version,
                 lexical_candidate_limit=query.candidate_limit,
                 dense_candidate_limit=dense_query.candidate_limit,
-                context_chunk_limit=dependencies.selection_profile.context_chunk_limit,
+                context_chunk_limit=chunk_limit,
                 context_character_limit=dependencies.selection_profile.context_character_limit,
                 started_at=started_at,
                 completed_at=completed_at,
@@ -460,6 +531,7 @@ class RetrieveResearchService:
                 run=run,
                 lexical_hits=lexical_hits,
                 dense_hits=dense_hits,
+                neighbor_hits=structured_hits,
                 selected_candidates=selected_candidates,
                 fused_ranks=fused_ranks,
                 reranker_scores=reranker_scores,
@@ -485,6 +557,50 @@ class RetrieveResearchService:
             candidates=candidates,
             sources=sources,
         )
+
+    @staticmethod
+    def _expand_pages(
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        question: str,
+        profile: M1SelectionProfile | RrfSelectionProfile,
+        reader: LexicalSearch,
+        selected: tuple[SelectedRetrievalCandidate, ...],
+    ) -> tuple[SelectedRetrievalCandidate, ...]:
+        bounds = {
+            "chunk_limit": profile.context_chunk_limit,
+            "character_limit": profile.context_character_limit,
+        }
+        # A single dated observation must earn new context through the exact-date lane.
+        if not ends_with_observation_date(question):
+            selected = add_page_context(
+                selected, reader.search_pages(context, query, index), **bounds
+            )
+        metric = observation_metric(question)
+        date = requested_observation_date(question)
+        if metric is not None and date is not None:
+            hit = reader.search_observation(context, query, index, metric, date)
+            if hit is not None:
+                selected = add_observation_context(selected, hit, **bounds)
+        return selected
+
+    @staticmethod
+    def _number_structured(
+        selected: tuple[SelectedRetrievalCandidate, ...],
+    ) -> tuple[tuple[SelectedRetrievalCandidate, ...], tuple[LexicalSearchHit, ...]]:
+        numbered: list[SelectedRetrievalCandidate] = []
+        hits: list[LexicalSearchHit] = []
+        for item in selected:
+            if item.origin is RetrievalOrigin.STRUCTURED:
+                hits.append(
+                    LexicalSearchHit.model_validate(
+                        item.model_dump(exclude={"origin", "rank", "selection_rank"})
+                    )
+                )
+                item = item.model_copy(update={"rank": len(hits)})
+            numbered.append(item)
+        return tuple(numbered), tuple(hits)
 
     @staticmethod
     def _select_context(
@@ -524,6 +640,7 @@ class RetrieveResearchService:
         dense_hits: tuple[QualifiedDenseHit, ...],
         selected_candidates: tuple[SelectedRetrievalCandidate, ...],
         fused_ranks: dict[UUID, int],
+        neighbor_hits: tuple[LexicalSearchHit, ...] = (),
         reranker_scores: dict[UUID, float] | None = None,
     ) -> tuple[
         tuple[RetrievalCandidate, ...],
@@ -537,12 +654,10 @@ class RetrieveResearchService:
         }
         candidates: list[RetrievalCandidate] = []
         candidate_by_lane: dict[tuple[RetrievalOrigin, int], RetrievalCandidate] = {}
-        lanes: tuple[
-            tuple[RetrievalOrigin, tuple[CanonicalRetrievalHit, ...]],
-            tuple[RetrievalOrigin, tuple[CanonicalRetrievalHit, ...]],
-        ] = (
+        lanes: tuple[tuple[RetrievalOrigin, tuple[CanonicalRetrievalHit, ...]], ...] = (
             (RetrievalOrigin.LEXICAL, lexical_hits),
             (RetrievalOrigin.DENSE, dense_hits),
+            (RetrievalOrigin.STRUCTURED, neighbor_hits),
         )
         for origin, hits in lanes:
             for rank, hit in enumerate(hits, start=1):
@@ -555,7 +670,11 @@ class RetrieveResearchService:
                     rank=rank,
                     raw_score=hit.raw_score,
                     selection_rank=selection_rank_by_lane.get((origin, rank)),
-                    fused_rank=fused_ranks.get(hit.chunk_id),
+                    fused_rank=(
+                        None
+                        if origin is RetrievalOrigin.STRUCTURED
+                        else fused_ranks.get(hit.chunk_id)
+                    ),
                     reranker_score=(reranker_scores or {}).get(hit.chunk_id),
                     created_at=run.completed_at,
                 )
