@@ -580,7 +580,12 @@ class RetrieveResearchService:
         metric = observation_metric(question)
         date = requested_observation_date(question)
         if metric is not None and date is not None:
-            hit = reader.search_observation(context, query, index, metric, date)
+            selected_pages = tuple(
+                (item.document_version_id, item.page_number)
+                for item in selected
+                if item.page_number is not None
+            )
+            hit = reader.search_observation(context, query, index, metric, date, selected_pages)
             if hit is not None:
                 selected = add_observation_context(selected, hit, **bounds)
         return selected

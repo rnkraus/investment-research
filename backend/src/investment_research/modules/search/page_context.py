@@ -49,7 +49,7 @@ def term_weights(
 
 def weighted_overlap(words: frozenset[str], weights: dict[str, float]) -> float:
     """Score rare matching terms with a mild length penalty."""
-    return (
+    return float(
         sum(weights[term] for term in sorted(words & weights.keys()))
         / (1 + len(words) / 150) ** 0.35
     )
@@ -81,16 +81,11 @@ def add_observation_context(
     """Keep earlier evidence and insert at most one additional observation passage."""
     if any(item.chunk_id == hit.chunk_id for item in selected):
         return selected
-    prefix_length = min(len(selected), chunk_limit - 1)
-    while prefix_length >= 0:
-        prefix = selected[:prefix_length]
-        if sum(len(item.text) for item in prefix) + len(hit.text) <= character_limit:
-            return _fit(
-                (*prefix, _structured(hit), *selected[prefix_length:]), chunk_limit, character_limit
-            )
-        if prefix_length <= len(selected) - 1:
-            break
-        prefix_length -= 1
+    for prefix_length in (min(len(selected), chunk_limit - 1), len(selected) - 1):
+        if prefix_length >= 0:
+            prefix = selected[:prefix_length]
+            if sum(len(item.text) for item in prefix) + len(hit.text) <= character_limit:
+                return _fit((*prefix, _structured(hit)), chunk_limit, character_limit)
     return selected
 
 
@@ -104,7 +99,7 @@ def _fit(
     candidates: Iterable[SelectedRetrievalCandidate], chunk_limit: int, character_limit: int
 ) -> tuple[SelectedRetrievalCandidate, ...]:
     seen: set[UUID] = set()
-    result = []
+    result: list[SelectedRetrievalCandidate] = []
     used_characters = 0
     for item in candidates:
         if len(result) == chunk_limit:
