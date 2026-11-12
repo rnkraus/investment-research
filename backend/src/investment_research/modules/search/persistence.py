@@ -39,7 +39,12 @@ from investment_research.modules.search.fusion_contracts import (
     RrfLaneContribution,
     reciprocal_rank_score,
 )
+from investment_research.modules.search.page_context import (
+    PAGE_SELECTOR_VERSION,
+    STRUCTURED_CONTEXT_LIMIT,
+)
 from investment_research.modules.search.reranking_contracts import RRF_RERANK_SELECTOR_VERSION
+from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_SELECTOR_VERSION
 
 
 class RetrievalRunRow(Base):
@@ -301,6 +306,12 @@ class SqlAlchemyRetrievalRepository:
         if run.mode is RetrievalMode.DUAL_LANE:
             allowed_origins.add(RetrievalOrigin.DENSE)
             limits[RetrievalOrigin.DENSE] = run.dense_candidate_limit
+            if run.selector_config_version == TEXT_NEIGHBOR_SELECTOR_VERSION:
+                allowed_origins.add(RetrievalOrigin.STRUCTURED)
+                limits[RetrievalOrigin.STRUCTURED] = 2
+            elif run.selector_config_version == PAGE_SELECTOR_VERSION:
+                allowed_origins.add(RetrievalOrigin.STRUCTURED)
+                limits[RetrievalOrigin.STRUCTURED] = STRUCTURED_CONTEXT_LIMIT
         for candidate in candidates:
             self._require_scope(context, candidate.workspace_id)
             if candidate.retrieval_run_id != run.id:
@@ -308,6 +319,14 @@ class SqlAlchemyRetrievalRepository:
             if candidate.origin not in allowed_origins:
                 raise SearchRelationshipError(
                     "candidate origin is not enabled for the retrieval run"
+                )
+            if candidate.origin is RetrievalOrigin.STRUCTURED and (
+                candidate.selection_rank is None
+                or candidate.fused_rank is not None
+                or candidate.reranker_score is not None
+            ):
+                raise SearchRelationshipError(
+                    "text neighbors require selection without fusion ranks"
                 )
             ranks_by_origin.setdefault(candidate.origin, []).append(candidate.rank)
             origin_chunk = (candidate.origin, candidate.chunk_id)
@@ -329,8 +348,16 @@ class SqlAlchemyRetrievalRepository:
             raise SearchRelationshipError("selection ranks must be contiguous")
         if run.context_chunk_limit is not None and len(selection_ranks) > run.context_chunk_limit:
             raise SearchRelationshipError("selected candidate count exceeds the context limit")
-        if run.selector_config_version in {RRF_CONFIG_VERSION, RRF_RERANK_SELECTOR_VERSION}:
-            self._require_rrf_based_ranks(run, candidates)
+        if run.selector_config_version in {
+            RRF_CONFIG_VERSION,
+            RRF_RERANK_SELECTOR_VERSION,
+            TEXT_NEIGHBOR_SELECTOR_VERSION,
+            PAGE_SELECTOR_VERSION,
+        }:
+            self._require_rrf_based_ranks(
+                run,
+                tuple(item for item in candidates if item.origin is not RetrievalOrigin.STRUCTURED),
+            )
 
         self._session.add(RetrievalRunRow.from_domain(run))
         self._session.flush()

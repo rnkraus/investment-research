@@ -24,10 +24,11 @@ unchanged. Earlier dated references to opt-in use and unchanged website defaults
 those historical blocks, not the current live default. This selection prevents accidental
 quote-copying starts; it is not a new quality observation or full milestone acceptance.
 
-**Current source-unit rule (2026-10-13):** Preparation uses `m1-5-citable-units-en-v3`, which
+**Current source-unit rule:** Preparation uses `m1-5-citable-units-en-v3`, which
 retains the v2 PDF-heading behavior and protects `U.S.`/`U.K.` continuations from false sentence
-boundaries. Answer configuration identifiers end in `low-citable-units-en-v8`; prompt v7 is
-unchanged. See the [abbreviation amendment](#country-abbreviation-amendment-2026-10-13).
+boundaries. Live answer configuration identifiers end in `low-citable-units-en-v9` and include
+the date-precision prompt guidance described in [M1 contracts](11-m1-contracts.md).
+See the [abbreviation amendment](#country-abbreviation-amendment-2026-10-13).
 
 **Local rejection inspection (2026-10-13):** The existing explicit local diagnostic override
 additionally exposes rejected claims and their matching selected excerpts in a separately labeled

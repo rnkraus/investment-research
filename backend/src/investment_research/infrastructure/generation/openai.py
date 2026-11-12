@@ -221,11 +221,12 @@ class OpenAIAnswerGenerator:
         """Make the provider call and apply the typed response contract."""
 
         proposal_schema = self._proposal_schema(generation_input)
+        instructions = self._request_instructions(generation_input)
         try:
             if self.local_validation_output is None and self.local_proposal_output is None:
                 response = self.client.responses.parse(
                     model=self.model,
-                    instructions=self.instructions,
+                    instructions=instructions,
                     input=self._serialize_input(generation_input),
                     text_format=proposal_schema,
                     reasoning={"effort": "low"},
@@ -239,7 +240,7 @@ class OpenAIAnswerGenerator:
             else:
                 raw_response = self.client.responses.with_raw_response.parse(
                     model=self.model,
-                    instructions=self.instructions,
+                    instructions=instructions,
                     input=self._serialize_input(generation_input),
                     text_format=proposal_schema,
                     reasoning={"effort": "low"},
@@ -415,6 +416,9 @@ class OpenAIAnswerGenerator:
             )
         except ValidationError:
             raise OpenAIAnswerProviderContractError(detail="proposal_validation") from None
+
+    def _request_instructions(self, generation_input: AnswerGenerationInput) -> str:
+        return self.instructions
 
     def _proposal_schema(self, generation_input: AnswerGenerationInput) -> type[BaseModel]:
         """Keep the retained M1 schema; other profiles may provide a scoped schema."""

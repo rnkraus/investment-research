@@ -1,6 +1,7 @@
 """Application-owned persistence contracts for reproducible retrieval."""
 
 from collections.abc import Sequence
+from datetime import date
 from typing import Protocol
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from investment_research.modules.search.contracts import (
     RerankResponse,
 )
 from investment_research.modules.search.domain import RetrievalCandidate, RetrievalRun
+from investment_research.modules.search.text_neighbors import TextNeighbor
 
 
 class SearchProviderError(RuntimeError):
@@ -52,6 +54,32 @@ class LexicalSearch(Protocol):
         query: LexicalSearchQuery,
     ) -> Sequence[LexicalSearchHit]:
         """Return eligible hits in deterministic descending relevance order."""
+
+    def text_neighbors(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        anchors: Sequence[UUID],
+        *,
+        embedding_config_version: str,
+        dense_index_config_version: str,
+    ) -> Sequence[TextNeighbor]:
+        """Read neighboring chunks from the same eligible text chunk set."""
+
+    def search_pages(
+        self, context: WorkspaceContext, query: LexicalSearchQuery, index: DenseQualificationRequest
+    ) -> Sequence[LexicalSearchHit]:
+        """Rank full pages and text documents within the active archive scope."""
+
+    def search_observation(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        metric: str,
+        observation_date: date,
+    ) -> LexicalSearchHit | None:
+        """Select a metric passage that also contains the requested observation date."""
 
 
 class EmbeddingProvider(Protocol):

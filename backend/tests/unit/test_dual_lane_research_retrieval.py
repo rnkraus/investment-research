@@ -83,6 +83,10 @@ from investment_research.modules.search.reranking_contracts import (
     BGE_RERANK_MODEL,
     RrfRerankingProfile,
 )
+from investment_research.modules.search.text_neighbors import (
+    TEXT_NEIGHBOR_SELECTOR_VERSION,
+    TextNeighbor,
+)
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -200,6 +204,23 @@ def test_query_planner_keeps_original_search_when_budget_reservation_fails() -> 
     provider.assert_not_called()
 
 
+def test_query_planner_preserves_the_requested_observation_date() -> None:
+    planner = AccountedQueryPlanner(
+        provider=Mock(
+            return_value=QueryPlan(
+                ("operating ARR November 5 2026",), ProviderUsage(input_units=5, output_units=3)
+            )
+        ),
+        executor=make_provider_operation_executor(),
+        model="gpt-5.6-terra",
+        cost_policy=ProviderCostPolicy(2_000_000, 12_000_000),
+    )
+
+    assert planner.plan(
+        make_context(), REQUEST_ID, "What was operating ARR for November 6, 2026?"
+    ) == ("operating arr november 6 2026",)
+
+
 def make_qualified_dense_hit(
     *,
     chunk_id: UUID,
@@ -281,6 +302,7 @@ def make_service(
     lexical_limit: int = 10,
     dense_limit: int = 10,
     reranking: AccountedRerankingService | None = None,
+    expand_text_neighbors: bool = False,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -320,6 +342,7 @@ def make_service(
         ),
         clock=clock_values.__next__,
         identifier_factory=identifier_values.__next__,
+        expand_text_neighbors=expand_text_neighbors,
     )
 
 
@@ -993,4 +1016,73 @@ def test_query_dependencies_reject_retry_delay_above_frozen_policy() -> None:
                 ),
             ),
             retry_delay_seconds=0.5,
+        )
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_count"),
+    [
+        ("How does the technology reduce idle GPU time?", 3),
+        ("Why was idle GPU time higher for November 6, 2026?", 1),
+        ("Which platform uses the technology?", 1),
+    ],
+)
+def test_rrf_text_neighbors_keep_fusion_and_enforce_observation_scope(
+    question: str, expected_count: int
+) -> None:
+    anchor = make_lexical_hit().model_copy(
+        update={
+            "source_locator_kind": SourceLocatorKind.TEXT_PASSAGE,
+            "page_number": None,
+            "text": "The technology joined the platform.",
+        }
+    )
+    neighbor_hits = tuple(
+        anchor.model_copy(
+            update={
+                "chunk_id": UUID(int=100 + index),
+                "structure_block_id": UUID(int=200 + index),
+                "text": text,
+            }
+        )
+        for index, text in enumerate(
+            ("GPUs sit idle during cold starts.", "The technology reduces idle GPU time.")
+        )
+    )
+    unit_of_work = RecordingUnitOfWork(lexical_hits=(anchor,))
+    unit_of_work.lexical_search_mock.text_neighbors.return_value = tuple(
+        TextNeighbor(
+            anchor_id=anchor.chunk_id,
+            offset=offset,
+            hit=hit,
+            anchor_terms=frozenset({"technolog", "platform"}),
+            neighbor_terms=frozenset({"gpus" if offset == 1 else "gpu", "idl"}),
+            query_terms=frozenset({"gpu", "idl", "time"}),
+        )
+        for offset, hit in enumerate(neighbor_hits, 1)
+    )
+    embedding, dense = make_provider_mocks()
+    service = make_service(
+        unit_of_work,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        identifiers=(REQUEST_ID, RUN_ID, *(UUID(int=400 + index) for index in range(3))),
+        selection_profile=RrfSelectionProfile(context_chunk_limit=16),
+        expand_text_neighbors=True,
+    )
+
+    result = service.retrieve(make_context(), ResearchRetrievalInput(question=question))
+
+    assert result.retrieval_run.selector_config_version == TEXT_NEIGHBOR_SELECTOR_VERSION
+    assert result.retrieval_run.context_chunk_limit == 8
+    assert len(result.sources) == expected_count
+    assert result.candidates[0].fused_rank == 1
+    if expected_count == 3:
+        assert [item.chunk_id for item in result.sources] == [
+            anchor.chunk_id,
+            *(item.chunk_id for item in neighbor_hits),
+        ]
+        assert all(
+            item.origin is RetrievalOrigin.STRUCTURED and item.fused_rank is None
+            for item in result.candidates[1:]
         )

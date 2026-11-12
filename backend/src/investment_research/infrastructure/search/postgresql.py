@@ -1,11 +1,13 @@
 """PostgreSQL adapters for canonical lexical retrieval and dense qualification."""
 
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Sequence
+from datetime import date
 from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import Select, and_, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from investment_research.modules.companies.contracts import CompanySummary
 from investment_research.modules.companies.domain import CompanyTicker
@@ -43,6 +45,13 @@ from investment_research.modules.search.contracts import (
     QualifiedDenseHit,
 )
 from investment_research.modules.search.domain import RetrievalFilters
+from investment_research.modules.search.observation_dates import contains_observation_date
+from investment_research.modules.search.page_context import (
+    PAGE_CONTEXT_SLOTS,
+    term_weights,
+    weighted_overlap,
+)
+from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_RADIUS, TextNeighbor
 
 TICKER_ADAPTER = TypeAdapter(CompanyTicker)
 
@@ -95,6 +104,18 @@ class PostgresLexicalSearch:
         text_query = func.websearch_to_tsquery("english", query.normalized_query)
         raw_score = func.ts_rank_cd(ChunkRow.search_vector, text_query).label("raw_score")
 
+        return (
+            PostgresLexicalSearch._eligible_chunks(context, query)
+            .add_columns(raw_score)
+            .where(ChunkRow.search_vector.bool_op("@@")(text_query), raw_score > 0)
+            .order_by(raw_score.desc(), ChunkRow.id.asc())
+            .limit(query.candidate_limit)
+        )
+
+    @staticmethod
+    def _eligible_chunks(
+        context: WorkspaceContext, query: LexicalSearchQuery
+    ) -> Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str]]:
         statement = (
             select(
                 ChunkRow.id,
@@ -104,7 +125,6 @@ class PostgresLexicalSearch:
                 StructureBlockRow.source_locator_kind,
                 StructureBlockRow.page_number,
                 ChunkRow.text,
-                raw_score,
             )
             .select_from(ChunkRow)
             .join(
@@ -157,8 +177,6 @@ class PostgresLexicalSearch:
                     (ProcessingState.LEXICAL_READY, ProcessingState.SEARCHABLE)
                 ),
                 ProcessingRunRow.lexical_config_version == query.lexical_config_version,
-                ChunkRow.search_vector.bool_op("@@")(text_query),
-                raw_score > 0,
                 *publication_date_predicates(query.filters),
             )
         )
@@ -185,7 +203,202 @@ class PostgresLexicalSearch:
                 DocumentVersionRow.captured_at <= query.filters.captured_at_cutoff,
             )
 
-        return statement.order_by(raw_score.desc(), ChunkRow.id.asc()).limit(query.candidate_limit)
+        return statement
+
+    @staticmethod
+    def _searchable_chunks(
+        context: WorkspaceContext, query: LexicalSearchQuery, index: DenseQualificationRequest
+    ) -> Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str]]:
+        return PostgresLexicalSearch._eligible_chunks(context, query).where(
+            ProcessingRunRow.state == ProcessingState.SEARCHABLE,
+            ChunkRow.text == StructureBlockRow.text,
+            ProcessingRunRow.embedding_config_version == index.embedding_config_version,
+            ProcessingRunRow.dense_index_config_version == index.dense_index_config_version,
+        )
+
+    def search_pages(
+        self, context: WorkspaceContext, query: LexicalSearchQuery, index: DenseQualificationRequest
+    ) -> tuple[LexicalSearchHit, ...]:
+        """Rank the vocabulary of complete pages before loading a few canonical passages."""
+        terms = frozenset(
+            self._session.scalar(
+                select(func.tsvector_to_array(func.to_tsvector("english", query.normalized_query)))
+            )
+            or ()
+        )
+        if not terms:
+            return ()
+        eligible = self._searchable_chunks(context, query, index)
+        statement = eligible.with_only_columns(
+            ChunkRow.id,
+            ChunkRow.document_version_id,
+            StructureBlockRow.page_number,
+            func.tsvector_to_array(ChunkRow.search_vector),
+        )
+        vocabulary: dict[tuple[UUID, int], set[str]] = defaultdict(set)
+        matched: dict[tuple[UUID, int], list[tuple[UUID, frozenset[str]]]] = defaultdict(list)
+        for chunk_id, version, page, words in self._session.execute(
+            statement.execution_options(yield_per=128)
+        ).tuples():
+            key = (version, page or 0)
+            vocabulary[key].update(words)
+            if terms.intersection(words):
+                matched[key].append((chunk_id, frozenset(words)))
+        pages = {key: frozenset(words) for key, words in vocabulary.items()}
+        weights = term_weights(terms, pages.values())
+        ranked = sorted(matched, key=lambda key: (-weighted_overlap(pages[key], weights), key))
+        seen: set[frozenset[str]] = set()
+        scores: dict[UUID, float] = {}
+        for key in ranked:
+            signature = pages[key]
+            if signature in seen:
+                continue
+            seen.add(signature)
+            chunk_id, words = min(
+                matched[key], key=lambda item: (-weighted_overlap(item[1], weights), item[0])
+            )
+            scores[chunk_id] = weighted_overlap(words, weights)
+            if len(scores) == PAGE_CONTEXT_SLOTS:
+                break
+        if not scores:
+            return ()
+        hits = {
+            row[0]: _page_hit(*row, scores[row[0]])
+            for row in self._session.execute(eligible.where(ChunkRow.id.in_(scores))).tuples()
+        }
+        return tuple(hits[key] for key in scores if key in hits)
+
+    def search_observation(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        metric: str,
+        observation_date: date,
+    ) -> LexicalSearchHit | None:
+        """Weight the named metric above date terms and require the full date in the passage."""
+        metric_query = func.plainto_tsquery("english", metric)
+        date_query = func.plainto_tsquery("english", observation_date.isoformat().replace("-", " "))
+        score = (
+            3 * func.ts_rank_cd(ChunkRow.search_vector, metric_query)
+            + func.ts_rank_cd(ChunkRow.search_vector, date_query)
+        ).label("observation_score")
+        statement = (
+            self._searchable_chunks(context, query, index)
+            .add_columns(score)
+            .where(
+                ChunkRow.search_vector.bool_op("@@")(metric_query),
+                func.strpos(ChunkRow.text, str(observation_date.year)) > 0,
+            )
+            .order_by(score.desc(), ChunkRow.id.asc())
+            .limit(32)
+        )
+        for row in self._session.execute(statement).tuples():
+            if contains_observation_date(row[6], observation_date):
+                return _page_hit(*row)
+        return None
+
+    def text_neighbors(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        anchors: Sequence[UUID],
+        *,
+        embedding_config_version: str,
+        dense_index_config_version: str,
+    ) -> tuple[TextNeighbor, ...]:
+        """Read the adjacent ordinals of selected chunks in the same active text chunk set."""
+        if not anchors:
+            return ()
+        anchor = aliased(ChunkRow)
+        offset = ChunkRow.ordinal - anchor.ordinal
+        statement = (
+            self._eligible_chunks(context, query)
+            .join_from(
+                ChunkRow,
+                anchor,
+                and_(
+                    anchor.workspace_id == ChunkRow.workspace_id,
+                    anchor.document_version_id == ChunkRow.document_version_id,
+                    anchor.chunk_set_id == ChunkRow.chunk_set_id,
+                    anchor.processing_run_id == ChunkRow.processing_run_id,
+                    anchor.id.in_(anchors),
+                    ChunkRow.ordinal.between(
+                        anchor.ordinal - TEXT_NEIGHBOR_RADIUS, anchor.ordinal + TEXT_NEIGHBOR_RADIUS
+                    ),
+                    offset != 0,
+                ),
+            )
+            .where(
+                StructureBlockRow.source_locator_kind == SourceLocatorKind.TEXT_PASSAGE,
+                ProcessingRunRow.state == ProcessingState.SEARCHABLE,
+                ChunkRow.text == StructureBlockRow.text,
+                ProcessingRunRow.embedding_config_version == embedding_config_version,
+                ProcessingRunRow.dense_index_config_version == dense_index_config_version,
+            )
+            .add_columns(
+                anchor.id,
+                offset,
+                func.tsvector_to_array(anchor.search_vector),
+                func.tsvector_to_array(ChunkRow.search_vector),
+                func.tsvector_to_array(func.to_tsvector("english", query.normalized_query)),
+            )
+        )
+        return tuple(
+            TextNeighbor(
+                anchor_id=anchor_id,
+                offset=position,
+                hit=LexicalSearchHit(
+                    chunk_id=chunk_id,
+                    document_id=document_id,
+                    document_version_id=version,
+                    structure_block_id=block,
+                    source_locator_kind=kind,
+                    page_number=page,
+                    text=body,
+                    raw_score=1.0,
+                ),
+                anchor_terms=frozenset(anchor_terms),
+                neighbor_terms=frozenset(neighbor_terms),
+                query_terms=frozenset(query_terms),
+            )
+            for (
+                chunk_id,
+                document_id,
+                version,
+                block,
+                kind,
+                page,
+                body,
+                anchor_id,
+                position,
+                anchor_terms,
+                neighbor_terms,
+                query_terms,
+            ) in self._session.execute(statement).tuples()
+        )
+
+
+def _page_hit(
+    chunk_id: UUID,
+    document_id: UUID,
+    version: UUID,
+    block: UUID,
+    kind: SourceLocatorKind,
+    page: int | None,
+    body: str,
+    score: float,
+) -> LexicalSearchHit:
+    return LexicalSearchHit(
+        chunk_id=chunk_id,
+        document_id=document_id,
+        document_version_id=version,
+        structure_block_id=block,
+        source_locator_kind=kind,
+        page_number=page,
+        text=body,
+        raw_score=float(score),
+    )
 
 
 class PostgresArchiveSearchReader:

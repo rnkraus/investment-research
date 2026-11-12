@@ -101,6 +101,20 @@ fusion ranks before persistence. No provider call, accounting rule, or evidence 
 See [Search](../search/README.md#standalone-m15-reciprocal-rank-fusion) for the fixed formula and
 comparison boundary.
 
+### Live source-ID context expansion
+
+The normal source-ID runtime uses `m1-5-rrf-k60-text-neighbors-v1` with a maximum of eight
+chunks and the configured character ceiling. For explanatory questions it checks up to two
+neighbors on either side of the first four selected text anchors. PostgreSQL reads the
+same active chunk set under the original workspace, document, and temporal filters. One
+relevant pair can replace lower-ranked passages. The existing lexical and dense ranks
+remain auditable; added neighbors are stored as structured selections and pass canonical
+source-ID and statement-support validation.
+
+An explicit observation date in the question is preserved in lexical query refinements and
+required for added neighbor text. The v9 answer prompt applies date-precision guidance to
+such questions and distinguishes observation, publication, and target dates.
+
 ### Internally injected accounted reranking
 
 The query dependency bundle can instead receive `RrfRerankingProfile` together with

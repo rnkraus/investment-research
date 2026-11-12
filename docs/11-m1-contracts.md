@@ -519,7 +519,9 @@ not a replacement for server-side support validation or a guarantee of live mode
 Both answer profiles explicitly require English generated prose regardless of the question's
 language: `rendered_text`, each statement's `text`, and any `missing_information` explanation.
 The M1 prompt v6 preserves verbatim `exact_text`; the M1.5 source-unit prompt
-`m1-5-citable-units-en-answer-prompt-v8` preserves ID selection and server-resolved original text.
+`m1-5-citable-units-en-answer-prompt-v9` preserves ID selection and server-resolved original text.
+For explicit observation dates, v9 preserves the available day and separates observation,
+publication, and target dates in the generation instruction.
 Neither profile translates quotations or changes canonical source text. This instruction applies
 to Terra and Luna alike; it is not a deterministic language validator or a new quality result.
 
