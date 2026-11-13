@@ -52,6 +52,10 @@ from investment_research.modules.research.application import (
     GenerateValidatedAnswerService,
     StatementSupportAccountingProfile,
 )
+from investment_research.modules.research.citable_unit_contracts import (
+    CitableUnitLimitDetails,
+    CitableUnitLimitError,
+)
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
@@ -500,6 +504,75 @@ def test_foreign_workspace_never_publishes_context() -> None:
 
     assert observed == []
     assert generator.calls == []
+
+
+@pytest.mark.parametrize("source_limit", [0, 1, 2])
+def test_hybrid_generation_fits_context_before_model_call(
+    monkeypatch: pytest.MonkeyPatch, source_limit: int
+) -> None:
+    original = make_retrieval_result()
+    first_candidate = original.candidates[0]
+    first_source = original.sources[0]
+    other_candidate = first_candidate.model_copy(
+        update={"id": UUID(int=201), "chunk_id": UUID(int=202), "rank": 2}
+    )
+    other_source = first_source.model_copy(
+        update={"retrieval_candidate_id": other_candidate.id, "chunk_id": other_candidate.chunk_id}
+    )
+    hybrid = ResearchRetrievalResult(
+        request=original.request,
+        retrieval_run=original.retrieval_run.model_copy(
+            update={
+                "mode": RetrievalMode.DUAL_LANE,
+                "embedding_config_version": "test-embedding-v1",
+                "dense_index_config_version": "test-index-v1",
+                "selector_config_version": "test-hybrid-v1",
+                "dense_candidate_limit": 10,
+                "context_chunk_limit": 2,
+                "context_character_limit": 1000,
+            }
+        ),
+        candidates=(first_candidate, other_candidate),
+        sources=(first_source, other_source),
+    )
+    builder = create_autospec(AnswerGenerationInputBuilder, instance=True)
+    builder.build.side_effect = lambda _, result: (
+        GenerateValidatedAnswerService._build_generation_input(result)
+    )
+    service, generator = make_service(
+        RecordingAnswerValidationUnitOfWork(),
+        make_answer_proposal(),
+        generation_input_builder=builder,
+    )
+    preflight_sizes: list[int] = []
+    observed: list[AnswerGenerationInput] = []
+
+    def preflight(generation_input: AnswerGenerationInput) -> None:
+        size = len(generation_input.sources)
+        preflight_sizes.append(size)
+        if size > source_limit:
+            raise CitableUnitLimitError(
+                "test metadata budget exceeded",
+                details=CitableUnitLimitDetails(
+                    kind="input_metadata", observed=size + 10, limit=source_limit + 10
+                ),
+            )
+
+    monkeypatch.setattr(generator, "preflight", preflight, raising=False)
+    if source_limit == 0:
+        with pytest.raises(CitableUnitLimitError):
+            service.generate(make_context(), hybrid, on_context=observed.append)
+        assert preflight_sizes == [2, 1]
+        assert observed == generator.calls == []
+        return
+
+    service.generate(make_context(), hybrid, on_context=observed.append)
+
+    assert preflight_sizes == ([2, 1] if source_limit == 1 else [2])
+    assert observed == generator.calls
+    assert [source.chunk_id for source in observed[0].sources] == [
+        source.chunk_id for source in hybrid.sources[:source_limit]
+    ]
 
 
 def test_m1_generation_accounts_provider_usage_before_answer_transaction() -> None:

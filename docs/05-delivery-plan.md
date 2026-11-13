@@ -480,6 +480,14 @@ Claim support continues to come from the original source text.
 - The local source-ID research path combines RRF with direct page ranking, bounded text
   neighbors, and a local weighted follow-up for explicit dated metrics. Observation dates
   stay fixed in search refinements and date-specific answer prompts.
+- Without an explicit company filter, an unambiguous company name or ticker in the question
+  can promote already retrieved passages from reviewed company documents by up to two
+  RRF positions. All eligible documents can still contribute evidence. An explicit company
+  filter takes precedence.
+- If the selected hybrid context exceeds a source-unit budget, answer preparation removes
+  the lowest-ranked passage and rechecks the remaining canonical sources locally before
+  any answer call. The displayed context is the one sent for generation. A single passage
+  that still exceeds the limit stops generation.
 
 ### Exit gate
 
