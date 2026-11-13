@@ -222,6 +222,7 @@ class ResearchRequestInput(StrictContract):
     generation_model: ResearchModel = ResearchModel.TERRA
     support_model: ResearchModel = ResearchModel.TERRA
     decompose_query: bool = False
+    rerank_with_luna: bool = False
 
 
 class ResearchModelOptions(StrictContract):
@@ -231,6 +232,7 @@ class ResearchModelOptions(StrictContract):
     generation_models: tuple[ResearchModel, ...]
     support_models: tuple[ResearchModel, ...]
     query_decomposition_enabled: bool = False
+    luna_reranking_enabled: bool = False
 
 
 class EvidenceRelationship(StrEnum):

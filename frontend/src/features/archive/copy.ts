@@ -181,6 +181,9 @@ export const archiveCopy = {
     searchModeLabel: "Search mode",
     standardSearch: "Standard",
     decomposedSearch: "Query decomposition (experimental)",
+    lunaRerankedSearch: "Luna reranking (experimental)",
+    lunaRerankedSearchHint:
+      "Sends retrieved passages to GPT-5.6 Luna for selection before answering. Uses the standard selection if reranking is unavailable.",
     decomposedSearchHint:
       "An extra model call can add up to two keyword searches for multi-part questions.",
     modelSettingsLabel: "Model settings",

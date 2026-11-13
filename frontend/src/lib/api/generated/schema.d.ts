@@ -1236,6 +1236,11 @@ export interface components {
         readonly ResearchModelOptions: {
             /** Generation Models */
             readonly generation_models: readonly components["schemas"]["ResearchModel"][];
+            /**
+             * Luna Reranking Enabled
+             * @default false
+             */
+            readonly luna_reranking_enabled: boolean;
             /** Provider Enabled */
             readonly provider_enabled: boolean;
             /**
@@ -1331,6 +1336,11 @@ export interface components {
             readonly generation_model: components["schemas"]["ResearchModel"];
             /** Question */
             readonly question: string;
+            /**
+             * Rerank With Luna
+             * @default false
+             */
+            readonly rerank_with_luna: boolean;
             /** @default gpt-5.6-terra */
             readonly support_model: components["schemas"]["ResearchModel"];
         };

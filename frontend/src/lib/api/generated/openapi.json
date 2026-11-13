@@ -1873,6 +1873,11 @@
             "title": "Generation Models",
             "type": "array"
           },
+          "luna_reranking_enabled": {
+            "default": false,
+            "title": "Luna Reranking Enabled",
+            "type": "boolean"
+          },
           "provider_enabled": {
             "title": "Provider Enabled",
             "type": "boolean"
@@ -2102,6 +2107,11 @@
             "minLength": 1,
             "title": "Question",
             "type": "string"
+          },
+          "rerank_with_luna": {
+            "default": false,
+            "title": "Rerank With Luna",
+            "type": "boolean"
           },
           "support_model": {
             "$ref": "#/components/schemas/ResearchModel",

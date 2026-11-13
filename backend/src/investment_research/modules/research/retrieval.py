@@ -22,6 +22,10 @@ from investment_research.modules.research.contracts import (
 )
 from investment_research.modules.research.domain import ResearchRequest, TemporalMode
 from investment_research.modules.research.errors import ResearchProviderUnavailableError
+from investment_research.modules.research.luna_reranking import (
+    LUNA_RERANK_POOL_LIMIT,
+    AccountedLunaReranker,
+)
 from investment_research.modules.research.ports import ResearchRetrievalUnitOfWorkFactory
 from investment_research.modules.research.query_planning import (
     AccountedQueryPlanner,
@@ -54,6 +58,7 @@ from investment_research.modules.search.domain import (
 from investment_research.modules.search.fusion import fit_rrf_context, fuse_rrf_hits
 from investment_research.modules.search.fusion_contracts import (
     COMPANY_PAGE_RRF_SELECTOR_VERSION,
+    LUNA_RERANK_SELECTOR_VERSION,
     RrfSelectionProfile,
 )
 from investment_research.modules.search.observation_dates import (
@@ -157,6 +162,7 @@ class RetrieveResearchService:
         m1_query_retrieval: M1QueryRetrievalDependencies | None = None,
         query_planner: AccountedQueryPlanner | None = None,
         company_priority: CompanyPriorityReader | None = None,
+        luna_reranker: AccountedLunaReranker | None = None,
         expand_text_neighbors: bool = False,
         expand_page_context: bool = False,
         clock: Clock = lambda: datetime.now(UTC),
@@ -179,6 +185,7 @@ class RetrieveResearchService:
         self._m1_query_retrieval = m1_query_retrieval
         self._query_planner = query_planner
         self._company_priority = company_priority
+        self._luna_reranker = luna_reranker
         self._expand_text_neighbors = expand_text_neighbors
         self._expand_page_context = expand_page_context
         self._clock = clock
@@ -187,6 +194,15 @@ class RetrieveResearchService:
     @property
     def query_decomposition_enabled(self) -> bool:
         return self._m1_query_retrieval is not None and self._query_planner is not None
+
+    @property
+    def luna_reranking_enabled(self) -> bool:
+        return (
+            self._luna_reranker is not None
+            and self._expand_page_context
+            and self._m1_query_retrieval is not None
+            and isinstance(self._m1_query_retrieval.selection_profile, RrfSelectionProfile)
+        )
 
     def retrieve(
         self,
@@ -199,6 +215,8 @@ class RetrieveResearchService:
 
         if retrieval_input.decompose_query and not self.query_decomposition_enabled:
             raise ValueError("query decomposition is unavailable")
+        if retrieval_input.rerank_with_luna and not self.luna_reranking_enabled:
+            raise ValueError("Luna reranking is unavailable")
         started_at = self._aware_utc_now()
         request = ResearchRequest(
             id=self._identifier_factory(),
@@ -227,6 +245,7 @@ class RetrieveResearchService:
                 started_at=started_at,
                 progress=progress,
                 decompose_query=retrieval_input.decompose_query,
+                rerank_with_luna=retrieval_input.rerank_with_luna,
             )
 
         return self._retrieve_lexical(
@@ -317,6 +336,7 @@ class RetrieveResearchService:
         started_at: datetime,
         progress: Callable[[UUID, ResearchProgressStage], None] | None,
         decompose_query: bool,
+        rerank_with_luna: bool,
     ) -> ResearchRetrievalResult:
         """Run external query providers first, then commit canonical selection atomically."""
         dependencies = self._m1_query_retrieval
@@ -421,6 +441,54 @@ class RetrieveResearchService:
             # The detached snapshot and provider operation never retain this read transaction.
             reranked = dependencies.reranking.select(context, request.id, prepared)
 
+        luna_selection: tuple[SelectedRetrievalCandidate, ...] | None = None
+        baseline = None
+        if rerank_with_luna:
+            profile = dependencies.selection_profile
+            assert isinstance(profile, RrfSelectionProfile) and self._luna_reranker is not None
+            if progress is not None:
+                progress(request.id, "SELECTING_PASSAGES")
+            with self._unit_of_work_factory() as unit_of_work:
+                lexical_snapshot = search_lexical_queries(
+                    unit_of_work.lexical_search, context, query, additional_queries
+                )
+                dense_snapshot = tuple(
+                    unit_of_work.dense_qualifier.qualify(context, qualification_request)
+                )
+                baseline = self._select_expanded_context(
+                    context,
+                    query,
+                    qualification_request,
+                    request.question,
+                    profile,
+                    unit_of_work.lexical_search,
+                    lexical_snapshot,
+                    dense_snapshot,
+                )
+            selected, _, _, limit = baseline
+            pool = {item.chunk_id: item for item in selected}
+            for candidate in fuse_rrf_hits(
+                lexical_hits=lexical_snapshot, dense_hits=dense_snapshot
+            )[:20]:
+                hit = candidate.hit
+                origin = candidate.contributions[0]
+                if hit.chunk_id not in pool and len(pool) < LUNA_RERANK_POOL_LIMIT:
+                    pool[hit.chunk_id] = SelectedRetrievalCandidate(
+                        **hit.model_dump(), origin=origin.origin, rank=origin.rank, selection_rank=1
+                    )
+            # Keep the experiment's original RRF input order and append structured additions.
+            ranked_pool = tuple(
+                sorted(pool.values(), key=lambda item: baseline[1].get(item.chunk_id, 41))
+            )
+            luna_selection = self._luna_reranker.select(
+                context,
+                request.id,
+                request.question,
+                ranked_pool,
+                chunk_limit=limit,
+                character_limit=profile.context_character_limit,
+            )
+
         with self._unit_of_work_factory() as unit_of_work:
             lexical_hits = search_lexical_queries(
                 unit_of_work.lexical_search, context, query, additional_queries
@@ -459,76 +527,31 @@ class RetrieveResearchService:
                         for item in reranked.response.results
                     }
             else:
-                if progress is not None:
+                if progress is not None and not rerank_with_luna:
                     progress(request.id, "SELECTING_PASSAGES")
-                profile = dependencies.selection_profile
-                if isinstance(profile, RrfRerankingProfile):
+                if isinstance(dependencies.selection_profile, RrfRerankingProfile):
                     raise RuntimeError("reranking selection was not prepared")
-                if (self._expand_text_neighbors or self._expand_page_context) and isinstance(
-                    profile, RrfSelectionProfile
-                ):
-                    chunk_limit = min(profile.context_chunk_limit, TEXT_NEIGHBOR_CONTEXT_LIMIT)
-                    profile = profile.model_copy(update={"context_chunk_limit": chunk_limit})
-                    selector_version = (
-                        PAGE_SELECTOR_VERSION
-                        if self._expand_page_context
-                        else TEXT_NEIGHBOR_SELECTOR_VERSION
-                    )
-                preferred_documents: frozenset[UUID] = frozenset()
-                if (
-                    self._company_priority is not None
-                    and query.filters.company_id is None
-                    and selector_version == PAGE_SELECTOR_VERSION
-                ):
-                    preferred_documents = self._company_priority.preferred_documents(
-                        context,
-                        request.question,
-                        {hit.document_id for hit in lexical_hits}
-                        | {hit.document_id for hit in dense_hits},
-                    )
-                selected_candidates, fused_ranks = self._select_context(
-                    lexical_hits=lexical_hits,
-                    dense_hits=dense_hits,
-                    profile=profile,
-                    preferred_documents=preferred_documents,
+                current = self._select_expanded_context(
+                    context,
+                    query,
+                    qualification_request,
+                    request.question,
+                    dependencies.selection_profile,
+                    unit_of_work.lexical_search,
+                    lexical_hits,
+                    dense_hits,
                 )
-                if selector_version == PAGE_SELECTOR_VERSION:
-                    selected_candidates = self._expand_pages(
-                        context,
-                        query,
-                        qualification_request,
-                        request.question,
-                        profile,
-                        unit_of_work.lexical_search,
-                        selected_candidates,
-                    )
-                if (
-                    self._expand_text_neighbors
-                    and isinstance(profile, RrfSelectionProfile)
-                    and seeks_explanation(request.question)
-                ):
-                    anchors = tuple(
-                        item.chunk_id
-                        for item in selected_candidates[:TEXT_NEIGHBOR_ANCHOR_LIMIT]
-                        if item.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
-                    )
-                    if anchors:
-                        selected_candidates, _ = select_text_neighbors(
-                            request.question,
-                            selected_candidates,
-                            unit_of_work.lexical_search.text_neighbors(
-                                context,
-                                query,
-                                anchors,
-                                embedding_config_version=dense_query.embedding_config_version,
-                                dense_index_config_version=dense_query.dense_index_config_version,
-                            ),
-                            chunk_limit=profile.context_chunk_limit,
-                            character_limit=profile.context_character_limit,
-                        )
+                selected_candidates, fused_ranks, selector_version, chunk_limit = current
+                if luna_selection is not None:
+                    if (
+                        current != baseline
+                        or lexical_hits != lexical_snapshot
+                        or dense_hits != dense_snapshot
+                    ):
+                        raise ResearchProviderUnavailableError(request.id, retriable=False)
+                    selected_candidates = luna_selection
+                    selector_version = LUNA_RERANK_SELECTOR_VERSION
                 selected_candidates, structured_hits = self._number_structured(selected_candidates)
-                if preferred_documents:
-                    selector_version = COMPANY_PAGE_RRF_SELECTOR_VERSION
             completed_at = self._aware_utc_now()
             run = RetrievalRun(
                 id=retrieval_run_id,
@@ -580,6 +603,84 @@ class RetrieveResearchService:
             candidates=candidates,
             sources=sources,
         )
+
+    def _select_expanded_context(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        qualification_request: DenseQualificationRequest,
+        question: str,
+        profile: M1SelectionProfile | RrfSelectionProfile,
+        reader: LexicalSearch,
+        lexical_hits: tuple[LexicalSearchHit, ...],
+        dense_hits: tuple[QualifiedDenseHit, ...],
+    ) -> tuple[tuple[SelectedRetrievalCandidate, ...], dict[UUID, int], str, int]:
+        selector_version = profile.selector_config_version
+        chunk_limit = profile.context_chunk_limit
+        if (self._expand_text_neighbors or self._expand_page_context) and isinstance(
+            profile, RrfSelectionProfile
+        ):
+            chunk_limit = min(profile.context_chunk_limit, TEXT_NEIGHBOR_CONTEXT_LIMIT)
+            profile = profile.model_copy(update={"context_chunk_limit": chunk_limit})
+            selector_version = (
+                PAGE_SELECTOR_VERSION
+                if self._expand_page_context
+                else TEXT_NEIGHBOR_SELECTOR_VERSION
+            )
+        preferred_documents: frozenset[UUID] = frozenset()
+        if (
+            self._company_priority is not None
+            and query.filters.company_id is None
+            and selector_version == PAGE_SELECTOR_VERSION
+        ):
+            preferred_documents = self._company_priority.preferred_documents(
+                context,
+                question,
+                {hit.document_id for hit in lexical_hits} | {hit.document_id for hit in dense_hits},
+            )
+        selected_candidates, fused_ranks = self._select_context(
+            lexical_hits=lexical_hits,
+            dense_hits=dense_hits,
+            profile=profile,
+            preferred_documents=preferred_documents,
+        )
+        if selector_version == PAGE_SELECTOR_VERSION:
+            selected_candidates = self._expand_pages(
+                context,
+                query,
+                qualification_request,
+                question,
+                profile,
+                reader,
+                selected_candidates,
+            )
+        if (
+            self._expand_text_neighbors
+            and isinstance(profile, RrfSelectionProfile)
+            and seeks_explanation(question)
+        ):
+            anchors = tuple(
+                item.chunk_id
+                for item in selected_candidates[:TEXT_NEIGHBOR_ANCHOR_LIMIT]
+                if item.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
+            )
+            if anchors:
+                selected_candidates, _ = select_text_neighbors(
+                    question,
+                    selected_candidates,
+                    reader.text_neighbors(
+                        context,
+                        query,
+                        anchors,
+                        embedding_config_version=qualification_request.embedding_config_version,
+                        dense_index_config_version=qualification_request.dense_index_config_version,
+                    ),
+                    chunk_limit=profile.context_chunk_limit,
+                    character_limit=profile.context_character_limit,
+                )
+        if preferred_documents:
+            selector_version = COMPANY_PAGE_RRF_SELECTOR_VERSION
+        return selected_candidates, fused_ranks, selector_version, chunk_limit
 
     @staticmethod
     def _expand_pages(

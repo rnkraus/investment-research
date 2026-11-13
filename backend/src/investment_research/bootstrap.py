@@ -90,6 +90,7 @@ from investment_research.infrastructure.generation.openai_citable_units import (
     citable_answer_profile,
     create_openai_citable_unit_answer_generator,
 )
+from investment_research.infrastructure.generation.openai_luna_reranker import OpenAILunaReranker
 from investment_research.infrastructure.generation.openai_query_planner import OpenAIQueryPlanner
 from investment_research.infrastructure.health import (
     CompositeReadinessProbe,
@@ -175,6 +176,7 @@ from investment_research.modules.operations.application import (
     FinalizeProviderOperationService,
     ProviderBudgetPolicy,
     ProviderCostPolicy,
+    RerankingRequestQuotaPolicy,
     ReserveProviderOperationService,
 )
 from investment_research.modules.processing.application import (
@@ -203,6 +205,7 @@ from investment_research.modules.research.contracts import (
     ResearchModel,
     UnvalidatedGeneratedAnswer,
 )
+from investment_research.modules.research.luna_reranking import AccountedLunaReranker
 from investment_research.modules.research.ports import AnswerGenerator
 from investment_research.modules.research.query_planning import AccountedQueryPlanner
 from investment_research.modules.search.archive import (
@@ -639,6 +642,11 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 budget_policy=ProviderBudgetPolicy(
                     monthly_limit_micro_usd=monthly_budget,
                 ),
+                reranking_quota_policy=(
+                    RerankingRequestQuotaPolicy(monthly_request_limit=500)
+                    if citable_units_enabled
+                    else None
+                ),
             ),
             finalization_service=FinalizeProviderOperationService(
                 unit_of_work_factory=provider_operation_unit_of_work_factory,
@@ -806,6 +814,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             else M1_EVIDENCE_VALIDATION_PROFILE
         )
     query_planner = None
+    luna_reranker = None
     if settings.query_providers is not None and citable_units_enabled:
         assert answer_generator_provider is not None
         assert provider_operation_executor is not None
@@ -818,6 +827,17 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 output_micro_usd_per_million_units=OPENAI_ANSWER_OUTPUT_MICRO_USD_PER_MILLION_TOKENS,
             ),
         )
+        assert luna_answer_generator_provider is not None
+        luna_price = RESEARCH_MODEL_PRICES[ResearchModel.LUNA]
+        luna_reranker = AccountedLunaReranker(
+            provider=OpenAILunaReranker(luna_answer_generator_provider.client, ResearchModel.LUNA),
+            executor=provider_operation_executor,
+            model=ResearchModel.LUNA,
+            cost_policy=ProviderCostPolicy(
+                input_micro_usd_per_million_units=luna_price.input_micro_usd_per_million_tokens,
+                output_micro_usd_per_million_units=luna_price.output_micro_usd_per_million_tokens,
+            ),
+        )
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
             database.session_factory
@@ -828,6 +848,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         ),
         m1_query_retrieval=m1_query_retrieval,
         query_planner=query_planner,
+        luna_reranker=luna_reranker,
         company_priority=PostgresCompanyPriorityReader(database.session_factory),
         expand_text_neighbors=citable_units_enabled,
         expand_page_context=citable_units_enabled,

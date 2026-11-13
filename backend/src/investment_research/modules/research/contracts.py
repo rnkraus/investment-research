@@ -76,6 +76,7 @@ class ResearchRetrievalInput(
     generation_model: ResearchModel = ResearchModel.TERRA
     support_model: ResearchModel = ResearchModel.TERRA
     decompose_query: bool = False
+    rerank_with_luna: bool = False
 
     @field_validator("question")
     @classmethod

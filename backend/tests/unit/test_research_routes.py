@@ -99,7 +99,9 @@ class FakeAnswerResearchRequestService:
         self.rejection: tuple[UnvalidatedGeneratedAnswer, EvidenceValidationDecision] | None = None
         self.calls: list[tuple[WorkspaceContext, ResearchRetrievalInput]] = []
         self.model_services: dict[tuple[ResearchModel, ResearchModel], object] | None = None
-        self.retrieval_service = SimpleNamespace(query_decomposition_enabled=False)
+        self.retrieval_service = SimpleNamespace(
+            query_decomposition_enabled=False, luna_reranking_enabled=False
+        )
 
     def answer(
         self,
@@ -465,12 +467,14 @@ def test_research_models_endpoint_reports_actual_runtime_availability(
         "generation_models": [],
         "support_models": [],
         "query_decomposition_enabled": False,
+        "luna_reranking_enabled": False,
     }
 
     service.model_services = {
         (answer, support): object() for answer in ResearchModel for support in ResearchModel
     }
     service.retrieval_service.query_decomposition_enabled = True
+    service.retrieval_service.luna_reranking_enabled = True
     provider_response = client.get("/api/v1/research-requests/models")
 
     assert provider_response.status_code == 200
@@ -479,6 +483,7 @@ def test_research_models_endpoint_reports_actual_runtime_availability(
         "generation_models": [model.value for model in ResearchModel],
         "support_models": [model.value for model in ResearchModel],
         "query_decomposition_enabled": True,
+        "luna_reranking_enabled": True,
     }
 
 
@@ -707,3 +712,17 @@ def test_research_route_rejects_client_workspace_scope_before_service_call(
     assert response.json()["error"]["code"] == "INVALID_REQUEST"
     assert "workspace_id" not in response.text
     assert service.calls == []
+
+
+def test_luna_reranking_requires_runtime_support_and_is_forwarded(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+) -> None:
+    client, service = research_client
+    body = {"question": QUESTION, "rerank_with_luna": True}
+    assert client.post("/api/v1/research-requests", json=body).status_code == 422
+    assert service.calls == []
+    service.retrieval_service.luna_reranking_enabled = True
+    assert client.post("/api/v1/research-requests", json=body).status_code == 200
+    assert service.calls == [
+        (make_context(), ResearchRetrievalInput(question=QUESTION, rerank_with_luna=True))
+    ]

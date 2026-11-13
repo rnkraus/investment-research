@@ -31,6 +31,10 @@ from investment_research.modules.research.company_priority import (
     company_lookup_terms,
 )
 from investment_research.modules.research.contracts import ResearchRetrievalInput
+from investment_research.modules.research.luna_reranking import (
+    AccountedLunaReranker,
+    ListwiseRanking,
+)
 from investment_research.modules.research.ports import (
     ResearchRepository,
     ResearchRetrievalUnitOfWork,
@@ -68,6 +72,7 @@ from investment_research.modules.search.domain import (
 )
 from investment_research.modules.search.fusion_contracts import (
     COMPANY_PAGE_RRF_SELECTOR_VERSION,
+    LUNA_RERANK_SELECTOR_VERSION,
     RRF_CONFIG_VERSION,
     RrfSelectionProfile,
 )
@@ -311,6 +316,7 @@ def make_service(
     expand_text_neighbors: bool = False,
     expand_page_context: bool = False,
     company_priority: CompanyPriorityReader | None = None,
+    luna_reranker: AccountedLunaReranker | None = None,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -353,6 +359,7 @@ def make_service(
         expand_text_neighbors=expand_text_neighbors,
         expand_page_context=expand_page_context,
         company_priority=company_priority,
+        luna_reranker=luna_reranker,
     )
 
 
@@ -1191,3 +1198,56 @@ def test_company_priority_preserves_cross_company_evidence(manual_filter: bool) 
         )
         assert result.retrieval_run.selector_config_version == COMPANY_PAGE_RRF_SELECTOR_VERSION
         assert [item.chunk_id for item in result.sources] == [preferred.chunk_id, first.chunk_id]
+
+
+@pytest.mark.parametrize("ranking", [(2, 3), (2, 2), None])
+def test_luna_selects_from_rrf_and_page_hits_with_baseline_fallback(
+    ranking: tuple[int, int] | None,
+) -> None:
+    first = make_lexical_hit()
+    second = first.model_copy(update={"chunk_id": UUID(int=850)})
+    page = first.model_copy(update={"chunk_id": UUID(int=851), "page_number": 9})
+    uow = RecordingUnitOfWork(lexical_hits=(first, second))
+    uow.lexical_search_mock.search_pages.return_value = (page,)
+    embedding, dense = make_provider_mocks()
+    provider = Mock(
+        return_value=ListwiseRanking(
+            ranking or (),
+            ProviderUsage(
+                input_units=10,
+                output_units=3,
+            ),
+        )
+    )
+    executor = make_provider_operation_executor()
+    reranker = AccountedLunaReranker(
+        provider, executor, "gpt-5.6-luna", ProviderCostPolicy(200_000, 1_200_000)
+    )
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfSelectionProfile(context_chunk_limit=2),
+        expand_page_context=True,
+        luna_reranker=reranker,
+        identifiers=(REQUEST_ID, RUN_ID, *(UUID(int=900 + index) for index in range(3))),
+    )
+
+    result = service.retrieve(
+        make_context(),
+        ResearchRetrievalInput(
+            question="What is the result?", rerank_with_luna=ranking is not None
+        ),
+    )
+
+    if ranking == (2, 3):
+        assert result.retrieval_run.selector_config_version == LUNA_RERANK_SELECTOR_VERSION
+        assert [source.chunk_id for source in result.sources] == [second.chunk_id, page.chunk_id]
+    else:
+        assert result.retrieval_run.selector_config_version == PAGE_SELECTOR_VERSION
+        assert [source.chunk_id for source in result.sources] == [first.chunk_id, page.chunk_id]
+    if ranking is None:
+        provider.assert_not_called()
+    else:
+        provider.assert_called_once()
+        assert provider.call_args.args[1:] == (3, 2)

@@ -227,6 +227,8 @@ function isResearchModelOptions(value: unknown): value is ResearchModelOptions {
     typeof value.provider_enabled !== "boolean" ||
     (value.query_decomposition_enabled !== undefined &&
       typeof value.query_decomposition_enabled !== "boolean") ||
+    (value.luna_reranking_enabled !== undefined &&
+      typeof value.luna_reranking_enabled !== "boolean") ||
     !Array.isArray(value.generation_models) ||
     !Array.isArray(value.support_models) ||
     !value.generation_models.every(isResearchModel) ||
@@ -238,6 +240,7 @@ function isResearchModelOptions(value: unknown): value is ResearchModelOptions {
   if (!value.provider_enabled) {
     return (
       value.query_decomposition_enabled !== true &&
+      value.luna_reranking_enabled !== true &&
       value.generation_models.length === 0 &&
       value.support_models.length === 0
     );
