@@ -44,6 +44,7 @@ from investment_research.modules.operations.domain import (
     ProviderOperationKind,
     ProviderUsage,
 )
+from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationProfile,
@@ -73,6 +74,7 @@ from investment_research.modules.research.ports import (
     AnswerValidationUnitOfWorkFactory,
     ResearchRepository,
 )
+from investment_research.modules.search.domain import RetrievalMode
 
 type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
@@ -337,11 +339,7 @@ class GenerateValidatedAnswerService:
             prompt_version=self._generation_profile.prompt_version,
             created_at=created_at,
         )
-        generation_input = (
-            self._build_generation_input(retrieval_result)
-            if self._generation_input_builder is None
-            else self._generation_input_builder.build(context, retrieval_result)
-        )
+        generation_input = self._prepare_generation_input(context, retrieval_result)
         if on_context is not None:
             # Selected context is source content, not a validated answer or a provider receipt.
             on_context(generation_input)
@@ -356,8 +354,6 @@ class GenerateValidatedAnswerService:
                 missing_information=self._insufficient_message,
             )
         else:
-            if isinstance(self._answer_generator, AnswerGenerationPreflight):
-                self._answer_generator.preflight(generation_input)
             generated_answer = self._generate_answer(context, generation_input)
         if progress is not None:
             progress(retrieval_result.request.id, "VALIDATING_EVIDENCE")
@@ -579,6 +575,37 @@ class GenerateValidatedAnswerService:
             statement_evidence=relationships,
             validations=result.validations,
         )
+
+    def _prepare_generation_input(
+        self, context: WorkspaceContext, retrieval_result: ResearchRetrievalResult
+    ) -> AnswerGenerationInput:
+        """Fit the highest-ranked canonical sources to the local generation budget."""
+
+        builder = self._generation_input_builder
+        generator = self._answer_generator
+        while True:
+            try:
+                if builder is None:
+                    generation_input = self._build_generation_input(retrieval_result)
+                else:
+                    generation_input = builder.build(context, retrieval_result)
+                    if not generation_input.sources:
+                        return generation_input
+                if isinstance(generator, AnswerGenerationPreflight):
+                    generator.preflight(generation_input)
+                return generation_input
+            except CitableUnitLimitError as error:
+                if (
+                    builder is None
+                    or retrieval_result.retrieval_run.mode is not RetrievalMode.DUAL_LANE
+                    or error.details is None
+                    or len(retrieval_result.sources) <= 1
+                ):
+                    raise
+                # Rebuild from the remaining canonical sources, preserving rank and unit boundaries.
+                retrieval_result = retrieval_result.model_copy(
+                    update={"sources": retrieval_result.sources[:-1]}
+                )
 
     @staticmethod
     def _build_generation_input(
