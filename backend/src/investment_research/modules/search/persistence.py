@@ -35,6 +35,8 @@ from investment_research.modules.search.domain import (
     SearchScopeError,
 )
 from investment_research.modules.search.fusion_contracts import (
+    COMPANY_PAGE_RRF_SELECTOR_VERSION,
+    COMPANY_RRF_RANK_BONUS,
     RRF_CONFIG_VERSION,
     RrfLaneContribution,
     reciprocal_rank_score,
@@ -309,7 +311,10 @@ class SqlAlchemyRetrievalRepository:
             if run.selector_config_version == TEXT_NEIGHBOR_SELECTOR_VERSION:
                 allowed_origins.add(RetrievalOrigin.STRUCTURED)
                 limits[RetrievalOrigin.STRUCTURED] = 2
-            elif run.selector_config_version == PAGE_SELECTOR_VERSION:
+            elif run.selector_config_version in {
+                PAGE_SELECTOR_VERSION,
+                COMPANY_PAGE_RRF_SELECTOR_VERSION,
+            }:
                 allowed_origins.add(RetrievalOrigin.STRUCTURED)
                 limits[RetrievalOrigin.STRUCTURED] = STRUCTURED_CONTEXT_LIMIT
         for candidate in candidates:
@@ -353,6 +358,7 @@ class SqlAlchemyRetrievalRepository:
             RRF_RERANK_SELECTOR_VERSION,
             TEXT_NEIGHBOR_SELECTOR_VERSION,
             PAGE_SELECTOR_VERSION,
+            COMPANY_PAGE_RRF_SELECTOR_VERSION,
         }:
             self._require_rrf_based_ranks(
                 run,
@@ -422,6 +428,15 @@ class SqlAlchemyRetrievalRepository:
             key=lambda candidate: candidate.selection_rank or 0,
         )
         ranks = [context_order[candidate.chunk_id] for candidate in selected]
+        if run.selector_config_version == COMPANY_PAGE_RRF_SELECTOR_VERSION:
+            highest_rank = 0
+            for rank in ranks:
+                if highest_rank - rank > COMPANY_RRF_RANK_BONUS:
+                    raise SearchRelationshipError(
+                        "Company priority exceeds the allowed rank change"
+                    )
+                highest_rank = max(highest_rank, rank)
+            return
         if ranks != sorted(ranks):
             if run.selector_config_version == RRF_RERANK_SELECTOR_VERSION:
                 raise SearchRelationshipError(

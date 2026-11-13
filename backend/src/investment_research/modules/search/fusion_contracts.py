@@ -18,6 +18,8 @@ from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 RRF_CONFIG_VERSION: Final = "m1-5-rrf-k60-v1"
 RRF_RANK_CONSTANT: Final = 60
+COMPANY_PAGE_RRF_SELECTOR_VERSION: Final = "m1-5-rrf-page-company-priority-v1"
+COMPANY_RRF_RANK_BONUS: Final = 2
 type RrfOrigin = Literal[RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE]
 
 
