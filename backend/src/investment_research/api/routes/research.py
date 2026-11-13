@@ -36,7 +36,10 @@ from investment_research.api.dependencies import (
     WorkspaceContextDependency,
 )
 from investment_research.api.errors import ApiError
-from investment_research.api.research_diagnostics import build_rejection_diagnostic
+from investment_research.api.research_diagnostics import (
+    build_rejection_diagnostic,
+    evidence_rejection_message,
+)
 from investment_research.infrastructure.logging import current_request_id
 from investment_research.modules.evidence.contracts import EvidenceValidationDecision
 from investment_research.modules.research.application import ResearchProviderUnavailableError
@@ -96,7 +99,7 @@ def build_research_stream_events(
                 research_request_id=request_id,
                 error=ErrorDetail(
                     code=ErrorCode.EVIDENCE_VALIDATION_FAILED,
-                    message="answer failed evidence validation",
+                    message=evidence_rejection_message(result.validations),
                 ),
                 retriable=False,
                 diagnostic=diagnostic,
@@ -166,7 +169,7 @@ async def stream_research_events(
     retrieval_input: ResearchRetrievalInput,
     http_request_id: UUID | None,
     *,
-    local_diagnostics_enabled: bool = False,
+    rejection_details_enabled: bool = False,
 ) -> AsyncGenerator[bytes]:
     """Deliver real progress while bounded synchronous research runs in a worker thread."""
 
@@ -203,27 +206,23 @@ async def stream_research_events(
         decision: EvidenceValidationDecision,
     ) -> None:
         nonlocal rejection_diagnostic
-        if local_diagnostics_enabled:
-            rejection_diagnostic = build_rejection_diagnostic(
-                proposal,
-                decision,
-                selected_sources,
-                answer_model=retrieval_input.generation_model,
-                support_model=retrieval_input.support_model,
-            )
+        rejection_diagnostic = build_rejection_diagnostic(
+            proposal,
+            decision,
+            selected_sources,
+            answer_model=retrieval_input.generation_model,
+            support_model=retrieval_input.support_model,
+        )
 
     async def run_research() -> None:
         try:
-            diagnostic_options = (
-                {"on_rejection": capture_rejection} if local_diagnostics_enabled else {}
-            )
             result = await run_in_threadpool(
                 service.answer,
                 context,
                 retrieval_input,
                 progress=publish_progress,
                 on_context=publish_context,
-                **diagnostic_options,
+                on_rejection=capture_rejection if rejection_details_enabled else None,
             )
             terminal_events = build_research_stream_events(result, diagnostic=rejection_diagnostic)
         except ResearchProviderUnavailableError as error:
@@ -355,7 +354,10 @@ def answer_research_request(
             context,
             retrieval_input,
             current_request_id(),
-            local_diagnostics_enabled=container.settings.local_model_failure_output,
+            rejection_details_enabled=(
+                container.settings.research_profile == "m1-5-citable-units"
+                or container.settings.local_model_failure_output
+            ),
         ),
         media_type="text/event-stream",
         headers={

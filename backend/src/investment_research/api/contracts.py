@@ -399,15 +399,16 @@ class RejectedStatementDiagnostic(StrictContract):
 
 
 class RejectedFindingDiagnostic(StrictContract):
-    """An application-owned failed rule, never a provider explanation."""
+    """A failed rule and an optional untrusted support-model explanation."""
 
     rule: ValidationRule
     statement_ordinal: int | None = Field(ge=0, le=7)
     reason: Annotated[str, StringConstraints(min_length=1, max_length=1_000)]
+    support_reason: Annotated[str, StringConstraints(min_length=1, max_length=500)] | None = None
 
 
 class ResearchRejectionDiagnostic(StrictContract):
-    """Opt-in local debugging only; this proposal failed answer validation."""
+    """Request-scoped detail about a rejected answer proposal."""
 
     unvalidated: Literal[True] = True
     answer_model: ResearchModel

@@ -126,6 +126,7 @@ function rejectionEvent() {
           rule: "STATEMENT_SUPPORT",
           statement_ordinal: 0,
           reason: "Canonical evidence does not support the complete statement.",
+          support_reason: "The source omits the claimed quantity.",
         },
       ],
     },
@@ -193,6 +194,12 @@ test("streamResearch rejects malformed or misplaced rejection diagnostics", asyn
     { ...diagnostic, findings: Array(65).fill(finding) },
     { ...diagnostic, findings: [{ ...finding, rule: "UNKNOWN" }] },
     { ...diagnostic, findings: [{ ...finding, reason: " " }] },
+    { ...diagnostic, findings: [{ ...finding, support_reason: " " }] },
+    {
+      ...diagnostic,
+      findings: [{ ...finding, support_reason: "x".repeat(501) }],
+    },
+    { ...diagnostic, findings: [{ ...finding, rule: "EXACT_SOURCE_SPAN" }] },
   ];
   for (const invalid of invalidDiagnostics) {
     await assert.rejects(

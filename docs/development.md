@@ -195,23 +195,17 @@ it in the `x-request-id` response header and safe JSON error envelope. Request b
 raw unmatched paths, headers, credentials, exception messages, and traceback text are excluded from
 these application events.
 
-For an explicitly approved public or synthetic document, an opt-in local diagnostic can show raw
-provider output when answer generation or statement-support response parsing fails. It also shows
-the unvalidated answer proposal and failed rules when server-side evidence validation rejects an
-answer. With this override, an evidence-validation rejection also exposes its rejected claims,
-selected source excerpts, model pair, and failed rules in the website's **Rejected answer
-diagnostics** panel. These are explicitly unvalidated diagnostics, not accepted answers or
-citations. Rebuild API and web when first updating to this feature, then reproduce the question:
+The research failure card shows the failed checks and any identified rejected claims alongside
+excerpts from the current request's selected context. In the local provider-backed source-ID
+profile, the evidence-check model returns a short explanation in the same support call.
+The website shows it as an unvalidated explanation next to the rejected claim. Rejected claims
+and model explanations are transient and are excluded from stored answers, findings, and default
+logs. The panel resets on the next question. Provider and schema failures before evidence
+validation use the ordinary failure card.
 
-```shell
-docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml up --build --detach --wait api web
-```
+For explicitly approved public or synthetic documents, the separate local override enables raw
+provider output in logs. To watch the terminal logs:
 
-The panel resolves excerpts only from the current request's already selected context; it does not
-fetch additional source data or expose prompts or credentials. It resets on the next question and
-cannot recover an earlier failure. It shows application-owned rejection findings, not a raw
-support-model explanation. Schema or provider failures before evidence validation still have only
-their existing terminal diagnostics, not this panel. To watch the terminal logs:
 
 ```shell
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml up --build --detach --wait api

@@ -9,9 +9,10 @@ export const archiveCopy = {
   rejectionDiagnostic: {
     heading: "Rejected answer diagnostics",
     warning:
-      "Local debugging only. These claims failed validation and are not an accepted answer. The selected passages below are not validated citations.",
+      "These claims failed validation. The selected passages show what the evidence check reviewed.",
     answerModel: "Answer model",
     supportModel: "Evidence-check model",
+    supportReason: "Why the evidence-check model rejected it",
     statement: "Rejected statement",
     evidence: "Selected source passage",
     missingEvidence:

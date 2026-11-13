@@ -44,6 +44,20 @@ export function RejectionDiagnostic({
             <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">
               {statement.text}
             </p>
+            {diagnostic.findings
+              .filter(
+                (finding) =>
+                  finding.statement_ordinal === statement.ordinal &&
+                  finding.support_reason != null,
+              )
+              .map((finding) => (
+                <div key={finding.rule} className="mt-3 text-sm leading-6">
+                  <p className="font-semibold">{copy.supportReason}</p>
+                  <p className="whitespace-pre-wrap break-words">
+                    {finding.support_reason}
+                  </p>
+                </div>
+              ))}
             {statement.evidence.length === 0 ? (
               <p className="mt-3 text-sm">{copy.missingEvidence}</p>
             ) : null}

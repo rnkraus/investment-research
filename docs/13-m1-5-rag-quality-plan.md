@@ -881,7 +881,9 @@ shared monthly operation ledger, provider cleanup, and opt-in local failure diag
 
 The source-ID profile records the existing generator and model-specific prompt/configuration
 versions and `m1-5-document-attribution-validation-v1-{support_model}`. Support operations record
-their model-specific configuration with the `-document-attribution-v1` suffix. The application
+their model-specific configuration with the `-document-attribution-reason-v1` suffix. The brief
+model explanation is shown with the rejected claim in the requesting browser and is not
+persisted. The application
 reloads canonical sources before preparation, evaluates support outside the answer transaction,
 and independently rechecks exact evidence and attribution state before atomic persistence.
 

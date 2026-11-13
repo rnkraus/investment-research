@@ -1625,7 +1625,7 @@
       },
       "RejectedFindingDiagnostic": {
         "additionalProperties": false,
-        "description": "An application-owned failed rule, never a provider explanation.",
+        "description": "A failed rule and an optional untrusted support-model explanation.",
         "properties": {
           "reason": {
             "maxLength": 1000,
@@ -1648,6 +1648,20 @@
               }
             ],
             "title": "Statement Ordinal"
+          },
+          "support_reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Support Reason"
           }
         },
         "required": [
@@ -1946,7 +1960,7 @@
       },
       "ResearchRejectionDiagnostic": {
         "additionalProperties": false,
-        "description": "Opt-in local debugging only; this proposal failed answer validation.",
+        "description": "Request-scoped detail about a rejected answer proposal.",
         "properties": {
           "answer_model": {
             "$ref": "#/components/schemas/ResearchModel"

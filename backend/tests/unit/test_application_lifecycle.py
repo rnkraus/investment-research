@@ -682,11 +682,12 @@ def test_build_api_container_wires_citable_units_for_all_model_pairs(
             assert support_accounting is not None
             assert support_accounting.model == support_model
             assert support_accounting.configuration_version == (
-                f"{support_config_version(support_model)}-document-attribution-v1"
+                f"{support_config_version(support_model)}-document-attribution-reason-v1"
             )
         for call in fakes.support_factory.call_args_list:
             assert call.kwargs["include_attribution_context"] is True
             assert call.kwargs["include_document_attribution_context"] is True
+            assert call.kwargs["include_decision_reason"] is True
             assert call.kwargs["local_validation_output"] is None
     finally:
         container.close()

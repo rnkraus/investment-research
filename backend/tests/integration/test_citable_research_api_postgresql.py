@@ -35,7 +35,7 @@ from investment_research.modules.operations.domain import (
 from investment_research.modules.research.citable_unit_contracts import CitableAnswerGenerationInput
 from investment_research.modules.research.contracts import AnswerGenerationResult, ResearchModel
 from investment_research.modules.search.contracts import DenseRetrievalHit
-from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
+from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSION
 from investment_research.settings import ApiSettings
 from tests.integration.factories import persist_research_source
 from tests.integration.test_m1_dual_retrieval_api_postgresql import (
@@ -121,6 +121,7 @@ class ContextualSupport:
         return StatementSupportResult(
             decision=StatementSupportDecision(supported=self.supported),
             usage=ProviderUsage(input_units=90, output_units=10),
+            diagnostic_reason=None if self.supported else "The source omits the claimed detail.",
         )
 
     def close(self) -> None:
@@ -148,6 +149,7 @@ def install_citable_providers(
     def support_factory(**kwargs: object) -> OpenAIStatementSupportEvaluator:
         assert kwargs["include_attribution_context"] is True
         assert kwargs["include_document_attribution_context"] is True
+        assert kwargs["include_decision_reason"] is True
         return cast(
             OpenAIStatementSupportEvaluator, evaluators[ResearchModel(str(kwargs["model"]))]
         )
@@ -263,7 +265,7 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
         workspace_id=source.context.workspace_id,
         research_request_id=request_id,
     )
-    assert run.selector_config_version == RrfSelectionProfile().selector_config_version
+    assert run.selector_config_version == PAGE_SELECTOR_VERSION
     assert {candidate.chunk_id for candidate in candidates} == {source.chunks[0].id}
     assert len(embedding.requests) == len(dense.queries) == 1
     assert (
@@ -309,7 +311,7 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
     assert support.model == support_model.value
     assert (
         support.configuration_version
-        == f"{support_config_version(support_model)}-document-attribution-v1"
+        == f"{support_config_version(support_model)}-document-attribution-reason-v1"
     )
     assert embedding.closed and dense.closed
     assert all(provider.closed for provider in generators.values())
@@ -336,8 +338,18 @@ def test_citable_api_does_not_publish_invalid_or_unsupported_proposals(
     events = parse_server_sent_events(response.text)
     assert response.status_code == 200
     assert [event["event_name"] for event in events] == ["research.failed"]
-    # Selected source context is inspectable; rejected generated content is never an answer.
-    assert QUOTE not in json.dumps(events)
+    terminal = events[0]["payload"]
+    if unknown_id:
+        assert "diagnostic" not in terminal
+        assert QUOTE not in json.dumps(events)
+    else:
+        diagnostic = terminal["diagnostic"]
+        assert diagnostic["unvalidated"] is True
+        assert diagnostic["statements"][0]["text"] == QUOTE
+        assert any(
+            finding["support_reason"] == "The source omits the claimed detail."
+            for finding in diagnostic["findings"]
+        )
     assert "synthetic-generation-key" not in response.text
     assert len(generators[ResearchModel.TERRA].requests) == 1
     assert len(evaluators[ResearchModel.TERRA].requests) == (0 if unknown_id else 1)

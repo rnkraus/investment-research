@@ -116,11 +116,12 @@ claims. Return true only if every material claim satisfies these rules. """
 
 
 def _document_attribution_instructions(explanations: bool) -> str:
-    """Keep document-attribution semantics identical with and without local diagnostics."""
+    """Keep document-attribution criteria identical across response formats."""
 
     return _DOCUMENT_ATTRIBUTION_SUPPORT_CRITERIA + (
         "Return a short English evidence-based reason of at most 500 characters, not hidden "
-        "reasoning or step-by-step analysis. Do not rewrite the statement or add external facts.\n"
+        "reasoning or step-by-step analysis. For a rejection, identify the unsupported detail, "
+        "ambiguity, or contradiction. Do not rewrite the statement or add external facts.\n"
         if explanations
         else "Do not rewrite the statement or produce an explanation.\n"
     )
@@ -154,7 +155,7 @@ def statement_support_prompt_version(
 
 
 class _ExplainedSupportDecision(BaseModel):
-    """Local-only provider schema; its reason grants no evidence authority."""
+    """Provider schema for a short explanation with no evidence authority."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True, hide_input_in_errors=True)
 
@@ -195,7 +196,11 @@ class OpenAIStatementSupportEvaluator:
             raise ValueError("OpenAI statement-support timeout must be between 0 and 30 seconds")
         if not 1 <= self.max_output_tokens <= OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS:
             raise ValueError("OpenAI statement-support output must be between 1 and 1000 tokens")
-        if self.include_decision_reason and self.local_validation_output is None:
+        if (
+            self.include_decision_reason
+            and self.local_validation_output is None
+            and not self.include_document_attribution_context
+        ):
             raise ValueError("support reasons require an explicit local diagnostic callback")
         if self.include_document_attribution_context and not self.include_attribution_context:
             raise ValueError("document attribution requires a contextual support profile")
@@ -507,7 +512,11 @@ def create_openai_statement_support_evaluator(
         raise ValueError("document attribution requires a contextual support profile")
     if not api_key.strip():
         raise ValueError("OpenAI API key must not be empty")
-    if include_decision_reason and local_validation_output is None:
+    if (
+        include_decision_reason
+        and local_validation_output is None
+        and not include_document_attribution_context
+    ):
         raise ValueError("support reasons require an explicit local diagnostic callback")
     client = OpenAI(
         api_key=api_key,
