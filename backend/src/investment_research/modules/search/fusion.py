@@ -1,6 +1,6 @@
 """Pure bounded RRF over already-qualified canonical lexical and dense lanes."""
 
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -11,6 +11,7 @@ from investment_research.modules.search.contracts import (
 )
 from investment_research.modules.search.domain import RetrievalOrigin
 from investment_research.modules.search.fusion_contracts import (
+    COMPANY_RRF_RANK_BONUS,
     RrfFusedCandidate,
     RrfLaneContribution,
     RrfOrigin,
@@ -98,6 +99,33 @@ def select_rrf_context(
     """Keep whole chunks in fused order under the existing M1 context limits."""
 
     ranked = fuse_rrf_hits(lexical_hits=lexical_hits, dense_hits=dense_hits)
+    return RrfSelectionResult(
+        profile=profile, ranked_candidates=ranked, candidates=fit_rrf_context(ranked, profile)
+    )
+
+
+def fit_rrf_context(
+    ranked: tuple[RrfFusedCandidate, ...],
+    profile: RrfSelectionProfile,
+    *,
+    preferred_documents: Set[UUID] = frozenset(),
+) -> tuple[RrfSelectedCandidate, ...]:
+    """Fit ranked chunks, with at most two places of company-based promotion."""
+
+    if preferred_documents:
+        ranked = tuple(
+            sorted(
+                ranked,
+                key=lambda item: (
+                    item.fused_rank
+                    - (
+                        COMPANY_RRF_RANK_BONUS if item.hit.document_id in preferred_documents else 0
+                    ),
+                    item.hit.document_id not in preferred_documents,
+                    item.fused_rank,
+                ),
+            )
+        )
     selected: list[RrfSelectedCandidate] = []
     character_count = 0
     for candidate in ranked:
@@ -108,4 +136,4 @@ def select_rrf_context(
             continue
         selected.append(RrfSelectedCandidate(candidate=candidate, selection_rank=len(selected) + 1))
         character_count += size
-    return RrfSelectionResult(profile=profile, ranked_candidates=ranked, candidates=tuple(selected))
+    return tuple(selected)

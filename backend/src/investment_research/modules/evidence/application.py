@@ -30,6 +30,7 @@ from investment_research.modules.research.contracts import (
 )
 from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
+from investment_research.modules.search.fusion_contracts import COMPANY_PAGE_RRF_SELECTOR_VERSION
 from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSION
 from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_SELECTOR_VERSION
 
@@ -329,7 +330,8 @@ class ValidateGeneratedAnswerService:
             eligible_origin = source.origin in {RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE} or (
                 source.origin is RetrievalOrigin.STRUCTURED
                 and (
-                    source.retrieval_selector_config_version == PAGE_SELECTOR_VERSION
+                    source.retrieval_selector_config_version
+                    in {PAGE_SELECTOR_VERSION, COMPANY_PAGE_RRF_SELECTOR_VERSION}
                     or (
                         source.retrieval_selector_config_version == TEXT_NEIGHBOR_SELECTOR_VERSION
                         and source.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE

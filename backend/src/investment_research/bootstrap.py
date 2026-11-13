@@ -118,6 +118,7 @@ from investment_research.infrastructure.queue.celery import (
     create_celery_app,
 )
 from investment_research.infrastructure.queue.outbox import BoundedCeleryOutboxPublisher
+from investment_research.infrastructure.search.company_priority import PostgresCompanyPriorityReader
 from investment_research.infrastructure.search.deterministic_index import (
     DeterministicSqliteDenseIndex,
 )
@@ -827,6 +828,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         ),
         m1_query_retrieval=m1_query_retrieval,
         query_planner=query_planner,
+        company_priority=PostgresCompanyPriorityReader(database.session_factory),
         expand_text_neighbors=citable_units_enabled,
         expand_page_context=citable_units_enabled,
     )

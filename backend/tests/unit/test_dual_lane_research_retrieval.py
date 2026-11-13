@@ -26,6 +26,10 @@ from investment_research.modules.research.application import (
     ResearchProviderUnavailableError,
     RetrieveResearchService,
 )
+from investment_research.modules.research.company_priority import (
+    CompanyPriorityReader,
+    company_lookup_terms,
+)
 from investment_research.modules.research.contracts import ResearchRetrievalInput
 from investment_research.modules.research.ports import (
     ResearchRepository,
@@ -63,6 +67,7 @@ from investment_research.modules.search.domain import (
     RetrievalOrigin,
 )
 from investment_research.modules.search.fusion_contracts import (
+    COMPANY_PAGE_RRF_SELECTOR_VERSION,
     RRF_CONFIG_VERSION,
     RrfSelectionProfile,
 )
@@ -305,6 +310,7 @@ def make_service(
     reranking: AccountedRerankingService | None = None,
     expand_text_neighbors: bool = False,
     expand_page_context: bool = False,
+    company_priority: CompanyPriorityReader | None = None,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -346,6 +352,7 @@ def make_service(
         identifier_factory=identifier_values.__next__,
         expand_text_neighbors=expand_text_neighbors,
         expand_page_context=expand_page_context,
+        company_priority=company_priority,
     )
 
 
@@ -1132,3 +1139,55 @@ def test_rrf_page_context_preserves_observation_date_and_fusion(compound: bool) 
     else:
         uow.lexical_search_mock.search_pages.assert_not_called()
         assert [item.chunk_id for item in result.sources] == [anchor.chunk_id]
+
+
+def test_company_lookup_terms_use_word_boundaries_and_explicit_tickers() -> None:
+    names, tickers = company_lookup_terms("Does IREN Limited work with NVIDIA, BRK.B or $AI?")
+    assert {"iren", "iren limited", "nvidia", "brk.b"} <= names
+    assert {"IREN", "NVIDIA", "BRK.B", "AI"} <= tickers
+    assert "IRE" not in tickers
+    assert "AI" not in company_lookup_terms("Which AI services are available?")[1]
+
+
+@pytest.mark.parametrize("manual_filter", [False, True])
+def test_company_priority_preserves_cross_company_evidence(manual_filter: bool) -> None:
+    first = make_lexical_hit()
+    other = first.model_copy(update={"chunk_id": UUID(int=802)})
+    preferred = first.model_copy(update={"chunk_id": UUID(int=803), "document_id": UUID(int=804)})
+    unit_of_work = RecordingUnitOfWork(lexical_hits=(first, other, preferred))
+    unit_of_work.lexical_search_mock.search_pages.return_value = ()
+    embedding, dense = make_provider_mocks()
+    company_priority = create_autospec(CompanyPriorityReader, instance=True)
+    company_priority.preferred_documents.return_value = frozenset({preferred.document_id})
+    service = make_service(
+        unit_of_work,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfSelectionProfile(context_chunk_limit=2),
+        expand_page_context=True,
+        company_priority=company_priority,
+        identifiers=(REQUEST_ID, RUN_ID, *(UUID(int=900 + index) for index in range(3))),
+    )
+    company_filter = UUID(int=805) if manual_filter else None
+
+    result = service.retrieve(
+        make_context(),
+        ResearchRetrievalInput(
+            question="How does NVIDIA work with partners?", company_id=company_filter
+        ),
+    )
+
+    assert result.retrieval_run.filters.company_id == company_filter
+    assert [item.fused_rank for item in result.candidates] == [1, 2, 3]
+    if manual_filter:
+        company_priority.preferred_documents.assert_not_called()
+        assert result.retrieval_run.selector_config_version == PAGE_SELECTOR_VERSION
+        assert [item.chunk_id for item in result.sources] == [first.chunk_id, other.chunk_id]
+    else:
+        company_priority.preferred_documents.assert_called_once_with(
+            make_context(),
+            "How does NVIDIA work with partners?",
+            {first.document_id, preferred.document_id},
+        )
+        assert result.retrieval_run.selector_config_version == COMPANY_PAGE_RRF_SELECTOR_VERSION
+        assert [item.chunk_id for item in result.sources] == [preferred.chunk_id, first.chunk_id]

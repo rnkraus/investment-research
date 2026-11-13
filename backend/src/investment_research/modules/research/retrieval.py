@@ -1,6 +1,6 @@
 """Research retrieval orchestration and its M1 provider policy."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Set
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import sleep
@@ -13,6 +13,7 @@ from investment_research.modules.operations.application import (
     ProviderBudgetExceededError,
     ProviderUsageExceededReservationError,
 )
+from investment_research.modules.research.company_priority import CompanyPriorityReader
 from investment_research.modules.research.contracts import (
     CanonicalCandidateSource,
     ResearchProgressStage,
@@ -50,8 +51,11 @@ from investment_research.modules.search.domain import (
     RetrievalOrigin,
     RetrievalRun,
 )
-from investment_research.modules.search.fusion import select_rrf_context
-from investment_research.modules.search.fusion_contracts import RrfSelectionProfile
+from investment_research.modules.search.fusion import fit_rrf_context, fuse_rrf_hits
+from investment_research.modules.search.fusion_contracts import (
+    COMPANY_PAGE_RRF_SELECTOR_VERSION,
+    RrfSelectionProfile,
+)
 from investment_research.modules.search.observation_dates import (
     ends_with_observation_date,
     requested_observation_date,
@@ -152,6 +156,7 @@ class RetrieveResearchService:
         search_profile: LexicalSearchProfile,
         m1_query_retrieval: M1QueryRetrievalDependencies | None = None,
         query_planner: AccountedQueryPlanner | None = None,
+        company_priority: CompanyPriorityReader | None = None,
         expand_text_neighbors: bool = False,
         expand_page_context: bool = False,
         clock: Clock = lambda: datetime.now(UTC),
@@ -173,6 +178,7 @@ class RetrieveResearchService:
         self._search_profile = search_profile
         self._m1_query_retrieval = m1_query_retrieval
         self._query_planner = query_planner
+        self._company_priority = company_priority
         self._expand_text_neighbors = expand_text_neighbors
         self._expand_page_context = expand_page_context
         self._clock = clock
@@ -468,8 +474,23 @@ class RetrieveResearchService:
                         if self._expand_page_context
                         else TEXT_NEIGHBOR_SELECTOR_VERSION
                     )
+                preferred_documents: frozenset[UUID] = frozenset()
+                if (
+                    self._company_priority is not None
+                    and query.filters.company_id is None
+                    and selector_version == PAGE_SELECTOR_VERSION
+                ):
+                    preferred_documents = self._company_priority.preferred_documents(
+                        context,
+                        request.question,
+                        {hit.document_id for hit in lexical_hits}
+                        | {hit.document_id for hit in dense_hits},
+                    )
                 selected_candidates, fused_ranks = self._select_context(
-                    lexical_hits=lexical_hits, dense_hits=dense_hits, profile=profile
+                    lexical_hits=lexical_hits,
+                    dense_hits=dense_hits,
+                    profile=profile,
+                    preferred_documents=preferred_documents,
                 )
                 if selector_version == PAGE_SELECTOR_VERSION:
                     selected_candidates = self._expand_pages(
@@ -506,6 +527,8 @@ class RetrieveResearchService:
                             character_limit=profile.context_character_limit,
                         )
                 selected_candidates, structured_hits = self._number_structured(selected_candidates)
+                if preferred_documents:
+                    selector_version = COMPANY_PAGE_RRF_SELECTOR_VERSION
             completed_at = self._aware_utc_now()
             run = RetrievalRun(
                 id=retrieval_run_id,
@@ -613,6 +636,7 @@ class RetrieveResearchService:
         lexical_hits: tuple[LexicalSearchHit, ...],
         dense_hits: tuple[QualifiedDenseHit, ...],
         profile: M1SelectionProfile | RrfSelectionProfile,
+        preferred_documents: Set[UUID] = frozenset(),
     ) -> tuple[tuple[SelectedRetrievalCandidate, ...], dict[UUID, int]]:
         """Normalize either policy to the existing canonical source contract."""
 
@@ -622,9 +646,7 @@ class RetrieveResearchService:
             )
             return result.candidates, {}
 
-        fused = select_rrf_context(
-            lexical_hits=lexical_hits, dense_hits=dense_hits, profile=profile
-        )
+        ranked = fuse_rrf_hits(lexical_hits=lexical_hits, dense_hits=dense_hits)
         selected = tuple(
             SelectedRetrievalCandidate(
                 **item.candidate.hit.model_dump(),
@@ -632,9 +654,9 @@ class RetrieveResearchService:
                 rank=item.candidate.contributions[0].rank,
                 selection_rank=item.selection_rank,
             )
-            for item in fused.candidates
+            for item in fit_rrf_context(ranked, profile, preferred_documents=preferred_documents)
         )
-        return selected, {item.hit.chunk_id: item.fused_rank for item in fused.ranked_candidates}
+        return selected, {item.hit.chunk_id: item.fused_rank for item in ranked}
 
     def _build_dual_lane_candidates(
         self,
