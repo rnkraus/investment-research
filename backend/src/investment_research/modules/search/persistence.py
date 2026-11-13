@@ -37,6 +37,7 @@ from investment_research.modules.search.domain import (
 from investment_research.modules.search.fusion_contracts import (
     COMPANY_PAGE_RRF_SELECTOR_VERSION,
     COMPANY_RRF_RANK_BONUS,
+    LUNA_RERANK_SELECTOR_VERSION,
     RRF_CONFIG_VERSION,
     RrfLaneContribution,
     reciprocal_rank_score,
@@ -314,6 +315,7 @@ class SqlAlchemyRetrievalRepository:
             elif run.selector_config_version in {
                 PAGE_SELECTOR_VERSION,
                 COMPANY_PAGE_RRF_SELECTOR_VERSION,
+                LUNA_RERANK_SELECTOR_VERSION,
             }:
                 allowed_origins.add(RetrievalOrigin.STRUCTURED)
                 limits[RetrievalOrigin.STRUCTURED] = STRUCTURED_CONTEXT_LIMIT
@@ -359,6 +361,7 @@ class SqlAlchemyRetrievalRepository:
             TEXT_NEIGHBOR_SELECTOR_VERSION,
             PAGE_SELECTOR_VERSION,
             COMPANY_PAGE_RRF_SELECTOR_VERSION,
+            LUNA_RERANK_SELECTOR_VERSION,
         }:
             self._require_rrf_based_ranks(
                 run,
@@ -405,6 +408,8 @@ class SqlAlchemyRetrievalRepository:
         expected = {chunk_id: rank for rank, chunk_id in enumerate(ranked_ids, start=1)}
         if any(candidate.fused_rank != expected[candidate.chunk_id] for candidate in candidates):
             raise SearchRelationshipError("RRF fusion ranks do not match the original lane ranks")
+        if run.selector_config_version == LUNA_RERANK_SELECTOR_VERSION:
+            return
         context_order = expected
         if run.selector_config_version == RRF_RERANK_SELECTOR_VERSION:
             scores: dict[UUID, float] = {}

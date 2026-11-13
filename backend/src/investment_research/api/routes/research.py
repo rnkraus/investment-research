@@ -68,6 +68,7 @@ def get_research_models(
         generation_models=(tuple(ResearchModel) if model_services is not None else ()),
         support_models=(tuple(ResearchModel) if model_services is not None else ()),
         query_decomposition_enabled=service.retrieval_service.query_decomposition_enabled,
+        luna_reranking_enabled=service.retrieval_service.luna_reranking_enabled,
     )
 
 
@@ -327,6 +328,12 @@ def answer_research_request(
             code=ErrorCode.INVALID_REQUEST,
             message="query decomposition is unavailable",
         )
+    if request.rerank_with_luna and not service.retrieval_service.luna_reranking_enabled:
+        raise ApiError(
+            status_code=422,
+            code=ErrorCode.INVALID_REQUEST,
+            message="Luna reranking is unavailable",
+        )
     retrieval_input = ResearchRetrievalInput(
         question=request.question,
         document_ids=request.context.document_ids,
@@ -340,6 +347,7 @@ def answer_research_request(
         generation_model=request.generation_model,
         support_model=request.support_model,
         decompose_query=request.decompose_query,
+        rerank_with_luna=request.rerank_with_luna,
     )
     return StreamingResponse(
         stream_research_events(

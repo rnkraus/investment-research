@@ -484,6 +484,11 @@ Claim support continues to come from the original source text.
   can promote already retrieved passages from reviewed company documents by up to two
   RRF positions. All eligible documents can still contribute evidence. An explicit company
   filter takes precedence.
+- The local provider-backed research UI offers experimental Luna reranking as an explicit search
+  mode. It sends at most 24 canonical passages to the configured OpenAI provider for ID-only
+  selection before answer generation, including passages selected by the standard search.
+  One call is accounted against the existing monthly budget and a 500-attempt workspace cap.
+  An unavailable, invalid, or over-budget ranking leaves the standard selection in use.
 - If the selected hybrid context exceeds a source-unit budget, answer preparation removes
   the lowest-ranked passage and rechecks the remaining canonical sources locally before
   any answer call. The displayed context is the one sent for generation. A single passage

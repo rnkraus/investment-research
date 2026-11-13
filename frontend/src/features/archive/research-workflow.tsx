@@ -67,7 +67,9 @@ export function ResearchWorkflow({
   const supportModelId = useId();
   const requestController = useRef<AbortController | null>(null);
   const [question, setQuestion] = useState<string>("");
-  const [decomposeQuery, setDecomposeQuery] = useState(false);
+  const [searchMode, setSearchMode] = useState<
+    "standard" | "decomposition" | "luna"
+  >("standard");
   const [session, setSession] = useState<ResearchSession>(
     EMPTY_RESEARCH_SESSION,
   );
@@ -146,7 +148,11 @@ export function ResearchWorkflow({
         {
           question,
           decompose_query:
-            modelOptions.query_decomposition_enabled && decomposeQuery,
+            modelOptions.query_decomposition_enabled === true &&
+            searchMode === "decomposition",
+          rerank_with_luna:
+            modelOptions.luna_reranking_enabled === true &&
+            searchMode === "luna",
           generation_model: modelOptions.provider_enabled
             ? generationModel
             : "gpt-5.6-terra",
@@ -249,7 +255,8 @@ export function ResearchWorkflow({
           required
           value={question}
         />
-        {modelOptions?.query_decomposition_enabled ? (
+        {modelOptions?.query_decomposition_enabled ||
+        modelOptions?.luna_reranking_enabled ? (
           <div className="mt-4">
             <label
               className="block text-sm font-semibold text-slate-800"
@@ -259,29 +266,45 @@ export function ResearchWorkflow({
             </label>
             <select
               aria-describedby={
-                decomposeQuery ? `${searchModeId}-hint` : undefined
+                searchMode !== "standard" ? `${searchModeId}-hint` : undefined
               }
               className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-teal-600 focus:outline-none focus:ring-3 focus:ring-teal-100 sm:w-auto"
               disabled={isBusy}
               id={searchModeId}
-              onChange={(event) =>
-                setDecomposeQuery(event.target.value === "decomposition")
-              }
-              value={decomposeQuery ? "decomposition" : "standard"}
+              onChange={(event) => {
+                const mode = event.target.value;
+                if (
+                  mode === "standard" ||
+                  mode === "decomposition" ||
+                  mode === "luna"
+                ) {
+                  setSearchMode(mode);
+                }
+              }}
+              value={searchMode}
             >
               <option value="standard">
                 {archiveCopy.research.standardSearch}
               </option>
-              <option value="decomposition">
-                {archiveCopy.research.decomposedSearch}
-              </option>
+              {modelOptions.query_decomposition_enabled ? (
+                <option value="decomposition">
+                  {archiveCopy.research.decomposedSearch}
+                </option>
+              ) : null}
+              {modelOptions.luna_reranking_enabled ? (
+                <option value="luna">
+                  {archiveCopy.research.lunaRerankedSearch}
+                </option>
+              ) : null}
             </select>
-            {decomposeQuery ? (
+            {searchMode !== "standard" ? (
               <p
                 className="mt-1 text-xs text-slate-600"
                 id={`${searchModeId}-hint`}
               >
-                {archiveCopy.research.decomposedSearchHint}
+                {searchMode === "luna"
+                  ? archiveCopy.research.lunaRerankedSearchHint
+                  : archiveCopy.research.decomposedSearchHint}
               </p>
             ) : null}
           </div>
