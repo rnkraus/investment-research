@@ -80,7 +80,7 @@ class StatementSupportDecision(ImmutableEvidenceContract):
 
 
 class StatementSupportResult(ImmutableEvidenceContract):
-    """Support decision, usage, and an optional non-serialized local diagnostic."""
+    """Support decision, usage, and an optional non-serialized explanation."""
 
     decision: StatementSupportDecision
     usage: ProviderUsage
@@ -228,6 +228,9 @@ class ValidationFinding(ImmutableEvidenceContract):
     statement_ordinal: int | None = Field(default=None, ge=0)
     passed: bool
     reason: ValidationReason | None = None
+    support_reason: str | None = Field(
+        default=None, min_length=1, max_length=500, exclude=True, repr=False
+    )
 
     @model_validator(mode="after")
     def require_reason_only_for_failure(self) -> Self:
@@ -237,6 +240,10 @@ class ValidationFinding(ImmutableEvidenceContract):
             raise ValueError("passing validation must not define reason")
         if not self.passed and self.reason is None:
             raise ValueError("failed validation requires reason")
+        if self.support_reason is not None and (
+            self.passed or self.rule is not ValidationRule.STATEMENT_SUPPORT
+        ):
+            raise ValueError("support explanation requires a failed statement support check")
         return self
 
 

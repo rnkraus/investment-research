@@ -362,6 +362,32 @@ def test_contextual_local_reason_uses_same_decision_contract_and_one_request(
         ] == openai_module._document_attribution_instructions(explanations=True)
 
 
+def test_document_profile_returns_explanation_without_local_logging() -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(
+            response=StubParsedResponse(
+                output_parsed=openai_module._ExplainedSupportDecision(
+                    supported=False, reason="The quote lacks the claimed quantity."
+                )
+            )
+        )
+    )
+    evaluator = OpenAIStatementSupportEvaluator(
+        client=cast(OpenAI, client),
+        include_attribution_context=True,
+        include_document_attribution_context=True,
+        include_decision_reason=True,
+    )
+    request = prepare_document(*make_document_source_and_reference())
+    assert request is not None
+
+    result = evaluator.evaluate_contextual(request)
+
+    assert result.decision.supported is False
+    assert result.diagnostic_reason == "The quote lacks the claimed quantity."
+    assert len(client.responses.calls) == 1
+
+
 def test_document_profile_configuration_is_rejected_before_sdk_construction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

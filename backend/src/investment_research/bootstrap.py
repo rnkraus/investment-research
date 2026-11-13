@@ -690,6 +690,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 ),
                 include_attribution_context=citable_units_enabled,
                 include_document_attribution_context=citable_units_enabled,
+                include_decision_reason=citable_units_enabled,
             )
             luna_answer_generator_provider = answer_factory(
                 api_key=generation_settings.api_key.get_secret_value(),
@@ -715,6 +716,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                 ),
                 include_attribution_context=citable_units_enabled,
                 include_document_attribution_context=citable_units_enabled,
+                include_decision_reason=citable_units_enabled,
             )
         except Exception:
             with ExitStack() as stack:
@@ -789,7 +791,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             provider="openai",
             model=OPENAI_STATEMENT_SUPPORT_MODEL,
             configuration_version=(
-                f"{M1_STATEMENT_SUPPORT_CONFIG_VERSION}-document-attribution-v1"
+                f"{M1_STATEMENT_SUPPORT_CONFIG_VERSION}-document-attribution-reason-v1"
                 if citable_units_enabled
                 else M1_STATEMENT_SUPPORT_CONFIG_VERSION
             ),
@@ -953,7 +955,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                         provider="openai",
                         model=support_model,
                         configuration_version=(
-                            f"{support_config_version(support_model)}-document-attribution-v1"
+                            f"{support_config_version(support_model)}-document-attribution-reason-v1"
                             if citable_units_enabled
                             else support_config_version(support_model)
                         ),

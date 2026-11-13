@@ -829,7 +829,7 @@ def test_m1_api_emits_no_generated_content_when_support_is_rejected(
     assert [event["event_name"] for event in events] == ["research.failed"]
     assert events[0]["payload"]["error"] == {
         "code": "EVIDENCE_VALIDATION_FAILED",
-        "message": "answer failed evidence validation",
+        "message": "The cited passages did not support every part of an answer claim.",
         "request_id": None,
     }
     assert events[0]["payload"]["retriable"] is False

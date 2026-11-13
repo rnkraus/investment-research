@@ -1,4 +1,4 @@
-"""Build opt-in local rejection details without disclosing additional source content."""
+"""Describe failed evidence checks for the request that produced them."""
 
 from investment_research.api.contracts import (
     RejectedEvidenceRange,
@@ -7,11 +7,31 @@ from investment_research.api.contracts import (
     ResearchRejectionDiagnostic,
 )
 from investment_research.modules.evidence.contracts import EvidenceValidationDecision
+from investment_research.modules.evidence.domain import AnswerValidation, ValidationRule
 from investment_research.modules.research.contracts import (
     AnswerGenerationSource,
     ResearchModel,
     UnvalidatedGeneratedAnswer,
 )
+
+_PUBLIC_REJECTION_REASONS = {
+    ValidationRule.WORKSPACE_SCOPE: "A cited source is unavailable in this workspace.",
+    ValidationRule.RETRIEVAL_CANDIDATE: "A citation did not match an eligible search result.",
+    ValidationRule.ACTIVE_DOCUMENT_VERSION: "A citation points to an inactive document version.",
+    ValidationRule.TEMPORAL_ELIGIBILITY: "A cited source is outside the requested time range.",
+    ValidationRule.EXACT_SOURCE_SPAN: "A citation did not match the original source text.",
+    ValidationRule.STATEMENT_SUPPORT: (
+        "The cited passages did not support every part of an answer claim."
+    ),
+}
+
+
+def evidence_rejection_message(validations: tuple[AnswerValidation, ...]) -> str:
+    """Explain the recorded checks with fixed text and no rejected content."""
+
+    failed = {validation.rule for validation in validations if not validation.passed}
+    reasons = [message for rule, message in _PUBLIC_REJECTION_REASONS.items() if rule in failed]
+    return " ".join(reasons) or "The answer could not be verified against the cited sources."
 
 
 def build_rejection_diagnostic(
@@ -64,6 +84,7 @@ def build_rejection_diagnostic(
                 rule=finding.rule,
                 statement_ordinal=finding.statement_ordinal,
                 reason=finding.reason or "Evidence validation rejected this proposal.",
+                support_reason=finding.support_reason,
             )
             for finding in failed
         ),

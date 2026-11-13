@@ -302,8 +302,9 @@ def test_research_route_exposes_selected_context_separately_from_answer(
 
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("rejected", [False, True])
-def test_rejection_details_require_local_opt_in_and_a_rejected_terminal_result(
-    enabled: bool, rejected: bool
+def test_rejection_details_are_visible_for_rejected_source_id_answers(
+    enabled: bool,
+    rejected: bool,
 ) -> None:
     service = FakeAnswerResearchRequestService()
     service.result = make_result(state=AnswerState.REJECTED if rejected else AnswerState.STREAMED)
@@ -348,6 +349,7 @@ def test_rejection_details_require_local_opt_in_and_a_rejected_terminal_result(
                     statement_ordinal=0,
                     passed=False,
                     reason="Claim is not fully supported.",
+                    support_reason="The passage omits the claimed quantity.",
                 ),
             ),
         ),
@@ -361,7 +363,7 @@ def test_rejection_details_require_local_opt_in_and_a_rejected_terminal_result(
                 make_context(),
                 ResearchRetrievalInput(question=QUESTION),
                 None,
-                local_diagnostics_enabled=enabled,
+                rejection_details_enabled=enabled,
             )
         ]
         return "".join(frames)
@@ -370,6 +372,9 @@ def test_rejection_details_require_local_opt_in_and_a_rejected_terminal_result(
     terminal = events[-1]["payload"]
     if enabled and rejected:
         assert terminal["diagnostic"]["unvalidated"] is True
+        assert terminal["diagnostic"]["findings"][0]["support_reason"] == (
+            "The passage omits the claimed quantity."
+        )
         assert terminal["diagnostic"]["statements"][0]["text"] == STATEMENT
         assert terminal["diagnostic"]["statements"][0]["evidence"][0]["end_character"] == len(
             EVIDENCE_TEXT
@@ -588,11 +593,26 @@ def test_research_route_streams_explicit_insufficient_result_without_content(
     assert "answer.citation" not in response.text
 
 
-def test_research_route_hides_rejected_validation_details(
+@pytest.mark.parametrize(
+    ("rule", "message"),
+    [
+        (ValidationRule.COVERAGE, "The answer could not be verified against the cited sources."),
+        (
+            ValidationRule.STATEMENT_SUPPORT,
+            "The cited passages did not support every part of an answer claim.",
+        ),
+        (ValidationRule.EXACT_SOURCE_SPAN, "A citation did not match the original source text."),
+    ],
+)
+def test_research_route_explains_rejected_evidence_without_raw_details(
     research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+    rule: ValidationRule,
+    message: str,
 ) -> None:
     client, service = research_client
-    service.result = make_result(state=AnswerState.REJECTED)
+    result = make_result(state=AnswerState.REJECTED)
+    validation = result.validations[0].model_copy(update={"rule": rule})
+    service.result = result.model_copy(update={"validations": (validation,)})
 
     response = client.post("/api/v1/research-requests", json={"question": QUESTION})
 
@@ -600,7 +620,9 @@ def test_research_route_hides_rejected_validation_details(
     assert response.status_code == 200
     assert [event["event_name"] for event in events] == ["research.failed"]
     assert events[0]["payload"]["error"]["code"] == "EVIDENCE_VALIDATION_FAILED"
+    assert events[0]["payload"]["error"]["message"] == message
     assert events[0]["payload"]["retriable"] is False
+    assert "diagnostic" not in events[0]["payload"]
     assert "private validation detail" not in response.text
     assert "answer.statement" not in response.text
     assert "answer.citation" not in response.text

@@ -1121,7 +1121,7 @@ export interface components {
         };
         /**
          * RejectedFindingDiagnostic
-         * @description An application-owned failed rule, never a provider explanation.
+         * @description A failed rule and an optional untrusted support-model explanation.
          */
         readonly RejectedFindingDiagnostic: {
             /** Reason */
@@ -1129,6 +1129,11 @@ export interface components {
             readonly rule: components["schemas"]["ValidationRule"];
             /** Statement Ordinal */
             readonly statement_ordinal: number | null;
+            /**
+             * Support Reason
+             * @default null
+             */
+            readonly support_reason: string | null;
         };
         /**
          * RejectedStatementDiagnostic
@@ -1280,7 +1285,7 @@ export interface components {
         };
         /**
          * ResearchRejectionDiagnostic
-         * @description Opt-in local debugging only; this proposal failed answer validation.
+         * @description Request-scoped detail about a rejected answer proposal.
          */
         readonly ResearchRejectionDiagnostic: {
             readonly answer_model: components["schemas"]["ResearchModel"];

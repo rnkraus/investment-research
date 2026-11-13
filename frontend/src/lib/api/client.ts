@@ -642,7 +642,9 @@ function isRejectionDiagnostic(
       (item: unknown) =>
         isRecord(item) &&
         Object.keys(item).every((key) =>
-          ["rule", "statement_ordinal", "reason"].includes(key),
+          ["rule", "statement_ordinal", "reason", "support_reason"].includes(
+            key,
+          ),
         ) &&
         typeof item.rule === "string" &&
         rules.has(item.rule) &&
@@ -651,7 +653,12 @@ function isRejectionDiagnostic(
             Number(item.statement_ordinal) <= 7)) &&
         isNonEmptyString(item.reason) &&
         item.reason.trim().length > 0 &&
-        Array.from(item.reason).length <= 1_000,
+        Array.from(item.reason).length <= 1_000 &&
+        (item.support_reason == null ||
+          (item.rule === "STATEMENT_SUPPORT" &&
+            isNonEmptyString(item.support_reason) &&
+            item.support_reason.trim().length > 0 &&
+            Array.from(item.support_reason).length <= 500)),
     )
   );
 }
