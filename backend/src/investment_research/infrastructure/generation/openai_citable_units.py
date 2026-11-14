@@ -38,7 +38,7 @@ from investment_research.modules.research.domain import CoverageStatus, Statemen
 from investment_research.modules.search.observation_dates import requested_observation_date
 
 M1_5_CITABLE_ANSWER_GENERATOR_VERSION = "openai-responses-citable-units-v3"
-M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v9"
+M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v10"
 _OBSERVATION_DATE_INSTRUCTIONS = (
     "\nPreserve the exact day in reported values and target dates when cited evidence supplies it. "
     "Distinguish observation dates, publication dates, and target dates. If the evidence does "
@@ -71,6 +71,10 @@ Each statement is checked independently, without preceding statements or rendere
 Write self-contained statements: name the subject, metric, period, and units where needed and
 supported. Do not rely on pronouns referring to other statements, invent identities, or transfer
 another source's subject or report attribution.
+If the question names a source reporting someone else's words, name the reporting source and
+the original speaker in the statement and rendered_text when supported. Use wording such as
+"According to [source], [speaker] said ...". Cite the quote and, if separate, the unit identifying
+its reporting source. Do not infer the reporting source from the question alone.
 Select the supporting units before composing each statement. Every material fact and qualification
 must follow from that statement's own selected units; nearby text is not evidence.
 Write one independently verifiable factual claim per statement. Split distinct capabilities,
@@ -210,7 +214,7 @@ def citable_answer_profile(model: ResearchModel) -> AnswerGenerationProfile:
 
     return AnswerGenerationProfile(
         generator_version=M1_5_CITABLE_ANSWER_GENERATOR_VERSION,
-        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v9",
+        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v10",
         prompt_version=M1_5_CITABLE_ANSWER_PROMPT_VERSION,
     )
 

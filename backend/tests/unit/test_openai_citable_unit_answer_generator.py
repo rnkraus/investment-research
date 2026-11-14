@@ -429,6 +429,10 @@ def test_focused_prompt_preserves_qualifications_and_needed_attribution(
     assert "Select only needed units" in instructions
     assert "Cite title/date units only for necessary subject, report, or time" in instructions
     assert "never as a substitute for factual evidence" in instructions
+    assert '"According to [source], [speaker] said ..."' in instructions
+    assert "the original speaker in the statement and rendered_text" in instructions
+    assert "the unit identifying\nits reporting source" in instructions
+    assert "the reporting source from the question alone" in instructions
     assert "cite both sides" in instructions
     assert "Every material fact and qualification" in instructions
     assert len(client.responses.calls) == 1
@@ -752,8 +756,8 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v3"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v9"
-    assert "citable-units-en-v9" in profile.generation_config_version
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v10"
+    assert "citable-units-en-v10" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v3"
 
 
