@@ -26,8 +26,8 @@ quote-copying starts; it is not a new quality observation or full milestone acce
 
 **Current source-unit rule:** Preparation uses `m1-5-citable-units-en-v3`, which
 retains the v2 PDF-heading behavior and protects `U.S.`/`U.K.` continuations from false sentence
-boundaries. Live answer configuration identifiers end in `low-citable-units-en-v10` and include
-the date-precision and reporting-source prompt guidance described in [M1 contracts](11-m1-contracts.md).
+boundaries. Live answer configuration identifiers end in `low-citable-units-en-v11` and include
+the date-precision, reporting-source, and mechanism guidance described in [M1 contracts](11-m1-contracts.md).
 See the [abbreviation amendment](#country-abbreviation-amendment-2026-10-13).
 
 **Local rejection inspection (2026-10-13):** The existing explicit local diagnostic override
