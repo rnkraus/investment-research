@@ -519,10 +519,12 @@ not a replacement for server-side support validation or a guarantee of live mode
 Both answer profiles explicitly require English generated prose regardless of the question's
 language: `rendered_text`, each statement's `text`, and any `missing_information` explanation.
 The M1 prompt v6 preserves verbatim `exact_text`; the M1.5 source-unit prompt
-`m1-5-citable-units-en-answer-prompt-v10` preserves ID selection and server-resolved original text.
+`m1-5-citable-units-en-answer-prompt-v11` preserves ID selection and server-resolved original text.
 When a question names a source that reports another person's statement, the prompt asks for both
 the reporting source and the speaker in the answer if the evidence identifies them. The answer
 cites the reported statement and the attribution unit when they are separate.
+For how questions, the prompt asks for an explicit explanation of the mechanism when the cited
+units support the link.
 For explicit observation dates, the prompt preserves the available day and separates observation,
 publication, and target dates in the generation instruction.
 Neither profile translates quotations or changes canonical source text. This instruction applies

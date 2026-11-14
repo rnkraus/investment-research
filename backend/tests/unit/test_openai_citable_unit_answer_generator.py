@@ -482,6 +482,8 @@ def test_prompt_requires_one_claim_supported_by_its_selected_units(model: Resear
     assert "Prioritize within eight statements rather than bundle claims" in instructions
     assert "Select the supporting units before composing each statement" in instructions
     assert "Retain uncertainty, conditions, and time scope" in instructions
+    assert "name the requested change and explain its effect" in instructions
+    assert "Cite the link between them" in instructions
     assert len(client.responses.calls) == 1
 
 
@@ -756,8 +758,8 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v3"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v10"
-    assert "citable-units-en-v10" in profile.generation_config_version
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v11"
+    assert "citable-units-en-v11" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v3"
 
 
