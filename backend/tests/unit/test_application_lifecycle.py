@@ -543,6 +543,7 @@ def test_build_api_container_wires_m1_query_resources(
             local_validation_output=None,
             include_attribution_context=False,
             include_document_attribution_context=False,
+            include_decision_reason=False,
         )
         fakes.support_factory.assert_any_call(
             api_key="synthetic-generation-key",
@@ -552,6 +553,7 @@ def test_build_api_container_wires_m1_query_resources(
             local_validation_output=None,
             include_attribution_context=False,
             include_document_attribution_context=False,
+            include_decision_reason=False,
         )
         services = container.answer_research_request_service.model_services
         assert services is not None
