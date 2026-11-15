@@ -645,14 +645,18 @@ embedding.document
 embedding.query
 pinecone.upsert
 pinecone.query
+research.answer
 research.retrieve
 research.generate
 evidence.evaluate_support
 evidence.validate
 ```
 
-The additive M1.5 accounting extension also approves `search.rerank` for `RERANKING` operations.
-It follows the same content-free attribute and failure rules; runtime wiring remains pending.
+The API opens a `research.answer` span inside the synchronous research execution so that
+provider operations, including optional `research.plan_query` and `search.rerank` spans,
+share its trace ID. The parent records the research request ID where available and the final
+outcome (`accepted`, `insufficient`, `rejected`, or `failed`). A result rejected by the evidence
+gate is a domain outcome. Technical failures use only a safe error category on the parent span.
 
 Approved attributes are safe identifiers, configuration versions, provider/model names, operation
 kind, lifecycle state, bounded counts, duration, outcome, and safe error category. Questions,

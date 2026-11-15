@@ -1,6 +1,7 @@
 """Validated answer services and stable research application imports."""
 
 from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from investment_research.modules.operations.application import (
     ProviderBudgetExceededError,
     ProviderUsageExceededReservationError,
 )
+from investment_research.modules.operations.ports import OperationTracer
 from investment_research.modules.research.answer_validation import (
     AnswerGenerationAccountingProfile as AnswerGenerationAccountingProfile,
 )
@@ -23,6 +25,7 @@ from investment_research.modules.research.answer_validation import RejectionDiag
 from investment_research.modules.research.answer_validation import (
     StatementSupportAccountingProfile as StatementSupportAccountingProfile,
 )
+from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     ResearchModel,
@@ -30,6 +33,7 @@ from investment_research.modules.research.contracts import (
     ResearchRetrievalInput,
     ValidatedAnswerResult,
 )
+from investment_research.modules.research.domain import AnswerState
 from investment_research.modules.research.errors import (
     ResearchProviderUnavailableError as ResearchProviderUnavailableError,
 )
@@ -60,6 +64,7 @@ class AnswerResearchRequestService:
     model_services: (
         Mapping[tuple[ResearchModel, ResearchModel], GenerateValidatedAnswerService] | None
     ) = None
+    tracer: OperationTracer | None = None
 
     def answer(
         self,
@@ -71,6 +76,50 @@ class AnswerResearchRequestService:
         on_rejection: RejectionDiagnostic | None = None,
     ) -> ValidatedAnswerResult:
         """Return only the validated terminal result of one research request."""
+
+        with self.tracer.start_span("research.answer") if self.tracer else nullcontext() as span:
+            try:
+                result = self._answer(
+                    context,
+                    retrieval_input,
+                    progress=progress,
+                    on_context=on_context,
+                    on_rejection=on_rejection,
+                )
+            except Exception as error:
+                if span is not None:
+                    span.set_attribute("outcome", "failed")
+                    if isinstance(error, ResearchProviderUnavailableError):
+                        span.set_attribute("research.request.id", str(error.research_request_id))
+                        span.record_error("provider_unavailable")
+                    elif isinstance(error, CitableUnitLimitError):
+                        span.record_error("context_limit")
+                    else:
+                        span.record_error("research_failed")
+                raise
+
+            if span is not None:
+                answer = result.answer
+                span.set_attribute("research.request.id", str(answer.research_request_id))
+                span.set_attribute("lifecycle.state", answer.state.value)
+                span.set_attribute(
+                    "outcome",
+                    "accepted"
+                    if answer.state is AnswerState.STREAMED
+                    else answer.state.value.lower(),
+                )
+            return result
+
+    def _answer(
+        self,
+        context: WorkspaceContext,
+        retrieval_input: ResearchRetrievalInput,
+        *,
+        progress: Callable[[UUID, ResearchProgressStage], None] | None,
+        on_context: Callable[[AnswerGenerationInput], None] | None,
+        on_rejection: RejectionDiagnostic | None,
+    ) -> ValidatedAnswerResult:
+        """Run the selected retrieval and generation services inside the request span."""
 
         selected_models = (retrieval_input.generation_model, retrieval_input.support_model)
         if self.model_services is None:

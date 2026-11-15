@@ -10,10 +10,15 @@ from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from sqlalchemy.exc import SQLAlchemyError
 
 from investment_research.api.dependencies import (
@@ -22,6 +27,7 @@ from investment_research.api.dependencies import (
 )
 from investment_research.api.routes.research import stream_research_events
 from investment_research.infrastructure.logging import configure_logging
+from investment_research.infrastructure.operations.opentelemetry import OpenTelemetryOperationTracer
 from investment_research.main import create_app
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.evidence.contracts import (
@@ -36,10 +42,26 @@ from investment_research.modules.evidence.domain import (
     ValidationRule,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
-from investment_research.modules.research.answer_validation import RejectionDiagnostic
+from investment_research.modules.operations.application import (
+    ExecuteProviderOperationService,
+    FinalizeProviderOperationService,
+    ProviderCostPolicy,
+    ProviderOperationAttempt,
+    ReserveProviderOperationService,
+)
+from investment_research.modules.operations.domain import (
+    ProviderOperationErrorCode,
+    ProviderOperationKind,
+    ProviderUsage,
+)
+from investment_research.modules.research.answer_validation import (
+    GenerateValidatedAnswerService,
+    RejectionDiagnostic,
+)
 from investment_research.modules.research.application import (
     AnswerResearchRequestService,
     ResearchProviderUnavailableError,
+    RetrieveResearchService,
 )
 from investment_research.modules.research.citable_unit_contracts import (
     CitableUnitLimitDetails,
@@ -51,6 +73,7 @@ from investment_research.modules.research.contracts import (
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
+    ResearchRetrievalResult,
     UnvalidatedEvidenceReference,
     UnvalidatedGeneratedAnswer,
     UnvalidatedGeneratedStatement,
@@ -64,6 +87,7 @@ from investment_research.modules.research.domain import (
     StatementSupportStatus,
     StatementType,
 )
+from investment_research.modules.research.ports import AnswerGenerationProviderTransientError
 from investment_research.settings import ApiSettings
 
 USER_ID = UUID("00000000-0000-4000-8000-000000000001")
@@ -574,6 +598,114 @@ def test_research_progress_arrives_while_service_is_still_running() -> None:
     assert b"research.progress" in first
     assert b"GENERATING_ANSWER" in first
     assert b"answer.statement" in remaining[0]
+
+
+@pytest.mark.parametrize(
+    ("state", "outcome", "terminal_event"),
+    [
+        (AnswerState.STREAMED, "accepted", "answer.completed"),
+        (AnswerState.REJECTED, "rejected", "research.failed"),
+        (AnswerState.INSUFFICIENT, "insufficient", "answer.insufficient"),
+        (None, "failed", "research.failed"),
+    ],
+)
+def test_research_stream_groups_provider_spans_and_records_terminal_outcome(
+    state: AnswerState | None, outcome: str, terminal_event: str
+) -> None:
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = OpenTelemetryOperationTracer(provider.get_tracer("test.research"), provider=provider)
+    executor = ExecuteProviderOperationService(
+        reservation_service=Mock(spec=ReserveProviderOperationService),
+        finalization_service=Mock(spec=FinalizeProviderOperationService),
+        tracer=tracer,
+    )
+    usage = ProviderUsage(input_units=2, output_units=1)
+    provider_error = "synthetic private provider failure"
+
+    def record_call(context: WorkspaceContext, operation: ProviderOperationKind) -> None:
+        def call_provider() -> ProviderUsage:
+            if state is None and operation is ProviderOperationKind.ANSWER_GENERATION:
+                raise AnswerGenerationProviderTransientError(provider_error)
+            return usage
+
+        executor.execute(
+            context,
+            ProviderOperationAttempt(
+                correlation_id=REQUEST_ID,
+                research_request_id=REQUEST_ID,
+                processing_run_id=None,
+                operation=operation,
+                provider="synthetic",
+                model="synthetic-fixture",
+                configuration_version="test-v1",
+                maximum_usage=usage,
+                cost_policy=ProviderCostPolicy(0, 0),
+            ),
+            call_provider,
+            lambda value: value,
+            lambda _: ProviderOperationErrorCode.TIMEOUT,
+        )
+
+    def retrieve(context: WorkspaceContext, *_args: object, **_kwargs: object) -> object:
+        record_call(context, ProviderOperationKind.QUERY_EMBEDDING)
+        return SimpleNamespace(request=SimpleNamespace(id=REQUEST_ID))
+
+    def generate(
+        context: WorkspaceContext, _retrieval: ResearchRetrievalResult, **_kwargs: object
+    ) -> ValidatedAnswerResult:
+        record_call(context, ProviderOperationKind.ANSWER_GENERATION)
+        assert state is not None
+        if state is not AnswerState.INSUFFICIENT:
+            record_call(context, ProviderOperationKind.STATEMENT_SUPPORT)
+        return make_result(state=state)
+
+    retrieval_service = Mock(spec=RetrieveResearchService)
+    retrieval_service.retrieve.side_effect = retrieve
+    generation_service = Mock(spec=GenerateValidatedAnswerService)
+    generation_service.generate.side_effect = generate
+    service = AnswerResearchRequestService(
+        retrieval_service=retrieval_service,
+        generation_service=generation_service,
+        tracer=tracer,
+    )
+
+    async def collect() -> list[bytes]:
+        return [
+            frame
+            async for frame in stream_research_events(
+                service, make_context(), ResearchRetrievalInput(question=QUESTION), None
+            )
+        ]
+
+    try:
+        events = parse_server_sent_events(b"".join(asyncio.run(collect())).decode())
+        spans = exporter.get_finished_spans()
+    finally:
+        tracer.close()
+
+    assert events[-1]["event_name"] == terminal_event
+    root = next(span for span in spans if span.name == "research.answer")
+    assert root.context is not None and root.context.is_valid
+    assert root.parent is None
+    assert root.attributes is not None
+    assert root.attributes["outcome"] == outcome
+    assert root.attributes["research.request.id"] == str(REQUEST_ID)
+    if state is None:
+        assert root.attributes["error.type"] == "provider_unavailable"
+        assert root.status.status_code is StatusCode.ERROR
+    else:
+        assert root.attributes["lifecycle.state"] == state.value
+        assert root.status.status_code is StatusCode.UNSET
+    children = [span for span in spans if span is not root]
+    names = ["embedding.query", "research.generate"]
+    if state in {AnswerState.STREAMED, AnswerState.REJECTED}:
+        names.append("evidence.evaluate_support")
+    assert [span.name for span in children] == names
+    assert all(span.parent == root.context for span in children)
+    assert all(QUESTION not in span.to_json() for span in spans)
+    assert all(provider_error not in span.to_json() for span in spans)
 
 
 def test_research_route_streams_explicit_insufficient_result_without_content(

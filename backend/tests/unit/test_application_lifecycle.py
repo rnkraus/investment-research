@@ -452,6 +452,7 @@ def test_build_api_container_wires_m1_query_resources(
         assert container.statement_support_provider is fakes.support_evaluator
         assert container.luna_answer_generator_provider is fakes.luna_answer_generator
         assert container.luna_statement_support_provider is fakes.luna_support_evaluator
+        assert container.answer_research_request_service.tracer is container.operation_tracer
         assert container.provider_operation_executor is not None
         assert (
             container.generate_validated_answer_service._provider_operation_executor
