@@ -24,9 +24,12 @@ from investment_research.infrastructure.search.pinecone import PineconeDenseRetr
 from investment_research.main import create_app
 from investment_research.modules.evidence.contracts import (
     ContextualStatementSupportInput,
+    StatementSupportBatchResult,
     StatementSupportDecision,
+    StatementSupportJudgment,
     StatementSupportResult,
 )
+from investment_research.modules.evidence.ports import ContextualSupportBatch
 from investment_research.modules.operations.domain import (
     ProviderOperationKind,
     ProviderOperationState,
@@ -53,16 +56,21 @@ HEADER = "Northstar Grid Analytics — FY2026 synthetic report"
 QUOTE = "Customer deployments require high-voltage transformers."
 TEXT = f"{HEADER}\n\n{QUOTE} {QUOTE}"
 QUESTION = "What do customer deployments require?"
+SECOND_CLAIM = "Customer deployments require a dedicated fiber ring."
+REJECTION_REASONS = ("The source omits the claimed detail.", "The quote does not mention fiber.")
 
 
 class SelectingGenerator:
     """Run the real source-ID adapter against a local SDK response, not the network."""
 
-    def __init__(self, model: ResearchModel, *, unknown_id: bool) -> None:
+    def __init__(
+        self, model: ResearchModel, *, unknown_id: bool, multiple_statements: bool
+    ) -> None:
         self.model = model
         self.plan_responses = RecordingResponses(payload={"queries": ["customer deployments"]})
         self.client = cast(OpenAI, RecordingClient(self.plan_responses))
         self.unknown_id = unknown_id
+        self.multiple_statements = multiple_statements
         self.requests: list[CitableAnswerGenerationInput] = []
         self.closed = False
 
@@ -76,7 +84,10 @@ class SelectingGenerator:
         payload: dict[str, object] = {
             "coverage_status": "COMPLETE",
             "rendered_text": QUOTE,
-            "statements": [{"text": QUOTE, "source_unit_ids": [selected_id]}],
+            "statements": [
+                {"text": statement, "source_unit_ids": [selected_id]}
+                for statement in ((QUOTE, SECOND_CLAIM) if self.multiple_statements else (QUOTE,))
+            ],
             "missing_information": None,
         }
         client = RecordingClient(RecordingResponses(payload=payload))
@@ -99,7 +110,7 @@ class ContextualSupport:
 
     def __init__(self, *, supported: bool) -> None:
         self.supported = supported
-        self.requests: list[ContextualStatementSupportInput] = []
+        self.requests: list[ContextualSupportBatch] = []
         self.closed = False
 
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
@@ -108,20 +119,30 @@ class ContextualSupport:
     def evaluate_contextual(
         self, request: ContextualStatementSupportInput
     ) -> StatementSupportResult:
-        self.requests.append(request)
-        assert request.statement == QUOTE
-        assert len(request.evidence) == 1
-        evidence = request.evidence[0]
-        assert evidence.reference.exact_text == QUOTE
-        assert evidence.attribution_context.text == HEADER
-        assert (
-            evidence.attribution_context.document_version_id
-            == evidence.reference.document_version_id
-        )
-        return StatementSupportResult(
-            decision=StatementSupportDecision(supported=self.supported),
+        raise AssertionError("website support must evaluate all eligible statements at once")
+
+    def evaluate_contextual_batch(
+        self, requests: ContextualSupportBatch
+    ) -> StatementSupportBatchResult:
+        self.requests.append(requests)
+        for ordinal, request in requests.items():
+            assert request.statement == (QUOTE, SECOND_CLAIM)[ordinal]
+            (evidence,) = request.evidence
+            assert evidence.reference.exact_text == QUOTE
+            assert evidence.attribution_context.text == HEADER
+            assert (
+                evidence.attribution_context.document_version_id
+                == evidence.reference.document_version_id
+            )
+        return StatementSupportBatchResult(
+            judgments={
+                ordinal: StatementSupportJudgment(
+                    decision=StatementSupportDecision(supported=self.supported),
+                    diagnostic_reason=None if self.supported else REJECTION_REASONS[ordinal],
+                )
+                for ordinal in requests
+            },
             usage=ProviderUsage(input_units=90, output_units=10),
-            diagnostic_reason=None if self.supported else "The source omits the claimed detail.",
         )
 
     def close(self) -> None:
@@ -142,7 +163,8 @@ def install_citable_providers(
 ]:
     embedding, dense = FixedQueryEmbeddingProvider(), FixedDenseRetriever(hits)
     generators = {
-        model: SelectingGenerator(model, unknown_id=unknown_id) for model in ResearchModel
+        model: SelectingGenerator(model, unknown_id=unknown_id, multiple_statements=not supported)
+        for model in ResearchModel
     }
     evaluators = {model: ContextualSupport(supported=supported) for model in ResearchModel}
 
@@ -311,7 +333,7 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
     assert support.model == support_model.value
     assert (
         support.configuration_version
-        == f"{support_config_version(support_model)}-document-attribution-reason-v1"
+        == f"{support_config_version(support_model)}-document-attribution-batch-reason-v1"
     )
     assert embedding.closed and dense.closed
     assert all(provider.closed for provider in generators.values())
@@ -345,11 +367,15 @@ def test_citable_api_does_not_publish_invalid_or_unsupported_proposals(
     else:
         diagnostic = terminal["diagnostic"]
         assert diagnostic["unvalidated"] is True
-        assert diagnostic["statements"][0]["text"] == QUOTE
-        assert any(
-            finding["support_reason"] == "The source omits the claimed detail."
+        assert [statement["text"] for statement in diagnostic["statements"]] == [
+            QUOTE,
+            SECOND_CLAIM,
+        ]
+        assert {
+            finding["statement_ordinal"]: finding["support_reason"]
             for finding in diagnostic["findings"]
-        )
+            if finding["rule"] == "STATEMENT_SUPPORT"
+        } == dict(enumerate(REJECTION_REASONS))
     assert "synthetic-generation-key" not in response.text
     assert len(generators[ResearchModel.TERRA].requests) == 1
     assert len(evaluators[ResearchModel.TERRA].requests) == (0 if unknown_id else 1)

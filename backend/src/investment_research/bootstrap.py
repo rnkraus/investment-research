@@ -58,6 +58,7 @@ from investment_research.infrastructure.evidence.deterministic import (
     FixtureStatementSupportRule,
 )
 from investment_research.infrastructure.evidence.openai import (
+    M1_5_DOCUMENT_ATTRIBUTION_BATCH_VERSION,
     M1_STATEMENT_SUPPORT_CONFIG_VERSION,
     OPENAI_STATEMENT_SUPPORT_ACCOUNTING_INPUT_OVERHEAD_UNITS,
     OPENAI_STATEMENT_SUPPORT_INPUT_MICRO_USD_PER_MILLION_TOKENS,
@@ -792,7 +793,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             provider="openai",
             model=OPENAI_STATEMENT_SUPPORT_MODEL,
             configuration_version=(
-                f"{M1_STATEMENT_SUPPORT_CONFIG_VERSION}-document-attribution-reason-v1"
+                f"{M1_STATEMENT_SUPPORT_CONFIG_VERSION}-{M1_5_DOCUMENT_ATTRIBUTION_BATCH_VERSION}"
                 if citable_units_enabled
                 else M1_STATEMENT_SUPPORT_CONFIG_VERSION
             ),
@@ -810,7 +811,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         validation_profile = (
             EvidenceValidationProfile(
                 validation_config_version=(
-                    f"m1-5-document-attribution-validation-v1-{ResearchModel.TERRA.value}"
+                    f"m1-5-document-attribution-batch-validation-v1-{ResearchModel.TERRA.value}"
                 )
             )
             if citable_units_enabled
@@ -875,6 +876,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         unit_of_work_factory=answer_unit_of_work_factory,
         generation_input_builder=generation_input_builder,
         support_context_builder=support_context_builder,
+        batch_contextual_support=citable_units_enabled,
         answer_generator=answer_generator,
         support_evaluator=support_evaluator,
         generation_profile=generation_profile,
@@ -920,6 +922,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     unit_of_work_factory=answer_unit_of_work_factory,
                     generation_input_builder=generation_input_builder,
                     support_context_builder=support_context_builder,
+                    batch_contextual_support=citable_units_enabled,
                     answer_generator=generators[answer_model],
                     support_evaluator=evaluators[support_model],
                     generation_profile=citable_answer_profile(answer_model)
@@ -931,7 +934,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     ),
                     validation_profile=EvidenceValidationProfile(
                         validation_config_version=(
-                            f"m1-5-document-attribution-validation-v1-{support_model.value}"
+                            f"m1-5-document-attribution-batch-validation-v1-{support_model.value}"
                             if citable_units_enabled
                             else M1_EVIDENCE_VALIDATION_PROFILE.validation_config_version
                             if support_model is ResearchModel.TERRA
@@ -959,7 +962,8 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                         provider="openai",
                         model=support_model,
                         configuration_version=(
-                            f"{support_config_version(support_model)}-document-attribution-reason-v1"
+                            f"{support_config_version(support_model)}-"
+                            f"{M1_5_DOCUMENT_ATTRIBUTION_BATCH_VERSION}"
                             if citable_units_enabled
                             else support_config_version(support_model)
                         ),

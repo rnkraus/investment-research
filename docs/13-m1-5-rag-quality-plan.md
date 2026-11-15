@@ -1956,6 +1956,21 @@ their frozen defaults. No new paid comparison is authorized by this configuratio
 
 ## 4. Handoff and stop rule
 
+### Batched statement support in the local API
+
+The provider-backed `m1-5-citable-units` API submits all statements with eligible canonical
+citations in one Responses API call for each Terra/Luna model pair. The prompt scopes each
+judgment to the statement's own quotes and attribution context. The adapter requires exactly
+one judgment with a brief English reason for every submitted statement ordinal. A malformed
+batch fails closed. The website receives each rejected statement's reason through the existing
+diagnostic contract.
+
+The API accounts for one support operation with the combined usage and records the
+`-document-attribution-batch-reason-v1` configuration suffix. Before persistence, it reloads
+canonical evidence and reuses each result only when its statement ordinal and prepared input
+still match. The legacy M1 path and standalone evaluation profiles retain their individual
+checks. Measure live latency and judgment quality separately from offline contract tests.
+
 ### Local acceptance and M2 handoff (2026-10-14)
 
 The owner confirmed that M1.5 is merged, all required CI checks are green, and the local website
