@@ -48,6 +48,8 @@ _INTEGER_ATTRIBUTE_NAMES = frozenset(
         "chunk.count",
         "cost.micro_usd",
         "duration.ms",
+        "evidence.statements.checked",
+        "evidence.statements.rejected",
         "input.units",
         "output.units",
     }

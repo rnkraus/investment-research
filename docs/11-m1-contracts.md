@@ -669,6 +669,11 @@ after qualification. A reranking path can record multiple search or fusion spans
 and revalidates its candidates. `research.context` records the retrieved and final prepared
 passage counts before generation, including when preflight trims the context.
 
+A successful `evidence.evaluate_support` span records `evidence.statements.checked` and
+`evidence.statements.rejected` for that provider call. These counts describe the model's
+judgments, before the final canonical evidence recheck. Statements excluded before the call
+are outside both counts. Failed calls omit both fields.
+
 Approved attributes are safe identifiers, configuration versions, provider/model names, operation
 kind, lifecycle state, bounded counts, duration, outcome, and safe error category. Questions,
 prompts, original text, chunk text, evidence text, generated text, filenames, headers, URLs with
