@@ -1,5 +1,6 @@
 """Application service for fail-closed canonical evidence validation."""
 
+from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
 
@@ -8,8 +9,10 @@ from pydantic import ValidationError
 from investment_research.modules.documents.domain import DocumentLifecycleState, SourceLocatorKind
 from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
+    ContextualStatementSupportInput,
     EvidenceValidationDecision,
     ResolvedEvidenceSpan,
+    StatementSupportJudgment,
     ValidatedEvidenceReference,
     ValidatedStatementProposal,
     ValidationFinding,
@@ -18,9 +21,12 @@ from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
     ContextualStatementSupportEvaluator,
+    ContextualSupportBatch,
+    EvaluateContextualSupportBatch,
     EvidenceReadUnitOfWorkFactory,
     StatementSupportContextBuilder,
     StatementSupportEvaluator,
+    StatementSupportProviderContractError,
 )
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.domain import ProcessingState
@@ -80,6 +86,16 @@ class ResolveEvidenceSpanService:
         )
 
 
+type StatementRules = tuple[tuple[ValidationRule, bool, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedStatement:
+    text: str
+    references: tuple[ValidatedEvidenceReference, ...]
+    rules: StatementRules
+
+
 class ValidateGeneratedAnswerService:
     """Recheck every generated claim against canonical scoped source state."""
 
@@ -89,14 +105,18 @@ class ValidateGeneratedAnswerService:
         source_reader: CanonicalEvidenceSourceReader,
         support_evaluator: StatementSupportEvaluator,
         support_context_builder: StatementSupportContextBuilder | None = None,
+        evaluate_support_batch: EvaluateContextualSupportBatch | None = None,
     ) -> None:
         if support_context_builder is not None and not isinstance(
             support_evaluator, ContextualStatementSupportEvaluator
         ):
             raise ValueError("support context requires a contextual evaluator")
+        if evaluate_support_batch is not None and support_context_builder is None:
+            raise ValueError("support batching requires a contextual input builder")
         self._source_reader = source_reader
         self._support_evaluator = support_evaluator
         self._support_context_builder = support_context_builder
+        self._evaluate_support_batch = evaluate_support_batch
 
     @classmethod
     def is_source_eligible(
@@ -138,8 +158,9 @@ class ValidateGeneratedAnswerService:
             )
 
         sources: dict[UUID, CanonicalEvidenceSource | None] = {}
-        findings: list[ValidationFinding] = []
-        validated_statements: list[ValidatedStatementProposal] = []
+        prepared: list[_PreparedStatement] = []
+        contextual_inputs: ContextualSupportBatch = {}
+        judgments: dict[int, StatementSupportJudgment] = {}
 
         for ordinal, statement in enumerate(generated_answer.statements):
             statement_sources: list[CanonicalEvidenceSource | None] = []
@@ -157,13 +178,52 @@ class ValidateGeneratedAnswerService:
                 if validated_reference is not None:
                     validated_references.append(validated_reference)
 
-            rule_results, support_reason = self._validate_statement_rules(
+            rules, support_input = self._prepare_statement_rules(
                 context=context,
                 retrieval_run_id=retrieval_run_id,
                 statement_text=statement.text,
                 sources=statement_sources,
                 validated_references=validated_references,
                 expected_reference_count=len(statement.evidence),
+            )
+            prepared.append(_PreparedStatement(statement.text, tuple(validated_references), rules))
+            if support_input is not None:
+                contextual_inputs[ordinal] = support_input
+            elif self._support_context_builder is None and len(validated_references) == len(
+                statement.evidence
+            ):
+                judgments[ordinal] = self._support_evaluator.evaluate(
+                    statement.text,
+                    tuple(reference.exact_text for reference in validated_references),
+                )
+
+        if contextual_inputs:
+            if self._evaluate_support_batch is not None:
+                judgments = self._evaluate_support_batch(contextual_inputs)
+                if judgments.keys() != contextual_inputs.keys():
+                    raise StatementSupportProviderContractError(
+                        "support judgments do not match the submitted statements"
+                    )
+            else:
+                evaluator = self._support_evaluator
+                assert isinstance(evaluator, ContextualStatementSupportEvaluator)
+                judgments = {
+                    ordinal: evaluator.evaluate_contextual(request)
+                    for ordinal, request in contextual_inputs.items()
+                }
+
+        findings: list[ValidationFinding] = []
+        validated_statements: list[ValidatedStatementProposal] = []
+        for ordinal, statement_input in enumerate(prepared):
+            judgment = judgments.get(ordinal)
+            supported = judgment is not None and judgment.decision.supported
+            rule_results = (
+                *statement_input.rules,
+                (
+                    ValidationRule.STATEMENT_SUPPORT,
+                    supported,
+                    "Canonical evidence does not support the complete statement.",
+                ),
             )
             findings.extend(
                 ValidationFinding(
@@ -172,7 +232,11 @@ class ValidateGeneratedAnswerService:
                     passed=passed,
                     reason=None if passed else reason,
                     support_reason=(
-                        support_reason if rule is ValidationRule.STATEMENT_SUPPORT else None
+                        judgment.diagnostic_reason
+                        if rule is ValidationRule.STATEMENT_SUPPORT
+                        and not supported
+                        and judgment is not None
+                        else None
                     ),
                 )
                 for rule, passed, reason in rule_results
@@ -181,8 +245,8 @@ class ValidateGeneratedAnswerService:
                 validated_statements.append(
                     ValidatedStatementProposal(
                         ordinal=ordinal,
-                        text=statement.text,
-                        evidence=tuple(validated_references),
+                        text=statement_input.text,
+                        evidence=statement_input.references,
                     )
                 )
 
@@ -210,7 +274,7 @@ class ValidateGeneratedAnswerService:
             findings=tuple(findings),
         )
 
-    def _validate_statement_rules(
+    def _prepare_statement_rules(
         self,
         *,
         context: WorkspaceContext,
@@ -219,8 +283,8 @@ class ValidateGeneratedAnswerService:
         sources: list[CanonicalEvidenceSource | None],
         validated_references: list[ValidatedEvidenceReference],
         expected_reference_count: int,
-    ) -> tuple[tuple[tuple[ValidationRule, bool, str], ...], str | None]:
-        """Evaluate each persisted statement-level rule exactly once."""
+    ) -> tuple[StatementRules, ContextualStatementSupportInput | None]:
+        """Check canonical eligibility before preparing any contextual provider input."""
 
         source_present = all(source is not None for source in sources)
         workspace_valid = source_present and all(
@@ -240,46 +304,30 @@ class ValidateGeneratedAnswerService:
             source is not None and self._is_temporally_eligible(source) for source in sources
         )
         exact_span_valid = len(validated_references) == expected_reference_count
-        support_result = None
-        if self._support_context_builder is None:
-            if exact_span_valid:
-                support_result = self._support_evaluator.evaluate(
-                    statement_text,
-                    tuple(reference.exact_text for reference in validated_references),
+        support_input = None
+        if self._support_context_builder is not None and all(
+            (
+                workspace_valid,
+                candidate_valid,
+                active_version_valid,
+                temporal_valid,
+                exact_span_valid,
+            )
+        ):
+            try:
+                support_input = self._support_context_builder(
+                    context=context,
+                    retrieval_run_id=retrieval_run_id,
+                    statement=statement_text,
+                    references=validated_references,
+                    sources={
+                        source.retrieval_candidate_id: source
+                        for source in sources
+                        if source is not None
+                    },
                 )
-        else:
-            if all(
-                (
-                    workspace_valid,
-                    candidate_valid,
-                    active_version_valid,
-                    temporal_valid,
-                    exact_span_valid,
-                )
-            ):
-                try:
-                    support_input = self._support_context_builder(
-                        context=context,
-                        retrieval_run_id=retrieval_run_id,
-                        statement=statement_text,
-                        references=validated_references,
-                        sources={
-                            source.retrieval_candidate_id: source
-                            for source in sources
-                            if source is not None
-                        },
-                    )
-                except ValidationError:
-                    support_input = None
-                if support_input is not None:
-                    assert isinstance(self._support_evaluator, ContextualStatementSupportEvaluator)
-                    support_result = self._support_evaluator.evaluate_contextual(support_input)
-        support_valid = support_result is not None and support_result.decision.supported
-        support_reason = (
-            support_result.diagnostic_reason
-            if support_result is not None and not support_valid
-            else None
-        )
+            except ValidationError:
+                support_input = None
         rules = (
             (
                 ValidationRule.WORKSPACE_SCOPE,
@@ -306,14 +354,9 @@ class ValidateGeneratedAnswerService:
                 exact_span_valid,
                 "Proposed evidence does not match the canonical source span.",
             ),
-            (
-                ValidationRule.STATEMENT_SUPPORT,
-                support_valid,
-                "Canonical evidence does not support the complete statement.",
-            ),
         )
 
-        return rules, support_reason
+        return rules, support_input
 
     @staticmethod
     def _is_retrieval_candidate_eligible(

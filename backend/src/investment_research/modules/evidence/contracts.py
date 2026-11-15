@@ -79,14 +79,26 @@ class StatementSupportDecision(ImmutableEvidenceContract):
     supported: bool
 
 
-class StatementSupportResult(ImmutableEvidenceContract):
-    """Support decision, usage, and an optional non-serialized explanation."""
+class StatementSupportJudgment(ImmutableEvidenceContract):
+    """One support decision and an optional non-serialized explanation."""
 
     decision: StatementSupportDecision
-    usage: ProviderUsage
     diagnostic_reason: str | None = Field(
         default=None, min_length=1, max_length=500, exclude=True, repr=False
     )
+
+
+class StatementSupportResult(StatementSupportJudgment):
+    """One judgment and usage for the corresponding provider request."""
+
+    usage: ProviderUsage
+
+
+class StatementSupportBatchResult(ImmutableEvidenceContract):
+    """Judgments keyed by answer statement ordinal with one aggregate provider receipt."""
+
+    judgments: dict[int, StatementSupportJudgment]
+    usage: ProviderUsage
 
 
 class CanonicalEvidenceSpanSource(ImmutableEvidenceContract):

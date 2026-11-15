@@ -31,10 +31,14 @@ from investment_research.modules.evidence.contracts import (
     EvidenceValidationDecision,
     EvidenceValidationProfile,
     OriginalSupportContext,
+    StatementSupportBatchResult,
+    StatementSupportDecision,
+    StatementSupportJudgment,
     StatementSupportResult,
 )
 from investment_research.modules.evidence.ports import (
     CanonicalEvidenceSourceReader,
+    ContextualSupportBatch,
     EvidenceRepository,
     StatementSupportContextBuilder,
     StatementSupportEvaluator,
@@ -346,6 +350,7 @@ def make_service(
     generation_input_builder: AnswerGenerationInputBuilder | None = None,
     support_evaluator: StatementSupportEvaluator | None = None,
     support_context_builder: StatementSupportContextBuilder | None = None,
+    batch_contextual_support: bool = False,
     provider_operation_executor: Mock | None = None,
     generation_input_overhead_units: int = 16_000,
     tracer: OperationTracer | None = None,
@@ -365,6 +370,7 @@ def make_service(
         answer_generator=generator_port,
         generation_input_builder=generation_input_builder,
         support_context_builder=support_context_builder,
+        batch_contextual_support=batch_contextual_support,
         support_evaluator=(
             support_evaluator
             or DeterministicFixtureStatementSupportEvaluator(
@@ -812,10 +818,13 @@ def test_source_becoming_inactive_during_support_check_rejects_answer() -> None:
 
 
 @pytest.mark.parametrize("changed_source", [False, True])
-@pytest.mark.parametrize("document_context", [False, True])
+@pytest.mark.parametrize(
+    ("document_context", "batch_contextual_support"), [(False, False), (True, False), (True, True)]
+)
 def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
     changed_source: bool,
     document_context: bool,
+    batch_contextual_support: bool,
 ) -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     executor = make_provider_operation_executor()
@@ -854,6 +863,33 @@ def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
         def evaluate_contextual(
             self, request: ContextualStatementSupportInput
         ) -> StatementSupportResult:
+            assert not batch_contextual_support
+            self.record_request(request)
+            return DeterministicFixtureStatementSupportEvaluator(
+                [FixtureStatementSupportRule(statement=STATEMENT, evidence_text=EVIDENCE_TEXT)]
+            ).evaluate(
+                request.statement, tuple(item.reference.exact_text for item in request.evidence)
+            )
+
+        def evaluate_contextual_batch(
+            self, requests: ContextualSupportBatch
+        ) -> StatementSupportBatchResult:
+            assert batch_contextual_support
+            assert list(requests) == [0, 1]
+            for request in requests.values():
+                assert request.evidence[0].reference.exact_text == EVIDENCE_TEXT
+                self.record_request(request)
+            return StatementSupportBatchResult(
+                judgments={
+                    ordinal: StatementSupportJudgment(
+                        decision=StatementSupportDecision(supported=True)
+                    )
+                    for ordinal in requests
+                },
+                usage=ProviderUsage(input_units=200, output_units=40),
+            )
+
+        def record_request(self, request: ContextualStatementSupportInput) -> None:
             nonlocal current_source
             assert not unit_of_work.is_open
             inputs.append(request)
@@ -877,35 +913,39 @@ def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
                             "structure_block_text": SOURCE_TEXT.replace("Financial", "Synthetic"),
                         }
                     )
-            return DeterministicFixtureStatementSupportEvaluator(
-                [FixtureStatementSupportRule(statement=STATEMENT, evidence_text=EVIDENCE_TEXT)]
-            ).evaluate(
-                request.statement, tuple(item.reference.exact_text for item in request.evidence)
-            )
 
     unit_of_work.evidence_sources = MutableSourceReader()
+    proposal = make_answer_proposal()
+    if batch_contextual_support:
+        (first,) = proposal.statements
+        second = first.model_copy(update={"text": "A second statement with the same source."})
+        proposal = proposal.model_copy(update={"statements": (first, second)})
     service, _ = make_service(
         unit_of_work,
-        make_answer_proposal(),
+        proposal,
         support_evaluator=ContextualEvaluator(),
         support_context_builder=(
             build_document_contextual_support_input
             if document_context
             else build_contextual_support_input
         ),
+        batch_contextual_support=batch_contextual_support,
         provider_operation_executor=executor,
     )
     result = service.generate(make_context(), make_retrieval_result())
-    assert len(inputs) == 1  # Final canonical validation replays, never calls the provider again.
+    assert len(inputs) == (2 if batch_contextual_support else 1)
     support_attempts = [
         call.args[1]
         for call in executor.execute.call_args_list
         if call.args[1].operation.value == "STATEMENT_SUPPORT"
     ]
     assert len(support_attempts) == 1
-    assert support_attempts[0].maximum_usage.input_units == (
-        16_000 + len(inputs[0].model_dump_json().encode("utf-8"))
-    )
+    serialized_inputs = sum(len(request.model_dump_json().encode("utf-8")) for request in inputs)
+    if batch_contextual_support:
+        assert support_attempts[0].maximum_usage.input_units > 16_000 + serialized_inputs
+        assert support_attempts[0].maximum_usage.output_units == 2_000
+    else:
+        assert support_attempts[0].maximum_usage.input_units == 16_000 + serialized_inputs
     assert result.answer.state is (AnswerState.REJECTED if changed_source else AnswerState.STREAMED)
     if changed_source:
         assert result.evidence_spans == ()

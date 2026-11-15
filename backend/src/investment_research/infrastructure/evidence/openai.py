@@ -19,18 +19,24 @@ from investment_research.modules.evidence.contracts import (
     M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION,
     M1_5_SUPPORT_CONTEXT_POLICY_VERSION,
     ContextualStatementSupportInput,
+    StatementSupportBatchResult,
     StatementSupportDecision,
     StatementSupportInput,
+    StatementSupportJudgment,
     StatementSupportResult,
 )
 from investment_research.modules.evidence.ports import (
+    ContextualSupportBatch,
     StatementSupportProviderConfigurationError,
     StatementSupportProviderContractError,
     StatementSupportProviderRefusalError,
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.operations.domain import ProviderUsage
-from investment_research.modules.research.contracts import ResearchModel
+from investment_research.modules.research.contracts import (
+    M1_GENERATED_STATEMENT_LIMIT,
+    ResearchModel,
+)
 
 OPENAI_STATEMENT_SUPPORT_MODEL = "gpt-5.6-terra"
 OPENAI_STATEMENT_SUPPORT_TIMEOUT_SECONDS = 30.0
@@ -48,6 +54,7 @@ M1_5_DOCUMENT_ATTRIBUTION_SUPPORT_PROMPT_VERSION = "m1-5-document-attribution-su
 M1_5_LOCAL_DOCUMENT_ATTRIBUTION_SUPPORT_REASON_PROMPT_VERSION = (
     "m1-5-local-document-attribution-support-reason-v1"
 )
+M1_5_DOCUMENT_ATTRIBUTION_BATCH_VERSION = "document-attribution-batch-reason-v1"
 
 _TRANSIENT_STATUS_CODES = frozenset({408, 409, 429})
 _STATEMENT_SUPPORT_CRITERIA = """\
@@ -174,6 +181,18 @@ class _ExplainedSupportDecision(BaseModel):
         return value
 
 
+class _BatchSupportDecision(_ExplainedSupportDecision):
+    statement_ordinal: int = Field(ge=0, lt=M1_GENERATED_STATEMENT_LIMIT)
+
+
+class _BatchSupportResponse(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True, hide_input_in_errors=True)
+
+    judgments: tuple[_BatchSupportDecision, ...] = Field(
+        min_length=1, max_length=M1_GENERATED_STATEMENT_LIMIT
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class OpenAIStatementSupportEvaluator:
     """Translate one retry-free OpenAI call into a bounded support decision."""
@@ -236,17 +255,12 @@ class OpenAIStatementSupportEvaluator:
             raise StatementSupportProviderConfigurationError(
                 "contextual support profile is unavailable"
             )
-        # Revalidate even a caller-created model_copy before serializing content to a provider.
-        request = ContextualStatementSupportInput.model_validate(request.model_dump())
         policy = (
             M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
             if self.include_document_attribution_context
             else M1_5_SUPPORT_CONTEXT_POLICY_VERSION
         )
-        if any(item.attribution_context.policy_version != policy for item in request.evidence):
-            raise StatementSupportProviderConfigurationError(
-                "context policy does not match the support profile"
-            )
+        request = self._validate_contextual_input(request, policy)
         instructions = (
             _document_attribution_instructions(self.include_decision_reason)
             if self.include_document_attribution_context
@@ -258,23 +272,113 @@ class OpenAIStatementSupportEvaluator:
         )
         return self._evaluate(request, instructions)
 
+    def evaluate_contextual_batch(
+        self, requests: ContextualSupportBatch
+    ) -> StatementSupportBatchResult:
+        """Check each submitted statement with its own cited evidence in one request."""
+
+        if not (self.include_document_attribution_context and self.include_decision_reason):
+            raise StatementSupportProviderConfigurationError(
+                "document-attribution batch support with reasons is unavailable"
+            )
+        if not 1 <= len(requests) <= M1_GENERATED_STATEMENT_LIMIT or any(
+            type(ordinal) is not int or not 0 <= ordinal < M1_GENERATED_STATEMENT_LIMIT
+            for ordinal in requests
+        ):
+            raise StatementSupportProviderConfigurationError("invalid support batch ordinals")
+
+        statements = [
+            {
+                "statement_ordinal": ordinal,
+                **self._input_fields(
+                    self._validate_contextual_input(
+                        request, M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
+                    )
+                ),
+            }
+            for ordinal, request in requests.items()
+        ]
+        instructions = (
+            _document_attribution_instructions(explanations=True)
+            + "Apply these rules independently to each entry in statements. Use only that entry's "
+            "evidence. Never borrow facts, attribution, or context across statements. Return one "
+            "judgment for every input statement_ordinal. Copy each ordinal exactly once.\n"
+        )
+        parsed, usage = self._request_decision(
+            json.dumps({"statements": statements}, ensure_ascii=False, separators=(",", ":")),
+            instructions,
+            _BatchSupportResponse,
+            max_output_tokens=self.max_output_tokens * len(statements),
+        )
+        judgments = {
+            item.statement_ordinal: StatementSupportJudgment(
+                decision=StatementSupportDecision(supported=item.supported),
+                diagnostic_reason=item.reason,
+            )
+            for item in parsed.judgments
+        }
+        if len(judgments) != len(parsed.judgments) or judgments.keys() != requests.keys():
+            raise StatementSupportProviderContractError(
+                "support judgments do not match the submitted statements"
+            )
+        return StatementSupportBatchResult(judgments=judgments, usage=usage)
+
+    @staticmethod
+    def _validate_contextual_input(
+        request: ContextualStatementSupportInput, policy: str
+    ) -> ContextualStatementSupportInput:
+        # Revalidate even a caller-created model_copy before serializing to the provider.
+        request = ContextualStatementSupportInput.model_validate(request.model_dump())
+        if any(item.attribution_context.policy_version != policy for item in request.evidence):
+            raise StatementSupportProviderConfigurationError(
+                "context policy does not match the support profile"
+            )
+        return request
+
     def _evaluate(
         self,
         support_input: StatementSupportInput | ContextualStatementSupportInput,
         instructions: str,
     ) -> StatementSupportResult:
-        response_format = (
+        response_format: type[StatementSupportDecision | _ExplainedSupportDecision] = (
             _ExplainedSupportDecision if self.include_decision_reason else StatementSupportDecision
         )
+        parsed, usage = self._request_decision(
+            json.dumps(
+                self._input_fields(support_input),
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            instructions,
+            response_format,
+            max_output_tokens=self.max_output_tokens,
+        )
+        return StatementSupportResult(
+            decision=StatementSupportDecision(supported=parsed.supported),
+            usage=usage,
+            diagnostic_reason=(
+                parsed.reason if isinstance(parsed, _ExplainedSupportDecision) else None
+            ),
+        )
+
+    def _request_decision[Decision: BaseModel](
+        self,
+        provider_input: str,
+        instructions: str,
+        response_format: type[Decision],
+        *,
+        max_output_tokens: int,
+    ) -> tuple[Decision, ProviderUsage]:
         try:
             if self.local_validation_output is None:
                 response = self.client.responses.parse(
                     model=self.model,
                     instructions=instructions,
-                    input=self._serialize_input(support_input),
+                    input=provider_input,
                     text_format=response_format,
                     reasoning={"effort": "low"},
-                    max_output_tokens=self.max_output_tokens,
+                    max_output_tokens=max_output_tokens,
                     store=False,
                     background=False,
                     tools=[],
@@ -285,10 +389,10 @@ class OpenAIStatementSupportEvaluator:
                 raw_response = self.client.responses.with_raw_response.parse(
                     model=self.model,
                     instructions=instructions,
-                    input=self._serialize_input(support_input),
+                    input=provider_input,
                     text_format=response_format,
                     reasoning={"effort": "low"},
-                    max_output_tokens=self.max_output_tokens,
+                    max_output_tokens=max_output_tokens,
                     store=False,
                     background=False,
                     tools=[],
@@ -390,70 +494,52 @@ class OpenAIStatementSupportEvaluator:
                 raise StatementSupportProviderContractError(
                     "statement-support provider returned an unexpected decision schema"
                 )
-            return StatementSupportResult(
-                decision=StatementSupportDecision(supported=parsed.supported),
-                usage=provider_usage,
-                diagnostic_reason=(
-                    parsed.reason if isinstance(parsed, _ExplainedSupportDecision) else None
-                ),
-            )
+            return parsed, provider_usage
         except StatementSupportProviderContractError, StatementSupportProviderTransientError:
             if self.local_validation_output is not None:
                 parsed_output = response.output_parsed
                 self.local_validation_output(
                     parsed_output.model_dump_json()
-                    if isinstance(
-                        parsed_output, (StatementSupportDecision, _ExplainedSupportDecision)
-                    )
+                    if isinstance(parsed_output, response_format)
                     else "[No parsed statement-support output was returned.]"
                 )
             raise
 
     @staticmethod
-    def _serialize_input(
+    def _input_fields(
         support_input: StatementSupportInput | ContextualStatementSupportInput,
-    ) -> str:
-        """Serialize only the allowlisted, bounded statement and evidence text."""
+    ) -> dict[str, object]:
+        """Select only the allowlisted, bounded statement and evidence fields."""
 
         if isinstance(support_input, ContextualStatementSupportInput):
-            return json.dumps(
-                {
-                    "statement": support_input.statement,
-                    "evidence": [
-                        {
-                            "document_id": str(item.reference.document_id),
-                            "document_version_id": str(item.reference.document_version_id),
-                            "structure_block_id": str(item.reference.structure_block_id),
-                            "exact_text": item.reference.exact_text,
-                            "attribution_context": item.attribution_context.text,
-                            **(
-                                {
-                                    "attribution_structure_block_id": str(
-                                        item.attribution_context.structure_block_id
-                                    ),
-                                    "attribution_scope": "same_document_version",
-                                }
-                                if item.attribution_context.policy_version
-                                == M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
-                                else {}
-                            ),
-                        }
-                        for item in support_input.evidence
-                    ],
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-        return json.dumps(
-            {
+            return {
                 "statement": support_input.statement,
-                "evidence_texts": list(support_input.evidence_texts),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+                "evidence": [
+                    {
+                        "document_id": str(item.reference.document_id),
+                        "document_version_id": str(item.reference.document_version_id),
+                        "structure_block_id": str(item.reference.structure_block_id),
+                        "exact_text": item.reference.exact_text,
+                        "attribution_context": item.attribution_context.text,
+                        **(
+                            {
+                                "attribution_structure_block_id": str(
+                                    item.attribution_context.structure_block_id
+                                ),
+                                "attribution_scope": "same_document_version",
+                            }
+                            if item.attribution_context.policy_version
+                            == M1_5_DOCUMENT_ATTRIBUTION_POLICY_VERSION
+                            else {}
+                        ),
+                    }
+                    for item in support_input.evidence
+                ],
+            }
+        return {
+            "statement": support_input.statement,
+            "evidence_texts": list(support_input.evidence_texts),
+        }
 
     @staticmethod
     def _output_text_from_raw_body(body: object) -> str | None:

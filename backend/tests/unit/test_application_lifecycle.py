@@ -660,9 +660,10 @@ def test_build_api_container_wires_citable_units_for_all_model_pairs(
         for (answer_model, support_model), service in services.items():
             assert isinstance(service._generation_input_builder, CitableGenerationInputBuilder)
             assert service._support_context_builder is build_document_contextual_support_input
+            assert service._batch_contextual_support
             assert service._generation_profile == citable_answer_profile(answer_model)
             assert service._validation_profile.validation_config_version == (
-                f"m1-5-document-attribution-validation-v1-{support_model.value}"
+                f"m1-5-document-attribution-batch-validation-v1-{support_model.value}"
             )
             assert service._answer_generator is (
                 fakes.answer_generator
@@ -685,7 +686,7 @@ def test_build_api_container_wires_citable_units_for_all_model_pairs(
             assert support_accounting is not None
             assert support_accounting.model == support_model
             assert support_accounting.configuration_version == (
-                f"{support_config_version(support_model)}-document-attribution-reason-v1"
+                f"{support_config_version(support_model)}-document-attribution-batch-reason-v1"
             )
         for call in fakes.support_factory.call_args_list:
             assert call.kwargs["include_attribution_context"] is True

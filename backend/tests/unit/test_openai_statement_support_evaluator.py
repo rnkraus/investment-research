@@ -38,6 +38,7 @@ from investment_research.modules.evidence.ports import (
     StatementSupportProviderTransientError,
 )
 from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.research.contracts import ResearchModel
 from investment_research.modules.search.contracts import M1_CONTEXT_CHARACTER_LIMIT
 from tests.unit.test_statement_support_context import (
     make_document_source_and_reference,
@@ -65,9 +66,12 @@ class StubParsedResponse:
 
     model: str = OPENAI_STATEMENT_SUPPORT_MODEL
     status: str = "completed"
-    output_parsed: StatementSupportDecision | openai_module._ExplainedSupportDecision | None = (
-        field(default_factory=lambda: StatementSupportDecision(supported=True))
-    )
+    output_parsed: (
+        StatementSupportDecision
+        | openai_module._ExplainedSupportDecision
+        | openai_module._BatchSupportResponse
+        | None
+    ) = field(default_factory=lambda: StatementSupportDecision(supported=True))
     output: tuple[object, ...] = ()
     usage: StubResponseUsage | None = field(default_factory=StubResponseUsage)
 
@@ -186,6 +190,63 @@ def test_supports_sends_one_bounded_stateless_request(supported: bool) -> None:
         "evidence_texts": list(EVIDENCE_TEXTS),
         "statement": STATEMENT,
     }
+
+
+@pytest.mark.parametrize("model", list(ResearchModel))
+@pytest.mark.parametrize("ordinals", [(2, 0), (0,), (0, 0, 2), (0, 1), (0, 2, 3)])
+def test_document_support_batch_matches_judgments_to_original_ordinals(
+    model: ResearchModel, ordinals: tuple[int, ...]
+) -> None:
+    client = RecordingOpenAIClient(
+        responses=RecordingResponsesResource(
+            response=StubParsedResponse(
+                model=model.value,
+                output_parsed=openai_module._BatchSupportResponse(
+                    judgments=tuple(
+                        openai_module._BatchSupportDecision(
+                            statement_ordinal=ordinal,
+                            supported=ordinal == 0,
+                            reason=f"Reason for statement {ordinal}.",
+                        )
+                        for ordinal in ordinals
+                    )
+                ),
+            )
+        )
+    )
+    evaluator = OpenAIStatementSupportEvaluator(
+        client=cast(OpenAI, client),
+        model=model.value,
+        include_attribution_context=True,
+        include_document_attribution_context=True,
+        include_decision_reason=True,
+    )
+    first = prepare_document(*make_document_source_and_reference())
+    assert first is not None
+    second = first.model_copy(update={"statement": "The campus is near Adelaide."})
+    requests = {0: first, 2: second}
+
+    if ordinals == (2, 0):
+        result = evaluator.evaluate_contextual_batch(requests)
+        assert result.judgments[0].decision.supported is True
+        assert result.judgments[2].decision.supported is False
+        assert result.judgments[2].diagnostic_reason == "Reason for statement 2."
+        assert result.usage == ProviderUsage(input_units=90, output_units=10)
+    else:
+        with pytest.raises(StatementSupportProviderContractError, match="submitted statements"):
+            evaluator.evaluate_contextual_batch(requests)
+
+    (call,) = client.responses.calls
+    payload = json.loads(cast(str, call["input"]))
+    assert [item["statement_ordinal"] for item in payload["statements"]] == [0, 2]
+    assert [item["statement"] for item in payload["statements"]] == [
+        first.statement,
+        second.statement,
+    ]
+    assert all(len(item["evidence"]) == 1 for item in payload["statements"])
+    assert "Never borrow facts" in cast(str, call["instructions"])
+    assert call["model"] == model
+    assert call["max_output_tokens"] == 2 * OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS
 
 
 def contextual_input() -> ContextualStatementSupportInput:

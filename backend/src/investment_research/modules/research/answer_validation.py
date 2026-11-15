@@ -11,7 +11,9 @@ from investment_research.modules.evidence.contracts import (
     ContextualStatementSupportInput,
     EvidenceValidationDecision,
     EvidenceValidationProfile,
+    StatementSupportBatchResult,
     StatementSupportDecision,
+    StatementSupportJudgment,
     StatementSupportResult,
     ValidationFinding,
 )
@@ -23,8 +25,10 @@ from investment_research.modules.evidence.domain import (
     ValidationRule,
 )
 from investment_research.modules.evidence.ports import (
+    BatchContextualStatementSupportEvaluator,
     CanonicalEvidenceSourceReader,
     ContextualStatementSupportEvaluator,
+    ContextualSupportBatch,
     EvidenceRepository,
     StatementSupportContextBuilder,
     StatementSupportEvaluator,
@@ -109,6 +113,8 @@ class _RecordingStatementSupportEvaluator:
     def __init__(self, evaluator: StatementSupportEvaluator) -> None:
         self._evaluator = evaluator
         self.results: dict[SupportKey, StatementSupportResult] = {}
+        self.batch_inputs: ContextualSupportBatch = {}
+        self.batch_judgments: dict[int, StatementSupportJudgment] = {}
 
     def evaluate(self, statement: str, evidence_texts: Sequence[str]) -> StatementSupportResult:
         key = (statement, tuple(evidence_texts))
@@ -124,6 +130,27 @@ class _RecordingStatementSupportEvaluator:
         result = self._evaluator.evaluate_contextual(request)
         self.results[request] = result
         return result
+
+    def evaluate_batch(
+        self, requests: ContextualSupportBatch
+    ) -> dict[int, StatementSupportJudgment]:
+        if not isinstance(self._evaluator, BatchContextualStatementSupportEvaluator):
+            raise StatementSupportProviderConfigurationError("batched support is unavailable")
+        result = self._evaluator.evaluate_contextual_batch(requests)
+        self.batch_inputs = requests.copy()
+        self.batch_judgments = result.judgments
+        return result.judgments
+
+    def replay_batch(self, requests: ContextualSupportBatch) -> dict[int, StatementSupportJudgment]:
+        unsupported = StatementSupportJudgment(decision=StatementSupportDecision(supported=False))
+        return {
+            ordinal: (
+                self.batch_judgments[ordinal]
+                if self.batch_inputs.get(ordinal) == request
+                else unsupported
+            )
+            for ordinal, request in requests.items()
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,9 +251,36 @@ class _AccountedStatementSupportEvaluator:
         )
         return self._execute(maximum_input_units, lambda: evaluator.evaluate_contextual(request))
 
-    def _execute(
-        self, maximum_input_units: int, call: Callable[[], StatementSupportResult]
-    ) -> StatementSupportResult:
+    def evaluate_contextual_batch(
+        self, requests: ContextualSupportBatch
+    ) -> StatementSupportBatchResult:
+        evaluator = self.evaluator
+        if not isinstance(evaluator, BatchContextualStatementSupportEvaluator):
+            raise StatementSupportProviderConfigurationError("batched support is unavailable")
+        # The model dump contains all provider input fields plus canonical metadata.
+        maximum_input_units = (
+            self.accounting.input_overhead_units
+            + len('{"statements":[]}')
+            + sum(
+                len(request.model_dump_json().encode("utf-8"))
+                + len(f'"statement_ordinal":{ordinal},')
+                + 1  # Array separator.
+                for ordinal, request in requests.items()
+            )
+        )
+        return self._execute(
+            maximum_input_units,
+            lambda: evaluator.evaluate_contextual_batch(requests),
+            statement_count=len(requests),
+        )
+
+    def _execute[Result: (StatementSupportResult, StatementSupportBatchResult)](
+        self,
+        maximum_input_units: int,
+        call: Callable[[], Result],
+        *,
+        statement_count: int = 1,
+    ) -> Result:
         return self.executor.execute(
             self.context,
             ProviderOperationAttempt(
@@ -239,7 +293,7 @@ class _AccountedStatementSupportEvaluator:
                 configuration_version=self.accounting.configuration_version,
                 maximum_usage=ProviderUsage(
                     input_units=maximum_input_units,
-                    output_units=self.accounting.maximum_output_units,
+                    output_units=self.accounting.maximum_output_units * statement_count,
                 ),
                 cost_policy=self.accounting.cost_policy,
             ),
@@ -281,6 +335,7 @@ class GenerateValidatedAnswerService:
         statement_support_accounting: StatementSupportAccountingProfile | None = None,
         rejection_diagnostic: RejectionDiagnostic | None = None,
         support_context_builder: StatementSupportContextBuilder | None = None,
+        batch_contextual_support: bool = False,
         tracer: OperationTracer | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
@@ -306,6 +361,12 @@ class GenerateValidatedAnswerService:
         ):
             raise ValueError("support context requires a contextual evaluator")
         self._support_context_builder = support_context_builder
+        if batch_contextual_support and (
+            support_context_builder is None
+            or not isinstance(support_evaluator, BatchContextualStatementSupportEvaluator)
+        ):
+            raise ValueError("support batching requires a batched contextual evaluator")
+        self._batch_contextual_support = batch_contextual_support
         self._generation_profile = generation_profile
         self._validation_profile = validation_profile
         self._insufficient_message = insufficient_message
@@ -380,6 +441,9 @@ class GenerateValidatedAnswerService:
             source_reader=source_snapshot,
             support_evaluator=support_evaluator,
             support_context_builder=self._support_context_builder,
+            evaluate_support_batch=(
+                support_evaluator.evaluate_batch if self._batch_contextual_support else None
+            ),
         ).validate(context, retrieval_result.retrieval_run.id, generated_answer)
 
         if progress is not None:
@@ -411,6 +475,9 @@ class GenerateValidatedAnswerService:
                     source_reader=unit_of_work.evidence_sources,
                     support_evaluator=_RecordedStatementSupportEvaluator(support_evaluator.results),
                     support_context_builder=self._support_context_builder,
+                    evaluate_support_batch=(
+                        support_evaluator.replay_batch if self._batch_contextual_support else None
+                    ),
                 ).validate(
                     context,
                     retrieval_result.retrieval_run.id,

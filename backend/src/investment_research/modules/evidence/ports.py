@@ -9,6 +9,8 @@ from investment_research.modules.evidence.contracts import (
     CanonicalEvidenceSource,
     CanonicalEvidenceSpanSource,
     ContextualStatementSupportInput,
+    StatementSupportBatchResult,
+    StatementSupportJudgment,
     StatementSupportResult,
     ValidatedEvidenceReference,
 )
@@ -78,6 +80,22 @@ class ContextualStatementSupportEvaluator(StatementSupportEvaluator, Protocol):
         self, request: ContextualStatementSupportInput
     ) -> StatementSupportResult:
         """Evaluate a server-prepared input without authorizing additional factual evidence."""
+
+
+type ContextualSupportBatch = dict[int, ContextualStatementSupportInput]
+type EvaluateContextualSupportBatch = Callable[
+    [ContextualSupportBatch], dict[int, StatementSupportJudgment]
+]
+
+
+@runtime_checkable
+class BatchContextualStatementSupportEvaluator(ContextualStatementSupportEvaluator, Protocol):
+    """Evaluate separately scoped statements with one provider request."""
+
+    def evaluate_contextual_batch(
+        self, requests: ContextualSupportBatch
+    ) -> StatementSupportBatchResult:
+        """Return one judgment per submitted ordinal and one aggregate usage receipt."""
 
 
 class StatementSupportContextBuilder(Protocol):
