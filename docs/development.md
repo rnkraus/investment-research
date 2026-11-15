@@ -430,6 +430,32 @@ credential-free deterministic provider implementations and incurs no OpenAI or P
 scans application logs for protected values and removes its containers, networks, volumes, and
 uniquely tagged acceptance image after success or failure.
 
+### Compare individual and batched evidence checks
+
+From `backend/`, preview the comparison and its estimated upper cost bound:
+
+```shell
+uv run --locked python -m scripts.compare_evidence_support
+```
+
+The comparison uses seven fixed statements in three groups. Quotes and attribution prefixes
+come from the pinned, reviewed synthetic M1.5 catalog. The same inputs go to the current
+contextual support adapter individually and in batches. The report lists expected and observed
+judgments, total provider-call time, token counts, and estimated charges for each variant.
+
+To explicitly authorize a live Luna run, provide the existing host secret file and a spend
+ceiling in USD. The command calls OpenAI using public synthetic inputs.
+
+```shell
+INVESTMENT_RESEARCH_OPENAI_GENERATION_API_KEY_SECRET_FILE=.secrets/openai_generation_api_key \
+  uv run --locked python -m scripts.compare_evidence_support \
+  --execute --confirm-public-synthetic --max-spend-usd 0.08
+```
+
+The spend ceiling uses the repository's configured model prices and conservative request
+reservations. The script checks the full reservation before loading the key. Treat latency
+and judgment agreement in this small sample as observations.
+
 ## Seed or reset local data
 
 The normal Compose startup migrates the database automatically but intentionally does not seed

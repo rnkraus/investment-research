@@ -151,3 +151,9 @@ def load_evaluation_settings() -> tuple[WorkerSettings, ApiSettings]:
     except ValidationError:
         raise EvaluationConfigurationError(BUDGET_NAME, "missing_or_invalid") from None
     return worker, api
+
+
+def load_evaluation_generation_key() -> SecretStr:
+    """Load only the generation credential from explicit host configuration."""
+
+    return _credential(GENERATION_KEY, {})
