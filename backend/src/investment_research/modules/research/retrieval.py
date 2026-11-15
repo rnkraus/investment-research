@@ -12,7 +12,9 @@ from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
     ProviderBudgetExceededError,
     ProviderUsageExceededReservationError,
+    trace_operation,
 )
+from investment_research.modules.operations.ports import OperationTracer
 from investment_research.modules.research.company_priority import CompanyPriorityReader
 from investment_research.modules.research.contracts import (
     CanonicalCandidateSource,
@@ -59,6 +61,7 @@ from investment_research.modules.search.fusion import fit_rrf_context, fuse_rrf_
 from investment_research.modules.search.fusion_contracts import (
     COMPANY_PAGE_RRF_SELECTOR_VERSION,
     LUNA_RERANK_SELECTOR_VERSION,
+    RrfFusedCandidate,
     RrfSelectionProfile,
 )
 from investment_research.modules.search.observation_dates import (
@@ -165,6 +168,7 @@ class RetrieveResearchService:
         luna_reranker: AccountedLunaReranker | None = None,
         expand_text_neighbors: bool = False,
         expand_page_context: bool = False,
+        tracer: OperationTracer | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
@@ -188,6 +192,7 @@ class RetrieveResearchService:
         self._luna_reranker = luna_reranker
         self._expand_text_neighbors = expand_text_neighbors
         self._expand_page_context = expand_page_context
+        self._tracer = tracer
         self._clock = clock
         self._identifier_factory = identifier_factory
 
@@ -236,26 +241,52 @@ class RetrieveResearchService:
         )
         retrieval_run_id = self._identifier_factory()
 
-        if self._m1_query_retrieval is not None:
-            return self._retrieve_dual_lane(
-                context=context,
-                request=request,
-                query=query,
-                retrieval_run_id=retrieval_run_id,
-                started_at=started_at,
-                progress=progress,
-                decompose_query=retrieval_input.decompose_query,
-                rerank_with_luna=retrieval_input.rerank_with_luna,
-            )
+        with trace_operation(
+            self._tracer, "research.retrieve", attributes={"research.request.id": str(request.id)}
+        ) as span:
+            if self._m1_query_retrieval is not None:
+                result = self._retrieve_dual_lane(
+                    context=context,
+                    request=request,
+                    query=query,
+                    retrieval_run_id=retrieval_run_id,
+                    started_at=started_at,
+                    progress=progress,
+                    decompose_query=retrieval_input.decompose_query,
+                    rerank_with_luna=retrieval_input.rerank_with_luna,
+                )
+            else:
+                result = self._retrieve_lexical(
+                    context=context,
+                    request=request,
+                    query=query,
+                    retrieval_run_id=retrieval_run_id,
+                    started_at=started_at,
+                    progress=progress,
+                )
+            if span is not None:
+                span.set_attribute(
+                    "configuration.version", result.retrieval_run.selector_config_version
+                )
+                span.set_attribute("chunk.count", len(result.sources))
+            return result
 
-        return self._retrieve_lexical(
-            context=context,
-            request=request,
-            query=query,
-            retrieval_run_id=retrieval_run_id,
-            started_at=started_at,
-            progress=progress,
-        )
+    def _search_lexical(
+        self,
+        reader: LexicalSearch,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        additional_queries: tuple[str, ...] = (),
+    ) -> tuple[LexicalSearchHit, ...]:
+        with trace_operation(
+            self._tracer,
+            "postgresql.lexical_search",
+            attributes={"configuration.version": query.lexical_config_version},
+        ) as span:
+            hits = search_lexical_queries(reader, context, query, additional_queries)
+            if span is not None:
+                span.set_attribute("candidate.count", len(hits))
+            return hits
 
     def _retrieve_lexical(
         self,
@@ -273,7 +304,7 @@ class RetrieveResearchService:
             unit_of_work.research.add_request(context, request)
             if progress is not None:
                 progress(request.id, "SEARCHING_SOURCES")
-            hits = tuple(unit_of_work.lexical_search.search(context, query))
+            hits = self._search_lexical(unit_of_work.lexical_search, context, query)
             if progress is not None:
                 progress(request.id, "SELECTING_PASSAGES")
             completed_at = self._aware_utc_now()
@@ -397,10 +428,17 @@ class RetrieveResearchService:
         if progress is not None:
             progress(request.id, "SEARCHING_SOURCES")
         try:
-            provider_hits = self._call_with_retry(
-                lambda: tuple(dependencies.dense_retriever.retrieve(context, dense_query)),
-                dependencies,
-            )
+            with trace_operation(
+                self._tracer,
+                "pinecone.query",
+                attributes={"configuration.version": dense_query.dense_index_config_version},
+            ) as span:
+                provider_hits = self._call_with_retry(
+                    lambda: tuple(dependencies.dense_retriever.retrieve(context, dense_query)),
+                    dependencies,
+                )
+                if span is not None:
+                    span.set_attribute("candidate.count", len(provider_hits))
         except SearchProviderError as error:
             raise ResearchProviderUnavailableError(
                 request.id,
@@ -419,7 +457,7 @@ class RetrieveResearchService:
         dense_snapshot: tuple[QualifiedDenseHit, ...] = ()
         if isinstance(dependencies.selection_profile, RrfRerankingProfile):
             with self._unit_of_work_factory() as unit_of_work:
-                lexical_snapshot = search_lexical_queries(
+                lexical_snapshot = self._search_lexical(
                     unit_of_work.lexical_search, context, query, additional_queries
                 )
                 dense_snapshot = tuple(
@@ -428,12 +466,15 @@ class RetrieveResearchService:
             if progress is not None:
                 progress(request.id, "SELECTING_PASSAGES")
             try:
-                prepared = prepare_rrf_reranking(
-                    normalized_query=query.normalized_query,
-                    lexical_hits=lexical_snapshot,
-                    dense_hits=dense_snapshot,
-                    profile=dependencies.selection_profile,
-                )
+                with trace_operation(self._tracer, "search.rrf") as span:
+                    prepared = prepare_rrf_reranking(
+                        normalized_query=query.normalized_query,
+                        lexical_hits=lexical_snapshot,
+                        dense_hits=dense_snapshot,
+                        profile=dependencies.selection_profile,
+                    )
+                    if span is not None:
+                        span.set_attribute("candidate.count", len(prepared.fused_candidates))
             except SearchProviderContractError as error:
                 raise ResearchProviderUnavailableError(request.id, retriable=False) from error
             if dependencies.reranking is None:
@@ -449,7 +490,7 @@ class RetrieveResearchService:
             if progress is not None:
                 progress(request.id, "SELECTING_PASSAGES")
             with self._unit_of_work_factory() as unit_of_work:
-                lexical_snapshot = search_lexical_queries(
+                lexical_snapshot = self._search_lexical(
                     unit_of_work.lexical_search, context, query, additional_queries
                 )
                 dense_snapshot = tuple(
@@ -467,7 +508,7 @@ class RetrieveResearchService:
                 )
             selected, _, _, limit = baseline
             pool = {item.chunk_id: item for item in selected}
-            for candidate in fuse_rrf_hits(
+            for candidate in self._fuse_rrf_hits(
                 lexical_hits=lexical_snapshot, dense_hits=dense_snapshot
             )[:20]:
                 hit = candidate.hit
@@ -490,7 +531,7 @@ class RetrieveResearchService:
             )
 
         with self._unit_of_work_factory() as unit_of_work:
-            lexical_hits = search_lexical_queries(
+            lexical_hits = self._search_lexical(
                 unit_of_work.lexical_search, context, query, additional_queries
             )
             dense_hits = tuple(unit_of_work.dense_qualifier.qualify(context, qualification_request))
@@ -731,8 +772,20 @@ class RetrieveResearchService:
             numbered.append(item)
         return tuple(numbered), tuple(hits)
 
-    @staticmethod
+    def _fuse_rrf_hits(
+        self,
+        *,
+        lexical_hits: tuple[LexicalSearchHit, ...],
+        dense_hits: tuple[QualifiedDenseHit, ...],
+    ) -> tuple[RrfFusedCandidate, ...]:
+        with trace_operation(self._tracer, "search.rrf") as span:
+            candidates = fuse_rrf_hits(lexical_hits=lexical_hits, dense_hits=dense_hits)
+            if span is not None:
+                span.set_attribute("candidate.count", len(candidates))
+            return candidates
+
     def _select_context(
+        self,
         *,
         lexical_hits: tuple[LexicalSearchHit, ...],
         dense_hits: tuple[QualifiedDenseHit, ...],
@@ -747,7 +800,7 @@ class RetrieveResearchService:
             )
             return result.candidates, {}
 
-        ranked = fuse_rrf_hits(lexical_hits=lexical_hits, dense_hits=dense_hits)
+        ranked = self._fuse_rrf_hits(lexical_hits=lexical_hits, dense_hits=dense_hits)
         selected = tuple(
             SelectedRetrievalCandidate(
                 **item.candidate.hit.model_dump(),

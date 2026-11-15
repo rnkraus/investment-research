@@ -8,7 +8,11 @@ from unittest.mock import Mock, create_autospec
 from uuid import UUID
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from investment_research.infrastructure.operations.opentelemetry import OpenTelemetryOperationTracer
 from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.operations.application import (
@@ -20,6 +24,7 @@ from investment_research.modules.operations.application import (
     ProviderUsageExceededReservationError,
 )
 from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.operations.ports import OperationTracer
 from investment_research.modules.research.application import (
     M1QueryRetrievalDependencies,
     QueryEmbeddingAccountingProfile,
@@ -317,6 +322,7 @@ def make_service(
     expand_page_context: bool = False,
     company_priority: CompanyPriorityReader | None = None,
     luna_reranker: AccountedLunaReranker | None = None,
+    tracer: OperationTracer | None = None,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
 
@@ -360,6 +366,7 @@ def make_service(
         expand_page_context=expand_page_context,
         company_priority=company_priority,
         luna_reranker=luna_reranker,
+        tracer=tracer,
     )
 
 
@@ -644,11 +651,16 @@ def test_rrf_retrieval_fuses_qualified_lanes_and_preserves_all_audit_rows(
     shared = QualifiedDenseHit.model_validate(second.model_dump() | {"raw_score": -0.9})
     unit_of_work = RecordingUnitOfWork(lexical_hits=(lexical_hit, second), dense_hits=(shared,))
     embedding, dense_provider = make_provider_mocks(events=unit_of_work.events)
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = OpenTelemetryOperationTracer(provider.get_tracer("test.retrieval"), provider=provider)
     service = make_service(
         unit_of_work,
         embedding_provider=cast(EmbeddingProvider, embedding),
         dense_retriever=cast(DenseRetriever, dense_provider),
         selection_profile=RrfSelectionProfile(context_chunk_limit=context_chunk_limit),
+        tracer=tracer,
         identifiers=(
             REQUEST_ID,
             RUN_ID,
@@ -658,7 +670,27 @@ def test_rrf_retrieval_fuses_qualified_lanes_and_preserves_all_audit_rows(
         ),
     )
 
-    result = service.retrieve(make_context(), ResearchRetrievalInput(question="revenue margin"))
+    question = "revenue margin"
+    try:
+        with tracer.start_span("research.answer"):
+            result = service.retrieve(make_context(), ResearchRetrievalInput(question=question))
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+    finally:
+        tracer.close()
+
+    retrieval_span = spans["research.retrieve"]
+    assert retrieval_span.parent == spans["research.answer"].context
+    assert retrieval_span.attributes == {
+        "research.request.id": str(REQUEST_ID),
+        "configuration.version": RRF_CONFIG_VERSION,
+        "chunk.count": context_chunk_limit,
+    }
+    for name in ("postgresql.lexical_search", "pinecone.query", "search.rrf"):
+        span = spans[name]
+        assert span.parent == retrieval_span.context
+        assert span.attributes is not None and span.attributes["candidate.count"] == 2
+    assert all(question not in span.to_json() for span in spans.values())
+    assert all(lexical_hit.text not in span.to_json() for span in spans.values())
 
     assert result.retrieval_run.selector_config_version == RRF_CONFIG_VERSION
     assert [item.fused_rank for item in result.candidates] == [2, 1, 1]
