@@ -633,7 +633,8 @@ and total-spend limit in the frozen fixture manifest.
 ## 10. Trace context
 
 OpenTelemetry supplies in-process W3C trace context through the application-owned
-`OperationTracer`. M1 configures no exporter and no LangSmith integration.
+`OperationTracer`. The default runtime keeps traces in process. Local development may
+explicitly opt into [LangSmith export](development.md#optional-local-langsmith-tracing).
 
 Approved span names are:
 
@@ -677,6 +678,13 @@ Queue and internal HTTP propagation use headers rather than business payload fie
 incoming context is ignored and replaced, never trusted as authorization. Tracing failure never
 changes a canonical product result. The local trace ID is copied to the provider-operation record
 for correlation.
+
+The API-only LangSmith exporter uses bounded background OTLP/HTTP batches. Spans retain their
+trace and parent IDs, while the export configuration excludes application UUID attributes and
+environment-supplied resource attributes. Provider accounting fields remain application metadata.
+`cost.micro_usd` can represent a conservative reservation on failed operations and is not a
+provider invoice. Raw content and exception details remain excluded. Export errors do not affect
+research results or readiness.
 
 ## 11. Public response contracts
 

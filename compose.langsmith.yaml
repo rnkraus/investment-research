@@ -1,0 +1,11 @@
+# Opt in only for a local archive containing approved public or synthetic material.
+services:
+  api:
+    environment:
+      INVESTMENT_RESEARCH_LANGSMITH_API_KEY_FILE: /run/secrets/langsmith_api_key
+    secrets:
+      - langsmith_api_key
+
+secrets:
+  langsmith_api_key:
+    file: ${INVESTMENT_RESEARCH_LANGSMITH_API_KEY_SECRET_FILE:-.secrets/langsmith_api_key}

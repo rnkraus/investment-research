@@ -22,7 +22,9 @@ PROVIDER_ROLES = (
 )
 
 
-def render_configuration(tmp_path: Path, *, live: bool, profile: str | None) -> dict[str, Any]:
+def render_configuration(
+    tmp_path: Path, *, live: bool, profile: str | None, langsmith: bool = False
+) -> dict[str, Any]:
     """Use a clean environment and disposable synthetic files to render actual Compose YAML."""
 
     docker = shutil.which("docker")
@@ -34,6 +36,8 @@ def render_configuration(tmp_path: Path, *, live: bool, profile: str | None) -> 
     command = [docker, "compose", "--file", str(REPOSITORY_ROOT / "compose.yaml")]
     if live:
         command.extend(["--file", str(REPOSITORY_ROOT / "compose.m1-live.yaml")])
+    if langsmith:
+        command.extend(["--file", str(REPOSITORY_ROOT / "compose.langsmith.yaml")])
     command.extend(["config", "--format", "json"])
 
     with disposable_compose_secret_environment(
@@ -47,6 +51,7 @@ def render_configuration(tmp_path: Path, *, live: bool, profile: str | None) -> 
             "INVESTMENT_RESEARCH_S3_BUCKET": "synthetic-config-only",
             "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD": "5000000",
             "INVESTMENT_RESEARCH_PINECONE_INDEX_HOST": "synthetic-index.example.svc.pinecone.io",
+            "INVESTMENT_RESEARCH_LANGSMITH_API_KEY_SECRET_FILE": str(provider_placeholder),
             **secret_paths,
             **{
                 f"INVESTMENT_RESEARCH_{role}_API_KEY_SECRET_FILE": str(provider_placeholder)
@@ -65,6 +70,21 @@ def render_configuration(tmp_path: Path, *, live: bool, profile: str | None) -> 
             timeout=30,
         )
     return cast(dict[str, Any], json.loads(result.stdout))
+
+
+@pytest.mark.parametrize("langsmith", [False, True])
+def test_compose_langsmith_keeps_the_secret_api_only(tmp_path: Path, langsmith: bool) -> None:
+    config = render_configuration(tmp_path, live=True, profile=None, langsmith=langsmith)
+    assert ("langsmith_api_key" in config["secrets"]) is langsmith
+    for name, service in config["services"].items():
+        environment = service.get("environment", {})
+        assert "INVESTMENT_RESEARCH_LANGSMITH_API_KEY" not in environment
+        expected_key_path = (
+            "/run/secrets/langsmith_api_key" if langsmith and name == "api" else None
+        )
+        assert environment.get("INVESTMENT_RESEARCH_LANGSMITH_API_KEY_FILE") == expected_key_path
+        secret_sources = {secret["source"] for secret in service.get("secrets", [])}
+        assert ("langsmith_api_key" in secret_sources) is (expected_key_path is not None)
 
 
 @pytest.mark.parametrize(

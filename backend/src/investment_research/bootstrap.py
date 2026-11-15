@@ -512,6 +512,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
     operation_tracer = create_operation_tracer(
         service_name="investment-research-api",
         service_version=__version__,
+        langsmith_api_key=settings.langsmith_api_key,
     )
     readiness_probes: list[ReadinessProbe] = [
         PostgreSQLReadinessProbe(database.engine),

@@ -1,15 +1,22 @@
-"""Content-safe in-process OpenTelemetry tracing without an exporter."""
+"""Content-safe OpenTelemetry tracing with optional API export."""
 
+import logging
 import re
 from contextlib import AbstractContextManager, nullcontext, suppress
+from os import environ
 from types import TracebackType
 from typing import Literal, cast
 from uuid import UUID
 
+from opentelemetry.exporter.otlp.proto.http import Compression
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from pydantic import SecretStr
 
+from investment_research.infrastructure.logging import application_logger
 from investment_research.infrastructure.operations.noop import NoopOperationSpan
 from investment_research.modules.operations.ports import (
     APPROVED_OPERATION_SPAN_NAMES,
@@ -21,6 +28,9 @@ from investment_research.modules.operations.ports import (
 
 _MAX_BOUNDED_INTEGER = 9_223_372_036_854_775_807
 _SAFE_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+_LANGSMITH_ENDPOINT = "https://eu.api.smith.langchain.com/otel/v1/traces"
+_LANGSMITH_PROJECT = "investment-research-local"
+_logger = application_logger("infrastructure.operations.opentelemetry")
 _UUID_ATTRIBUTE_NAMES = frozenset(
     {
         "answer.id",
@@ -91,11 +101,23 @@ def _safe_attributes(attributes: TraceAttributes | None) -> dict[str, TraceAttri
     return safe
 
 
+def _redact_exporter_log(record: logging.LogRecord) -> bool:
+    """Keep untrusted HTTP error details out of logs."""
+
+    record.msg = "tracing.langsmith.export_warning"
+    record.args = ()
+    record.exc_info = None
+    record.exc_text = None
+    record.stack_info = None
+    return True
+
+
 class OpenTelemetryOperationSpan:
     """Expose a content-safe application span over one OpenTelemetry span."""
 
-    def __init__(self, span: Span) -> None:
+    def __init__(self, span: Span, *, export_enabled: bool = False) -> None:
         self._span = span
+        self._export_enabled = export_enabled
 
     @property
     def trace_id(self) -> str | None:
@@ -110,6 +132,8 @@ class OpenTelemetryOperationSpan:
         """Attach one allowlisted and bounded scalar without failing product behavior."""
 
         if name not in APPROVED_TRACE_ATTRIBUTE_NAMES:
+            return
+        if self._export_enabled and name in _UUID_ATTRIBUTE_NAMES:
             return
         safe_value = _safe_attribute_value(name, value)
         if safe_value is None:
@@ -135,8 +159,9 @@ class OpenTelemetryOperationSpan:
 class _FailOpenSpanContext(AbstractContextManager[OperationSpan]):
     """Keep tracing setup and teardown failures out of canonical product behavior."""
 
-    def __init__(self, inner: AbstractContextManager[Span]) -> None:
+    def __init__(self, inner: AbstractContextManager[Span], *, export_enabled: bool) -> None:
         self._inner = inner
+        self._export_enabled = export_enabled
         self._inner_active = False
 
     def __enter__(self) -> OperationSpan:
@@ -145,7 +170,7 @@ class _FailOpenSpanContext(AbstractContextManager[OperationSpan]):
         except Exception:
             return NoopOperationSpan()
         self._inner_active = True
-        return OpenTelemetryOperationSpan(span)
+        return OpenTelemetryOperationSpan(span, export_enabled=self._export_enabled)
 
     def __exit__(
         self,
@@ -162,9 +187,16 @@ class _FailOpenSpanContext(AbstractContextManager[OperationSpan]):
 class OpenTelemetryOperationTracer:
     """Create content-safe in-process spans through one process-owned provider."""
 
-    def __init__(self, tracer: Tracer, *, provider: TracerProvider | None = None) -> None:
+    def __init__(
+        self,
+        tracer: Tracer,
+        *,
+        provider: TracerProvider | None = None,
+        export_enabled: bool = False,
+    ) -> None:
         self._tracer = tracer
         self._provider = provider
+        self._export_enabled = export_enabled
 
     def start_span(
         self,
@@ -177,15 +209,21 @@ class OpenTelemetryOperationTracer:
         if name not in APPROVED_OPERATION_SPAN_NAMES:
             return nullcontext(NoopOperationSpan())
         try:
+            safe_attributes = _safe_attributes(attributes)
+            if self._export_enabled:
+                for attribute_name in _UUID_ATTRIBUTE_NAMES:
+                    safe_attributes.pop(attribute_name, None)
             inner = self._tracer.start_as_current_span(
                 name,
-                attributes=_safe_attributes(attributes),
+                attributes=safe_attributes,
                 record_exception=False,
                 set_status_on_exception=False,
             )
         except Exception:
             return nullcontext(NoopOperationSpan())
-        return _FailOpenSpanContext(cast(AbstractContextManager[Span], inner))
+        return _FailOpenSpanContext(
+            cast(AbstractContextManager[Span], inner), export_enabled=self._export_enabled
+        )
 
     def close(self) -> None:
         """Shut down the owned provider without changing application shutdown behavior."""
@@ -202,8 +240,9 @@ def create_operation_tracer(
     *,
     service_name: str,
     service_version: str,
+    langsmith_api_key: SecretStr | None = None,
 ) -> OpenTelemetryOperationTracer:
-    """Create one process-local tracer provider with deliberately no exporter."""
+    """Create one process-local provider with an opt-in, bounded LangSmith exporter."""
 
     if _SAFE_TEXT_PATTERN.fullmatch(service_name) is None:
         raise ValueError("service_name must be a safe technical identifier")
@@ -211,12 +250,48 @@ def create_operation_tracer(
         raise ValueError("service_version must be a safe technical identifier")
 
     provider = TracerProvider(
-        resource=Resource.create(
+        resource=Resource(
             {
                 "service.name": service_name,
                 "service.version": service_version,
             }
-        )
+        ),
     )
+    export_enabled = False
+    if langsmith_api_key is not None and any(
+        name.startswith(("OTEL_EXPORTER_OTLP_", "OTEL_PYTHON_EXPORTER_OTLP_HTTP_"))
+        for name in environ
+    ):
+        # The SDK merges ambient headers even when explicitly configured headers are supplied.
+        _logger.warning("tracing.langsmith.ambient_export_settings")
+    elif langsmith_api_key is not None:
+        try:
+            logging.getLogger(OTLPSpanExporter.__module__).addFilter(_redact_exporter_log)
+            exporter: SpanExporter = OTLPSpanExporter(
+                endpoint=_LANGSMITH_ENDPOINT,
+                headers={
+                    "x-api-key": langsmith_api_key.get_secret_value(),
+                    "Langsmith-Project": _LANGSMITH_PROJECT,
+                },
+                compression=Compression.NoCompression,
+                timeout=2,
+                max_request_size=262_144,
+            )
+            try:
+                provider.add_span_processor(
+                    BatchSpanProcessor(
+                        exporter,
+                        max_queue_size=256,
+                        max_export_batch_size=32,
+                        schedule_delay_millis=1_000,
+                        export_timeout_millis=2_000,
+                    )
+                )
+            except Exception:
+                exporter.shutdown()
+                raise
+            export_enabled = True
+        except Exception:
+            _logger.warning("tracing.langsmith.setup_failed")
     tracer = provider.get_tracer("investment_research.operations", service_version)
-    return OpenTelemetryOperationTracer(tracer, provider=provider)
+    return OpenTelemetryOperationTracer(tracer, provider=provider, export_enabled=export_enabled)

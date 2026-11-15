@@ -1,13 +1,18 @@
 """Tests for content-safe in-process OpenTelemetry tracing."""
 
+import logging
+from threading import current_thread
 from typing import cast
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode, Tracer
+from pydantic import SecretStr
 
 from investment_research.infrastructure.operations.opentelemetry import (
     OpenTelemetryOperationTracer,
@@ -15,6 +20,130 @@ from investment_research.infrastructure.operations.opentelemetry import (
 )
 
 RAW_MARKER = "raw question and document text must never appear"
+
+
+@pytest.mark.parametrize("status_code", [200, 401])
+def test_langsmith_export_sends_only_approved_fields(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, status_code: int
+) -> None:
+    key = "synthetic-export-test-key"
+    workspace_id = str(uuid4())
+    request_id = str(uuid4())
+    calls: list[tuple[str, str, dict[str, str], bytes]] = []
+    request_thread = current_thread()
+
+    def capture_request(
+        method: str, url: str, *, headers: dict[str, str], data: bytes, **options: object
+    ) -> Mock:
+        assert current_thread() is not request_thread
+        assert options["allow_redirects"] is False
+        calls.append((method, url, headers.copy(), data))
+        return Mock(status_code=status_code, reason=f"{RAW_MARKER} {key}")
+
+    monkeypatch.setattr("requests.Session.request", Mock(side_effect=capture_request))
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", f"secret={key}")
+    tracer = create_operation_tracer(
+        service_name="investment-research-api",
+        service_version="1.0.0",
+        langsmith_api_key=SecretStr(key),
+    )
+
+    try:
+        with tracer.start_span(
+            "research.answer", attributes={"workspace.id": workspace_id, "question": RAW_MARKER}
+        ) as root:
+            root.set_attribute("request.id", request_id)
+            root.set_attribute("outcome", "accepted")
+            with tracer.start_span("research.generate", attributes={"model.name": "demo-model"}):
+                pass
+    finally:
+        tracer.close()
+
+    [(method, url, headers, body)] = calls
+    assert method == "POST"
+    assert url == "https://eu.api.smith.langchain.com/otel/v1/traces"
+    assert headers["x-api-key"] == key
+    assert headers["langsmith-project"] == "investment-research-local"
+    for forbidden in (key, workspace_id, request_id, RAW_MARKER):
+        assert forbidden.encode() not in body
+        assert forbidden not in caplog.text
+    if status_code == 401:
+        assert any(
+            record.levelno == logging.ERROR
+            and record.getMessage() == "tracing.langsmith.export_warning"
+            for record in caplog.records
+        )
+
+    message = ExportTraceServiceRequest.FromString(body)
+    [resource_spans] = message.resource_spans
+    assert {attribute.key for attribute in resource_spans.resource.attributes} == {
+        "service.name",
+        "service.version",
+    }
+    [scope_spans] = resource_spans.scope_spans
+    spans = {span.name: span for span in scope_spans.spans}
+    assert set(spans) == {"research.answer", "research.generate"}
+    assert spans["research.generate"].trace_id == spans["research.answer"].trace_id
+    assert spans["research.generate"].parent_span_id == spans["research.answer"].span_id
+    assert {attribute.key for attribute in spans["research.answer"].attributes} == {"outcome"}
+    assert {attribute.key for attribute in spans["research.generate"].attributes} == {"model.name"}
+
+
+def test_langsmith_export_is_disabled_without_a_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    exporter = Mock()
+    monkeypatch.setattr(
+        "investment_research.infrastructure.operations.opentelemetry.OTLPSpanExporter", exporter
+    )
+    tracer = create_operation_tracer(service_name="investment-research-api", service_version="1")
+    try:
+        with tracer.start_span("research.answer") as span:
+            assert span.trace_id is not None
+    finally:
+        tracer.close()
+    exporter.assert_not_called()
+
+
+def test_langsmith_setup_failure_leaves_tracing_available(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(
+        "investment_research.infrastructure.operations.opentelemetry.OTLPSpanExporter",
+        Mock(side_effect=ValueError(RAW_MARKER)),
+    )
+    tracer = create_operation_tracer(
+        service_name="investment-research-api",
+        service_version="1",
+        langsmith_api_key=SecretStr("synthetic-export-test-key"),
+    )
+    try:
+        with tracer.start_span("research.answer") as span:
+            assert span.trace_id is not None
+    finally:
+        tracer.close()
+    assert "tracing.langsmith.setup_failed" in caplog.text
+    assert RAW_MARKER not in caplog.text
+
+
+def test_langsmith_does_not_forward_ambient_otlp_headers(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "x-untrusted=do-not-send")
+    exporter = Mock()
+    monkeypatch.setattr(
+        "investment_research.infrastructure.operations.opentelemetry.OTLPSpanExporter", exporter
+    )
+    tracer = create_operation_tracer(
+        service_name="investment-research-api",
+        service_version="1",
+        langsmith_api_key=SecretStr("synthetic-export-test-key"),
+    )
+    try:
+        with tracer.start_span("research.answer") as span:
+            assert span.trace_id is not None
+    finally:
+        tracer.close()
+    exporter.assert_not_called()
+    assert "tracing.langsmith.ambient_export_settings" in caplog.text
 
 
 def _capturing_tracer() -> tuple[

@@ -524,6 +524,9 @@ def load_api_settings(
         ),
         "query_providers": query_provider_values,
         "generation_provider": generation_provider_values,
+        "langsmith_api_key": _secret_configuration_value(
+            "INVESTMENT_RESEARCH_LANGSMITH_API_KEY", file_values
+        ),
         "acceptance_dense_index_path": _configuration_value(
             "INVESTMENT_RESEARCH_M1_ACCEPTANCE_DENSE_INDEX_PATH",
             file_values,

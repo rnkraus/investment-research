@@ -83,6 +83,7 @@ PARSER_FORBIDDEN_ENVIRONMENT_PREFIXES = (
     "INVESTMENT_RESEARCH_S3_",
     "INVESTMENT_RESEARCH_OPENAI_",
     "INVESTMENT_RESEARCH_PINECONE_",
+    "INVESTMENT_RESEARCH_LANGSMITH_",
     "OPENAI_",
     "PINECONE_",
     "LANGSMITH_",
@@ -498,6 +499,24 @@ class ApiSettings(ObjectStorageSettings):
     generation_provider: GenerationProviderSettings | None = None
     acceptance_dense_index_path: Path | None = None
     local_model_failure_output: bool = False
+    langsmith_api_key: SecretStr | None = None
+
+    @field_validator("langsmith_api_key")
+    @classmethod
+    def validate_langsmith_api_key(cls, value: SecretStr | None) -> SecretStr | None:
+        """Accept only normalized credentials suitable for an HTTP header."""
+
+        if value is not None and not fullmatch(r"[!-~]{1,512}", value.get_secret_value()):
+            raise ValueError("invalid LangSmith export credential")
+        return value
+
+    @model_validator(mode="after")
+    def restrict_langsmith_export(self) -> ApiSettings:
+        """Keep hosted trace export out of the test runtime."""
+
+        if self.langsmith_api_key is not None and self.environment != "development":
+            raise ValueError("LangSmith export requires a local development API")
+        return self
 
     @model_validator(mode="after")
     def restrict_local_model_failure_output(self) -> ApiSettings:
