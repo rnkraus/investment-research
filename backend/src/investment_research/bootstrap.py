@@ -854,6 +854,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         company_priority=PostgresCompanyPriorityReader(database.session_factory),
         expand_text_neighbors=citable_units_enabled,
         expand_page_context=citable_units_enabled,
+        tracer=operation_tracer,
     )
     answer_unit_of_work_factory = create_answer_validation_unit_of_work_factory(
         database.session_factory,
@@ -878,6 +879,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         generation_profile=generation_profile,
         validation_profile=validation_profile,
         insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
+        tracer=operation_tracer,
         provider_operation_executor=provider_operation_executor,
         generation_accounting=generation_accounting,
         statement_support_accounting=statement_support_accounting,
@@ -936,6 +938,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                         )
                     ),
                     insufficient_message=M0_0_INSUFFICIENT_MESSAGE,
+                    tracer=operation_tracer,
                     provider_operation_executor=provider_operation_executor,
                     generation_accounting=AnswerGenerationAccountingProfile(
                         provider="openai",

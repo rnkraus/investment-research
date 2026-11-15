@@ -645,11 +645,14 @@ embedding.document
 embedding.query
 pinecone.upsert
 pinecone.query
+postgresql.lexical_search
 research.answer
+research.context
 research.retrieve
 research.generate
 evidence.evaluate_support
 evidence.validate
+search.rrf
 ```
 
 The API opens a `research.answer` span inside the synchronous research execution so that
@@ -657,6 +660,13 @@ provider operations, including optional `research.plan_query` and `search.rerank
 share its trace ID. The parent records the research request ID where available and the final
 outcome (`accepted`, `insufficient`, `rejected`, or `failed`). A result rejected by the evidence
 gate is a domain outcome. Technical failures use only a safe error category on the parent span.
+
+The `research.retrieve` span wraps PostgreSQL lexical search, the Pinecone query and any RRF
+candidate fusion. Lexical searches report the merged lexical count for that pass. Pinecone
+reports the count before canonical qualification, and RRF reports the number of fused candidates
+after qualification. A reranking path can record multiple search or fusion spans as it prepares
+and revalidates its candidates. `research.context` records the retrieved and final prepared
+passage counts before generation, including when preflight trims the context.
 
 Approved attributes are safe identifiers, configuration versions, provider/model names, operation
 kind, lifecycle state, bounded counts, duration, outcome, and safe error category. Questions,
