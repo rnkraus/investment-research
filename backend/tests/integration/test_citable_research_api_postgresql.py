@@ -9,6 +9,9 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from openai import OpenAI
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import Engine
 
 from investment_research import bootstrap as bootstrap_module
@@ -19,6 +22,7 @@ from investment_research.infrastructure.generation.openai_citable_units import (
     citable_answer_profile,
 )
 from investment_research.infrastructure.openai_models import support_config_version
+from investment_research.infrastructure.operations.opentelemetry import OpenTelemetryOperationTracer
 from investment_research.infrastructure.search.openai import OpenAIEmbeddingProvider
 from investment_research.infrastructure.search.pinecone import PineconeDenseRetriever
 from investment_research.main import create_app
@@ -353,6 +357,11 @@ def test_citable_api_does_not_publish_invalid_or_unsupported_proposals(
     _, _, generators, evaluators = install_citable_providers(
         monkeypatch, hits=(), unknown_id=unknown_id, supported=False
     )
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = OpenTelemetryOperationTracer(provider.get_tracer(__name__), provider=provider)
+    monkeypatch.setattr(bootstrap_module, "create_operation_tracer", lambda **_: tracer)
     application = create_app(citable_settings(integration_api_settings, tmp_path / "objects"))
     application.dependency_overrides[get_workspace_context] = lambda: source.context
     with TestClient(application) as client:
@@ -379,3 +388,15 @@ def test_citable_api_does_not_publish_invalid_or_unsupported_proposals(
     assert "synthetic-generation-key" not in response.text
     assert len(generators[ResearchModel.TERRA].requests) == 1
     assert len(evaluators[ResearchModel.TERRA].requests) == (0 if unknown_id else 1)
+    support_spans = [
+        span for span in exporter.get_finished_spans() if span.name == "evidence.evaluate_support"
+    ]
+    if unknown_id:
+        assert support_spans == []
+    else:
+        (span,) = support_spans
+        assert span.attributes is not None
+        assert span.attributes["evidence.statements.checked"] == 2
+        assert span.attributes["evidence.statements.rejected"] == 2
+        assert QUOTE not in repr(span.attributes)
+        assert all(reason not in repr(span.attributes) for reason in REJECTION_REASONS)

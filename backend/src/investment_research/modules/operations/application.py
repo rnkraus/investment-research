@@ -1,7 +1,7 @@
 """Application services for bounded canonical provider-operation accounting."""
 
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import monotonic
@@ -313,6 +313,8 @@ class ExecuteProviderOperationService:
         provider_call: Callable[[], ResultT],
         usage_from_result: Callable[[ResultT], ProviderUsage],
         classify_error: ProviderErrorClassifier,
+        *,
+        trace_attributes_from_result: Callable[[ResultT], TraceAttributes] | None = None,
     ) -> ResultT:
         """Execute one call between separately committed reservation and finalization writes."""
 
@@ -403,6 +405,10 @@ class ExecuteProviderOperationService:
             span.set_attribute("cost.micro_usd", actual_cost)
             span.set_attribute("duration.ms", completion.duration_ms)
             span.set_attribute("outcome", "succeeded")
+            if trace_attributes_from_result is not None:
+                with suppress(Exception):
+                    for name, value in trace_attributes_from_result(result).items():
+                        span.set_attribute(name, value)
             return result
 
     def _aware_utc_now(self) -> datetime:

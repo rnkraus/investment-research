@@ -431,7 +431,7 @@ def make_provider_operation_executor() -> Mock:
 
     executor = cast(Mock, create_autospec(ExecuteProviderOperationService, instance=True))
     executor.execute.side_effect = (
-        lambda _context, _attempt, provider_call, _usage_from_result, _classify_error: (
+        lambda _context, _attempt, provider_call, _usage_from_result, _classify_error, **_: (
             provider_call()
         )
     )
@@ -648,7 +648,7 @@ def test_m1_statement_support_accounts_usage_outside_answer_transaction() -> Non
 
     transaction_states: list[bool] = []
 
-    def execute_provider_call(*args: object) -> object:
+    def execute_provider_call(*args: object, **kwargs: object) -> object:
         transaction_states.append(unit_of_work.is_open)
         provider_call = cast(Callable[[], object], args[2])
         return provider_call()

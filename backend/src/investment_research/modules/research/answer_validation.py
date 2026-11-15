@@ -49,7 +49,7 @@ from investment_research.modules.operations.domain import (
     ProviderOperationKind,
     ProviderUsage,
 )
-from investment_research.modules.operations.ports import OperationTracer
+from investment_research.modules.operations.ports import OperationTracer, TraceAttributes
 from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -300,7 +300,24 @@ class _AccountedStatementSupportEvaluator:
             call,
             lambda result: result.usage,
             self._classify_error,
+            trace_attributes_from_result=self._support_trace_attributes,
         )
+
+    @staticmethod
+    def _support_trace_attributes(
+        result: StatementSupportResult | StatementSupportBatchResult,
+    ) -> TraceAttributes:
+        judgments = (
+            result.judgments.values()
+            if isinstance(result, StatementSupportBatchResult)
+            else (result,)
+        )
+        return {
+            "evidence.statements.checked": len(judgments),
+            "evidence.statements.rejected": sum(
+                not judgment.decision.supported for judgment in judgments
+            ),
+        }
 
     @staticmethod
     def _classify_error(error: Exception) -> ProviderOperationErrorCode:

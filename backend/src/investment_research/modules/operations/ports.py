@@ -65,6 +65,8 @@ APPROVED_TRACE_ATTRIBUTE_NAMES = frozenset(
         "correlation.id",
         "cost.micro_usd",
         "duration.ms",
+        "evidence.statements.checked",
+        "evidence.statements.rejected",
         "error.type",
         "input.units",
         "job.id",
