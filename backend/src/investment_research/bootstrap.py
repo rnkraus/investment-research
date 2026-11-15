@@ -1058,6 +1058,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             retrieval_service=retrieve_research_service,
             generation_service=generate_validated_answer_service,
             model_services=model_services,
+            tracer=operation_tracer,
         ),
         resolve_evidence_span_service=ResolveEvidenceSpanService(
             create_evidence_read_unit_of_work_factory(database.session_factory)
