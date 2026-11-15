@@ -23,13 +23,16 @@ type OperationSpanName = Literal[
     "evidence.validate",
     "pinecone.query",
     "pinecone.upsert",
+    "postgresql.lexical_search",
     "processing.index",
     "processing.parse",
     "research.answer",
+    "research.context",
     "research.generate",
     "research.plan_query",
     "research.retrieve",
     "search.rerank",
+    "search.rrf",
 ]
 
 APPROVED_OPERATION_SPAN_NAMES: frozenset[OperationSpanName] = frozenset(
@@ -41,13 +44,16 @@ APPROVED_OPERATION_SPAN_NAMES: frozenset[OperationSpanName] = frozenset(
         "evidence.validate",
         "pinecone.query",
         "pinecone.upsert",
+        "postgresql.lexical_search",
         "processing.index",
         "processing.parse",
         "research.answer",
+        "research.context",
         "research.generate",
         "research.plan_query",
         "research.retrieve",
         "search.rerank",
+        "search.rrf",
     }
 )
 APPROVED_TRACE_ATTRIBUTE_NAMES = frozenset(
