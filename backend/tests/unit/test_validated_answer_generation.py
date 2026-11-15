@@ -9,12 +9,17 @@ from unittest.mock import Mock, create_autospec
 from uuid import UUID
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from pydantic import ValidationError
 
 from investment_research.infrastructure.evidence.deterministic import (
     DeterministicFixtureStatementSupportEvaluator,
     FixtureStatementSupportRule,
 )
+from investment_research.infrastructure.operations.opentelemetry import OpenTelemetryOperationTracer
 from investment_research.modules.documents.domain import (
     DocumentLifecycleState,
     SourceLocatorKind,
@@ -46,6 +51,7 @@ from investment_research.modules.operations.application import (
     ProviderCostPolicy,
 )
 from investment_research.modules.operations.domain import ProviderUsage
+from investment_research.modules.operations.ports import OperationTracer
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.application import (
     AnswerGenerationAccountingProfile,
@@ -342,6 +348,7 @@ def make_service(
     support_context_builder: StatementSupportContextBuilder | None = None,
     provider_operation_executor: Mock | None = None,
     generation_input_overhead_units: int = 16_000,
+    tracer: OperationTracer | None = None,
     rejection_diagnostic: (
         Callable[[UnvalidatedGeneratedAnswer, EvidenceValidationDecision], None] | None
     ) = None,
@@ -406,6 +413,7 @@ def make_service(
             )
         ),
         rejection_diagnostic=rejection_diagnostic,
+        tracer=tracer,
         clock=clock_values.__next__,
         identifier_factory=lambda: UUID(int=next(identifier_values)),
     )
@@ -539,10 +547,15 @@ def test_hybrid_generation_fits_context_before_model_call(
     builder.build.side_effect = lambda _, result: (
         GenerateValidatedAnswerService._build_generation_input(result)
     )
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = OpenTelemetryOperationTracer(provider.get_tracer("test.context"), provider=provider)
     service, generator = make_service(
         RecordingAnswerValidationUnitOfWork(),
         make_answer_proposal(),
         generation_input_builder=builder,
+        tracer=tracer,
     )
     preflight_sizes: list[int] = []
     observed: list[AnswerGenerationInput] = []
@@ -559,15 +572,28 @@ def test_hybrid_generation_fits_context_before_model_call(
             )
 
     monkeypatch.setattr(generator, "preflight", preflight, raising=False)
+    try:
+        with tracer.start_span("research.answer"):
+            if source_limit == 0:
+                with pytest.raises(CitableUnitLimitError):
+                    service.generate(make_context(), hybrid, on_context=observed.append)
+            else:
+                service.generate(make_context(), hybrid, on_context=observed.append)
+        context_span, parent_span = exporter.get_finished_spans()
+    finally:
+        tracer.close()
+
+    assert context_span.name == "research.context"
+    assert context_span.parent == parent_span.context
+    assert EVIDENCE_TEXT not in context_span.to_json()
     if source_limit == 0:
-        with pytest.raises(CitableUnitLimitError):
-            service.generate(make_context(), hybrid, on_context=observed.append)
+        assert context_span.attributes == {"candidate.count": 2, "error.type": "operation_failed"}
+        assert context_span.status.status_code is StatusCode.ERROR
+        assert "test metadata budget exceeded" not in context_span.to_json()
         assert preflight_sizes == [2, 1]
         assert observed == generator.calls == []
         return
-
-    service.generate(make_context(), hybrid, on_context=observed.append)
-
+    assert context_span.attributes == {"candidate.count": 2, "chunk.count": source_limit}
     assert preflight_sizes == ([2, 1] if source_limit == 1 else [2])
     assert observed == generator.calls
     assert [source.chunk_id for source in observed[0].sources] == [

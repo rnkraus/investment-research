@@ -38,12 +38,14 @@ from investment_research.modules.operations.application import (
     ExecuteProviderOperationService,
     ProviderCostPolicy,
     ProviderOperationAttempt,
+    trace_operation,
 )
 from investment_research.modules.operations.domain import (
     ProviderOperationErrorCode,
     ProviderOperationKind,
     ProviderUsage,
 )
+from investment_research.modules.operations.ports import OperationTracer
 from investment_research.modules.research.citable_unit_contracts import CitableUnitLimitError
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
@@ -279,6 +281,7 @@ class GenerateValidatedAnswerService:
         statement_support_accounting: StatementSupportAccountingProfile | None = None,
         rejection_diagnostic: RejectionDiagnostic | None = None,
         support_context_builder: StatementSupportContextBuilder | None = None,
+        tracer: OperationTracer | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         identifier_factory: IdentifierFactory = uuid4,
     ) -> None:
@@ -310,6 +313,7 @@ class GenerateValidatedAnswerService:
         self._generation_accounting = generation_accounting
         self._statement_support_accounting = statement_support_accounting
         self._rejection_diagnostic = rejection_diagnostic
+        self._tracer = tracer
         self._clock = clock
         self._identifier_factory = identifier_factory
 
@@ -339,7 +343,14 @@ class GenerateValidatedAnswerService:
             prompt_version=self._generation_profile.prompt_version,
             created_at=created_at,
         )
-        generation_input = self._prepare_generation_input(context, retrieval_result)
+        with trace_operation(
+            self._tracer,
+            "research.context",
+            attributes={"candidate.count": len(retrieval_result.sources)},
+        ) as span:
+            generation_input = self._prepare_generation_input(context, retrieval_result)
+            if span is not None:
+                span.set_attribute("chunk.count", len(generation_input.sources))
         if on_context is not None:
             # Selected context is source content, not a validated answer or a provider receipt.
             on_context(generation_input)

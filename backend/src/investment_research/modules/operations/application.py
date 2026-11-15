@@ -1,6 +1,7 @@
 """Application services for bounded canonical provider-operation accounting."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import monotonic
@@ -17,9 +18,11 @@ from investment_research.modules.operations.domain import (
     ProviderUsage,
 )
 from investment_research.modules.operations.ports import (
+    OperationSpan,
     OperationSpanName,
     OperationTracer,
     ProviderOperationUnitOfWorkFactory,
+    TraceAttributes,
 )
 
 MAX_MICRO_USD: Final = 9_223_372_036_854_775_807
@@ -31,6 +34,25 @@ type MonotonicClock = Callable[[], float]
 type OperationIdentifierFactory = Callable[[], UUID]
 type TraceIdentifierFactory = Callable[[], str]
 type ProviderErrorClassifier = Callable[[Exception], ProviderOperationErrorCode]
+
+
+@contextmanager
+def trace_operation(
+    tracer: OperationTracer | None,
+    name: OperationSpanName,
+    *,
+    attributes: TraceAttributes | None = None,
+) -> Iterator[OperationSpan | None]:
+    """Record a timed local step and classify failures without capturing exception details."""
+
+    context = tracer.start_span(name, attributes=attributes) if tracer else nullcontext()
+    with context as span:
+        try:
+            yield span
+        except Exception:
+            if span is not None:
+                span.record_error("operation_failed")
+            raise
 
 
 def _provider_operation_span_name(operation: ProviderOperationKind) -> OperationSpanName:
