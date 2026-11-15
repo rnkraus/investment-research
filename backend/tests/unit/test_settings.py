@@ -67,6 +67,8 @@ QUEUE_SETTING_NAMES = (
     "REDIS_PORT",
 )
 PROVIDER_SETTING_NAMES = (
+    "INVESTMENT_RESEARCH_LANGSMITH_API_KEY",
+    "INVESTMENT_RESEARCH_LANGSMITH_API_KEY_FILE",
     "INVESTMENT_RESEARCH_RESEARCH_PROFILE",
     "INVESTMENT_RESEARCH_LOCAL_MODEL_FAILURE_OUTPUT",
     "INVESTMENT_RESEARCH_PROVIDER_MONTHLY_BUDGET_MICRO_USD",
@@ -436,6 +438,39 @@ def test_worker_settings_build_container_connections_from_mounted_secrets(
     assert settings.require_s3_settings().secret_access_key.get_secret_value() == (
         "synthetic-application-secret"
     )
+
+
+def test_langsmith_secret_is_optional_and_api_scoped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert load_api_settings(env_file=None).langsmith_api_key is None
+    monkeypatch.setattr(settings_module, "DOCKER_SECRETS_ROOT", tmp_path)
+    secret = tmp_path / "langsmith_api_key"
+    secret.write_text("synthetic-langsmith-key\n", encoding="utf-8")
+    monkeypatch.setenv("INVESTMENT_RESEARCH_LANGSMITH_API_KEY_FILE", str(secret))
+
+    settings = load_api_settings(env_file=None)
+    assert settings.langsmith_api_key is not None
+    assert settings.langsmith_api_key.get_secret_value() == "synthetic-langsmith-key"
+    assert "synthetic-langsmith-key" not in repr(settings)
+    assert "langsmith_api_key" not in load_worker_settings(env_file=None).model_dump()
+
+
+@pytest.mark.parametrize(
+    ("environment", "key", "error_message"),
+    [
+        ("development", "malformed key", "invalid LangSmith export credential"),
+        ("test", "synthetic-langsmith-key", "requires a local development API"),
+    ],
+)
+def test_langsmith_credentials_are_validated_without_echoing_input(
+    monkeypatch: pytest.MonkeyPatch, environment: str, key: str, error_message: str
+) -> None:
+    monkeypatch.setenv("INVESTMENT_RESEARCH_ENVIRONMENT", environment)
+    monkeypatch.setenv("INVESTMENT_RESEARCH_LANGSMITH_API_KEY", key)
+    with pytest.raises(ValidationError, match=error_message) as error:
+        load_api_settings(env_file=None)
+    assert key not in str(error.value)
 
 
 def test_secret_file_rejects_direct_value_conflict(

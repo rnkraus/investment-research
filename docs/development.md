@@ -301,6 +301,31 @@ Stop the Compose stack without deleting its named volumes:
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml down
 ```
 
+### Optional local LangSmith tracing
+
+Use this overlay only with a local archive containing approved public or synthetic demo data.
+It sends technical API traces to the EU LangSmith endpoint in a project-based workspace under
+`investment-research-local`. It does not attach questions, answers, prompts, source passages,
+or archive record IDs. Research and readiness do not wait for LangSmith.
+
+With an EU LangSmith key scoped to the demo workspace, write the key to the ignored
+`.secrets/langsmith_api_key` file. From the repository root, recreate the live API with the
+additional overlay:
+
+```shell
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml \
+  -f compose.langsmith.yaml up --build --detach --wait api
+```
+
+Run a demo question and open the `research.answer` trace in the LangSmith project. Expand it
+to inspect retrieval, context preparation, generation, and evidence checking. To disable
+the export, rerun the same Compose command without `-f compose.langsmith.yaml`.
+
+For a host-run development API, the same opt-in uses
+`INVESTMENT_RESEARCH_LANGSMITH_API_KEY`. Existing `OTEL_EXPORTER_OTLP_*` settings disable this
+integration and emit a technical warning because the SDK could otherwise merge additional
+export destination settings or headers.
+
 ## Verify changes
 
 Run the frontend checks from the repository root:
