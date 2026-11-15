@@ -686,10 +686,13 @@ for correlation.
 
 The API-only LangSmith exporter uses bounded background OTLP/HTTP batches. Spans retain their
 trace and parent IDs, while the export configuration excludes application UUID attributes and
-environment-supplied resource attributes. Provider accounting fields remain application metadata.
-`cost.micro_usd` can represent a conservative reservation on failed operations and is not a
-provider invoice. Raw content and exception details remain excluded. Export errors do not affect
-research results or readiness.
+environment-supplied resource attributes. OpenAI provider spans include the GenAI operation,
+provider, and model attributes, and the OpenInference model name used for LangSmith pricing.
+Successful OpenAI calls report input, output, and total tokens through the GenAI usage fields.
+Pinecone usage stays in its native accounting units. LangSmith's cost display uses its own model
+pricing table. The application's `cost.micro_usd` can represent a conservative reservation on
+failed operations. Raw content and exception details remain excluded. Export errors do not
+affect research results or readiness.
 
 ## 11. Public response contracts
 

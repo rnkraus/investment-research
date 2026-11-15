@@ -618,6 +618,9 @@ def test_execute_provider_operation_reserves_calls_and_finalizes_success() -> No
         "cost.micro_usd": 2,
         "duration.ms": 125,
         "outcome": "succeeded",
+        "gen_ai.usage.input_tokens": 80,
+        "gen_ai.usage.output_tokens": 0,
+        "gen_ai.usage.total_tokens": 80,
     }
 
 
@@ -701,6 +704,13 @@ def test_execute_provider_operation_derives_approved_span_name(
     )
 
     assert tracer.names == [expected_span_name]
+    (attributes,) = tracer.initial_attributes
+    assert attributes is not None
+    assert attributes["gen_ai.operation.name"] == (
+        "embedding" if expected_span_name.startswith("embedding.") else "chat"
+    )
+    assert attributes["gen_ai.system"] == "openai"
+    assert attributes["gen_ai.request.model"] == attributes["llm.model_name"] == attempt.model
 
 
 def test_execute_provider_operation_rejects_budget_before_provider_call() -> None:
@@ -755,6 +765,7 @@ def test_execute_provider_operation_books_full_reservation_on_unknown_failure_us
     )
     assert raw_marker not in repr(completion)
     assert raw_marker not in repr(tracer.span.attributes)
+    assert not any(name.startswith("gen_ai.usage.") for name in tracer.span.attributes)
     assert tracer.span.error_types == ["timeout"]
 
 
@@ -897,6 +908,11 @@ def test_reranking_records_zero_cost_usage_after_an_accepted_reservation() -> No
     assert completion.output_units == 0
     assert completion.actual_cost_micro_usd == 0
     assert tracer.names == ["search.rerank"]
+    (attributes,) = tracer.initial_attributes
+    assert attributes is not None
+    assert not any(
+        name.startswith("gen_ai.") for name in (attributes.keys() | tracer.span.attributes.keys())
+    )
     provider_call.assert_called_once_with()
 
 

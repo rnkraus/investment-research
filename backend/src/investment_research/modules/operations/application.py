@@ -35,6 +35,14 @@ type OperationIdentifierFactory = Callable[[], UUID]
 type TraceIdentifierFactory = Callable[[], str]
 type ProviderErrorClassifier = Callable[[Exception], ProviderOperationErrorCode]
 
+_EMBEDDING_OPERATIONS = frozenset(
+    {
+        ProviderOperationKind.ARCHIVE_QUERY_EMBEDDING,
+        ProviderOperationKind.DOCUMENT_EMBEDDING,
+        ProviderOperationKind.QUERY_EMBEDDING,
+    }
+)
+
 
 @contextmanager
 def trace_operation(
@@ -327,6 +335,20 @@ class ExecuteProviderOperationService:
             "operation.kind": attempt.operation.value,
             **self._relationship_trace_attribute(attempt),
         }
+        # OpenAI usage is reported in tokens for all supported operations.
+        # Pinecone reranking reports its own billing units.
+        reports_tokens = attempt.provider == "openai"
+        if reports_tokens:
+            span_attributes.update(
+                {
+                    "gen_ai.operation.name": (
+                        "embedding" if attempt.operation in _EMBEDDING_OPERATIONS else "chat"
+                    ),
+                    "gen_ai.request.model": attempt.model,
+                    "gen_ai.system": attempt.provider,
+                    "llm.model_name": attempt.model,
+                }
+            )
         with self.tracer.start_span(
             _provider_operation_span_name(attempt.operation),
             attributes=span_attributes,
@@ -405,6 +427,10 @@ class ExecuteProviderOperationService:
             span.set_attribute("cost.micro_usd", actual_cost)
             span.set_attribute("duration.ms", completion.duration_ms)
             span.set_attribute("outcome", "succeeded")
+            if reports_tokens:
+                span.set_attribute("gen_ai.usage.input_tokens", usage.input_units)
+                span.set_attribute("gen_ai.usage.output_tokens", usage.output_units)
+                span.set_attribute("gen_ai.usage.total_tokens", usage.total_units)
             if trace_attributes_from_result is not None:
                 with suppress(Exception):
                     for name, value in trace_attributes_from_result(result).items():
