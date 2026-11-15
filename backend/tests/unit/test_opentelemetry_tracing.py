@@ -54,8 +54,18 @@ def test_langsmith_export_sends_only_approved_fields(
         ) as root:
             root.set_attribute("request.id", request_id)
             root.set_attribute("outcome", "accepted")
-            with tracer.start_span("research.generate", attributes={"model.name": "demo-model"}):
-                pass
+            with tracer.start_span(
+                "research.generate",
+                attributes={
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.request.model": "demo-model",
+                    "gen_ai.system": "openai",
+                    "llm.model_name": "demo-model",
+                },
+            ) as generation:
+                generation.set_attribute("gen_ai.usage.input_tokens", 80)
+                generation.set_attribute("gen_ai.usage.output_tokens", 20)
+                generation.set_attribute("gen_ai.usage.total_tokens", 100)
     finally:
         tracer.close()
 
@@ -86,7 +96,16 @@ def test_langsmith_export_sends_only_approved_fields(
     assert spans["research.generate"].trace_id == spans["research.answer"].trace_id
     assert spans["research.generate"].parent_span_id == spans["research.answer"].span_id
     assert {attribute.key for attribute in spans["research.answer"].attributes} == {"outcome"}
-    assert {attribute.key for attribute in spans["research.generate"].attributes} == {"model.name"}
+    attributes = {
+        attribute.key: attribute.value for attribute in spans["research.generate"].attributes
+    }
+    assert attributes["gen_ai.operation.name"].string_value == "chat"
+    assert attributes["gen_ai.request.model"].string_value == "demo-model"
+    assert attributes["gen_ai.system"].string_value == "openai"
+    assert attributes["llm.model_name"].string_value == "demo-model"
+    assert attributes["gen_ai.usage.input_tokens"].int_value == 80
+    assert attributes["gen_ai.usage.output_tokens"].int_value == 20
+    assert attributes["gen_ai.usage.total_tokens"].int_value == 100
 
 
 def test_langsmith_export_is_disabled_without_a_key(monkeypatch: pytest.MonkeyPatch) -> None:

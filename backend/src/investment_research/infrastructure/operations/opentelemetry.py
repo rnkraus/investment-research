@@ -50,6 +50,9 @@ _INTEGER_ATTRIBUTE_NAMES = frozenset(
         "duration.ms",
         "evidence.statements.checked",
         "evidence.statements.rejected",
+        "gen_ai.usage.input_tokens",
+        "gen_ai.usage.output_tokens",
+        "gen_ai.usage.total_tokens",
         "input.units",
         "output.units",
     }
