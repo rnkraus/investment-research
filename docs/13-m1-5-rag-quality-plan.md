@@ -1971,6 +1971,25 @@ canonical evidence and reuses each result only when its statement ordinal and pr
 still match. The legacy M1 path and standalone evaluation profiles retain their individual
 checks. Measure live latency and judgment quality separately from offline contract tests.
 
+**Live benchmark (2026-11-15).** The owner ran the comparison with `gpt-5.6-luna`. Both variants
+received the same seven fixed synthetic statements, quotes, and attribution prefixes. The
+benchmark measured only the support calls.
+[Benchmark procedure](development.md#compare-individual-and-batched-evidence-checks)
+
+| Measure | Individual checks | Batched checks |
+| --- | ---: | ---: |
+| Correct judgments | 6/7 | 7/7 |
+| Provider calls | 7 | 3 |
+| Total provider-call time | 12.421 s | 6.297 s |
+| Input / output tokens | 4,282 / 442 | 2,987 / 414 |
+| Estimated cost | USD 0.001390 | USD 0.001095 |
+
+The only differing judgment involved report attribution. The individual check accepted a claim
+attributed to the Capacity Update with a quote from the Operations Note. The batched check
+correctly rejected it. Estimated combined cost was USD 0.002485, with a preflight reservation of
+USD 0.052660. These observations come from one fixed synthetic sample and do not establish
+repeatability, general accuracy, or end-to-end research latency.
+
 ### Local acceptance and M2 handoff (2026-10-14)
 
 The owner confirmed that M1.5 is merged, all required CI checks are green, and the local website
