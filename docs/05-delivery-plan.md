@@ -1,6 +1,6 @@
 # Investment Research Archive — Delivery Plan
 
-**Status:** Active v1.10 — M2 Step 1 accepted; bounded M3 company foundation in progress
+**Status:** Active v1.11 — M2 Step 1 accepted locally; bounded M3 archive discovery implemented
 **Approach:** Lean proof of value, then local-first vertical slices, evidence before agents
 
 **Related:** [01-product-scope.md](./01-product-scope.md), [02-system-design.md](./02-system-design.md), [03-domain-model.md](./03-domain-model.md), [04-security-and-operations.md](./04-security-and-operations.md), [07-m0-0-architecture-flows.md](./07-m0-0-architecture-flows.md), [08-m0-0-implementation-plan.md](./08-m0-0-implementation-plan.md), [09-m0-implementation-plan.md](./09-m0-implementation-plan.md), [10-m1-implementation-plan.md](./10-m1-implementation-plan.md), [12-m2-implementation-plan.md](./12-m2-implementation-plan.md), [13-m1-5-rag-quality-plan.md](./13-m1-5-rag-quality-plan.md)
@@ -512,7 +512,8 @@ The fixture corpus can be found through exact ticker lookup, lexical wording, se
 - Statement-level answer generation and server-side evidence validation.
 - Complete, partial, insufficient, and conflicting coverage behavior.
 - Public-knowledge-time and personal-archive-time modes.
-- OpenTelemetry/OpenInference traces and LangSmith inspection.
+- Build on the implemented local OpenTelemetry traces, optional LangSmith export, and batched
+  per-statement evidence checks. Include them in the broader direct-RAG verification gate.
 - Per-operation latency, token, and estimated-cost recording.
 - Extend the M1.5 and M3 measurements to separate retrieval recall, reranking, answer support,
   citation correctness, refusal of unanswerable questions, temporal behavior, latency, and cost.
@@ -647,6 +648,6 @@ Require tool allowlists, workspace enforcement, step/time/token/cost budgets, ch
 4. Keep the accepted local RAG profile, evaluation history, fixed local owner, and loopback-only
    boundary. Provider checks remain separately approved, bounded, and public/synthetic only;
    publishing source code does not authorize a public application deployment.
-5. Build scoped document assignment on the verified company services and HTTP routes. Preserve
-   the remaining M2 gates; do not infer company assignment or reviewed report metadata for old
-   documents from their titles or legacy type constants.
+5. Record verification for the implemented M3 company assignments, metadata filters, and keyword
+   and semantic discovery against the M3 exit gate. Keep the remaining M2 lifecycle work under
+   its existing steps and accepted ADRs.

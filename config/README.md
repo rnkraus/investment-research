@@ -7,13 +7,13 @@ non-secret application configuration: commit intentional changes, never credenti
 | --- | --- | --- | --- |
 | `retrieval.lexical_candidate_limit` | 20 | 1–20 | Maximum keyword-search candidates before context selection |
 | `retrieval.dense_candidate_limit` | 20 | 1–20 | Maximum vector-search candidates before canonical qualification |
-| `context.chunk_limit` | 8 | 1–32 | Maximum unique chunks selected for the answer model |
+| `context.chunk_limit` | 8 | 1–32 | Maximum unique chunks selected for the answer model. The live M1.5 profile applies an effective ceiling of 8. |
 | `context.character_limit` | 24000 | 1–24000 | Combined selected source text, measured in Unicode code points |
 | `generation.input_overhead_limit` | 18000 | 16000–18000 | Conservative allowance shared by source-unit preflight and answer cost reservation |
 
-For a first multi-document experiment, change only `chunk_limit = 8` to `chunk_limit = 16`.
-More chunks are not necessarily better: compare evidence coverage, answer support, latency,
-and estimated cost on the same questions.
+Use values from 1 to 8 to compare context sizes in the default M1.5 profile. Values from
+9 to 32 are accepted by the file and apply to the retained M1 profile. Compare evidence
+coverage, answer support, latency, and estimated cost on the same questions.
 
 ## Data flow
 
@@ -32,7 +32,7 @@ flowchart LR
     O --> R[Reserve answer cost before provider access]
     C --> P
     P --> R
-    R --> G[Answer model and unchanged evidence checks]
+    R --> G[Answer model and evidence checks]
 ```
 
 The count and text limits both apply. Selection uses whole chunks, does not pad results to
@@ -75,11 +75,10 @@ restart-only updates; the older code cannot recognize the new section.
 
 ## Reproducibility and scope
 
-The algorithm version still identifies the unchanged selection algorithm; each new retrieval
-run records its four effective numeric limits alongside that version. Old runs, answers, and
-evaluation outputs are never rewritten. Historical M0/M1 acceptance adapters and standalone
-M1/M1.5 baseline evaluation keep their explicitly constructed, frozen profiles; they do not
-adopt these tuning values. The API still validates its startup file. Programmatic tests use
+Each new retrieval run records the selector version and its four effective numeric limits,
+including the chunk ceiling after the active profile applies its own bounds. Historical M0/M1
+acceptance adapters and standalone M1/M1.5 baseline evaluation use their explicitly constructed
+profiles. The API validates its startup file. Programmatic tests use
 fixed defaults unless they inject tuning.
 The committed live file sets answer overhead to 18,000; explicitly constructed profiles retain
 the historical 16,000 default. The overhead is not one of the four retrieval-history fields;

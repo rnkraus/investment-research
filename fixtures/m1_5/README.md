@@ -79,23 +79,25 @@ Citation scoring and runtime evidence validation are unchanged in this correctio
 
 ## Current source-unit answer prompt
 
-New `--answer-policy citable_units` plans use `m1-5-citable-units-en-answer-prompt-v6` and the
-model-specific `m1-5-<model>-low-citable-units-en-v6` generation configuration. The prompt asks for
-only the question's material requested parts, without adjacent unsolicited facts or forecasts,
-while retaining necessary uncertainty, time scope, and conflict. Select title/date units only when
-needed for subject, report, or temporal attribution; they cannot replace factual evidence.
+New `--answer-policy citable_units` plans use `m1-5-citable-units-en-answer-prompt-v11` and the
+model-specific `m1-5-<model>-low-citable-units-en-v11` generation configuration. The prompt
+limits the answer to the requested facts and preserves uncertainty, time scope, and conflict.
+It asks for exact date precision when supported, attribution to the reporting source, and
+evidence linking the change to its effect in how questions. Title and date units provide
+attribution. Factual claims require supporting text.
 
-Transport remains `openai-responses-citable-units-v3`; source-unit boundaries remain
-`m1-5-citable-units-en-v2`. Models, two-unit/eight-statement limits, canonical resolution, support
-checks, scoring, and reservation ceilings are unchanged. Do not execute an old v5 plan as if it
-were v6: generate a new preflight plan and a fresh output filename for a separately authorized
-comparison. Historical reports retain their original prompt versions. Scripted tests establish
-instruction delivery and version wiring, not better live-model behavior or independent support.
+Transport uses `openai-responses-citable-units-v3` and source selection uses
+`m1-5-citable-units-en-v3`. Each answer can include up to eight statements with up to two
+source units per statement. Generate a fresh preflight plan and output filename for a new
+comparison. Historical reports identify the prompt versions used in their original runs.
 
 ## Opt-in support attribution experiment
 
-The live evaluator defaults to `--support-policy m1` (exact quotes only). To compare the bounded
-same-block attribution profile, explicitly add `--support-policy attribution` to a separately
+The standalone live evaluator uses individual checks and defaults to `--support-policy m1`
+(exact quotes only). The website's default M1.5 profile uses batched document-attribution checks.
+[Batch benchmark](../../docs/13-m1-5-rag-quality-plan.md#batched-statement-support-in-the-local-api)
+
+To compare the bounded same-block attribution profile, add `--support-policy attribution` to a separately
 authorized live invocation. This choice is independent of `--retrieval-policy` and
 `--answer-policy`; for the source-unit experiment use `--retrieval-policy rrf --answer-policy
 citable_units`. Without `--execute`, the same options produce a credential-free preflight plan:

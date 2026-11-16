@@ -43,6 +43,9 @@ narrow the company scope. Changing the company clears the document selection.
 **Publication date** lets users apply a start day, an end day, or both to the list and new
 questions. The bounds are inclusive UTC days and combine with any selected company. Applying
 or clearing the dates clears the explicit document selection.
+The **Source attribution filter** selects an author or X handle from the active catalog. It
+combines with the company and publication filters across the document list, discovery, and
+research.
 **Source format** and **Processing status** filter only the document list. They combine with
 company and publication filters before pagination. To research a subset shown by these list
 filters, select the documents explicitly. Changing either list filter clears the selection
@@ -61,11 +64,12 @@ and selection help are expandable. It cannot be hidden while deletion confirmati
 locks selection. Permanent deletion controls remain at the top of the sidebar.
 
 Answer and evidence-check model choices are independent under collapsed **Model settings**;
-their current pair is visible in the summary. Progress, validated results, and safe failures remain
-in the main area. Optional local rejection diagnostics appear expanded directly inside the failure
-card, separately labeled as unvalidated. The collapsed **Research details** section below the result
-contains retrieved context, not rejection diagnostics; both remain separate from validated citations.
-Neither collapsing controls nor the layout changes authorization, provider choices, or validation.
+their current pair is visible in the summary. **Search mode** shows the experimental query
+decomposition or Luna reranking options when the API advertises them. Progress, validated
+results, and safe failures remain in the main area. The local M1.5 profile shows available
+rejection details expanded in the
+failure card and labels them as unvalidated. The collapsed **Research details** section below
+the result shows the retrieved context.
 
 ```mermaid
 flowchart TD
@@ -81,7 +85,7 @@ flowchart TD
     RESEARCH --> DETAILS[Collapsed research details]
     DETAILS --> CONTEXT[Retrieved context]
     RESEARCH --> FAILURE[Safe failure card]
-    FAILURE --> DIAGNOSTIC[Expanded optional unvalidated rejection diagnostics]
+    FAILURE --> DIAGNOSTIC[Expanded rejection details when supplied]
 ```
 
 Deterministic tests cover copy, contracts, and state transitions. The Playwright suite includes
@@ -175,14 +179,13 @@ titles are display labels only, with an ID fallback for unloaded entries. The cu
 survives a failed or insufficient request and resets for a new question. It neither proves an
 answer nor records successful provider use, and is not stored in browser persistence or logs.
 
-With the explicit local diagnostic override, a terminal evidence rejection can also carry
-`diagnostic` details. `rejection-diagnostic.tsx` displays rejected claims, the model pair, selected
-excerpts, and failed rules under **Rejected answer diagnostics**. The session reducer requires
+An evidence rejection in the local M1.5 profile can carry `diagnostic` details.
+`rejection-diagnostic.tsx` displays rejected claims, the model pair, selected excerpts, failed
+rules, and each rejected statement's evidence-check reason when supplied. The session reducer requires
 every excerpt range to belong to this request's selected context; the component uses Unicode
 code-point slicing and React text escaping. These unvalidated claims never enter the accepted
-statement/citation list and reset for a new question. Normal runs have no diagnostic payload.
-See the [runtime guide](../../../../docs/development.md#default-m15-source-id-research) for the
-public/synthetic-only opt-in and its limitations.
+statement/citation list and reset for a new question. The optional local diagnostics overlay
+enables additional output in the API logs. [Runtime guide](../../../../docs/development.md#default-m15-source-id-research)
 
 ## Research UI flow
 
@@ -210,7 +213,7 @@ flowchart LR
     LOCATOR -->|PDF_PAGE| PAGE[PDF blob at stored physical page]
     LOCATOR -->|TEXT_PASSAGE| TEXT[Verified exact-range highlight]
     SESSION -->|insufficient evidence| EMPTY[Explicit empty result]
-    SESSION -->|evidence rejected and local diagnostics enabled| DIAGNOSTIC[Unvalidated claims and selected excerpts]
+    SESSION -->|evidence rejection includes diagnostics| DIAGNOSTIC[Unvalidated claims and selected excerpts]
     SESSION -->|invalid sequence| REJECT[Discard partial result]
 ```
 

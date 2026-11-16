@@ -7,6 +7,8 @@ This directory owns repository automation that runs after changes reach GitHub. 
 | Path               | Responsibility                                                                                   |
 | ------------------ | ------------------------------------------------------------------------------------------------ |
 | `workflows/ci.yml` | Runs deterministic application, persistence, image, storage, and complete-runtime verification. |
+| `workflows/generation-key-check.yml` | Manually checks the configured OpenAI generation key with one bounded synthetic request. |
+| `workflows/m1-provider-smoke.yml` | Manually verifies M1 provider compatibility on the approved synthetic fixture. |
 
 ## Workflow
 
@@ -19,12 +21,15 @@ flowchart LR
     CI --> BACKEND[Backend static checks and unit tests]
     CI --> IMAGES[Backend image gate]
     CI --> STORAGE[SeaweedFS contracts]
-    CI --> RUNTIME[Complete M0 runtime]
+    CI --> M0[Complete M0 runtime]
+    CI --> M1[Complete M1 runtime]
     BACKEND --> POSTGRES[PostgreSQL migration and integration cycle]
-    RUNTIME --> PARSER[Parser isolation]
-    PARSER --> RECOVERY[Queue recovery]
-    RECOVERY --> JOURNEY[Complete fixture journey]
+    M0 --> PARSER[Parser isolation]
+    PARSER --> RECOVERY[Outbox and queue recovery]
+    RECOVERY --> JOURNEY[M0 HTTP fixture journey]
+    M1 --> BROWSER[M1 PDF and text journey and browser acceptance]
     JOURNEY --> CLEANUP[Always verify scoped cleanup]
+    BROWSER --> CLEANUP
     PRECOMMIT --> GATE[Merge decision]
     FRONTEND --> GATE[Merge decision]
     POSTGRES --> GATE
@@ -39,13 +44,15 @@ runs the same deterministic verification command documented for local developmen
 an empty PostgreSQL 17 service, seeds the synthetic workspaces, runs all integration tests, checks
 metadata drift, and proves the reviewed migration can downgrade to base and upgrade back to head.
 Contract-drift checks are included through the normal frontend and backend test commands. Separate
-jobs verify backend images and SeaweedFS behavior. The bounded `Complete M0 runtime` job proves
-parser isolation, forced worker-loss recovery, and the browser-facing fixture journey. Its final
-`always()` step fails if a scoped verifier container, network, volume, or temporary acceptance image
-remains after either success or failure.
+jobs verify backend images and SeaweedFS behavior. `Complete M0 runtime` checks parser isolation,
+outbox scheduling, worker-loss and HTTP recovery, and the browser-facing HTTP fixture.
+`Complete M1 runtime` verifies the PDF and text journey with deterministic providers and includes
+Playwright browser acceptance. Both jobs run scoped resource-cleanup checks on success or failure.
 
-The workflow keeps the stable job name `Complete M0 runtime`, but workflow YAML cannot make a check
-mandatory for merging. Repository branch protection must select that exact check name as required.
+The separate provider workflows run by manual dispatch. The generation-key check requires
+confirmation of synthetic input. The M1 smoke also requires confirmation of the Pinecone Starter
+scope. Regular pull-request CI uses deterministic credentials and provider doubles. Configure
+required merge checks by job name in the repository ruleset.
 
 ## Maintenance rules
 
