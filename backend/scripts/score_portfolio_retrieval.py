@@ -66,6 +66,13 @@ def normalized(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
 
 
+def matches_target(target: Target, page: int | None, normalized_text: str) -> bool:
+    """Match evidence markers in one passage from an already matched source."""
+    return page in target.pages and all(
+        normalized(marker) in normalized_text for marker in target.markers
+    )
+
+
 def validate_catalog(catalog: Catalog) -> None:
     expected_ids = {
         **{f"D{i:02}": "discovery" for i in range(1, 8)},
@@ -135,8 +142,7 @@ def score(catalog: Catalog, snapshot: bytes) -> dict[str, object]:
                 rank
                 for rank, (candidate, text) in enumerate(selected, start=1)
                 if candidate.title == catalog.sources[target.source]
-                and candidate.page in target.pages
-                and all(normalized(marker) in text for marker in target.markers)
+                and matches_target(target, candidate.page, text)
             ]
             for target in case.context_targets
         }
