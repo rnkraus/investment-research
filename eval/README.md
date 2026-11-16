@@ -35,3 +35,42 @@ can shrink when the app prepares the actual model input. Marker hits are a diagn
 recorded extraction. Review alternate passages manually if their wording differs. The seven
 discovery cases use their own search expectations. Grade abstention, answer completeness, and
 actual citation support using an end-to-end run.
+
+## Four-case app pilot
+
+The pilot uses A05 (Citi financing), A06 (Inferize), A09 (operating ARR), and U03
+(unreported November 6 ARR). It uses the original catalog questions and selected-document
+scopes. The prepared bodies select Terra for both model roles and standard search. Start the
+local API with the source-ID profile so it uses batched evidence checks. Record the code
+revision and active RAG configuration with the results.
+
+Create an ignored local JSON map from source aliases to the verified current
+`document_id` and `document_version_id` of each reviewed original. Include `N-CITI`,
+`N-INF`, `I-Q1`, `I-NEW`, and `X-CHANOS`. From `backend/`, prepare the request bodies
+and preview the maximum number of provider attempts:
+
+```shell
+uv run --locked python -m scripts.inspect_portfolio_pilot /path/to/sources.json
+```
+
+Pass `--case A09` to print only that case's request body for the normal
+`POST /api/v1/research-requests` endpoint. After checking the budget, submit that body once
+to the local API and retain the unmodified SSE response. In the browser, the request and the
+stream are visible in the Network panel. Inspect the saved response locally:
+
+```shell
+uv run --locked python -m scripts.inspect_portfolio_pilot /path/to/sources.json \
+  --case A09 --stream /path/to/A09.sse
+```
+
+The inspector scores `research.context` after the application fits the input. It verifies
+the document and version of each selected passage, reports marker ranks and terminal status,
+and counts linked statements and citations. Open each citation and review the claim against
+its original. Record citation validity, factual completeness, and provider usage separately.
+The pilot requires correct source links, support for every published claim, and an
+insufficient-evidence result for U03. Grade completeness separately.
+
+Both commands are offline. The attempt preview assumes one submission per case and includes
+the configured transient retrieval retry. The API applies its workspace budget to actual
+provider reservations. Review available budget before submitting the pilot and record the usage
+ledger afterward. Keep raw streams, local IDs, and unreviewed results out of Git.
