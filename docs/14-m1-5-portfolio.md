@@ -1,6 +1,6 @@
 # M1.5 — Evidence-grounded RAG portfolio guide
 
-**Snapshot:** 2026-10-14; M1.5 accepted as a bounded local portfolio proof, with recorded evaluation limits.
+**Snapshot:** 2026-11-16. The bounded local M1.5 acceptance dates to 2026-10-14.
 
 Investment Research Archive answers questions over saved PDF and pasted-text documents with
 verifiable original-source citations. The application owns retrieval, source selection,
@@ -31,7 +31,7 @@ flowchart TD
     R --> U[Exact source units with request-local IDs]
     U --> A[Typed answer proposal selecting source IDs]
     A --> S[Server resolves exact original ranges]
-    S --> V[Statement-support model and canonical recheck]
+    S --> V[Batched statement support and canonical recheck]
     V --> P[Atomic persistence of accepted answer]
     P --> W[Validated statements and citations to website]
     W --> O[Integrity-checked PDF page or text highlight]
@@ -42,14 +42,12 @@ flowchart TD
   hits must resolve to eligible canonical chunks; vector scores are not evidence authorization.
 - RRF combines rank positions from the two lanes rather than adding incompatible raw scores.
   A chunk found by both lanes is one candidate with two rank contributions.
-- Context defaults to eight sources and 24,000 code points; [local tuning](../config/README.md)
-  permits up to 32 sources within that unchanged text ceiling. Versioned source units carry exact
-  canonical ranges; the model selects short request-local handles such as `u1` instead of
-  copying a quote. The server rejects unknown or invalid selections.
-- The support model receives one proposed statement and its resolved exact quotes, plus a checked
-  document prefix for company/report/date attribution only. The prefix cannot supply missing
-  operational facts. Model calls occur outside the answer-writing transaction; canonical state
-  is rechecked before accepted statements and spans are persisted together.
+- The source-ID profile caps context at eight chunks and 24,000 code points. Versioned source
+  units carry exact canonical ranges. The model selects request-local handles such as `u1`.
+- One support request contains all statements eligible for model review, each with its resolved
+  quotes and a checked document prefix limited to company, report, and date attribution. The
+  model returns one judgment and reason per statement. The server rechecks canonical state before
+  persisting accepted statements and spans together.
 - `COMPLETE`, `PARTIAL`, `CONFLICTING`, and `INSUFFICIENT` are application-owned coverage states.
   Raw model prose is not published merely because its JSON parses. Citations resolve to original
   document spans, not mutable chunks or vector IDs.
@@ -75,7 +73,8 @@ read as a claim that routed queries, conversation, or all lifecycle workflows ex
 | Citation selection | Model supplies candidate ID and copied exact substring | Model selects source-unit IDs; server supplies exact original text and ranges |
 | Repeated wording | An ambiguous copied substring fails safely | A selected unit identifies a particular canonical occurrence |
 | Support attribution | Exact selected quotes | Exact quotes plus a restricted, checked same-document prefix |
-| Reranking | None | Separate opt-in Pinecone BGE experiment, not enabled by the website profile |
+| Support calls | One per statement | One batch for eligible statements, with a judgment and reason for each |
+| Reranking | None | Optional Luna reranking per request, plus a separate Pinecone BGE experiment |
 
 For example, M1 could reject Luna's proposed quote after the model changed PDF line breaks.
 Source-ID selection removes the requirement for the model to reproduce those characters; it
@@ -88,19 +87,15 @@ necessary uncertainty and conflict. In the reviewed rollout answer, the publishe
 contains the transformer constraint without the earlier unsolicited supplier forecast. This is
 a recorded example, not a controlled causal measurement of the prompt change.
 
-M1.5 is the provider-backed local runtime default; M1 remains explicitly selectable for comparison.
-Switching profiles requires no migrations or reindexing. The normal website support response
-contains only `supported: true/false`; a separate local evaluation option requests a short reason
-and changes the support prompt/schema. Raw failure logging is another opt-in diagnostic, not a
-normal product feature. Local default adoption was owner-approved on 2026-10-12; bounded milestone
-acceptance followed on 2026-10-14. Neither decision changes historical evaluation results, models,
-or diagnostic settings or establishes a new normal-checker/model-pair quality measurement.
+M1.5 is the provider-backed local runtime default. M1 remains selectable for comparison using
+the existing data and index. The website displays the reason associated with each rejected
+statement. Raw failure logging is a separate local opt-in. Local default adoption was
+owner-approved on 2026-10-12, followed by bounded milestone acceptance on 2026-10-14.
 
 In the current workspace, choose the document scope above the question and select individual
-documents in the collapsible sidebar. Answer/support model choices are under `Model settings`;
-selected context passages are under `Research details`. When explicitly enabled, local rejection
-diagnostics appear directly with the failure, outside that collapsed details section. They are
-unvalidated debugging material, not accepted answers or citations.
+documents in the collapsible sidebar. Choose answer and support models under `Model settings`.
+`Research details` shows the selected context. A rejected answer displays failed statements and
+their reasons alongside the failure notice.
 
 ## 3. Recorded evaluation, not a general accuracy claim
 
@@ -133,10 +128,12 @@ in the historical report remains pending.
 Earlier small M1-versus-RRF and RRF-versus-reranker comparisons did not establish a quality
 benefit justifying default adoption. Their protocols and limitations remain in the
 [M1.5 plan](./13-m1-5-rag-quality-plan.md). Catalog v2 corrected one question's unsupported fiscal
-period, so its results are not an unchanged paired comparison with v1. The twelve-case result
-does not measure the normal Boolean-only support prompt, current answer-prompt-v8 quality, or reliability
-on varied real documents. Costs use repository price policies, exclude Pinecone billing, and
-are not provider invoices; maximum reservations must not be presented as token charges.
+period. The twelve-case figures apply to its recorded v6 configuration and synthetic corpus.
+Estimated OpenAI costs use repository prices and cover the stated measured operations.
+
+On 2026-11-15, a separate live benchmark compared Luna's individual and batched support checks
+on identical synthetic statements and citations. The benchmark isolates the evidence checker.
+[Benchmark results](./13-m1-5-rag-quality-plan.md#batched-statement-support-in-the-local-api)
 
 ## 4. Safe owner-run local demonstration
 
@@ -152,12 +149,13 @@ docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --buil
 ```
 
 Remove an old explicit `INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1` override or change it to
-`m1-5-citable-units`. Do not add `compose.m1-local-diagnostics.yaml`. The profile preserves the
-ordinary Boolean-only support response and does not activate BGE reranking.
+`m1-5-citable-units`. The current profile uses batched support checks and standard RRF by
+default. To demonstrate request timings, usage, and evidence-check counts without exporting
+document text or prompts, follow the [optional LangSmith setup](./development.md#optional-local-langsmith-tracing).
 
-Open `http://127.0.0.1:3000` yourself. Choose answer/support models explicitly; Luna/Luna matches
-the recorded answer-model pair, but not its diagnostic support prompt. A demo observation is a
-new live result, not an automatic repeat of the saved scores.
+Open `http://127.0.0.1:3000` and choose the answer and support models explicitly. Record the
+model pair and profile with each observation so the result can be interpreted independently
+of the earlier evaluation.
 
 1. Import the approved FY2025 PDF if absent and wait for `SEARCHABLE`. Restrict the question to
    selected documents and select only that PDF in the sidebar. Ask “What were Northstar's FY2025
@@ -180,7 +178,8 @@ Existing searchable sources do not need re-uploading just to change the research
 
 ### Credential-free reproduction checks
 
-From `backend/`, validate the reviewed catalog and preview the matching **normal-support** plan:
+From `backend/`, validate the reviewed catalog and preview the standalone evaluation plan
+with the individual evidence checker:
 
 ```shell
 uv run --locked python -m scripts.verify_m1_5_corpus \
@@ -191,22 +190,23 @@ uv run --locked python -m scripts.verify_m1_5_live_baseline \
   --answer-model gpt-5.6-luna --support-model gpt-5.6-luna --max-spend-usd 0.80
 ```
 
-These commands make no provider calls and do not prove answer quality. Live execution is a
-separate owner-approved action requiring execution confirmations, credentials, and a fresh
-ignored report path. `--show-local-model-output` would additionally request support reasons;
-omit it when measuring the normal website support contract. See the
-[evaluation guide](../fixtures/m1_5/README.md) for the full bounded execution protocol.
+These commands make no provider calls. The standalone evaluation uses a different checker
+from the current website. Live evaluation requires execution confirmations, credentials, and
+a fresh ignored report path. See the [evaluation guide](../fixtures/m1_5/README.md) for that
+protocol and [the checker comparison](./development.md#compare-individual-and-batched-evidence-checks)
+to preview or run a separate benchmark for the batched checker.
 
 ## 5. What this demonstrates, and what remains
 
 A defensible portfolio description is: “Built an application-owned local RAG pipeline with
 PostgreSQL lexical and Pinecone dense retrieval, RRF and optional cross-encoder reranking,
-structured source-ID generation, canonical citation validation, model-based statement support,
-and bounded provider-usage accounting. Recorded a versioned twelve-question synthetic evaluation
-with explicit abstention, conflict, latency, cost, and citation-precision limitations.”
+structured source-ID generation, canonical citation validation, and batched model-based evidence
+checks with per-statement reasons. Added OpenTelemetry tracing with optional LangSmith export and
+bounded provider-usage accounting. Recorded a twelve-question synthetic evaluation and a separate
+individual-versus-batched evidence-check benchmark.”
 
-Do not claim production readiness, authenticated multi-user deployment, measured superiority
-of RRF/reranking, representative accuracy, or deployed LangSmith evaluation. Fixed local identity,
+The evaluations do not establish representative accuracy or a general improvement from reranking.
+LangSmith is available for tracing the local runtime. Fixed local identity,
 loopback access, bounded English source-unit heuristics, and public/synthetic-only provider use
 remain constraints. Provider outages, limits, and semantic-support errors can still stop a
 request safely; source IDs prevent copying mistakes, not every reasoning or retrieval error.
@@ -216,7 +216,7 @@ successful project CI result on `main` are recorded in the
 [acceptance record](./13-m1-5-rag-quality-plan.md#local-acceptance-and-m2-handoff-2026-10-14).
 The owner confirmed the merged green CI and working website and approved closing the bounded
 local milestone. The credential-free runtime gate and general website confirmation do not establish
-representative live M1.5 quality, diagnostic/normal-checker parity, or every model-pair result.
+representative live M1.5 quality or every model-pair result.
 Structured independent-review fields in historical reports remain unchanged. The public source
 repository is not a publicly hosted or authenticated application.
 M2 owns ingestion/lifecycle reliability, M3 archive/discovery and broader corpus measurements,

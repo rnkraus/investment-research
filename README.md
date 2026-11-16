@@ -22,11 +22,12 @@ and remaining product milestones are still pending.
 | Original storage      | S3-compatible storage through Boto3; SeaweedFS in local Compose                                       |
 | Background processing | Celery, Redis, pypdf; queued ingestion and bounded text-PDF parsing                                   |
 | AI and retrieval      | OpenAI embeddings and structured generation/support; Pinecone dense search; RRF; opt-in BGE reranking |
+| Observability         | OpenTelemetry spans with optional export to LangSmith EU                                              |
 | Quality and delivery  | pytest, Ruff, Mypy, Playwright, GitHub Actions, Docker Compose; uv and pnpm                           |
 
-LangChain, LlamaIndex, and LangGraph are not the orchestration core. Hosted LangSmith evaluation
-is not part of the implemented quality evidence. The [system design](docs/02-system-design.md)
-separates current behavior from the broader target architecture.
+The app owns retrieval, generation, and validation. LangSmith receives optional traces through
+OpenTelemetry. The [system design](docs/02-system-design.md) describes the broader target
+architecture.
 
 [Architecture](docs/14-m1-5-portfolio.md#1-implemented-architecture) ·
 [Evaluation](eval/README.md) ·
@@ -57,8 +58,8 @@ This screenshot does not show processing completion.
 ### Browse saved sources
 
 View a paginated document list with processing status and open complete PDF or text originals
-without first asking a question. Hide the sidebar or open the Add source panel without losing
-the current question or selection.
+without first asking a question. Find companies by name or ticker, filter by company or
+publication date, and use keyword or semantic archive search to inspect matching passages.
 
 ### Ask saved evidence
 
@@ -89,8 +90,8 @@ flow does not imply that the full lifecycle milestone is complete.
 
 ### Inspect rejected answers locally
 
-Opt-in diagnostics show rejected statements, selected source excerpts, and failed checks directly
-with the error, never as accepted answers.
+The local M1.5 interface shows rejected statements, their selected source excerpts, and the
+reason for each failed support check.
 
 The [synthetic demo walkthrough](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration)
 shows PDF research, exact text citations, scoped abstention, and conflicting reports. That
@@ -122,7 +123,7 @@ flowchart TB
     end
 
     subgraph VAL["3 · EVIDENCE VALIDATION"]
-        V["Statement Support Evaluation<br/>OpenAI LLM API · separate call per statement"] --> R{"Server-side acceptance gate<br/>Evidence and canonical checks"}
+        V["Batched statement support<br/>OpenAI API · one judgment per statement"] --> R{"Server-side acceptance gate<br/>Evidence and canonical checks"}
     end
 
     U --> G
@@ -157,11 +158,10 @@ their source IDs; the server, not the model, supplies the exact original quotati
 
 ### 3. Evidence Validation — LLM API and server checks
 
-Receives each proposed statement, its resolved original quotations, and restricted document
-attribution context. It assesses whether the evidence supports the complete statement. Both
-roles can use the same model, but run as separate calls with different instructions. The server
-also enforces schema, workspace, eligibility, and citation rules; the statement-support model alone cannot
-authorize publication.
+The server sends all eligible statements in a single support call. Each statement is paired
+with its resolved quotes and restricted document attribution context. The checker returns a
+separate judgment and brief reason for each statement. The server enforces schema, workspace,
+eligibility, and citation rules and rechecks canonical evidence before publishing an answer.
 
 Ingestion runs separately through Celery workers and a credential-free parser boundary.
 PostgreSQL and S3-compatible original storage are canonical; Pinecone is a derived index and
@@ -171,10 +171,18 @@ Lexical search uses PostgreSQL full-text search (`tsvector`, GIN, `ts_rank_cd`),
 Dense search uses OpenAI embeddings and Pinecone; RRF combines rank positions, not incompatible
 raw scores. Context is bounded, not an exhaustive reading of every document.
 
-The provider-backed local default is the M1.5 RRF/source-ID path. Pinecone BGE cross-encoder
-reranking is implemented as a separate opt-in experiment, not enabled by that website profile.
-The retained M1 baseline remains available for comparison; details are in the
-[profile guide](docs/14-m1-5-portfolio.md#2-profiles-and-concrete-changes-from-m1).
+The provider-backed local default is the M1.5 RRF/source-ID path. Query decomposition and
+Luna reranking can be enabled per request. Pinecone BGE reranking is a separate experiment.
+The retained M1 baseline remains available for comparison.
+[Profile guide](docs/14-m1-5-portfolio.md#2-profiles-and-concrete-changes-from-m1)
+
+## Observability
+
+With the optional LangSmith Compose overlay, follow a request through embedding, retrieval,
+fusion, context preparation, generation, and evidence checking. Spans show duration, model,
+reported OpenAI tokens, and safe outcomes. The support span records the number of statements
+checked and rejected. The trace export omits raw questions, source text, and model responses.
+[LangSmith setup](docs/development.md#optional-local-langsmith-tracing)
 
 ## Engineering decisions
 
@@ -252,6 +260,22 @@ from the synthetic evaluation corpus below and are not additional quality measur
 The [first app run on public sources](eval/first-app-run.md) covers archive discovery, answer
 completeness, citation validity, and abstention across 19 reviewed cases.
 
+### Live benchmark of the evidence checker
+
+Luna evaluated the same seven synthetic statements and citations individually and in three
+batches. This run measured only the support calls.
+
+| Measurement | Individual | Batched |
+| --- | ---: | ---: |
+| Correct judgments | 6 of 7 | 7 of 7 |
+| Provider calls | 7 | 3 |
+| Total provider-call time | 12.42 s | 6.30 s |
+| Input / output tokens | 4,282 / 442 | 2,987 / 414 |
+| Estimated cost | USD 0.001390 | USD 0.001095 |
+
+The batch correctly rejected a claim attributed to the wrong report. The timing and judgment
+results describe one synthetic run. [Benchmark procedure](docs/development.md#compare-individual-and-batched-evidence-checks)
+
 ### Earlier synthetic evaluation
 
 The recorded owner-run evaluation uses **12 reviewed questions across three synthetic originals**.
@@ -259,8 +283,7 @@ It includes answerable questions, missing information, partial coverage, conflic
 document scope, repeated wording, and combined PDF/text evidence.
 
 The 2026-10-09 observation used RRF, source-unit prompt v6, Luna for both model roles, no reranker,
-and the local **support-reason diagnostic variant**. It is not an evaluation of the normal
-Boolean-only website support prompt or a representative real-world benchmark.
+and the historical **support-reason diagnostic variant**.
 
 | Measurement                     | Recorded observation      |
 | ------------------------------- | ------------------------- |
@@ -271,10 +294,9 @@ Boolean-only website support prompt or a representative real-world benchmark.
 
 Exact citation validity was 10/10 checked answers; the stricter target score penalized three
 additional genuine attribution links across two answers. These are distinct metrics, not a
-single accuracy percentage. The current source-unit answer prompt is v8; the historical v6 run
-does not establish its quality or reliability on IREN, Nebius, or other real-document archives.
-Latency and estimated-cost measurements, configuration, and review limitations remain in the
-[detailed evaluation guide](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim).
+single accuracy percentage. The figures apply to the recorded v6 configuration and corpus.
+The detailed evaluation guide records latency, estimated costs, and review limitations.
+[Historical evaluation](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim)
 
 Earlier small ranking comparisons did not establish a quality advantage justifying automatic
 adoption of RRF or reranking. The
@@ -296,12 +318,8 @@ docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --buil
 ```
 
 Open <http://127.0.0.1:3000>, import an approved document, wait for `SEARCHABLE`, and ask a question.
-The normal M1.5 website checker returns a Boolean support decision, without diagnostic reasons.
-An old explicit `INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1` environment setting still overrides the
-default; remove it or select `m1-5-citable-units`. The
-[demo guide](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) gives concrete
-synthetic questions and citation checks. Never commit credentials or enable raw diagnostics for
-private content.
+Use the default `m1-5-citable-units` profile for the demo. The demo guide provides synthetic
+questions and citation checks. [Local demo](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration)
 
 For bounded retrieval and context experiments, edit [config/rag.toml](config/rag.toml);
 the [tuning guide](config/README.md) explains the five settings, bounds, and API restart.

@@ -23,12 +23,12 @@ Evaluation und die verbleibenden Produktmeilensteine stehen noch aus.
 | Originalspeicher           | S3-kompatibler Speicher über Boto3; SeaweedFS im lokalen Compose-Stack                                               |
 | Hintergrundverarbeitung    | Celery, Redis, pypdf; Import über Warteschlangen und begrenzte Extraktion aus Text-PDFs                              |
 | KI und Retrieval           | OpenAI-Embeddings und strukturierte Generierung/Aussagenprüfung; Pinecone-Vektorsuche; RRF; optionales BGE-Reranking |
+| Observability              | OpenTelemetry-Traces mit optionalem Export nach LangSmith EU                                                         |
 | Qualität und Auslieferung  | pytest, Ruff, Mypy, Playwright, GitHub Actions, Docker Compose; uv und pnpm                                          |
 
-LangChain, LlamaIndex und LangGraph bilden nicht den Kern der Orchestrierung. Gehostete
-LangSmith-Evaluation ist kein Bestandteil der implementierten Qualitätsnachweise. Das
-[Systemdesign](docs/02-system-design.md) trennt den aktuellen Stand von der umfassenderen
-Zielarchitektur.
+Die Anwendung steuert Retrieval, Generierung und Validierung selbst. OpenTelemetry kann
+Traces an LangSmith exportieren. Das [Systemdesign](docs/02-system-design.md) beschreibt die
+umfassendere Zielarchitektur.
 
 [Architektur](docs/14-m1-5-portfolio.md#1-implemented-architecture) ·
 [Evaluation](eval/README.md) ·
@@ -63,8 +63,9 @@ eintragen. Dieser Screenshot zeigt noch keine abgeschlossene Verarbeitung.
 ### Gespeicherte Quellen ansehen
 
 Eine seitenweise Dokumentliste mit Verarbeitungsstatus anzeigen und vollständige PDF- oder
-Textoriginale ohne vorherige Frage öffnen. Die Seitenleiste ausblenden oder Add source öffnen,
-ohne aktuelle Frage oder Auswahl zu verlieren.
+Textoriginale ohne vorherige Frage öffnen. Unternehmen nach Name oder Ticker finden, nach
+Unternehmen oder Veröffentlichungsdatum filtern und passende Textstellen per Stichwort oder
+semantischer Suche finden.
 
 ### Vorhandene Dokumente befragen
 
@@ -96,8 +97,8 @@ Dokumentlebenszyklus abgeschlossen ist.
 
 ### Abgewiesene Antworten lokal untersuchen
 
-Optionale Diagnosen zeigen abgewiesene Aussagen, ausgewählte Textstellen und fehlgeschlagene
-Prüfungen direkt beim Fehler, nie als akzeptierte Antwort.
+Die lokale M1.5-Oberfläche zeigt abgewiesene Aussagen mit den ausgewählten Textstellen
+und dem Grund, den der Prüfer pro Aussage zurückgibt.
 
 Die [synthetische Demo](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) zeigt
 PDF-Recherche, genaue Textzitate, bewusste Enthaltung bei fehlenden Belegen im gewählten Suchbereich
@@ -131,7 +132,7 @@ flowchart TB
     end
 
     subgraph VAL["3 · EVIDENCE VALIDATION"]
-        V["Inhaltliche Aussagenprüfung<br/>OpenAI-LLM-API · separater Aufruf je Aussage"] --> R{"Serverseitige Freigabe<br/>Evidenz und Quellenzustand prüfen"}
+        V["Sammelprüfung der Aussagen<br/>OpenAI-API · ein Urteil pro Aussage"] --> R{"Serverseitige Freigabe<br/>Evidenz und Quellenzustand prüfen"}
     end
 
     U --> G
@@ -166,11 +167,10 @@ deren Quellen-IDs aus. Den exakten Originaltext der Zitate liefert der Server, n
 
 ### 3. Evidence Validation — Evidenzvalidierung per LLM-API und Serverprüfungen
 
-Erhält jede vorgeschlagene Aussage, ihre aufgelösten Originalzitate und begrenzte Angaben zur
-Dokumentzuordnung. Er bewertet, ob die Belege die gesamte Aussage stützen. Beide Rollen können
-dasselbe Modell verwenden, laufen aber als getrennte Aufrufe mit unterschiedlichen Anweisungen.
-Der Server prüft zusätzlich Antwortformat, Workspace, Quellenzulässigkeit und Zitationsregeln;
-der Modellprüfer allein kann keine Antwort freigeben.
+Der Server sendet alle Aussagen mit zulässigen Belegen in einem gemeinsamen Aufruf. Jede Aussage
+hat dabei ihre eigenen Originalzitate und Angaben zur Dokumentzuordnung. Der Prüfer liefert pro
+Aussage ein Urteil mit kurzer Begründung. Vor der Ausgabe prüft der Server Antwortformat,
+Workspace, Quellenzulässigkeit und Zitate.
 
 Der Dokumentimport läuft separat über Celery-Worker und einen Parser ohne Zugangsdaten.
 PostgreSQL und der S3-kompatible Originalspeicher enthalten die maßgeblichen Daten. Pinecone
@@ -181,10 +181,19 @@ Die lexikalische Suche verwendet PostgreSQL-Volltextsuche (`tsvector`, GIN, `ts_
 BM25. Die semantische Suche nutzt OpenAI-Embeddings und Pinecone. RRF verbindet Rangpositionen,
 nicht unvergleichbare Rohwerte. Der Kontext ist begrenzt, keine vollständige Lektüre aller Dokumente.
 
-Der lokale Standard mit echten Providern ist der M1.5-Pfad mit RRF und Quellen-IDs. Das
-Pinecone-BGE-Cross-Encoder-Reranking ist als separat aktivierbares Experiment implementiert,
-im Website-Profil aber nicht eingeschaltet. Die M1-Basisvariante bleibt zum Vergleich verfügbar;
-Details stehen in der [Profilübersicht](docs/14-m1-5-portfolio.md#2-profiles-and-concrete-changes-from-m1).
+Der lokale Standard mit echten Providern ist der M1.5-Pfad mit RRF und Quellen-IDs. Pro Anfrage
+lassen sich Fragezerlegung und Luna-Reranking aktivieren. Pinecone-BGE-Reranking bleibt ein
+separates Experiment. Die M1-Basisvariante steht zum Vergleich bereit.
+[Profilübersicht](docs/14-m1-5-portfolio.md#2-profiles-and-concrete-changes-from-m1)
+
+## Observability
+
+Mit der optionalen LangSmith-Compose-Erweiterung lässt sich eine Anfrage vom Embedding über
+Quellensuche und Kontextaufbereitung bis zur Antwortgenerierung und Belegprüfung verfolgen.
+Die Traces zeigen Laufzeit, Modell, gemeldete OpenAI-Tokens und den Ausgang der Schritte.
+Beim Prüfer ist auch sichtbar, wie viele Aussagen er bewertet und abgelehnt hat. Fragen,
+Quelltexte und Modellantworten werden nicht mit den Traces exportiert.
+[LangSmith einrichten](docs/development.md#optional-local-langsmith-tracing)
 
 ## Wichtige Architekturentscheidungen
 
@@ -273,6 +282,23 @@ keine zusätzlichen Qualitätsmessungen.
 Der [erste App-Messlauf mit öffentlichen Quellen](eval/first-app-run.md) bewertet Archivsuche,
 Antwortvollständigkeit, Zitatgenauigkeit und Enthaltung in 19 geprüften Fällen.
 
+### Live-Vergleich der Belegprüfung
+
+Luna bewertete dieselben sieben synthetischen Aussagen und Zitate einzeln und in drei
+Sammelaufrufen. Gemessen wurden die Aufrufe für die Belegprüfung.
+
+| Messgröße | Einzelprüfung | Sammelprüfung |
+| --- | ---: | ---: |
+| Richtige Urteile | 6 von 7 | 7 von 7 |
+| Provider-Aufrufe | 7 | 3 |
+| Gesamte Aufrufzeit | 12,42 s | 6,30 s |
+| Eingabe- / Ausgabetokens | 4.282 / 442 | 2.987 / 414 |
+| Geschätzte Kosten | 0,001390 USD | 0,001095 USD |
+
+Die Sammelprüfung lehnte eine Aussage korrekt ab, deren Beleg aus einem anderen Bericht
+stammte. Die Laufzeiten und Urteile stammen aus einem einzelnen synthetischen Messlauf.
+[Benchmark-Anleitung](docs/development.md#compare-individual-and-batched-evidence-checks)
+
 ### Frühere synthetische Evaluation
 
 Die dokumentierte, vom Projektverantwortlichen ausgeführte Evaluation umfasst **zwölf geprüfte
@@ -281,9 +307,7 @@ Informationen, teilweise belegte Antworten, widersprüchliche Berichte, Dokument
 wiederholte Formulierungen und kombinierte PDF-/Textbelege.
 
 Der Lauf vom 09.10.2026 verwendete RRF, Quellen-Einheiten-Prompt v6, Luna für beide Modellrollen,
-kein Reranking und die lokale **Diagnosevariante mit Begründungen zur Aussagenprüfung**. Er
-bewertet weder den normalen Website-Prüfprompt mit reiner Ja-/Nein-Entscheidung noch stellt er
-einen repräsentativen Benchmark für reale Dokumentbestände dar.
+kein Reranking und die damalige **Diagnosevariante mit Begründungen zur Aussagenprüfung**.
 
 | Messgröße                                                | Dokumentiertes Ergebnis         |
 | -------------------------------------------------------- | ------------------------------- |
@@ -294,11 +318,10 @@ einen repräsentativen Benchmark für reale Dokumentbestände dar.
 
 Die exakte Zitationsgültigkeit lag bei 10/10 geprüften Antworten. Die strengere Zielwertung
 berücksichtigte drei zusätzliche, echte Zuordnungsbelege in zwei Antworten als Abweichungen.
-Das sind unterschiedliche Messgrößen, keine gemeinsame Genauigkeitsquote. Der aktuelle
-Quellen-ID-Antwortprompt ist v8; der historische v6-Lauf belegt weder dessen Qualität noch die
-Zuverlässigkeit auf IREN, Nebius oder anderen realen Dokumentbeständen. Laufzeit- und geschätzte
-Kostenmessungen, Konfiguration und Review-Grenzen stehen im
-[ausführlichen Evaluationsbericht](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim).
+Die beiden Messgrößen erfassen Zitationsgültigkeit und Übereinstimmung mit den vorgegebenen
+Zitationszielen. Die Werte gelten für die damalige v6-Konfiguration und den zugehörigen
+Korpus. Die Detaildokumentation enthält Laufzeit, geschätzte Kosten und Grenzen der Prüfung.
+[Historische Evaluation](docs/14-m1-5-portfolio.md#3-recorded-evaluation-not-a-general-accuracy-claim)
 
 Frühere kleine Ranking-Vergleiche belegten keinen Qualitätsvorteil, der eine automatische
 Übernahme von RRF oder Reranking rechtfertigt. Der
@@ -322,13 +345,9 @@ docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml up --buil
 ```
 
 <http://127.0.0.1:3000> öffnen, ein freigegebenes Dokument importieren, auf `SEARCHABLE` warten
-und eine Frage stellen. Die normale M1.5-Aussagenprüfung der Website liefert eine
-Ja-/Nein-Entscheidung ohne Diagnosebegründung. Ein alter ausdrücklicher Eintrag
-`INVESTMENT_RESEARCH_RESEARCH_PROFILE=m1` in der Umgebung überschreibt weiterhin den Standard;
-diesen entfernen oder auf `m1-5-citable-units` setzen. Die
-[Demo-Anleitung](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration) enthält konkrete
-synthetische Fragen und Quellenprüfungen. Zugangsdaten niemals committen und Diagnosen mit
-ungefilterten Inhalten niemals für private Dokumente aktivieren.
+und im Standardprofil `m1-5-citable-units` eine Frage stellen. Die Demo-Anleitung enthält
+synthetische Fragen und die passenden Quellenprüfungen.
+[Lokale Demo](docs/14-m1-5-portfolio.md#4-safe-owner-run-local-demonstration)
 
 Für begrenzte Retrieval- und Kontextexperimente [config/rag.toml](config/rag.toml) bearbeiten;
 die [Konfigurationsanleitung](config/README.md) erklärt die fünf Einstellungen, Grenzen und den
