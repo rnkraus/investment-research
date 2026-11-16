@@ -197,7 +197,7 @@ these application events.
 
 The research failure card shows the failed checks and any identified rejected claims alongside
 excerpts from the current request's selected context. In the local provider-backed source-ID
-profile, the evidence-check model returns a short explanation in the same support call.
+profile, a single support call returns a judgment and short explanation for each checked claim.
 The website shows it as an unvalidated explanation next to the rejected claim. Rejected claims
 and model explanations are transient and are excluded from stored answers, findings, and default
 logs. The panel resets on the next question. Provider and schema failures before evidence
@@ -205,7 +205,6 @@ validation use the ordinary failure card.
 
 For explicitly approved public or synthetic documents, the separate local override enables raw
 provider output in logs. To watch the terminal logs:
-
 
 ```shell
 docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml -f compose.m1-local-diagnostics.yaml up --build --detach --wait api
@@ -218,11 +217,10 @@ JSON identifies the first missing model-proposed `exact_text`, its `retrieval_ca
 zero-based `statement_ordinal` and `evidence_ordinal`. It does not include the candidate's source
 text; the quote remains unverified until it matches that source exactly. For `evidence_validation`,
 the nested JSON has the proposed rendering, rejected statements and proposed citation text, and
-failed validation findings. A `STATEMENT_SUPPORT` failure means the support decision did not accept
-the statement as fully supported; it does not expose a model explanation. The proposal and citation
-text remain untrusted and are never stored as accepted answer content. Only the bounded rejected
-claims and matching ranges described above reach the browser with this explicit override. Output
-is capped at 100,000 characters and may contain source text. Do not use this override with private documents
+failed validation findings. A `STATEMENT_SUPPORT` failure marks a claim the checker did not
+accept as fully supported. The browser receives the bounded request diagnostics described above
+and displays the support reason when available. Raw log output is capped at 100,000 characters
+and may contain source text. Do not use this override with private documents
 or in CI, staging, or public deployments; do not paste raw output into tickets or chats. Connection
 failures without a model response have no output text to show. Docker may retain these logs after
 the request. After debugging, restart without the override to disable the output:

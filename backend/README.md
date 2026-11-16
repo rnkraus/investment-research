@@ -53,7 +53,7 @@ and grants no additional write permissions. Production targets do not include th
 
 | Target      | Current entry point                          | M0 role                                                        |
 | ----------- | -------------------------------------------- | -------------------------------------------------------------- |
-| `api`       | Uvicorn with the FastAPI application factory | Public application API with liveness and readiness checks.     |
+| `api`       | Uvicorn with the FastAPI application factory | Local application API with liveness and readiness checks.      |
 | `migration` | Alembic `upgrade head`                       | Applies reviewed schema history before application startup.    |
 | `worker`    | Celery processing worker                     | Claims queued runs and owns canonical storage and persistence. |
 | `parser`    | Private Uvicorn parser application           | Parses bounded PDF bytes without canonical-service secrets.    |
@@ -76,4 +76,7 @@ The executable image gate and its guarantees are documented in
 gate is documented under
 [`Parser-isolation verification`](scripts/README.md#parser-isolation-verification).
 
-Installation, startup, and verified commands are documented in the repository [`README.md`](../README.md). Architecture and ownership rules are defined in [`docs/02-system-design.md`](../docs/02-system-design.md), the completed proof structure in [`docs/08-m0-0-implementation-plan.md`](../docs/08-m0-0-implementation-plan.md), and the active runtime replacement sequence in [`docs/09-m0-implementation-plan.md`](../docs/09-m0-implementation-plan.md).
+For installation, startup, and verification commands, see the [development guide](../docs/development.md).
+Architecture and ownership rules appear in the [system design](../docs/02-system-design.md).
+The [M0 implementation plan](../docs/09-m0-implementation-plan.md) records the completed
+runtime transition.

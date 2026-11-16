@@ -747,10 +747,8 @@ The local website presents this workflow as a compact research workspace, not nu
 The collapsible document sidebar retains selection; search scope remains above the question.
 Add source opens an inline import panel that stays mounted while hidden, preserving drafts and
 processing polls. Independent answer/support choices are under Model settings. Retrieved context
-is grouped under collapsed Research details. Optional local rejection diagnostics appear expanded
-directly inside the safe failure card, separate from validated answers. Safe failure messages and
-actual progress remain directly visible. This
-presentation change does not alter the request, stream, eligibility, or evidence contracts.
+is grouped under collapsed Research details. The local M1.5 profile displays available rejection
+details in the failure card. Safe failure messages and actual progress remain directly visible.
 
 The research SSE stream reports actual application stages while the request is running:
 
@@ -793,27 +791,26 @@ The existing workspace boundary and `private, no-store, no-transform` stream hea
 to source context. Clients must update their runtime allowlists and regenerate TypeScript types;
 the envelope stays `1.0`, and older streams without this additive event remain supported.
 
-For explicitly enabled local diagnostics, an evidence-rejected terminal `research.failed` can
-include an optional `diagnostic` object. It is absent from ordinary streams and restricted to
-`EVIDENCE_VALIDATION_FAILED` with `retriable=false`. The existing
-`local_model_failure_output` setting permits this only in the development container runtime;
-see the [local diagnostic override](./development.md#default-m15-source-id-research).
+In the local `m1-5-citable-units` profile, a terminal `research.failed` can include an optional
+`diagnostic` object on `EVIDENCE_VALIDATION_FAILED` with `retriable=false`. The development
+container's local diagnostics override also enables this payload for the retained M1 profile
+and enables separate raw failure logs. [Local failure diagnosis](./development.md#default-m15-source-id-research)
 The object labels its contents `unvalidated=true` and contains the selected model pair, at most
 eight rejected statements, and bounded failed-rule findings. Evidence references contain only
 candidate IDs and Unicode ranges into this request's already disclosed selected context. The
 server omits unknown candidates and ranges that do not exactly match the proposed source text.
-No additional source text, prompt, raw provider response, credential, or support-model explanation
-is included. Only after the rejected terminal result is committed may these diagnostics be sent.
+A failed statement-support finding can carry an optional `support_reason` of up to 500
+characters. The batched checker supplies one judgment and reason per submitted statement.
+The payload excludes prompts, raw provider responses, and credentials. The server sends
+diagnostics after the rejected terminal result is committed.
 
 The website displays these claims and selected excerpts in a separately labeled diagnostic
 panel, never as accepted answers or validated citations. It rejects references outside the
-current request's context, escapes all text, and clears the panel for the next question. This
-does not weaken evidence checks or add persistence. Historical failures cannot be reconstructed
-through this request-local feature. Normal streams omit the field entirely; strict clients must
-regenerate the additive contract and update their allowlist with the API.
+current request's context, escapes all text, and clears the panel for the next question.
+Strict clients must regenerate the additive contract and update their stream allowlist with the API.
 
-The opt-in M1.5 source-ID path adds `RESEARCH_CONTEXT_LIMIT` to the error-code enum when catalog
-preparation or its input-metadata preflight exceeds an application-owned bound. It ends with one
+The M1.5 source-ID path uses `RESEARCH_CONTEXT_LIMIT` when catalog preparation or its input-metadata
+preflight exceeds an application-owned bound. It ends with one
 `research.failed`, `retriable=false`, and the fixed message: "Retrieved sources exceed the current
 research limits. Try a more focused question or select a single document." It emits no answer
 statements or citations and never returns the exception message or counters to the browser.

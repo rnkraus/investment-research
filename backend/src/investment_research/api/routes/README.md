@@ -8,12 +8,21 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 | --------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `health.py`     | `GET /health`                                                        | Reports process liveness without dependency details or credentials.                 |
 | `health.py`     | `GET /ready`                                                         | Reports aggregate dependency readiness without identifying a failed dependency.     |
+| `documents.py`  | `GET /api/v1/documents`                                              | Lists current documents with scoped filters and cursor pagination.                  |
 | `documents.py`  | `POST /api/v1/documents`                                             | Captures one validated PDF and returns canonical identifiers with HTTP 202.         |
+| `documents.py`  | `POST /api/v1/documents/text`                                        | Captures pasted text and returns canonical identifiers with HTTP 202.              |
+| `documents.py`  | `GET /api/v1/documents/source-attributions`                           | Lists current author and X-handle filter choices.                                   |
+| `documents.py`  | `PUT /api/v1/documents/{document_id}/source-attribution`              | Edits or clears current source attribution.                                        |
+| `document_companies.py` | `GET, PUT /api/v1/documents/{document_id}/companies` | Reads or replaces company links with revision checking on writes. |
+| `companies.py` | `GET, POST /api/v1/companies` | Lists or creates scoped company records. |
+| `companies.py` | `PATCH /api/v1/companies/{company_id}` and `PATCH /api/v1/companies/{company_id}/ticker` | Updates company details or its ticker. |
+| `archive_search.py` | `POST /api/v1/archive-search` | Returns scoped keyword or semantic discovery results. |
 | `document_deletions.py` | `POST /api/v1/documents/deletions` | Admits a confirmed explicit batch and publishes pending purge jobs after commit. |
 | `document_deletions.py` | `GET /api/v1/documents/{document_id}/deletion` | Returns a content-free deletion receipt, including after source removal. |
-| `documents.py`  | `GET /api/v1/documents/{document_id}/versions/{version_id}/original` | Streams one authorized and integrity-checked current PDF original.                  |
+| `documents.py`  | `GET /api/v1/documents/{document_id}/versions/{version_id}/original` | Returns an authorized, integrity-checked current PDF or text original.               |
 | `processing.py` | `GET /api/v1/processing-runs/{processing_run_id}`                    | Returns one workspace-scoped run state with safe failure details.                   |
-| `research.py`   | `POST /api/v1/research-requests`                                     | Streams only validated statements, citation references, or a safe terminal outcome. |
+| `research.py`   | `GET /api/v1/research-requests/models`                               | Advertises the enabled models and search options.                                   |
+| `research.py`   | `POST /api/v1/research-requests`                                     | Streams progress, context, and a validated answer or safe terminal outcome.        |
 | `evidence.py`   | `GET /api/v1/evidence-spans/{evidence_span_id}`                      | Resolves one authorized streamed citation to its exact active source.               |
 
 ```mermaid
@@ -22,8 +31,8 @@ flowchart TD
     VALIDATE --> CONTEXT[Resolve trusted context]
     CONTEXT --> CAPTURE[CaptureDocumentService]
     CAPTURE --> STORAGE[Store immutable original]
-    STORAGE --> DATABASE[Commit canonical records and CAPTURED run]
-    DATABASE --> DISPATCH[Publish ProcessingJobV1 through Celery]
+    STORAGE --> DATABASE[Commit canonical records, CAPTURED run, and durable intent]
+    DATABASE --> DISPATCH[Attempt bounded outbox dispatch through Celery]
     DISPATCH -->|published| RESPONSE[DocumentAccepted]
     DISPATCH -->|broker unavailable; safe event| RESPONSE
 ```

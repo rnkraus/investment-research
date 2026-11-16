@@ -15,9 +15,11 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_backend.py`           | Runs all deterministic backend static checks and unit tests.                             |
 | `verify_backend_images.py`    | Builds and exercises every backend image target in an isolated runtime.                  |
 | `verify_m0_runtime.py`        | Proves the complete fixture journey through the production-shaped M0 runtime.            |
+| `verify_m1_runtime.py`        | Verifies the isolated PDF and text fixture journey and browser acceptance.                |
 | `verify_m1_provider_smoke.py` | Runs one explicit, bounded M1 external-provider compatibility smoke.                     |
 | `plan_m1_5_live_baseline.py`  | Validates the approved M1.5 preflight and bounds sequential invocation reservations.      |
 | `compare_m1_5_retrieval.py`   | Scores paired M1/RRF offline contexts from identical qualified lanes without answer-quality claims. |
+| `compare_evidence_support.py` | Compares individual and batched support judgments on fixed synthetic inputs. |
 | `m1_5_live_providers.py`      | Wraps existing provider ports with reservations and content-free usage records.          |
 | `m1_5_live_diagnostics.py`    | Classifies failures using fixed categories and allowlisted adapter metadata only.        |
 | `m1_5_local_output.py`        | Displays opt-in synthetic model proposals and decisions only in a local interactive terminal. |
@@ -32,7 +34,7 @@ This directory contains small, reviewable development utilities. Scripts support
 | `verify_postgres.py`          | Runs migrations, seeds, and integration tests in an isolated disposable PostgreSQL.      |
 | `verify_queue_recovery.py`    | Proves stopped-Redis capture, outbox/worker-loss recovery, and synthetic-source cleanup. |
 | `queue_expired_execution_probe.py` | Guarded container-only fixture for live-fence rejection and expired-run outbox recovery; invoked only by the queue verifier. |
-| `verify_runtime_cleanup.py`   | Fails when an M0 runtime verifier leaves a scoped Docker resource behind.                |
+| `verify_runtime_cleanup.py`   | Fails when runtime verification leaves a scoped Docker resource behind.                 |
 
 The M1.5 evaluation commands, fixture provenance, output schema, and opt-in boundaries are
 documented in the [corpus guide](../../fixtures/m1_5/README.md#opt-in-live-baseline). The live
@@ -56,6 +58,10 @@ reviewed corpus, reports evidence availability and context-order changes, and ne
 application default. Generation, support evaluation, provider cost, and browser behavior are not
 measured. See the [paired comparison guide](../../fixtures/m1_5/README.md#paired-m1rrf-offline-comparison)
 for the verified workflow, observations, and limitations.
+
+The evidence-support comparison previews its budget without credentials by default. Its live
+mode measures support judgments on fixed statements and citations.
+[Benchmark commands](../../docs/development.md#compare-individual-and-batched-evidence-checks)
 
 ## Contract flow
 

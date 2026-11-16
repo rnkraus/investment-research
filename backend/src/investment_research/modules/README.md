@@ -9,11 +9,12 @@ This directory contains business capabilities with explicit ownership boundaries
 | `identity/`   | Resolves the trusted user and workspace boundary for each operation.           |
 | `companies/`  | Owns scoped company identity, creation/lookup/listing, and PostgreSQL persistence. |
 | `documents/`  | Owns logical documents, immutable versions, originals, and eligible retrieval. |
+| `delivery/`   | Owns durable processing intent, dispatch receipts, and bounded recovery.        |
 | `processing/` | Owns processing intent, parsed structure, chunk sets, and lexical chunks.      |
 | `search/`     | Owns reproducible retrieval runs and their ordered candidate records.          |
 | `research/`   | Owns research requests, versioned answers, and validated statements.           |
 | `evidence/`   | Owns exact source spans, evidence links, and validation records.               |
-| `operations/` | Owns provider-neutral optional tracing contracts, not canonical state.         |
+| `operations/` | Owns canonical provider-operation accounting, budget admission, and tracing contracts. |
 
 ## Target dependency direction
 

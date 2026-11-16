@@ -10,7 +10,7 @@ This module owns exact source spans, statement-to-source relationships, and immu
 | `contracts.py`   | Defines canonical source snapshots, validation decisions, and resolved spans.      |
 | `domain.py`      | Defines exact spans, relationships, validation rules, hashes, and invariants.      |
 | `ports.py`       | Defines canonical source, citation-read, statement-support, and persistence ports. |
-| `support_context.py` | Builds bounded, source-separated original attribution context for the opt-in M1.5 support experiment. |
+| `support_context.py` | Builds bounded, source-separated original attribution context for M1.5 support checks. |
 | `persistence.py` | Maps three PostgreSQL tables and implements workspace-scoped repository behavior.  |
 
 ## Evidence chain
@@ -97,17 +97,18 @@ flowchart TD
 support decision plus content-free provider usage. It cannot authorize a source, document version,
 workspace, or citation range; those decisions remain with the surrounding canonical checks.
 
-The opt-in M1.5 support profiles use `ContextualStatementSupportEvaluator` instead:
+The M1.5 support profiles use `ContextualStatementSupportEvaluator`:
 
 - `attribution` pairs each exact citation with a bounded prefix of its own original block.
 - `document_attribution` pairs it with the first block's bounded prefix from the same canonical
   workspace, document version, and processing run, even when the quote is on another page.
 
-Neither profile guesses a header or accepts context from another report. The prefix may identify
-the subject, report, or date; all other factual support must come from exact citations. It is
-untrusted text, not verified metadata. The normal M1 evaluator and website remain exact-text-only.
-See [the M1.5 contract](../../../../../docs/13-m1-5-rag-quality-plan.md) for prefix limits and the
-experiment boundary.
+The prefix is untrusted original text from the same document version. It may identify the
+subject, report, or date. All other factual support must come from exact citations.
+The default M1.5 API submits eligible statements together using `document_attribution`. Each
+statement receives its own judgment and reason. The retained M1 evaluator checks exact quotes
+individually, and the standalone M1.5 evaluator offers individual contextual checks.
+[M1.5 batch contract](../../../../../docs/13-m1-5-rag-quality-plan.md#batched-statement-support-in-the-local-api)
 
 Research obtains a detached canonical snapshot, evaluates outside the answer transaction, and
 counts the complete contextual input in the provider reservation. It rebuilds context from fresh

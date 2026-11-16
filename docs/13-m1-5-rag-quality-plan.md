@@ -1,6 +1,6 @@
 # Investment Research Archive — M1.5 RAG Quality Proof Plan
 
-**Status:** Accepted for the bounded local portfolio scope on 2026-10-14; M2 Step 0 accepted, Step 1 next
+**Status:** Accepted for the bounded local portfolio scope on 2026-10-14
 **Date:** 2026-10-01  
 **Milestone:** M1.5 — RAG quality proof, after accepted M1 and before M2
 
@@ -11,18 +11,18 @@ and accepted [ADRs](./adr/README.md). This plan advances selected M4 RAG work wi
 that the full M4 gate is complete.
 
 The [local acceptance and M2 handoff](#local-acceptance-and-m2-handoff-2026-10-14) records the
-current closeout decision. Earlier dated references to pending checks describe their historical
-work blocks, not the current milestone status. Historical reports and quality scores remain unchanged.
+M1.5 closeout decision. Dated work blocks retain the status and measurements from their
+original runs. M2 Steps 0 and 1 were accepted for local operation.
+[M2 implementation status](./12-m2-implementation-plan.md#step-1-closeout-2026-11-02)
 
 ## 1. Outcome and boundary
 
 **Current local default (owner-approved 2026-10-12):** Provider-backed live Compose and host API
-startup now default to `m1-5-citable-units`: RRF, source-ID generation, and document-attribution
-support without BGE reranking or raw diagnostics. Explicit `m1` selection remains available;
-credential-free development, frozen M0/M1 acceptance adapters, and evaluation CLI defaults remain
-unchanged. Earlier dated references to opt-in use and unchanged website defaults below describe
-those historical blocks, not the current live default. This selection prevents accidental
-quote-copying starts; it is not a new quality observation or full milestone acceptance.
+startup default to `m1-5-citable-units` with RRF, source-ID generation, and batched
+document-attribution support. The retained `m1` profile remains available for comparison.
+Pinecone BGE and raw diagnostics are separate opt-ins. Frozen acceptance adapters and standalone
+evaluation commands use their own profiles.
+[Batched support contract](#batched-statement-support-in-the-local-api)
 
 **Current source-unit rule:** Preparation uses `m1-5-citable-units-en-v3`, which
 retains the v2 PDF-heading behavior and protects `U.S.`/`U.K.` continuations from false sentence
@@ -30,13 +30,12 @@ boundaries. Live answer configuration identifiers end in `low-citable-units-en-v
 the date-precision, reporting-source, and mechanism guidance described in [M1 contracts](11-m1-contracts.md).
 See the [abbreviation amendment](#country-abbreviation-amendment-2026-10-13).
 
-**Local rejection inspection (2026-10-13):** The existing explicit local diagnostic override
-additionally exposes rejected claims and their matching selected excerpts in a separately labeled
-website panel. Normal runs still disclose no rejected proposal, and no unvalidated claim becomes
-accepted answer content. The panel is request-local, public/synthetic-only, and does not alter
-generation, support decisions, evidence rules, or quality measurements. See the
-[stream contract](./11-m1-contracts.md#113-research-stream) and
-[runtime guide](./development.md#default-m15-source-id-research).
+**Local rejection inspection:** The M1.5 website displays rejected claims, matching selected
+excerpts, and the evidence checker's reason when available. The panel labels the claims as
+unvalidated and clears them on the next request. The diagnostics overlay adds raw failure logs
+for approved public or synthetic sources.
+[Stream contract](./11-m1-contracts.md#113-research-stream) ·
+[Runtime guide](./development.md#default-m15-source-id-research)
 
 The accepted M1 path already answers questions over saved, eligible PDF and pasted-text documents
 with lexical and dense retrieval, typed generation, statement-support evaluation, and exact
