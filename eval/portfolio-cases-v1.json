@@ -1,0 +1,439 @@
+{
+  "version": 1,
+  "sources": {
+    "I-Q3": "IREN Q3 FY2026 earnings presentation",
+    "I-AU": "IREN Australian data center campus release",
+    "I-NEW": "IREN new customer contracts release",
+    "I-H1": "IREN Horizon 1 delivery release",
+    "I-Q1": "IREN Q1 FY2027 earnings presentation",
+    "N-Q1": "Nebius Q1 2026 shareholder letter",
+    "N-Q2": "Nebius Q2 2026 shareholder letter",
+    "N-INF": "Nebius Inferize release",
+    "N-CITI": "Nebius Citi financing release",
+    "X-CHANOS": "Chanos on IREN capital employed",
+    "X-BAKER": "Baker on GPU prepayments",
+    "X-WSE": "Wall St Engine on AWS inference"
+  },
+  "cases": [
+    {
+      "id": "D01",
+      "kind": "discovery",
+      "question": "NBIS",
+      "discovery_scope": "Keyword, all sources",
+      "expected": "The Nebius company card matches the exact ticker."
+    },
+    {
+      "id": "D02",
+      "kind": "discovery",
+      "question": "\"transmission connection agreement\"",
+      "discovery_scope": "Keyword, company IREN",
+      "expected": "I-AU p. 1, agreement for the planned Bundey site."
+    },
+    {
+      "id": "D03",
+      "kind": "discovery",
+      "question": "What happens to the time it takes to earn back accelerator spending when customers pay up front?",
+      "discovery_scope": "Compare keyword and semantic, company IREN",
+      "expected": "I-Q1 p. 9, the illustrative GPU cash payback cases."
+    },
+    {
+      "id": "D04",
+      "kind": "discovery",
+      "question": "What short-term funding did Nebius secure to build more computing capacity?",
+      "discovery_scope": "Compare keyword and semantic, company NBIS",
+      "expected": "N-CITI lines 8–10 and 22–24, lender, purpose, and maturity."
+    },
+    {
+      "id": "D05",
+      "kind": "discovery",
+      "question": "\"Horizon 1\"",
+      "discovery_scope": "Keyword, company IREN, published through 2026-07-31",
+      "expected": "I-Q3 p. 9 covers the planned Microsoft handoff. I-H1 and I-Q1 fall outside the date filter."
+    },
+    {
+      "id": "D06",
+      "kind": "discovery",
+      "question": "\"capital employed\"",
+      "discovery_scope": "Keyword, X handle @RealJimChanos",
+      "expected": "X-CHANOS line 6 contains the estimate. Every returned passage belongs to the selected handle."
+    },
+    {
+      "id": "D07",
+      "kind": "discovery",
+      "question": "Inferize",
+      "discovery_scope": "Keyword, company IREN",
+      "expected": "No document or passage matches. The NBIS release stays outside the results."
+    },
+    {
+      "id": "A01",
+      "kind": "answer",
+      "question": "What group revenue did Nebius report for Q1 and Q2 2026, and what sequential growth did it report for Q2?",
+      "document_scope": [
+        "N-Q1",
+        "N-Q2"
+      ],
+      "context_targets": [
+        {
+          "id": "q1-revenue",
+          "source": "N-Q1",
+          "pages": [
+            9
+          ],
+          "markers": [
+            "group revenue",
+            "399.0 million"
+          ]
+        },
+        {
+          "id": "q2-revenue-and-growth",
+          "source": "N-Q2",
+          "pages": [
+            9
+          ],
+          "markers": [
+            "group revenue",
+            "582.3 million",
+            "46% compared to q1"
+          ]
+        }
+      ],
+      "expected": "Q1 $399.0 million and Q2 $582.3 million, up 46% from Q1. N-Q1 p. 9 and N-Q2 p. 9. Group revenue is the requested measure."
+    },
+    {
+      "id": "A02",
+      "kind": "answer",
+      "question": "When did IREN's May presentation schedule the Horizon 1 Microsoft handoff, and what did IREN announce on August 13, 2026?",
+      "document_scope": [
+        "I-Q3",
+        "I-H1"
+      ],
+      "context_targets": [
+        {
+          "id": "scheduled-handoff",
+          "source": "I-Q3",
+          "pages": [
+            9
+          ],
+          "markers": [
+            "microsoft handoff",
+            "q3 cy26"
+          ]
+        },
+        {
+          "id": "actual-handoff",
+          "source": "I-H1",
+          "pages": [
+            1
+          ],
+          "markers": [
+            "delivered to and accepted by microsoft"
+          ]
+        }
+      ],
+      "expected": "The May presentation scheduled the handoff for calendar Q3 2026. The August release reports delivery and acceptance by Microsoft. I-Q3 p. 9 and I-H1 p. 1. Distinguish the schedule from the later milestone."
+    },
+    {
+      "id": "A03",
+      "kind": "answer",
+      "question": "What total value did IREN announce for the new AI developer contracts in July, and how did its year-end AI Cloud ARR target change?",
+      "document_scope": [
+        "I-NEW"
+      ],
+      "context_targets": [
+        {
+          "id": "contract-value",
+          "source": "I-NEW",
+          "pages": [
+            1
+          ],
+          "markers": [
+            "2.8bn",
+            "total contract value"
+          ]
+        },
+        {
+          "id": "arr-target-change",
+          "source": "I-NEW",
+          "pages": [
+            1
+          ],
+          "markers": [
+            "target from $3.7bn",
+            "more than $4bn"
+          ]
+        }
+      ],
+      "expected": "$2.8 billion in total contract value. The year-end target rose from $3.7 billion to more than $4 billion. I-NEW p. 1. Keep total contract value and the ARR target separate."
+    },
+    {
+      "id": "A04",
+      "kind": "answer",
+      "question": "In IREN's illustrative five-year contract economics, what is the GPU cash payback at zero, 50%, and 90% GPU capex prepayment?",
+      "document_scope": [
+        "I-Q1"
+      ],
+      "context_targets": [
+        {
+          "id": "prepayment-scenarios",
+          "source": "I-Q1",
+          "pages": [
+            9
+          ],
+          "markers": [
+            "illustrative gpu cash payback",
+            "2.4 yrs no prepay",
+            "1.5 yrs 50% prepay",
+            "0.4 yrs 90% prepay"
+          ]
+        }
+      ],
+      "expected": "2.4, 1.5, and 0.4 years respectively. I-Q1 p. 9, GPU cash payback row or chart. These are illustrative scenarios."
+    },
+    {
+      "id": "A05",
+      "kind": "answer",
+      "question": "How large was the Nebius Citi facility, who provided it, and what maturity and initial interest spread did Nebius disclose?",
+      "document_scope": [
+        "N-CITI"
+      ],
+      "context_targets": [
+        {
+          "id": "facility-size-and-lender",
+          "source": "N-CITI",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "3.5 billion",
+            "citi"
+          ]
+        },
+        {
+          "id": "maturity-and-spread",
+          "source": "N-CITI",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "364-day maturity",
+            "term sofr plus 2.75%"
+          ]
+        }
+      ],
+      "expected": "$3.5 billion, provided by Citi, with 364-day maturity and an initial annual rate of Term SOFR plus 2.75 percentage points. N-CITI lines 8 and 22."
+    },
+    {
+      "id": "A06",
+      "kind": "answer",
+      "question": "Which Nebius platform did the Inferize technology join, and what production bottleneck was it intended to reduce?",
+      "document_scope": [
+        "N-INF"
+      ],
+      "context_targets": [
+        {
+          "id": "platform",
+          "source": "N-INF",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "joined nebius token factory"
+          ]
+        },
+        {
+          "id": "cold-start-bottleneck",
+          "source": "N-INF",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "cold starts",
+            "gpus idle at launch time"
+          ]
+        },
+        {
+          "id": "mechanism",
+          "source": "N-INF",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "idle gpu tax",
+            "enabling"
+          ]
+        }
+      ],
+      "expected": "Nebius Token Factory. It reduces model startup time, helping avoid idle GPU time when new instances start or demand spikes. N-INF lines 10–14.",
+      "whole_archive_replay_question": "Which Nebius platform did Inferize's technology join, and how does shortening model startup time help reduce idle GPU time in production?"
+    },
+    {
+      "id": "A07",
+      "kind": "answer",
+      "question": "Which metric does Gavin Baker emphasize as GPU financing shifts toward prepayments, and what benefit does IREN's Q1 FY2027 presentation illustrate for its own contracts?",
+      "document_scope": [
+        "X-BAKER",
+        "I-Q1"
+      ],
+      "context_targets": [
+        {
+          "id": "baker-cash-flow-metric",
+          "source": "X-BAKER",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "ocf to ebitda"
+          ]
+        },
+        {
+          "id": "iren-contract-benefits",
+          "source": "I-Q1",
+          "pages": [
+            9
+          ],
+          "markers": [
+            "cut iren's funding requirements",
+            "accelerate cash paybacks"
+          ]
+        }
+      ],
+      "expected": "Baker highlights operating cash flow relative to EBITDA. IREN illustrates lower funding requirements and faster cash payback. Attribute each claim to its own source. X-BAKER lines 5–11 and I-Q1 p. 9."
+    },
+    {
+      "id": "A08",
+      "kind": "answer",
+      "question": "According to the Wall St Engine post, how did AWS CEO Matt Garman describe usage changing when inference becomes 50% cheaper?",
+      "document_scope": [
+        "X-WSE"
+      ],
+      "context_targets": [
+        {
+          "id": "attributed-usage-claim",
+          "source": "X-WSE",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "matt garman",
+            "50% cheaper",
+            "order of magnitude more usage"
+          ]
+        }
+      ],
+      "expected": "The post attributes roughly an order of magnitude more usage to Garman. Mark it as a statement reported by the post. X-WSE lines 10–12."
+    },
+    {
+      "id": "A09",
+      "kind": "answer",
+      "question": "What operating ARR did IREN report as of September 30, 2026, and when did it move its target of more than $4 billion to?",
+      "document_scope": [
+        "I-Q1"
+      ],
+      "context_targets": [
+        {
+          "id": "reported-arr-page",
+          "source": "I-Q1",
+          "pages": [
+            22
+          ],
+          "markers": [
+            "operating arr ramp",
+            "$1b operating",
+            "sep 30, 2026"
+          ]
+        },
+        {
+          "id": "revised-target-date",
+          "source": "I-Q1",
+          "pages": [
+            22,
+            24
+          ],
+          "markers": [
+            "jan 31, 2027",
+            "$4b"
+          ]
+        },
+        {
+          "id": "possible-extension",
+          "source": "I-Q1",
+          "pages": [
+            22
+          ],
+          "markers": [
+            "end-february 2027"
+          ]
+        }
+      ],
+      "expected": "$1.0 billion operating ARR as of September 30. IREN moved the target from year-end 2026 to January 31, 2027, with a possible extension through the end of February. I-Q1 p. 22 and the supporting note on p. 24."
+    },
+    {
+      "id": "U01",
+      "kind": "abstention",
+      "question": "What exact purchase price did Nebius pay for Inferize?",
+      "document_scope": [
+        "N-INF"
+      ],
+      "context_targets": [
+        {
+          "id": "undisclosed-terms",
+          "source": "N-INF",
+          "pages": [
+            null
+          ],
+          "markers": [
+            "terms",
+            "undisclosed"
+          ]
+        }
+      ],
+      "expected": "Insufficient. N-INF line 28 says the transaction terms were undisclosed."
+    },
+    {
+      "id": "U02",
+      "kind": "abstention",
+      "question": "On what exact date did the Bundey campus first become energized?",
+      "document_scope": [
+        "I-AU"
+      ],
+      "context_targets": [
+        {
+          "id": "expected-energization",
+          "source": "I-AU",
+          "pages": [
+            1
+          ],
+          "markers": [
+            "energization from 2028"
+          ]
+        }
+      ],
+      "expected": "Insufficient. I-AU p. 1 describes the expected start from 2028 and gives no observed energization date."
+    },
+    {
+      "id": "U03",
+      "kind": "abstention",
+      "question": "What exact operating ARR did IREN report for November 6, 2026?",
+      "document_scope": [
+        "I-NEW",
+        "I-Q1",
+        "X-CHANOS"
+      ],
+      "context_targets": [
+        {
+          "id": "different-date-arr",
+          "source": "I-Q1",
+          "pages": [
+            22
+          ],
+          "markers": [
+            "operating arr ramp",
+            "$1b operating",
+            "sep 30, 2026"
+          ]
+        }
+      ],
+      "expected": "Insufficient for that date. I-Q1 p. 22 reports $1.0 billion as of September 30 and a future target. I-NEW p. 1 gives an earlier target and X-CHANOS line 6 offers commentary on projected timing. A response may give the reported September figure with its date."
+    }
+  ]
+}
