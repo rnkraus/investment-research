@@ -7,10 +7,12 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, event, func, select
 from sqlalchemy.orm import Session
 
 from investment_research.api.dependencies import get_workspace_context
+from investment_research.infrastructure.database.session import create_session_factory
+from investment_research.infrastructure.search.postgresql import PostgresArchiveSearchReader
 from investment_research.main import create_app
 from investment_research.modules.operations.domain import (
     ProviderOperationKind,
@@ -19,7 +21,12 @@ from investment_research.modules.operations.domain import (
 from investment_research.modules.operations.persistence import ProviderOperationRow
 from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
 from investment_research.modules.research.persistence import ResearchRequestRow
-from investment_research.modules.search.contracts import DenseRetrievalHit
+from investment_research.modules.search.application import build_lexical_search_query
+from investment_research.modules.search.contracts import (
+    DenseQualificationRequest,
+    DenseRetrievalHit,
+)
+from investment_research.modules.search.domain import RetrievalFilters
 from investment_research.settings import ApiSettings
 from tests.integration.factories import (
     FIXTURE_TIME,
@@ -27,6 +34,7 @@ from tests.integration.factories import (
     persist_research_source,
 )
 from tests.integration.test_document_company_service_postgresql import add_company
+from tests.integration.test_lexical_search_postgresql import with_chunk_texts
 from tests.integration.test_m1_dual_retrieval_api_postgresql import (
     install_provider_fakes,
     make_m1_api_settings,
@@ -109,6 +117,7 @@ def test_archive_search_returns_scoped_phrase_matches_without_saving_questions(
             }
         assert client.post(route, json={"query": "   "}).status_code == 422
         assert client.post(route, json={**query, "mode": "semantic"}).status_code == 503
+        assert client.post(route, json={**query, "mode": "hybrid"}).status_code == 503
         assert client.post(route, json={**query, "workspace_id": str(uuid4())}).status_code == 422
 
     with Session(engine) as session:
@@ -218,7 +227,9 @@ def test_archive_search_finds_exact_tickers_and_literal_current_titles(
             assert client.post(route, json={**title_query, **extra}).json()["documents"] == []
 
 
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
 def test_semantic_archive_search_returns_canonical_passages_without_chat(
+    mode: str,
     integration_database_engine: Engine,
     integration_api_settings: ApiSettings,
     tmp_path: Path,
@@ -251,7 +262,7 @@ def test_semantic_archive_search_returns_canonical_passages_without_chat(
             "/api/v1/archive-search",
             json={
                 "query": SEMANTIC_QUERY,
-                "mode": "semantic",
+                "mode": mode,
                 "published_from": published_from,
                 "source_attribution": "grid ir",
             },
@@ -294,7 +305,9 @@ def test_semantic_archive_search_returns_canonical_passages_without_chat(
     assert operation.reserved_cost_micro_usd > 0
 
 
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
 def test_archive_search_budget_rejection_precedes_all_provider_calls(
+    mode: str,
     integration_database_engine: Engine,
     integration_api_settings: ApiSettings,
     tmp_path: Path,
@@ -311,12 +324,133 @@ def test_archive_search_budget_rejection_precedes_all_provider_calls(
     application = create_app(settings)
     application.dependency_overrides[get_workspace_context] = lambda: source.context
     with TestClient(application) as client:
-        denied = client.post(
-            "/api/v1/archive-search", json={"query": SEMANTIC_QUERY, "mode": "semantic"}
-        )
+        denied = client.post("/api/v1/archive-search", json={"query": SEMANTIC_QUERY, "mode": mode})
         keyword = client.post("/api/v1/archive-search", json={"query": "capacity expansion"})
     assert denied.status_code == 429
     assert denied.json()["error"]["message"] == "workspace provider budget exhausted"
     assert keyword.status_code == 200
     assert keyword.json()["items"][0]["document_id"] == str(source.document.id)
     assert not fakes.embedding.requests and not fakes.dense.queries
+
+
+def test_hybrid_archive_fuses_shared_hits_and_preserves_scoped_metadata(
+    integration_database_engine: Engine,
+    integration_api_settings: ApiSettings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = with_chunk_texts(
+        make_searchable_source(label="Hybrid owner", primary_text="Capacity expansion."),
+        ("Capacity expansion.", "Capacity expansion."),
+    )
+    source = replace(
+        source,
+        version=source.version.model_copy(
+            update={"title": "Capacity reference", "author_name": "Grid IR"}
+        ),
+    )
+    foreign = make_searchable_source(label="Hybrid foreign", primary_text="Capacity expansion.")
+    for item in (source, foreign):
+        persist_research_source(integration_database_engine, item)
+    shared = max(source.chunks, key=lambda chunk: chunk.id.int)
+    fakes = install_provider_fakes(
+        monkeypatch,
+        hits=(
+            DenseRetrievalHit(chunk_id=foreign.chunks[0].id, raw_score=0.99),
+            DenseRetrievalHit(chunk_id=shared.id, raw_score=0.98),
+        ),
+        statement=None,
+    )
+    application = create_app(make_m1_api_settings(integration_api_settings, tmp_path / "objects"))
+    application.dependency_overrides[get_workspace_context] = lambda: source.context
+    with TestClient(application) as client:
+        company = client.post(
+            "/api/v1/companies", json={"name": "Capacity Grid", "ticker": "CAPACITY"}
+        )
+        company_id = company.json()["company_id"]
+        assigned = client.put(
+            f"/api/v1/documents/{source.document.id}/companies",
+            json={
+                "expected_document_version_id": str(source.version.id),
+                "expected_revision": 0,
+                "company_ids": [company_id],
+            },
+        )
+        assert assigned.status_code == 200
+        query = {
+            "query": "capacity",
+            "company_id": company_id,
+            "source_attribution": "grid ir",
+            "published_from": FIXTURE_TIME.date().isoformat(),
+            "published_to": FIXTURE_TIME.date().isoformat(),
+        }
+        keyword = client.post("/api/v1/archive-search", json=query)
+        hybrid = client.post("/api/v1/archive-search", json={**query, "mode": "hybrid"})
+        assert keyword.status_code == hybrid.status_code == 200
+        assert keyword.json()["items"][-1]["chunk_id"] == str(shared.id)
+        payload = hybrid.json()
+        assert payload["companies"] == keyword.json()["companies"] == [company.json()]
+        assert payload["documents"] == keyword.json()["documents"]
+        assert len(payload["documents"]) == 1
+        assert [item["chunk_id"] for item in payload["items"]] == [
+            str(shared.id),
+            str(min(source.chunks, key=lambda chunk: chunk.id.int).id),
+        ]
+        assert payload["has_more"] is False
+        assert all(item["document_id"] == str(source.document.id) for item in payload["items"])
+        excluded = client.post(
+            "/api/v1/archive-search",
+            json={
+                **query,
+                "mode": "hybrid",
+                "published_from": (FIXTURE_TIME.date() + timedelta(days=1)).isoformat(),
+                "published_to": (FIXTURE_TIME.date() + timedelta(days=1)).isoformat(),
+            },
+        )
+        assert excluded.status_code == 200
+        assert excluded.json() == {
+            "companies": [],
+            "documents": [],
+            "items": [],
+            "has_more": False,
+        }
+    assert len(fakes.embedding.requests) == len(fakes.dense.queries) == 2
+    assert not fakes.generator.requests and not fakes.support.requests
+
+
+def test_hybrid_candidate_read_attaches_metadata_in_the_two_lane_queries(
+    integration_database_engine: Engine,
+) -> None:
+    source = make_searchable_source(label="Hybrid query count", primary_text="Capacity expansion.")
+    persist_research_source(integration_database_engine, source)
+    query = build_lexical_search_query(
+        query_text="capacity",
+        filters=RetrievalFilters(),
+        lexical_config_version=M1_PROCESSING_PROFILE.lexical_config_version,
+        candidate_limit=21,
+    )
+    request = DenseQualificationRequest(
+        provider_hits=(DenseRetrievalHit(chunk_id=source.chunks[0].id, raw_score=0.75),),
+        filters=query.filters,
+        lexical_config_version=query.lexical_config_version,
+        embedding_config_version=M1_PROCESSING_PROFILE.embedding_config_version,
+        dense_index_config_version=M1_PROCESSING_PROFILE.dense_index_config_version,
+    )
+    statements: list[str] = []
+
+    def record_statement(*args: object) -> None:
+        statements.append(str(args[2]))
+
+    event.listen(integration_database_engine, "before_cursor_execute", record_statement)
+    try:
+        result = PostgresArchiveSearchReader(
+            create_session_factory(integration_database_engine)
+        ).read(source.context, query=query, request=request, metadata_term="capacity")
+    finally:
+        event.remove(integration_database_engine, "before_cursor_execute", record_statement)
+
+    assert result.lexical[0].hit.chunk_id == result.dense[0].hit.chunk_id == source.chunks[0].id
+    assert result.dense[0].hit.raw_score == 0.75
+    assert result.lexical[0].title == result.dense[0].title == source.version.title
+    # One query per lane and one each for company and title matches.
+    assert len(statements) == 4

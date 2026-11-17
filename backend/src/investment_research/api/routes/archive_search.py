@@ -26,7 +26,7 @@ def search_archive(
     service: SearchArchiveServiceDependency,
     context: WorkspaceContextDependency,
 ) -> ArchiveSearchResult:
-    """Return keyword or semantic matches without requesting an AI answer."""
+    """Return keyword, semantic, or hybrid matches without requesting an AI answer."""
 
     try:
         return service.search(context, command)
@@ -44,7 +44,7 @@ def search_archive(
         raise ApiError(
             status_code=503,
             code=ErrorCode.PROVIDER_UNAVAILABLE,
-            message="semantic archive search is unavailable",
+            message=f"{command.mode} archive search is unavailable",
         ) from None
     except SQLAlchemyError:
         raise ApiError(

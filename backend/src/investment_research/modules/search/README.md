@@ -52,6 +52,21 @@ with originals, in vector rank order. This mode returns passages without exact m
 or research records. The keyword mode remains the default. An unavailable semantic runtime
 returns `503`, and a rejected budget reservation returns `429`.
 
+With `mode: "hybrid"`, the endpoint obtains one semantic candidate pool and the lexical
+matches under identical workspace, company, attribution, publication, and configuration
+filters. The shared RRF implementation combines up to 20 qualified candidates per lane
+with equal weights and `k=60`, deduplicates by chunk ID, and resolves ties by chunk UUID.
+The response returns at most 20 ranked passages plus the keyword metadata groups. Its
+`has_more` flag indicates additional eligible passage candidates. The mode uses the same
+embedding budget admission as semantic search and creates no research or generated answer.
+Existing backend, PostgreSQL, contract, and browser CI checks cover the additional mode.
+
+`PostgresArchiveSearchReader` returns detached canonical lane candidates with original metadata
+from one read scope. Both lanes attach titles and publication dates in their existing SQL query.
+`SearchArchiveService` owns mode selection, shared RRF, deduplication, and the final result limit.
+All modes use the same candidate-to-preview mapping. Hybrid needs no separate metadata read
+after fusion. Query embeddings and provider calls complete before the database read scope opens.
+
 The application retains the user's raw question on `ResearchRequest` and `RetrievalRun`, while
 `normalize_lexical_query` derives a deterministic search-only form. It applies Unicode NFKC
 normalization, collapses whitespace, and case-folds text. The normalized value, effective filters,

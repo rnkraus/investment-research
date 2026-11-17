@@ -15,7 +15,7 @@ export interface paths {
         readonly put?: never;
         /**
          * Search Archive
-         * @description Return keyword or semantic matches without requesting an AI answer.
+         * @description Return keyword, semantic, or hybrid matches without requesting an AI answer.
          */
         readonly post: operations["search_archive_api_v1_archive_search_post"];
         readonly delete?: never;
@@ -600,7 +600,7 @@ export interface components {
              * @default keyword
              * @enum {string}
              */
-            readonly mode: "keyword" | "semantic";
+            readonly mode: "keyword" | "semantic" | "hybrid";
             /** Published From */
             readonly published_from?: string | null;
             /** Published To */
