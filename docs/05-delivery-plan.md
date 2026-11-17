@@ -448,6 +448,13 @@ the default keyword mode. It uses the existing embedding and dense retrieval con
 reserves embedding cost against the shared workspace budget, and shows eligible original
 passages directly. Budget exhaustion and provider unavailability are visible in the UI.
 
+**Hybrid archive search.** An explicit hybrid mode combines lexical and canonically qualified
+dense candidates through the existing equal-weight RRF implementation with `k=60`. It returns
+up to 20 deduplicated passages and preserves exact company and title result groups. Both lanes
+share the user-selected filters. The mode uses one query embedding and the shared workspace
+budget. The website submits it only after the user starts a search. Integration and browser
+tests run with synthetic provider responses through the existing CI gates.
+
 **Archive search comparison.** The isolated runtime sends the same keyword and paraphrase to
 both modes, under identical publication bounds. It checks the rank of the same canonical
 fixture passage and reports elapsed request time. The deterministic embedding aliases prove

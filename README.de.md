@@ -64,8 +64,8 @@ eintragen. Dieser Screenshot zeigt noch keine abgeschlossene Verarbeitung.
 
 Eine seitenweise Dokumentliste mit Verarbeitungsstatus anzeigen und vollständige PDF- oder
 Textoriginale ohne vorherige Frage öffnen. Unternehmen nach Name oder Ticker finden, nach
-Unternehmen oder Veröffentlichungsdatum filtern und passende Textstellen per Stichwort oder
-semantischer Suche finden.
+Unternehmen oder Veröffentlichungsdatum filtern und passende Textstellen per Stichwort-,
+semantischer oder hybrider Suche finden.
 
 ### Vorhandene Dokumente befragen
 
