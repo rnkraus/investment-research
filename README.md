@@ -59,7 +59,7 @@ This screenshot does not show processing completion.
 
 View a paginated document list with processing status and open complete PDF or text originals
 without first asking a question. Find companies by name or ticker, filter by company or
-publication date, and use keyword or semantic archive search to inspect matching passages.
+publication date, and use keyword, semantic, or hybrid archive search to inspect matching passages.
 
 ### Ask saved evidence
 

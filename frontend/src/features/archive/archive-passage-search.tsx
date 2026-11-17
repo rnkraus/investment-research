@@ -24,12 +24,14 @@ type SearchState =
     };
 
 function searchErrorMessage(error: unknown, mode: ArchiveSearchMode): string {
-  if (mode === "semantic" && error instanceof ApiRequestError) {
+  if (mode !== "keyword" && error instanceof ApiRequestError) {
     if (error.status === 429) {
       return "The workspace provider budget is exhausted. Keyword search is still available.";
     }
     if (error.status === 503) {
-      return "Semantic search is unavailable. Keyword search is still available.";
+      return mode === "hybrid"
+        ? "Hybrid search is unavailable. Keyword search is still available."
+        : "Semantic search is unavailable. Keyword search is still available.";
     }
   }
   return "Archive search failed. Try again.";
@@ -54,7 +56,7 @@ export function ArchivePassageSearch({
   const [query, setQuery] = useState("");
   const [state, setState] = useState<SearchState>();
   const loading = state?.status === "LOADING";
-  const semantic = mode === "semantic";
+  const paidSearch = mode !== "keyword";
   const result = state?.status === "RESULTS" ? state.result : undefined;
 
   useEffect(() => () => request.current?.abort(), []);
@@ -101,7 +103,10 @@ export function ArchivePassageSearch({
             disabled={disabled || loading}
             onChange={(event) => {
               onModeChange(
-                event.target.value === "semantic" ? "semantic" : "keyword",
+                event.target.value === "semantic" ||
+                  event.target.value === "hybrid"
+                  ? event.target.value
+                  : "keyword",
               );
               setState(undefined);
             }}
@@ -109,19 +114,22 @@ export function ArchivePassageSearch({
           >
             <option value="keyword">Keyword</option>
             <option value="semantic">Semantic</option>
+            <option value="hybrid">Hybrid</option>
           </select>
         </div>
         <p className="text-sm text-slate-600">
-          {semantic
-            ? "Describe the passage you want to find. Submitting sends the query to the configured embedding provider and uses the workspace budget."
-            : "Search by ticker, document title, or keywords. Use quotation marks to find a phrase in the text."}{" "}
+          {mode === "hybrid"
+            ? "Combine keyword and semantic matches in one ranked list. Submitting sends the query to the configured embedding provider and uses the workspace budget."
+            : paidSearch
+              ? "Describe the passage you want to find. Submitting sends the query to the configured embedding provider and uses the workspace budget."
+              : "Search by ticker, document title, or keywords. Use quotation marks to find a phrase in the text."}{" "}
           The selected company and publication dates narrow the matches.
         </p>
         <label
           htmlFor={queryId}
           className="text-sm font-semibold text-slate-700"
         >
-          {semantic ? "Describe the passage" : "Ticker, title, or keywords"}
+          {paidSearch ? "Describe the passage" : "Ticker, title, or keywords"}
         </label>
         <div className="mt-1 flex flex-wrap gap-2">
           <input
@@ -231,7 +239,11 @@ export function ArchivePassageSearch({
           {result.items.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-900">
-                {semantic ? "Semantic passages" : "Text passages"}
+                {mode === "hybrid"
+                  ? "Hybrid passages"
+                  : paidSearch
+                    ? "Semantic passages"
+                    : "Text passages"}
               </h3>
               {result.has_more && (
                 <p className="text-xs text-slate-600">
