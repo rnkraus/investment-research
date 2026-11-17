@@ -35,19 +35,19 @@ from investment_research.modules.search.domain import (
     SearchScopeError,
 )
 from investment_research.modules.search.fusion_contracts import (
-    COMPANY_PAGE_RRF_SELECTOR_VERSION,
+    COMPANY_PAGE_RRF_SELECTOR_VERSIONS,
     COMPANY_RRF_RANK_BONUS,
-    LUNA_RERANK_SELECTOR_VERSION,
+    LUNA_RERANK_SELECTOR_VERSIONS,
     RRF_CONFIG_VERSION,
     RrfLaneContribution,
     reciprocal_rank_score,
 )
 from investment_research.modules.search.page_context import (
-    PAGE_SELECTOR_VERSION,
+    PAGE_SELECTOR_VERSIONS,
     STRUCTURED_CONTEXT_LIMIT,
 )
 from investment_research.modules.search.reranking_contracts import RRF_RERANK_SELECTOR_VERSION
-from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_SELECTOR_VERSION
+from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_SELECTOR_VERSIONS
 
 
 class RetrievalRunRow(Base):
@@ -309,13 +309,13 @@ class SqlAlchemyRetrievalRepository:
         if run.mode is RetrievalMode.DUAL_LANE:
             allowed_origins.add(RetrievalOrigin.DENSE)
             limits[RetrievalOrigin.DENSE] = run.dense_candidate_limit
-            if run.selector_config_version == TEXT_NEIGHBOR_SELECTOR_VERSION:
+            if run.selector_config_version in TEXT_NEIGHBOR_SELECTOR_VERSIONS:
                 allowed_origins.add(RetrievalOrigin.STRUCTURED)
                 limits[RetrievalOrigin.STRUCTURED] = 2
             elif run.selector_config_version in {
-                PAGE_SELECTOR_VERSION,
-                COMPANY_PAGE_RRF_SELECTOR_VERSION,
-                LUNA_RERANK_SELECTOR_VERSION,
+                *PAGE_SELECTOR_VERSIONS,
+                *COMPANY_PAGE_RRF_SELECTOR_VERSIONS,
+                *LUNA_RERANK_SELECTOR_VERSIONS,
             }:
                 allowed_origins.add(RetrievalOrigin.STRUCTURED)
                 limits[RetrievalOrigin.STRUCTURED] = STRUCTURED_CONTEXT_LIMIT
@@ -358,10 +358,10 @@ class SqlAlchemyRetrievalRepository:
         if run.selector_config_version in {
             RRF_CONFIG_VERSION,
             RRF_RERANK_SELECTOR_VERSION,
-            TEXT_NEIGHBOR_SELECTOR_VERSION,
-            PAGE_SELECTOR_VERSION,
-            COMPANY_PAGE_RRF_SELECTOR_VERSION,
-            LUNA_RERANK_SELECTOR_VERSION,
+            *TEXT_NEIGHBOR_SELECTOR_VERSIONS,
+            *PAGE_SELECTOR_VERSIONS,
+            *COMPANY_PAGE_RRF_SELECTOR_VERSIONS,
+            *LUNA_RERANK_SELECTOR_VERSIONS,
         }:
             self._require_rrf_based_ranks(
                 run,
@@ -408,7 +408,7 @@ class SqlAlchemyRetrievalRepository:
         expected = {chunk_id: rank for rank, chunk_id in enumerate(ranked_ids, start=1)}
         if any(candidate.fused_rank != expected[candidate.chunk_id] for candidate in candidates):
             raise SearchRelationshipError("RRF fusion ranks do not match the original lane ranks")
-        if run.selector_config_version == LUNA_RERANK_SELECTOR_VERSION:
+        if run.selector_config_version in LUNA_RERANK_SELECTOR_VERSIONS:
             return
         context_order = expected
         if run.selector_config_version == RRF_RERANK_SELECTOR_VERSION:
@@ -433,7 +433,7 @@ class SqlAlchemyRetrievalRepository:
             key=lambda candidate: candidate.selection_rank or 0,
         )
         ranks = [context_order[candidate.chunk_id] for candidate in selected]
-        if run.selector_config_version == COMPANY_PAGE_RRF_SELECTOR_VERSION:
+        if run.selector_config_version in COMPANY_PAGE_RRF_SELECTOR_VERSIONS:
             highest_rank = 0
             for rank in ranks:
                 if highest_rank - rank > COMPANY_RRF_RANK_BONUS:

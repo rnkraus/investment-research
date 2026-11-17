@@ -478,7 +478,11 @@ Claim support continues to come from the original source text.
 - Expand the M1.5 evaluation core with public or sanitized representative document forms,
   discovery cases, reviewed expected evidence, and failure categories.
 - The local source-ID research path combines RRF with direct page ranking, bounded text
-  neighbors, and a local weighted follow-up for explicit dated metrics. Observation dates
+  neighbors, and a local weighted follow-up for explicit dated metrics. Text neighbors are
+  considered for every question within two positions of the first four text anchors. The
+  selector can add one informative neighbor and a qualifying intervening paragraph, with at
+  most two additions and eight total chunks. Selection versions and historical compatibility
+  are recorded in the research module guide. Observation dates
   stay fixed in search refinements and date-specific answer prompts.
 - Without an explicit company filter, an unambiguous company name or ticker in the question
   can promote already retrieved passages from reviewed company documents by up to two

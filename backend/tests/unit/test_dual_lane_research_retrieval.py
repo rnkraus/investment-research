@@ -1106,7 +1106,11 @@ def test_rrf_text_neighbors_keep_fusion_and_enforce_observation_scope(
             hit=hit,
             anchor_terms=frozenset({"technolog", "platform"}),
             neighbor_terms=frozenset({"gpus" if offset == 1 else "gpu", "idl"}),
-            query_terms=frozenset({"gpu", "idl", "time"}),
+            query_terms=(
+                frozenset({"technolog", "platform"})
+                if question.startswith("Which")
+                else frozenset({"gpu", "idl", "time"})
+            ),
         )
         for offset, hit in enumerate(neighbor_hits, 1)
     )

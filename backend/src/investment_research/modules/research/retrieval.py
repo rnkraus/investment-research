@@ -96,7 +96,6 @@ from investment_research.modules.search.text_neighbors import (
     TEXT_NEIGHBOR_ANCHOR_LIMIT,
     TEXT_NEIGHBOR_CONTEXT_LIMIT,
     TEXT_NEIGHBOR_SELECTOR_VERSION,
-    seeks_explanation,
     select_text_neighbors,
 )
 
@@ -695,11 +694,7 @@ class RetrieveResearchService:
                 reader,
                 selected_candidates,
             )
-        if (
-            self._expand_text_neighbors
-            and isinstance(profile, RrfSelectionProfile)
-            and seeks_explanation(question)
-        ):
+        if self._expand_text_neighbors and isinstance(profile, RrfSelectionProfile):
             anchors = tuple(
                 item.chunk_id
                 for item in selected_candidates[:TEXT_NEIGHBOR_ANCHOR_LIMIT]

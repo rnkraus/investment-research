@@ -103,7 +103,7 @@ comparison boundary.
 
 ### Live source-ID context expansion
 
-The normal source-ID runtime uses `m1-5-rrf-k60-page-context-v1` with a maximum of eight
+The normal source-ID runtime uses `m1-5-rrf-k60-page-context-v2` with a maximum of eight
 chunks and the configured character ceiling. It ranks complete PDF pages and text documents
 by lexical overlap and allocates up to four slots after the leading RRF selections. A dated
 question with a named metric can add one passage through a local follow-up search. The follow-up
@@ -111,12 +111,19 @@ weights the metric above the date, requires the full requested date in the added
 skips PDF pages already selected. For a question that asks only for a dated observation, new
 passages must qualify through this follow-up. These stages make no additional provider calls.
 
-For explanatory questions the runtime also checks up to two
-neighbors on either side of the first four selected text anchors. PostgreSQL reads the
-same active chunk set under the original workspace, document, and temporal filters. One
-relevant pair can replace lower-ranked passages. The existing lexical and dense ranks
+For every question the runtime checks up to two neighbors on either side of the first four
+selected text anchors. PostgreSQL reads the same active chunk set under the original workspace,
+document, and temporal filters. Explanatory questions retain the existing relevant-pair selection.
+Otherwise, a neighbor must introduce uncovered query terms or a question-relevant explanation,
+quantity, or location signal. A selected neighbor two positions away can include its intervening
+paragraph when both share at least two terms absent from the anchor. At most two added passages
+replace trailing selections, and the first four anchors remain protected. These lexical signals
+nominate context for generation; statement support is checked independently. The existing lexical and dense ranks
 remain auditable; added pages and neighbors are stored as structured selections and pass canonical
 source-ID and statement-support validation.
+
+Selection versions end in `v2` for text, page, company-priority, and Luna context selection.
+Canonical validation and persistence continue to accept the historical `v1` versions.
 
 An explicit observation date in the question is preserved in lexical query refinements and
 required for added neighbor text. The v9 answer prompt applies date-precision guidance to

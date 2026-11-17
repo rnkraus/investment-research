@@ -37,11 +37,11 @@ from investment_research.modules.research.contracts import (
 from investment_research.modules.research.domain import CoverageStatus
 from investment_research.modules.search.domain import RetrievalMode, RetrievalOrigin
 from investment_research.modules.search.fusion_contracts import (
-    COMPANY_PAGE_RRF_SELECTOR_VERSION,
-    LUNA_RERANK_SELECTOR_VERSION,
+    COMPANY_PAGE_RRF_SELECTOR_VERSIONS,
+    LUNA_RERANK_SELECTOR_VERSIONS,
 )
-from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSION
-from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_SELECTOR_VERSION
+from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSIONS
+from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_SELECTOR_VERSIONS
 
 
 class EvidenceSpanUnavailableError(Exception):
@@ -385,12 +385,12 @@ class ValidateGeneratedAnswerService:
                 and (
                     source.retrieval_selector_config_version
                     in {
-                        PAGE_SELECTOR_VERSION,
-                        COMPANY_PAGE_RRF_SELECTOR_VERSION,
-                        LUNA_RERANK_SELECTOR_VERSION,
+                        *PAGE_SELECTOR_VERSIONS,
+                        *COMPANY_PAGE_RRF_SELECTOR_VERSIONS,
+                        *LUNA_RERANK_SELECTOR_VERSIONS,
                     }
                     or (
-                        source.retrieval_selector_config_version == TEXT_NEIGHBOR_SELECTOR_VERSION
+                        source.retrieval_selector_config_version in TEXT_NEIGHBOR_SELECTOR_VERSIONS
                         and source.source_locator_kind is SourceLocatorKind.TEXT_PASSAGE
                     )
                 )
