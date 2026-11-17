@@ -4,6 +4,9 @@
   abstention across 19 reviewed cases. It includes expected results, observed gaps, and timings.
 - [Retrieval and reranking follow-up](retrieval-and-reranking.md) records the search
   experiments, the fixed-pool Luna comparison, and separate runtime checks.
+- [Neighbor context app evaluation](neighbor-context-app-run.md) records the 19-case
+  whole-archive run with bounded neighboring text and Terra/Terra, including remaining
+  discovery and abstention-message gaps.
 - [Individual and batched evidence checks](../docs/13-m1-5-rag-quality-plan.md#batched-statement-support-in-the-local-api)
   compares judgments, calls, latency, token use, and estimated cost on seven fixed synthetic
   statements using Luna.
