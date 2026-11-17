@@ -1,5 +1,8 @@
 # Evaluation
 
+- [Current RAG and archive-search evaluation](rag-archive-current-run.md) records the repeat
+  of all 19 cases with Terra/Terra and additional hybrid discovery requests: nine complete
+  answer cases, two of three expected abstentions, and the remaining date/search gaps.
 - [First app run on public sources](first-app-run.md) covers archive search, cited answers, and
   abstention across 19 reviewed cases. It includes expected results, observed gaps, and timings.
 - [Retrieval and reranking follow-up](retrieval-and-reranking.md) records the search
