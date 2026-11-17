@@ -18,8 +18,12 @@ from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 RRF_CONFIG_VERSION: Final = "m1-5-rrf-k60-v1"
 RRF_RANK_CONSTANT: Final = 60
-LUNA_RERANK_SELECTOR_VERSION: Final = "m1-5-rrf-page-luna-v1"
-COMPANY_PAGE_RRF_SELECTOR_VERSION: Final = "m1-5-rrf-page-company-priority-v1"
+LUNA_RERANK_SELECTOR_VERSION: Final = "m1-5-rrf-page-luna-v2"
+LUNA_RERANK_SELECTOR_VERSIONS = frozenset({"m1-5-rrf-page-luna-v1", LUNA_RERANK_SELECTOR_VERSION})
+COMPANY_PAGE_RRF_SELECTOR_VERSION: Final = "m1-5-rrf-page-company-priority-v2"
+COMPANY_PAGE_RRF_SELECTOR_VERSIONS = frozenset(
+    {"m1-5-rrf-page-company-priority-v1", COMPANY_PAGE_RRF_SELECTOR_VERSION}
+)
 COMPANY_RRF_RANK_BONUS: Final = 2
 type RrfOrigin = Literal[RetrievalOrigin.LEXICAL, RetrievalOrigin.DENSE]
 

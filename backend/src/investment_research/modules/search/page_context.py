@@ -13,7 +13,8 @@ from investment_research.modules.search.contracts import (
 from investment_research.modules.search.domain import RetrievalOrigin
 from investment_research.modules.search.observation_dates import requested_observation_date
 
-PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v1"
+PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v2"
+PAGE_SELECTOR_VERSIONS = frozenset({"m1-5-rrf-k60-page-context-v1", PAGE_SELECTOR_VERSION})
 PAGE_CONTEXT_SLOTS = 4
 STRUCTURED_CONTEXT_LIMIT = 7
 _OBSERVATION_METRIC = re.compile(
