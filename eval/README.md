@@ -74,3 +74,28 @@ Both commands are offline. The attempt preview assumes one submission per case a
 the configured transient retrieval retry. The API applies its workspace budget to actual
 provider reservations. Review available budget before submitting the pilot and record the usage
 ledger afterward. Keep raw streams, local IDs, and unreviewed results out of Git.
+
+## Weighted OR lexical retrieval experiment
+
+The PostgreSQL adapter supports an opt-in `weighted_or` strategy for plain queries. A chunk
+can match any query lexeme. Its score sums the inverse document frequency of each distinct
+matched lexeme, where the corpus consists of the eligible chunks in the query's scope. The
+formula is `ln(1 + (N - df + 0.5) / (df + 0.5))`, with `N` eligible chunks and `df` eligible
+chunks containing the lexeme. Queries using explicit phrases, `OR`, or exclusions, and
+queries outside the one-to-16-lexeme range, use the existing `websearch` strategy. The app
+continues to use `websearch` by default.
+
+The 2026-11-17 pilot replay used the original document scopes, the same saved Pinecone hits,
+and the existing RRF and context expansion. The comparison measures ranks in the eight
+selected passages before generation preflight. It made no provider calls.
+
+| Case | `websearch` | `weighted_or` |
+| --- | --- | --- |
+| A05 · Citi financing | Size/lender at 1, maturity/spread at 5 | Size/lender at 1, maturity/spread at 3 |
+| A06 · Inferize | Platform at 1 | Platform at 1, cold-start bottleneck at 7. GPU-idle mechanism appears at lexical rank 9 and stays outside the final selection. |
+| A09 · Operating ARR | All three markers at 2 | All three markers at 3 |
+| U03 · Missing November 6 ARR | September-only evidence at 7 | September-only evidence falls outside the selection. Neither variant showed evidence for November 6 in the reviewed scope. |
+
+In a separate lexical-adapter control for D07, both strategies returned five stem matches in
+the IREN scope and zero exact `Inferize` matches. The experiment measured retrieval only.
+Archive-wide latency and answer quality remain open checks before making this an app option.

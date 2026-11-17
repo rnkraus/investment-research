@@ -122,6 +122,53 @@ def test_known_passage_is_retrieved_and_unanswerable_question_returns_no_hit(
     assert unanswerable_hits == ()
 
 
+def test_weighted_or_returns_scoped_partial_matches_and_rewards_rare_terms(
+    integration_database_engine: Engine,
+) -> None:
+    rare = with_chunk_texts(
+        make_research_source(label="Weighted OR rare"),
+        ("Signalforge released a production update.", "Production capacity grew."),
+    )
+    outside = with_chunk_texts(
+        make_research_source(label="Weighted OR outside"),
+        ("Signalforge production bottleneck.", "An unrelated paragraph."),
+    )
+    for source in (rare, outside):
+        persist_research_source(integration_database_engine, source)
+    query = make_query(
+        rare,
+        "Signalforge production bottleneck",
+        filters=RetrievalFilters(document_ids=(rare.document.id, outside.document.id)),
+        candidate_limit=2,
+    )
+    with create_session_factory(integration_database_engine)() as session:
+        assert PostgresLexicalSearch(session).search(rare.context, query) == ()
+        hits = PostgresLexicalSearch(session, strategy="weighted_or").search(rare.context, query)
+
+    assert [hit.chunk_id for hit in hits] == [chunk.id for chunk in rare.chunks]
+    # The rare term adds more to the first score than the common term shared by both.
+    assert hits[0].raw_score > 2 * hits[1].raw_score
+
+
+def test_weighted_or_preserves_explicit_phrase_and_exclusion(
+    integration_database_engine: Engine,
+) -> None:
+    source = with_chunk_texts(
+        make_research_source(label="Weighted OR explicit syntax"),
+        ("Accelerator capacity doubled.", "Accelerator capacity was reserved."),
+    )
+    persist_research_source(integration_database_engine, source)
+    query = make_query(
+        source,
+        '"accelerator capacity" -reserved',
+        filters=RetrievalFilters(document_ids=(source.document.id,)),
+    )
+    with create_session_factory(integration_database_engine)() as session:
+        hits = PostgresLexicalSearch(session, strategy="weighted_or").search(source.context, query)
+
+    assert [hit.chunk_id for hit in hits] == [source.chunks[0].id]
+
+
 def test_pasted_text_hit_preserves_text_passage_locator(
     integration_database_engine: Engine,
 ) -> None:
