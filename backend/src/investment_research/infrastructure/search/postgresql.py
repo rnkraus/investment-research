@@ -1,13 +1,28 @@
 """PostgreSQL adapters for canonical lexical retrieval and dense qualification."""
 
+import re
 from calendar import month_abbr, month_name
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import Select, and_, func, select, tuple_
+from sqlalchemy import (
+    ColumnElement,
+    Select,
+    Text,
+    and_,
+    case,
+    func,
+    literal,
+    or_,
+    select,
+    true,
+    tuple_,
+)
+from sqlalchemy.dialects.postgresql import TSQUERY, array
 from sqlalchemy.orm import Session, aliased
 
 from investment_research.modules.companies.contracts import CompanySummary
@@ -55,13 +70,18 @@ from investment_research.modules.search.page_context import (
 from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_RADIUS, TextNeighbor
 
 TICKER_ADAPTER = TypeAdapter(CompanyTicker)
+WEIGHTED_OR_TERM_LIMIT = 16
+_EXPLICIT_WEBSEARCH_SYNTAX = re.compile(r'"|(?:^|\s)-|\bor\b')
 
 
 class PostgresLexicalSearch:
     """Select eligible canonical chunks through PostgreSQL full-text search."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self, session: Session, *, strategy: Literal["websearch", "weighted_or"] = "websearch"
+    ) -> None:
         self._session = session
+        self._strategy = strategy
 
     def search(
         self,
@@ -71,6 +91,19 @@ class PostgresLexicalSearch:
         """Return bounded hits after all canonical eligibility predicates pass."""
 
         statement = self.build_statement(context, query)
+        if self._strategy == "weighted_or" and not _EXPLICIT_WEBSEARCH_SYNTAX.search(
+            query.normalized_query
+        ):
+            terms = tuple(
+                self._session.scalar(
+                    select(
+                        func.tsvector_to_array(func.to_tsvector("english", query.normalized_query))
+                    )
+                )
+                or ()
+            )
+            if 0 < len(terms) <= WEIGHTED_OR_TERM_LIMIT:
+                statement = self.build_weighted_or_statement(context, query, terms)
         rows = self._session.execute(statement).tuples()
         return tuple(
             LexicalSearchHit(
@@ -109,6 +142,45 @@ class PostgresLexicalSearch:
             PostgresLexicalSearch._eligible_chunks(context, query)
             .add_columns(raw_score)
             .where(ChunkRow.search_vector.bool_op("@@")(text_query), raw_score > 0)
+            .order_by(raw_score.desc(), ChunkRow.id.asc())
+            .limit(query.candidate_limit)
+        )
+
+    @staticmethod
+    def build_weighted_or_statement(
+        context: WorkspaceContext, query: LexicalSearchQuery, terms: tuple[str, ...]
+    ) -> Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str, float]]:
+        """Rank partial chunk matches with IDF from the same eligible scope."""
+        if not 0 < len(terms) <= WEIGHTED_OR_TERM_LIMIT or len(set(terms)) != len(terms):
+            raise ValueError("weighted OR requires bounded distinct lexemes")
+
+        # PostgreSQL serializes each already stemmed lexeme as one quoted tsquery operand.
+        matches = tuple(
+            ChunkRow.search_vector.bool_op("@@")(
+                func.array_to_tsvector(array([term])).cast(Text).cast(TSQUERY)
+            )
+            for term in terms
+        )
+        eligible = PostgresLexicalSearch._eligible_chunks(context, query)
+        frequencies = eligible.with_only_columns(
+            func.count().label("total"),
+            *(func.count().filter(match).label(f"df_{i}") for i, match in enumerate(matches)),
+        ).cte("scoped_lexeme_frequencies")
+        score: ColumnElement[float] = literal(0.0)
+        for i, match in enumerate(matches):
+            frequency = frequencies.c[f"df_{i}"]
+            score = score + case(
+                (
+                    match,
+                    func.ln(1.0 + (frequencies.c.total - frequency + 0.5) / (frequency + 0.5)),
+                ),
+                else_=0.0,
+            )
+        raw_score = score.label("raw_score")
+        return (
+            eligible.join_from(ChunkRow, frequencies, true())
+            .add_columns(raw_score)
+            .where(or_(*matches))
             .order_by(raw_score.desc(), ChunkRow.id.asc())
             .limit(query.candidate_limit)
         )
