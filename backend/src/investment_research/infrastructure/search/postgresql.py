@@ -48,11 +48,10 @@ from investment_research.modules.processing.persistence import (
     StructureBlockRow,
 )
 from investment_research.modules.search.archive import (
-    ARCHIVE_PASSAGE_LIMIT,
     ARCHIVE_SEARCH_LIMIT,
     ArchiveDocumentHit,
-    ArchiveSearchHit,
-    ArchiveSearchResult,
+    ArchiveSearchCandidate,
+    ArchiveSearchCandidates,
 )
 from investment_research.modules.search.contracts import (
     DenseQualificationRequest,
@@ -492,103 +491,112 @@ class PostgresArchiveSearchReader:
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._session_factory = session_factory
 
-    def search(
-        self, context: WorkspaceContext, query: LexicalSearchQuery, *, metadata_term: str
-    ) -> ArchiveSearchResult:
-        statement = (
-            PostgresLexicalSearch.build_statement(context, query)
-            .add_columns(DocumentVersionRow.title, DocumentVersionRow.published_at)
-            .join(
-                OriginalArtifactRow,
-                and_(
-                    OriginalArtifactRow.workspace_id == DocumentVersionRow.workspace_id,
-                    OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
-                ),
+    def read(
+        self,
+        context: WorkspaceContext,
+        *,
+        query: LexicalSearchQuery | None,
+        request: DenseQualificationRequest | None,
+        metadata_term: str | None,
+    ) -> ArchiveSearchCandidates:
+        """Load canonical lane hits and originals in one session before application ranking."""
+        if query is None and request is None:
+            raise ValueError("archive discovery requires a lexical or dense query")
+        if (
+            query is not None
+            and request is not None
+            and (
+                query.filters != request.filters
+                or query.lexical_config_version != request.lexical_config_version
             )
-        )
+        ):
+            raise ValueError("hybrid archive lanes require identical eligibility scope")
         with self._session_factory() as session:
-            rows = session.execute(statement).tuples().all()
-            items = tuple(
-                ArchiveSearchHit(
-                    chunk_id=chunk_id,
-                    document_id=document_id,
-                    document_version_id=document_version_id,
-                    title=title,
-                    published_at=published_at,
-                    source_locator_kind=locator,
-                    page_number=page_number,
-                    passage=text[:ARCHIVE_PASSAGE_LIMIT],
+            lexical = (
+                self._read_candidates(
+                    session, PostgresLexicalSearch.build_statement(context, query), LexicalSearchHit
                 )
-                for (
-                    chunk_id,
-                    document_id,
-                    document_version_id,
-                    _,
-                    locator,
-                    page_number,
-                    text,
-                    _,
-                    title,
-                    published_at,
-                ) in rows[:ARCHIVE_SEARCH_LIMIT]
+                if query is not None
+                else ()
             )
-            return ArchiveSearchResult(
-                companies=self._find_companies(session, context, query.filters, metadata_term),
-                documents=self._find_documents(session, context, query.filters, metadata_term),
-                items=items,
-                has_more=len(rows) > ARCHIVE_SEARCH_LIMIT,
+            dense: tuple[ArchiveSearchCandidate[QualifiedDenseHit], ...] = ()
+            if request is not None and request.provider_hits:
+                # Attach the validated provider scores without changing canonical eligibility.
+                loaded = self._read_candidates(
+                    session,
+                    PostgresDenseCandidateQualifier.build_statement(context, request).add_columns(
+                        case(
+                            {item.chunk_id: item.raw_score for item in request.provider_hits},
+                            value=ChunkRow.id,
+                            else_=0.0,
+                        ).label("raw_score")
+                    ),
+                    QualifiedDenseHit,
+                )
+                by_chunk = {item.hit.chunk_id: item for item in loaded}
+                dense = tuple(
+                    by_chunk[item.chunk_id]
+                    for item in request.provider_hits
+                    if item.chunk_id in by_chunk
+                )
+            return ArchiveSearchCandidates(
+                lexical=lexical,
+                dense=dense,
+                companies=(
+                    self._find_companies(session, context, query.filters, metadata_term)
+                    if query is not None and metadata_term is not None
+                    else ()
+                ),
+                documents=(
+                    self._find_documents(session, context, query.filters, metadata_term)
+                    if query is not None and metadata_term is not None
+                    else ()
+                ),
             )
 
-    def search_semantic(
-        self, context: WorkspaceContext, request: DenseQualificationRequest
-    ) -> ArchiveSearchResult:
-        if not request.provider_hits:
-            return ArchiveSearchResult(companies=(), documents=(), items=(), has_more=False)
-        statement = (
-            PostgresDenseCandidateQualifier.build_statement(context, request)
-            .add_columns(DocumentVersionRow.title, DocumentVersionRow.published_at)
-            .join(
-                OriginalArtifactRow,
-                and_(
-                    OriginalArtifactRow.workspace_id == DocumentVersionRow.workspace_id,
-                    OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
+    @staticmethod
+    def _read_candidates[Hit: LexicalSearchHit | QualifiedDenseHit](
+        session: Session,
+        statement: Select[tuple[UUID, UUID, UUID, UUID, SourceLocatorKind, int | None, str, float]],
+        hit_type: type[Hit],
+    ) -> tuple[ArchiveSearchCandidate[Hit], ...]:
+        """Attach original metadata to either canonical lane in the same database query."""
+        statement_with_metadata = statement.add_columns(
+            DocumentVersionRow.title, DocumentVersionRow.published_at
+        ).join(
+            OriginalArtifactRow,
+            and_(
+                OriginalArtifactRow.workspace_id == DocumentVersionRow.workspace_id,
+                OriginalArtifactRow.document_version_id == DocumentVersionRow.id,
+            ),
+        )
+        return tuple(
+            ArchiveSearchCandidate(
+                hit=hit_type(
+                    chunk_id=chunk,
+                    document_id=document,
+                    document_version_id=version,
+                    structure_block_id=block,
+                    source_locator_kind=kind,
+                    page_number=page,
+                    text=text,
+                    raw_score=float(score),
                 ),
+                title=title,
+                published_at=published_at,
             )
-        )
-        with self._session_factory() as session:
-            by_chunk_id = {
-                chunk_id: ArchiveSearchHit(
-                    chunk_id=chunk_id,
-                    document_id=document_id,
-                    document_version_id=document_version_id,
-                    title=title,
-                    published_at=published_at,
-                    source_locator_kind=locator,
-                    page_number=page_number,
-                    passage=text[:ARCHIVE_PASSAGE_LIMIT],
-                )
-                for (
-                    chunk_id,
-                    document_id,
-                    document_version_id,
-                    _,
-                    locator,
-                    page_number,
-                    text,
-                    title,
-                    published_at,
-                ) in session.execute(statement).tuples()
-            }
-        items = tuple(
-            by_chunk_id[hit.chunk_id]
-            for hit in request.provider_hits
-            if hit.chunk_id in by_chunk_id
-        )
-        return ArchiveSearchResult(
-            companies=(),
-            documents=(),
-            items=items[:ARCHIVE_SEARCH_LIMIT],
-            has_more=len(items) > ARCHIVE_SEARCH_LIMIT,
+            for (
+                chunk,
+                document,
+                version,
+                block,
+                kind,
+                page,
+                text,
+                score,
+                title,
+                published_at,
+            ) in session.execute(statement_with_metadata).tuples()
         )
 
     @staticmethod

@@ -20,9 +20,12 @@ from investment_research.modules.search.contracts import (
     DenseRetrievalProfile,
     DenseRetrievalQuery,
     ImmutableSearchContract,
+    LexicalSearchHit,
     LexicalSearchQuery,
+    QualifiedDenseHit,
 )
 from investment_research.modules.search.domain import ConfigurationVersion, RetrievalFilters
+from investment_research.modules.search.fusion import fuse_rrf_hits
 from investment_research.modules.search.ports import (
     DenseRetriever,
     SearchProviderContractError,
@@ -44,11 +47,11 @@ class ArchiveSearchInput(ImmutableSearchContract, PublicationDateBounds, SourceA
         ),
     ]
     company_id: UUID | None = None
-    mode: Literal["keyword", "semantic"] = "keyword"
+    mode: Literal["keyword", "semantic", "hybrid"] = "keyword"
 
     @model_validator(mode="after")
     def validate_lexical_query(self) -> Self:
-        if self.mode == "keyword":
+        if self.mode != "semantic":
             normalize_lexical_query(self.query)
         return self
 
@@ -92,16 +95,47 @@ class ArchiveSearchResult(ImmutableSearchContract):
     has_more: bool
 
 
-class ArchiveSearchReader(Protocol):
-    def search(
-        self, context: WorkspaceContext, query: LexicalSearchQuery, *, metadata_term: str
-    ) -> ArchiveSearchResult:
-        """Find exact ticker, literal title, and ranked passage matches."""
+@dataclass(frozen=True, slots=True)
+class ArchiveSearchCandidate[Hit: LexicalSearchHit | QualifiedDenseHit]:
+    """A qualified canonical hit with the metadata required by archive discovery."""
 
-    def search_semantic(
-        self, context: WorkspaceContext, request: DenseQualificationRequest
-    ) -> ArchiveSearchResult:
-        """Return eligible original passages in vector candidate order."""
+    hit: Hit
+    title: DocumentTitle
+    published_at: AwareDatetime | None
+
+    def to_result(self) -> ArchiveSearchHit:
+        return ArchiveSearchHit(
+            chunk_id=self.hit.chunk_id,
+            document_id=self.hit.document_id,
+            document_version_id=self.hit.document_version_id,
+            title=self.title,
+            published_at=self.published_at,
+            source_locator_kind=self.hit.source_locator_kind,
+            page_number=self.hit.page_number,
+            passage=self.hit.text[:ARCHIVE_PASSAGE_LIMIT],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveSearchCandidates:
+    """Detached lane rankings and metadata from one canonical database read scope."""
+
+    lexical: tuple[ArchiveSearchCandidate[LexicalSearchHit], ...]
+    dense: tuple[ArchiveSearchCandidate[QualifiedDenseHit], ...]
+    companies: tuple[CompanySummary, ...]
+    documents: tuple[ArchiveDocumentHit, ...]
+
+
+class ArchiveSearchReader(Protocol):
+    def read(
+        self,
+        context: WorkspaceContext,
+        *,
+        query: LexicalSearchQuery | None,
+        request: DenseQualificationRequest | None,
+        metadata_term: str | None,
+    ) -> ArchiveSearchCandidates:
+        """Load qualified lanes and optional exact metadata without choosing fusion policy."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,7 +203,8 @@ class SearchArchiveService:
             published_from=command.published_from,
             published_to=command.published_to,
         )
-        if command.mode == "semantic":
+        request = None
+        if command.mode in {"semantic", "hybrid"}:
             if self._semantic is None:
                 raise SearchProviderUnavailableError("semantic archive search is unavailable")
             request = self._semantic.retrieve(
@@ -178,15 +213,41 @@ class SearchArchiveService:
                 filters=filters,
                 lexical_config_version=self._lexical_config_version,
             )
-            return self._reader.search_semantic(context, request)
-
-        query = LexicalSearchQuery(
-            normalized_query=normalize_lexical_query(command.query),
-            filters=filters,
-            lexical_config_version=self._lexical_config_version,
-            candidate_limit=ARCHIVE_SEARCH_LIMIT + 1,
+        query = None
+        term = None
+        if command.mode != "semantic":
+            query = LexicalSearchQuery(
+                normalized_query=normalize_lexical_query(command.query),
+                filters=filters,
+                lexical_config_version=self._lexical_config_version,
+                candidate_limit=ARCHIVE_SEARCH_LIMIT + 1,
+            )
+            term = command.query
+            if term.startswith('"') and term.endswith('"'):
+                term = term[1:-1].strip()
+        candidates = self._reader.read(context, query=query, request=request, metadata_term=term)
+        if command.mode == "hybrid":
+            ranked = fuse_rrf_hits(
+                lexical_hits=tuple(item.hit for item in candidates.lexical[:ARCHIVE_SEARCH_LIMIT]),
+                dense_hits=tuple(item.hit for item in candidates.dense[:ARCHIVE_SEARCH_LIMIT]),
+            )
+            combined: tuple[
+                ArchiveSearchCandidate[QualifiedDenseHit]
+                | ArchiveSearchCandidate[LexicalSearchHit],
+                ...,
+            ] = (*candidates.dense, *candidates.lexical)
+            by_chunk = {item.hit.chunk_id: item.to_result() for item in combined}
+            items = tuple(by_chunk[item.hit.chunk_id] for item in ranked)
+        else:
+            lane = candidates.dense if command.mode == "semantic" else candidates.lexical
+            items = tuple(item.to_result() for item in lane)
+        return ArchiveSearchResult(
+            companies=candidates.companies,
+            documents=candidates.documents,
+            items=items[:ARCHIVE_SEARCH_LIMIT],
+            has_more=(
+                len(items) > ARCHIVE_SEARCH_LIMIT
+                or len(candidates.lexical) > ARCHIVE_SEARCH_LIMIT
+                or len(candidates.dense) > ARCHIVE_SEARCH_LIMIT
+            ),
         )
-        term = command.query
-        if term.startswith('"') and term.endswith('"'):
-            term = term[1:-1].strip()
-        return self._reader.search(context, query, metadata_term=term)

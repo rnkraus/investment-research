@@ -368,7 +368,8 @@
             "default": "keyword",
             "enum": [
               "keyword",
-              "semantic"
+              "semantic",
+              "hybrid"
             ],
             "title": "Mode",
             "type": "string"
@@ -2330,7 +2331,7 @@
   "paths": {
     "/api/v1/archive-search": {
       "post": {
-        "description": "Return keyword or semantic matches without requesting an AI answer.",
+        "description": "Return keyword, semantic, or hybrid matches without requesting an AI answer.",
         "operationId": "search_archive_api_v1_archive_search_post",
         "requestBody": {
           "content": {
