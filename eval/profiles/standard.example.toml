@@ -1,5 +1,5 @@
 # Validated evaluation profile for free preview and scoring of recorded selections.
-# Selector recomputation and live execution remain later blocks; the website is unchanged.
+# Use run_portfolio_evaluation for new A/U research runs; the website is unchanged.
 # Offline switches must match their recording. Editing them does not recompute old selections.
 # No credentials, runtime record IDs, private endpoints, or source passages belong here.
 
@@ -16,8 +16,8 @@ catalog = "eval/portfolio-cases-v1.json"
 
 # Stage. Allowed: "offline_replay", "retrieval_live", "rag_live".
 # offline_replay: score saved selections; no database/provider calls or new answers.
-# retrieval_live: planned collection of search/context only, without answer/check model calls.
-# rag_live: planned search plus answer generation and batched checks of cited claims.
+# retrieval_live: new collection of search/context only, without answer/check model calls.
+# rag_live: new search plus answer generation and batched checks of cited claims.
 # Embeddings, query planning, or reranking can still cost money in retrieval_live.
 # Preview accepts all modes. The offline executor rejects both live modes; no live fallback exists.
 mode = "offline_replay"
@@ -93,7 +93,7 @@ decompose_query = false
 # pinecone: bge-reranker-v2-m3; requires page_expansion/text_neighbors/company_priority=false
 # because that existing path does not apply those expansions. No silently ignored switches.
 # Offline scoring requires a recording made with this strategy; it does not rerank passages.
-# Future live providers require credentials/budget.
+# The live collector currently supports none/luna; pinecone is rejected before execution.
 strategy = "none"
 
 [models]
@@ -117,7 +117,7 @@ modes = ["keyword", "semantic", "hybrid"]
 # Saved replay input. Allowed: "" (not chosen) or a repository-relative .json path
 # under outputs/. No absolute paths, hidden paths, or parent traversal. Preview does not read it.
 # An empty value is allowed for preview; offline scoring needs this value or --snapshot.
-# retrieval_live requires "". Future rag_live can reuse verified saved generation contexts.
+# Both live modes currently require ""; saved-context generation is not supported.
 # Offline scoring verifies recorded corpus/question/settings identity, not live eligibility.
 # Offline scoring uses the documented versioned JSON snapshot, not legacy bare JSONL exports.
 snapshot = ""
@@ -127,14 +127,15 @@ snapshot = ""
 # Allowed: a QUOTED decimal USD string from "0" through "0.800000", up to six decimal places.
 # offline_replay requires zero. Provider-backed live work requires a positive value.
 # Keyword-only discovery can use zero. All execution remains a separate explicit step.
-# Preview does not spend; offline scoring permits zero calls only. A later live executor must
-# enforce this limit and the existing workspace budget before every provider attempt.
+# Preview does not spend; offline scoring permits zero calls only. The live collector enforces
+# conservative model reservations and the existing workspace budget before every model attempt.
+# Pinecone database query charges are excluded from USD; its query attempts use the call ceiling.
 # Raising the reviewed USD 0.80 policy ceiling needs a separate change and approval.
 max_spend_usd = "0.00"
 
 # Maximum total provider calls for the run. Allowed: integers 0..1000.
 # offline_replay requires 0. Provider-backed live work requires >0. This does not bypass
-# existing role quotas; future execution must count actual attempts, including retries.
+# existing role quotas. Live execution counts actual attempts, including retries and dense queries.
 max_provider_calls = 0
 
 # Fixed rather than configurable in this profile: small embeddings, processing/chunking versions,
