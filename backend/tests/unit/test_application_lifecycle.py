@@ -18,11 +18,13 @@ from investment_research.bootstrap import (
     build_api_container,
     build_worker_container,
 )
+from investment_research.composition_options import ApiCompositionOptions
 from investment_research.infrastructure.database.outbox_unit_of_work import (
     create_outbox_delivery_unit_of_work_factory,
 )
 from investment_research.infrastructure.database.unit_of_work import (
     create_answer_validation_unit_of_work_factory,
+    create_research_retrieval_unit_of_work_factory,
 )
 from investment_research.infrastructure.evidence.openai import (
     OPENAI_STATEMENT_SUPPORT_MAX_OUTPUT_TOKENS,
@@ -1253,3 +1255,40 @@ def test_application_lifespan_owns_container(
 
     assert closed_containers == [container]
     assert not hasattr(application.state, "container")
+
+
+def test_real_composition_shares_run_guard_and_forwards_search_strategy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fakes = install_api_provider_fakes(monkeypatch, citable_units=True)
+    options = ApiCompositionOptions(
+        lexical_strategy="weighted_or",
+        text_neighbors=False,
+        page_expansion=False,
+        company_priority=False,
+        admit_provider_attempt=Mock(),
+        wrap_dense_retriever=Mock(return_value=Mock()),
+    )
+    factory = Mock(wraps=create_research_retrieval_unit_of_work_factory)
+    monkeypatch.setattr(bootstrap_module, "create_research_retrieval_unit_of_work_factory", factory)
+    container = build_api_container(
+        make_m1_api_settings(tmp_path / "objects", citable_units=True), options=options
+    )
+    try:
+        factory.assert_called_once_with(container.session_factory, lexical_strategy="weighted_or")
+        service = container.retrieve_research_service
+        assert not service._expand_text_neighbors and not service._expand_page_context
+        assert service._company_priority is None
+        dependencies = service._m1_query_retrieval
+        assert dependencies is not None
+        assert dependencies.dense_retriever is not fakes.dense_retriever
+        executor = container.provider_operation_executor
+        assert executor is not None and executor.admit_attempt == options.admit_provider_attempt
+        assert dependencies.provider_operation_executor is executor
+        services = container.answer_research_request_service.model_services
+        assert services is not None and len(services) == 4
+        assert all(item._provider_operation_executor is executor for item in services.values())
+        assert service._query_planner is not None and service._query_planner.executor is executor
+        assert service._luna_reranker is not None and service._luna_reranker.executor is executor
+    finally:
+        container.close()

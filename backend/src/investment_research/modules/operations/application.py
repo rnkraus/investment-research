@@ -313,6 +313,7 @@ class ExecuteProviderOperationService:
     monotonic_clock: MonotonicClock = monotonic
     identifier_factory: OperationIdentifierFactory = uuid4
     trace_identifier_factory: TraceIdentifierFactory = lambda: uuid4().hex
+    admit_attempt: Callable[[ProviderOperationAttempt], None] | None = None
 
     def execute[ResultT](
         self,
@@ -326,6 +327,8 @@ class ExecuteProviderOperationService:
     ) -> ResultT:
         """Execute one call between separately committed reservation and finalization writes."""
 
+        if self.admit_attempt is not None:
+            self.admit_attempt(attempt)
         span_attributes = {
             "workspace.id": str(context.workspace_id),
             "correlation.id": str(attempt.correlation_id),
