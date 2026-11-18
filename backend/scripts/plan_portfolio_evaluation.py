@@ -35,36 +35,20 @@ from investment_research.modules.search.text_neighbors import (
     TEXT_NEIGHBOR_ANCHOR_LIMIT,
     TEXT_NEIGHBOR_RADIUS,
 )
-from investment_research.rag_settings import RagConfigurationError, load_rag_settings
+from investment_research.rag_settings import RagConfigurationError
 from scripts.evaluation_profiles import (
     DEFAULT_PROFILE,
-    REPOSITORY_ROOT,
     EvaluationProfileError,
-    checked_repository_file,
-    effective_rag_settings,
-    load_profile,
+    resolve_profile,
 )
-from scripts.score_portfolio_retrieval import Catalog, SnapshotError, validate_catalog
+from scripts.score_portfolio_retrieval import SnapshotError
 
 
 def build_preview(path: Path = DEFAULT_PROFILE) -> dict[str, object]:
     """Resolve the experiment and state future prerequisites, never invoke its requested mode."""
 
-    profile, profile_bytes = load_profile(path)
-    catalog_path = checked_repository_file(profile.catalog, subtree="eval", suffixes=(".json",))
-    catalog_bytes = catalog_path.read_bytes()
-    catalog = Catalog.model_validate_json(catalog_bytes)
-    validate_catalog(catalog, require_portfolio_cases=False)
-    by_id = {case.id: case for case in catalog.cases}
-    mentioned = set(profile.cases.include) | set(profile.cases.exclude)
-    if not mentioned <= by_id.keys():
-        raise EvaluationProfileError("case selection contains IDs absent from the catalog")
-    wanted = set(profile.cases.include) if profile.cases.include else set(by_id)
-    selected = [case for case in catalog.cases if case.id in wanted - set(profile.cases.exclude)]
-    if not selected:
-        raise EvaluationProfileError("case selection is empty")
-    rag_path = REPOSITORY_ROOT / "config/rag.toml"
-    rag = effective_rag_settings(profile, load_rag_settings(rag_path))
+    resolved = resolve_profile(path)
+    profile, selected, rag = resolved.profile, resolved.cases, resolved.rag
     counts = Counter(case.kind for case in selected)
     discovery_requests = counts["discovery"] * len(profile.archive.modes) * profile.repetitions
     research_requests = (counts["answer"] + counts["abstention"]) * profile.repetitions
@@ -149,9 +133,9 @@ def build_preview(path: Path = DEFAULT_PROFILE) -> dict[str, object]:
         "provider_calls_made": 0,
         "name": profile.name,
         "requested_mode": profile.mode,
-        "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
-        "catalog_sha256": hashlib.sha256(catalog_bytes).hexdigest(),
-        "rag_config_sha256": hashlib.sha256(rag_path.read_bytes()).hexdigest(),
+        "profile_sha256": hashlib.sha256(resolved.profile_bytes).hexdigest(),
+        "catalog_sha256": hashlib.sha256(resolved.catalog_bytes).hexdigest(),
+        "rag_config_sha256": hashlib.sha256(resolved.rag_bytes).hexdigest(),
         "case_ids": [case.id for case in selected],
         "case_counts": {kind: counts[kind] for kind in ("discovery", "answer", "abstention")},
         "planned_discovery_evaluations": discovery_requests,

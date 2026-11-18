@@ -1,5 +1,6 @@
-# Validated evaluation profile; the preview command reads this file without executing it.
-# The execution runner is a later block. Editing this file does not change the website.
+# Validated evaluation profile for free preview and scoring of recorded selections.
+# Selector recomputation and live execution remain later blocks; the website is unchanged.
+# Offline switches must match their recording. Editing them does not recompute old selections.
 # No credentials, runtime record IDs, private endpoints, or source passages belong here.
 
 # Profile-format version. Allowed value: 1.
@@ -14,11 +15,11 @@ name = "standard-with-neighbors"
 catalog = "eval/portfolio-cases-v1.json"
 
 # Stage. Allowed: "offline_replay", "retrieval_live", "rag_live".
-# offline_replay: saved retrieval inputs only; no database/provider calls or new answers.
-# retrieval_live: collect search/context only; no answer-generation or evidence-check calls.
-# rag_live: search plus answer generation and batched checks of cited claims.
+# offline_replay: score saved selections; no database/provider calls or new answers.
+# retrieval_live: planned collection of search/context only, without answer/check model calls.
+# rag_live: planned search plus answer generation and batched checks of cited claims.
 # Embeddings, query planning, or reranking can still cost money in retrieval_live.
-# All modes are currently preview-only; no executor or automatic live fallback exists.
+# Preview accepts all modes. The offline executor rejects both live modes; no live fallback exists.
 mode = "offline_replay"
 
 # Research scope. Allowed: "whole_archive" or "catalog_documents".
@@ -91,7 +92,8 @@ decompose_query = false
 # none: standard selection. luna: current Luna LLM path; requires page_expansion=true.
 # pinecone: bge-reranker-v2-m3; requires page_expansion/text_neighbors/company_priority=false
 # because that existing path does not apply those expansions. No silently ignored switches.
-# Offline ranking requires compatible saved outputs. Live providers require credentials/budget.
+# Offline scoring requires a recording made with this strategy; it does not rerank passages.
+# Future live providers require credentials/budget.
 strategy = "none"
 
 [models]
@@ -112,11 +114,12 @@ evidence_check = "gpt-5.6-terra"
 modes = ["keyword", "semantic", "hybrid"]
 
 [inputs]
-# Saved replay input. Allowed: "" (not chosen) or a repository-relative .json/.jsonl path
+# Saved replay input. Allowed: "" (not chosen) or a repository-relative .json path
 # under outputs/. No absolute paths, hidden paths, or parent traversal. Preview does not read it.
-# An empty value is allowed for planning but cannot execute replay. retrieval_live requires "".
-# rag_live can reuse verified saved generation contexts and call only answer/check models.
-# Later execution must verify corpus, question, configuration, and candidate compatibility.
+# An empty value is allowed for preview; offline scoring needs this value or --snapshot.
+# retrieval_live requires "". Future rag_live can reuse verified saved generation contexts.
+# Offline scoring verifies recorded corpus/question/settings identity, not live eligibility.
+# Offline scoring uses the documented versioned JSON snapshot, not legacy bare JSONL exports.
 snapshot = ""
 
 [budget]
@@ -124,7 +127,8 @@ snapshot = ""
 # Allowed: a QUOTED decimal USD string from "0" through "0.800000", up to six decimal places.
 # offline_replay requires zero. Provider-backed live work requires a positive value.
 # Keyword-only discovery can use zero. All execution remains a separate explicit step.
-# The preview neither spends nor enforces a run budget; the later executor must enforce it.
+# Preview does not spend; offline scoring permits zero calls only. A later live executor must
+# enforce this limit and the existing workspace budget before every provider attempt.
 # Raising the reviewed USD 0.80 policy ceiling needs a separate change and approval.
 max_spend_usd = "0.00"
 

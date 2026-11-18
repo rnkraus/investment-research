@@ -39,7 +39,6 @@ def prepared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, dic
     (tmp_path / "eval/portfolio-cases-v1.json").write_bytes(CATALOG)
     (tmp_path / "config/rag.toml").write_bytes(RAG)
     monkeypatch.setattr(profiles, "REPOSITORY_ROOT", tmp_path)
-    monkeypatch.setattr(planner, "REPOSITORY_ROOT", tmp_path)
     return tmp_path / "eval/profiles/example.toml", loads(TEMPLATE)
 
 
@@ -157,7 +156,7 @@ def test_explicit_rag_overrides_do_not_modify_the_shared_config(
 
 
 @pytest.mark.parametrize("mode", ["retrieval_live", "rag_live"])
-@pytest.mark.parametrize("snapshot", ["", "outputs/saved-contexts.jsonl"])
+@pytest.mark.parametrize("snapshot", ["", "outputs/saved-contexts.json"])
 def test_live_preview_reports_possible_roles_without_execution(
     prepared: tuple[Path, dict[str, Any]], mode: str, snapshot: str
 ) -> None:
