@@ -399,17 +399,32 @@ def test_request_instructions_cover_independent_claims_and_evidence_gaps() -> No
     assert len(client.responses.calls) == 1
 
 
-def test_explicit_observation_date_gets_date_precision_instructions() -> None:
-    generation_input = make_input().model_copy(
-        update={"question": "What exact operating ARR did IREN report for November 6, 2026?"}
-    )
-    generator, client = make_generator(generation_input)
+@pytest.mark.parametrize("model", list(ResearchModel))
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What exact operating ARR did IREN report for November 6, 2026?",
+        "What ARR was reported as of September 30, 2026, and when is the new target?",
+    ],
+)
+def test_explicit_observation_date_gets_date_precision_instructions(
+    model: ResearchModel, question: str
+) -> None:
+    generation_input = make_input().model_copy(update={"question": question})
+    generator, client = make_generator(generation_input, model=model)
+    client.responses.overrides["model"] = model.value
 
     generator.generate(generation_input)
 
     instructions = cast(str, client.responses.calls[0]["instructions"])
     assert "Distinguish observation dates, publication dates, and target dates" in instructions
     assert "explicitly withhold that value" in instructions
+    assert "return INSUFFICIENT with no statements or source IDs" in instructions
+    assert "do not return PARTIAL with a related historical value" in instructions
+    assert "answer only the supported requested parts" in instructions
+    assert "Distinguish reported values from future targets" in instructions
+    assert json.loads(cast(str, client.responses.calls[0]["input"]))["question"] == question
+    assert len(client.responses.calls) == 1
 
 
 @pytest.mark.parametrize("model", list(ResearchModel))
@@ -758,8 +773,8 @@ def test_profiles_version_the_model_and_unit_policy_separately_from_m1(
     assert profile.prompt_version != M1_ANSWER_PROMPT_VERSION
     assert model.value in profile.generation_config_version
     assert profile.generator_version == "openai-responses-citable-units-v3"
-    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v11"
-    assert "citable-units-en-v11" in profile.generation_config_version
+    assert profile.prompt_version == "m1-5-citable-units-en-answer-prompt-v12"
+    assert "citable-units-en-v12" in profile.generation_config_version
     assert make_input().catalog.unit_policy_version == "m1-5-citable-units-en-v3"
 
 

@@ -26,7 +26,7 @@ evaluation commands use their own profiles.
 
 **Current source-unit rule:** Preparation uses `m1-5-citable-units-en-v3`, which
 retains the v2 PDF-heading behavior and protects `U.S.`/`U.K.` continuations from false sentence
-boundaries. Live answer configuration identifiers end in `low-citable-units-en-v11` and include
+boundaries. Live answer configuration identifiers end in `low-citable-units-en-v12` and include
 the date-precision, reporting-source, and mechanism guidance described in [M1 contracts](11-m1-contracts.md).
 See the [abbreviation amendment](#country-abbreviation-amendment-2026-10-13).
 
@@ -1965,10 +1965,19 @@ batch fails closed. The website receives each rejected statement's reason throug
 diagnostic contract.
 
 The API accounts for one support operation with the combined usage and records the
-`-document-attribution-batch-reason-v1` configuration suffix. Before persistence, it reloads
+`-document-attribution-batch-reason-v2` configuration suffix. Before persistence, it reloads
 canonical evidence and reuses each result only when its statement ordinal and prepared input
 still match. The legacy M1 path and standalone evaluation profiles retain their individual
 checks. Measure live latency and judgment quality separately from offline contract tests.
+
+**Observation-date correction (2026-11-18).** Answer prompt v12 requires INSUFFICIENT when a
+single requested dated value is unsupported, rather than substituting an earlier value under
+PARTIAL. The API passes a recognized observation-date question to contextual checking as bounded
+untrusted input. Document-support prompt v2 checks the requested material part and date link,
+while allowing distinct dates for other explicitly requested parts. Validation configuration
+identifiers use `m1-5-document-attribution-batch-validation-v2-<model>`. The question participates
+in input reservation and replay identity. The historical benchmark below used v1 and is not a
+measurement of the revised prompt.
 
 **Live benchmark (2026-11-15).** The owner ran the comparison with `gpt-5.6-luna`. Both variants
 received the same seven fixed synthetic statements, quotes, and attribution prefixes. The

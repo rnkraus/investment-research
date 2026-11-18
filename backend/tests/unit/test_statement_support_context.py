@@ -178,6 +178,25 @@ def test_document_context_can_identify_a_quote_from_a_different_block() -> None:
     assert "Northstar" not in source.structure_block_text
 
 
+@pytest.mark.parametrize("question", [" ", "x" * 4_001])
+def test_observation_question_rejects_blank_or_unbounded_input(question: str) -> None:
+    request = prepare_document(*make_document_source_and_reference())
+    assert request is not None
+    with pytest.raises(ValidationError):
+        ContextualStatementSupportInput.model_validate(
+            request.model_dump() | {"observation_question": question}
+        )
+
+
+def test_recorded_support_identity_includes_the_observation_question() -> None:
+    request = prepare_document(*make_document_source_and_reference())
+    assert request is not None
+    first = request.model_copy(update={"observation_question": "What ARR for November 6, 2026?"})
+    second = request.model_copy(update={"observation_question": "What ARR for September 30, 2026?"})
+    assert second not in {first: True}
+    assert "observation_question" not in repr(first)
+
+
 @pytest.mark.parametrize(
     "field", ["workspace_id", "processing_run_id", "document_id", "document_version_id"]
 )

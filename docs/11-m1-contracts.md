@@ -519,7 +519,7 @@ not a replacement for server-side support validation or a guarantee of live mode
 Both answer profiles explicitly require English generated prose regardless of the question's
 language: `rendered_text`, each statement's `text`, and any `missing_information` explanation.
 The M1 prompt v6 preserves verbatim `exact_text`; the M1.5 source-unit prompt
-`m1-5-citable-units-en-answer-prompt-v11` preserves ID selection and server-resolved original text.
+`m1-5-citable-units-en-answer-prompt-v12` preserves ID selection and server-resolved original text.
 When a question names a source that reports another person's statement, the prompt asks for both
 the reporting source and the speaker in the answer if the evidence identifies them. The answer
 cites the reported statement and the attribution unit when they are separate.
@@ -527,6 +527,18 @@ For how questions, the prompt asks for an explicit explanation of the mechanism 
 units support the link.
 For explicit observation dates, the prompt preserves the available day and separates observation,
 publication, and target dates in the generation instruction.
+If a question asks only for a value on an unsupported observation date, the source-ID prompt
+requires INSUFFICIENT rather than a PARTIAL answer containing an earlier value or an unresolved
+"today". Multi-part questions can still return their supported requested parts with distinct
+observation and target dates. In the source-ID API, the contextual support input also carries the
+original question for a recognized single observation date. Document-support prompt v2 checks
+whether each claim answers a requested material part as well as whether its exact quotes support
+it. An earlier value does not establish another date. The question is untrusted data, never
+evidence or instructions. Individual per-statement reasons and the single batched call remain.
+The bounded question is included in support cost reservation and recorded-decision identity;
+the final canonical recheck uses the same question. No public API schema or temporal eligibility
+filter changes. Model compliance still requires evaluation; exact quote matching alone cannot
+establish date-specific answer relevance.
 Neither profile translates quotations or changes canonical source text. This instruction applies
 to Terra and Luna alike; it is not a deterministic language validator or a new quality result.
 

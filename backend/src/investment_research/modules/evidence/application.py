@@ -141,6 +141,8 @@ class ValidateGeneratedAnswerService:
         context: WorkspaceContext,
         retrieval_run_id: UUID,
         generated_answer: UnvalidatedGeneratedAnswer,
+        *,
+        observation_question: str | None = None,
     ) -> EvidenceValidationDecision:
         """Return only content that survives every server-side evidence rule."""
 
@@ -188,6 +190,10 @@ class ValidateGeneratedAnswerService:
             )
             prepared.append(_PreparedStatement(statement.text, tuple(validated_references), rules))
             if support_input is not None:
+                if observation_question is not None:
+                    support_input = ContextualStatementSupportInput.model_validate(
+                        support_input.model_dump() | {"observation_question": observation_question}
+                    )
                 contextual_inputs[ordinal] = support_input
             elif self._support_context_builder is None and len(validated_references) == len(
                 statement.evidence

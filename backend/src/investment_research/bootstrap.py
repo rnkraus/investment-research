@@ -811,7 +811,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         validation_profile = (
             EvidenceValidationProfile(
                 validation_config_version=(
-                    f"m1-5-document-attribution-batch-validation-v1-{ResearchModel.TERRA.value}"
+                    f"m1-5-document-attribution-batch-validation-v2-{ResearchModel.TERRA.value}"
                 )
             )
             if citable_units_enabled
@@ -934,7 +934,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
                     ),
                     validation_profile=EvidenceValidationProfile(
                         validation_config_version=(
-                            f"m1-5-document-attribution-batch-validation-v1-{support_model.value}"
+                            f"m1-5-document-attribution-batch-validation-v2-{support_model.value}"
                             if citable_units_enabled
                             else M1_EVIDENCE_VALIDATION_PROFILE.validation_config_version
                             if support_model is ResearchModel.TERRA

@@ -38,11 +38,17 @@ from investment_research.modules.research.domain import CoverageStatus, Statemen
 from investment_research.modules.search.observation_dates import requested_observation_date
 
 M1_5_CITABLE_ANSWER_GENERATOR_VERSION = "openai-responses-citable-units-v3"
-M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v11"
+M1_5_CITABLE_ANSWER_PROMPT_VERSION = "m1-5-citable-units-en-answer-prompt-v12"
 _OBSERVATION_DATE_INSTRUCTIONS = (
     "\nPreserve the exact day in reported values and target dates when cited evidence supplies it. "
     "Distinguish observation dates, publication dates, and target dates. If the evidence does "
-    "not establish the value on the requested observation date, explicitly withhold that value."
+    "not establish the value on the requested observation date, explicitly withhold that value. "
+    "The requested observation date is a material part of the question. A value from another "
+    "date, an earlier report's 'today', or a publication date does not answer it. For a question "
+    "asking only for that dated value, return INSUFFICIENT with no statements or source IDs "
+    "when that date is unsupported; do not return PARTIAL with a related historical value. "
+    "For a multi-part question, answer only the supported requested parts and preserve each "
+    "value's own observation date. Distinguish reported values from future targets."
 )
 # Leave dedicated margins inside the configured reservation for framing and schema expansion.
 _REQUEST_FRAMING_OVERHEAD_UNITS = 512
@@ -214,7 +220,7 @@ def citable_answer_profile(model: ResearchModel) -> AnswerGenerationProfile:
 
     return AnswerGenerationProfile(
         generator_version=M1_5_CITABLE_ANSWER_GENERATOR_VERSION,
-        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v11",
+        generation_config_version=f"m1-5-{ResearchModel(model).value}-low-citable-units-en-v12",
         prompt_version=M1_5_CITABLE_ANSWER_PROMPT_VERSION,
     )
 

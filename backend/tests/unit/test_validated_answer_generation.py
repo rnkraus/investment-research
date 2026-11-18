@@ -819,12 +819,16 @@ def test_source_becoming_inactive_during_support_check_rejects_answer() -> None:
 
 @pytest.mark.parametrize("changed_source", [False, True])
 @pytest.mark.parametrize(
+    "observation_question", [None, "What operating ARR was reported for November 6, 2026?"]
+)
+@pytest.mark.parametrize(
     ("document_context", "batch_contextual_support"), [(False, False), (True, False), (True, True)]
 )
 def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
     changed_source: bool,
     document_context: bool,
     batch_contextual_support: bool,
+    observation_question: str | None,
 ) -> None:
     unit_of_work = RecordingAnswerValidationUnitOfWork()
     executor = make_provider_operation_executor()
@@ -932,8 +936,19 @@ def test_contextual_support_is_accounted_outside_transactions_and_rechecked(
         batch_contextual_support=batch_contextual_support,
         provider_operation_executor=executor,
     )
-    result = service.generate(make_context(), make_retrieval_result())
+    retrieval = make_retrieval_result()
+    if observation_question is not None:
+        retrieval = retrieval.model_copy(
+            update={
+                "request": retrieval.request.model_copy(update={"question": observation_question})
+            }
+        )
+    result = service.generate(make_context(), retrieval)
     assert len(inputs) == (2 if batch_contextual_support else 1)
+    assert all(
+        request.observation_question == (observation_question if batch_contextual_support else None)
+        for request in inputs
+    )
     support_attempts = [
         call.args[1]
         for call in executor.execute.call_args_list
