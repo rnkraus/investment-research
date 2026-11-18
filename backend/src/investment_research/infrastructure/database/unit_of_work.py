@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
+from typing import Literal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -257,13 +258,15 @@ def sqlalchemy_provider_operation_unit_of_work(
 @contextmanager
 def sqlalchemy_research_retrieval_unit_of_work(
     session_factory: SessionFactory,
+    *,
+    lexical_strategy: Literal["websearch", "weighted_or"] = "websearch",
 ) -> Iterator[ResearchRetrievalUnitOfWork]:
     """Commit one request and its canonically qualified retrieval result atomically."""
 
     with transactional_session(session_factory) as session:
         yield SqlAlchemyResearchRetrievalRepositories(
             research=SqlAlchemyResearchRepository(session),
-            lexical_search=PostgresLexicalSearch(session),
+            lexical_search=PostgresLexicalSearch(session, strategy=lexical_strategy),
             dense_qualifier=PostgresDenseCandidateQualifier(session),
             retrieval=SqlAlchemyRetrievalRepository(session),
         )
@@ -357,11 +360,15 @@ def create_provider_operation_unit_of_work_factory(
 
 def create_research_retrieval_unit_of_work_factory(
     session_factory: SessionFactory,
+    *,
+    lexical_strategy: Literal["websearch", "weighted_or"] = "websearch",
 ) -> ResearchRetrievalUnitOfWorkFactory:
     """Bind research-retrieval transaction creation to one process-wide session factory."""
 
     def create_unit_of_work() -> AbstractContextManager[ResearchRetrievalUnitOfWork]:
-        return sqlalchemy_research_retrieval_unit_of_work(session_factory)
+        return sqlalchemy_research_retrieval_unit_of_work(
+            session_factory, lexical_strategy=lexical_strategy
+        )
 
     return create_unit_of_work
 

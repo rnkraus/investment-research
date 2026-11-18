@@ -427,7 +427,7 @@ class GenerateValidatedAnswerService:
             "research.context",
             attributes={"candidate.count": len(retrieval_result.sources)},
         ) as span:
-            generation_input = self._prepare_generation_input(context, retrieval_result)
+            generation_input = self.prepare_generation_input(context, retrieval_result)
             if span is not None:
                 span.set_attribute("chunk.count", len(generation_input.sources))
         if on_context is not None:
@@ -684,11 +684,13 @@ class GenerateValidatedAnswerService:
             validations=result.validations,
         )
 
-    def _prepare_generation_input(
+    def prepare_generation_input(
         self, context: WorkspaceContext, retrieval_result: ResearchRetrievalResult
     ) -> AnswerGenerationInput:
         """Fit the highest-ranked canonical sources to the local generation budget."""
 
+        if retrieval_result.request.workspace_id != context.workspace_id:
+            raise ResearchScopeError("research result is outside the active workspace")
         builder = self._generation_input_builder
         generator = self._answer_generator
         while True:

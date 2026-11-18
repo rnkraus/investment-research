@@ -4,12 +4,13 @@ import json
 import sys
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from celery import Celery  # type: ignore[import-untyped]
 from sqlalchemy import Engine
 
 from investment_research import __version__
+from investment_research.composition_options import ApiCompositionOptions
 from investment_research.infrastructure.acceptance import (
     M1_ACCEPTANCE_GENERATION_PROFILE,
     M1_ACCEPTANCE_SUPPORT_CONFIG_VERSION,
@@ -483,8 +484,12 @@ class WorkerContainer:
                         self.database_engine.dispose()
 
 
-def build_api_container(settings: ApiSettings) -> ApiContainer:
+def build_api_container(
+    settings: ApiSettings, *, options: ApiCompositionOptions | None = None
+) -> ApiContainer:
     """Wire API application services without constructing parser execution."""
+
+    options = options or ApiCompositionOptions()
 
     processing_profile: ProcessingProfile = (
         M0_0_PROCESSING_PROFILE
@@ -817,6 +822,20 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
             if citable_units_enabled
             else M1_EVIDENCE_VALIDATION_PROFILE
         )
+    if m1_query_retrieval is not None:
+        assert provider_operation_executor is not None
+        provider_operation_executor = replace(
+            provider_operation_executor, admit_attempt=options.admit_provider_attempt
+        )
+        m1_query_retrieval = replace(
+            m1_query_retrieval,
+            provider_operation_executor=provider_operation_executor,
+            dense_retriever=(
+                options.wrap_dense_retriever(m1_query_retrieval.dense_retriever)
+                if options.wrap_dense_retriever is not None
+                else m1_query_retrieval.dense_retriever
+            ),
+        )
     query_planner = None
     luna_reranker = None
     if settings.query_providers is not None and citable_units_enabled:
@@ -844,7 +863,7 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         )
     retrieve_research_service = RetrieveResearchService(
         unit_of_work_factory=create_research_retrieval_unit_of_work_factory(
-            database.session_factory
+            database.session_factory, lexical_strategy=options.lexical_strategy
         ),
         search_profile=LexicalSearchProfile(
             lexical_config_version=processing_profile.lexical_config_version,
@@ -853,9 +872,13 @@ def build_api_container(settings: ApiSettings) -> ApiContainer:
         m1_query_retrieval=m1_query_retrieval,
         query_planner=query_planner,
         luna_reranker=luna_reranker,
-        company_priority=PostgresCompanyPriorityReader(database.session_factory),
-        expand_text_neighbors=citable_units_enabled,
-        expand_page_context=citable_units_enabled,
+        company_priority=(
+            PostgresCompanyPriorityReader(database.session_factory)
+            if options.company_priority
+            else None
+        ),
+        expand_text_neighbors=citable_units_enabled and options.text_neighbors,
+        expand_page_context=citable_units_enabled and options.page_expansion,
         tracer=operation_tracer,
     )
     answer_unit_of_work_factory = create_answer_validation_unit_of_work_factory(

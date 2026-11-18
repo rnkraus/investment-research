@@ -520,6 +520,15 @@ def test_foreign_workspace_never_publishes_context() -> None:
     assert generator.calls == []
 
 
+def test_context_preparation_alone_rejects_a_foreign_workspace_without_model_calls() -> None:
+    unit_of_work = RecordingAnswerValidationUnitOfWork()
+    service, generator = make_service(unit_of_work, make_answer_proposal())
+    foreign_context = make_context().model_copy(update={"workspace_id": UUID(int=999)})
+    with pytest.raises(ValueError, match="outside the active workspace"):
+        service.prepare_generation_input(foreign_context, make_retrieval_result())
+    assert generator.calls == []
+
+
 @pytest.mark.parametrize("source_limit", [0, 1, 2])
 def test_hybrid_generation_fits_context_before_model_call(
     monkeypatch: pytest.MonkeyPatch, source_limit: int
