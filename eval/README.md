@@ -31,9 +31,81 @@ provider call. Provider-backed live plans require explicit positive spend/call l
 keyword-only discovery does not. The reviewed per-run spend ceiling remains USD 0.80.
 
 The preview itself does not verify snapshots, running-code/source identity, provider availability,
-or enforce a run budget. Offline scoring of recorded selections is available below. Selector
-recomputation, live collection, canonical requalification, and enforced live call/spend guards
-remain separate work. Historical commands and results are unchanged.
+or enforce a run budget. Offline scoring and opt-in fresh research collection are available
+below. Historical commands and results are unchanged.
+
+## Run a new research evaluation
+
+The [live example](profiles/live-retrieval.example.toml) selects A06, `retrieval_live`, standard
+app retrieval, a USD 0.08 conservative model reservation ceiling and eight provider invocations.
+Every setting has comments describing its values. Edit a copy under `eval/profiles/`; change
+`mode` to `rag_live` to generate and validate answers, or change the case selection, models,
+limits, neighbors, page expansion, company priority, decomposition or Luna reranking.
+These switches build separate process-local services and do not change the website configuration.
+
+Preview the live profile from `backend/`. This command loads no credentials and makes no calls:
+
+```shell
+uv run --locked python -m scripts.run_portfolio_evaluation \
+  --profile ../eval/profiles/live-retrieval.example.toml
+```
+
+Start the normal local Compose stack and build its current API image first. From the repository
+root, preview the same collector inside the API runtime, using only the necessary source/config
+mounts. `--no-deps` expects the database and other local services to be running. This starts a
+one-off command, not another HTTP server:
+
+```shell
+mkdir -p outputs
+docker compose --env-file .env -f compose.yaml -f compose.m1-live.yaml \
+  run --rm --no-deps --user "$(id -u):$(id -g)" \
+  --entrypoint /app/.venv/bin/python \
+  --volume "$PWD/backend/scripts:/evaluation/backend/scripts:ro" \
+  --volume "$PWD/eval:/evaluation/eval:ro" \
+  --volume "$PWD/config:/evaluation/config:ro" \
+  --volume "$PWD/outputs:/evaluation/outputs" \
+  --workdir /evaluation/backend api \
+  -m scripts.run_portfolio_evaluation \
+  --profile ../eval/profiles/live-retrieval.example.toml
+```
+
+After reviewing the preview and confirming that **every document in the archive** is public or
+synthetic, append `--execute --confirm-public-synthetic --output outputs/portfolio-live/a06-v1`
+to that command. Use a new run directory each time. The collector requires a local development
+M1.5 provider configuration. It loads credentials through the application's normal runtime;
+credentials, environment contents and provider exception messages are not recorded.
+
+Both live modes execute fresh hybrid research retrieval through existing canonical eligibility
+checks. `retrieval_live` prepares the **final post-preflight context** without calling either
+answer or evidence-check model. Embeddings and optional query planning/Luna ranking still cost
+money. `rag_live` uses the ordinary selected-model answer service and server-side validation;
+it stores per-claim rejection diagnostics when available. Research requests and validated
+terminal answers are persisted in the local app. Nothing is imported, deleted or reindexed.
+
+The current collector supports A/U research cases and `none`/`luna` reranking. Discovery cases,
+Pinecone reranking, offline profiles and saved-context generation are rejected before loading
+runtime credentials. The separate archive search and historical runners remain available.
+
+Each ignored run directory contains `profile.toml`, `catalog.json`, `resolved.json`, a flushed
+`results.jsonl` journal, `manifest.json`, and `snapshot.json` when at least one context was captured.
+The manifest records code/config/catalog identities, current document/version identities,
+timings, failures and conservative provider reservations. The corpus must be fully searchable;
+required titles must identify exactly one current document. Catalog metadata is checked before
+each case and after the run; changes stop collection. This is not an atomic database snapshot,
+an original-file checksum verification or a vector-index reconciliation. Normal canonical
+eligibility checks still run for every retrieval and citation.
+
+The shared run limit applies **before** each accounted model attempt and each dense query,
+including application retries. Failed attempts retain their reservations. Existing monthly
+workspace accounting also applies. Pinecone database query charges are not included in the model
+USD estimate; the shared invocation ceiling bounds their requests separately. Actual billed
+costs can differ from reservations. A stopped run retains its partial journal and manifest.
+
+Raw journals/snapshots include public source passages, claims and local IDs. Keep them under
+ignored `outputs/`; publish only reviewed summaries. Marker matches are retrieval diagnostics,
+not automatic proof of answer correctness or correct abstention. Score a completed new snapshot
+with an `offline_replay` profile carrying the same resolved settings, case selection and scope.
+Existing offline comparison commands below can compare the resulting recordings.
 
 ## Score and compare recorded selections offline
 
