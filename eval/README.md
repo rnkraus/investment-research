@@ -1,5 +1,15 @@
 # Evaluation
 
+## Evaluation-profile draft
+
+[The commented profile template](profiles/standard.example.toml) proposes per-experiment
+settings with descriptions, planned values, and offline/live constraints beside every field.
+It is a design example: no current runner reads it, and editing it changes neither the website
+nor an existing evaluation command. Profile loading, strict validation, and a credential-free
+run preview are the next implementation block. Existing verified commands below remain valid.
+
+## Recorded evaluations
+
 - [Observation-date follow-up](observation-date-followup.md) records the targeted U03
   correction, unchanged eight-chunk context, successful abstention, and its verification limits.
 - [Current RAG and archive-search evaluation](rag-archive-current-run.md) records the repeat

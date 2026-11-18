@@ -1,0 +1,81 @@
+# Proposed evaluation-profile format; no existing runner consumes this file yet.
+# These are planned profile choices, not switches for the running website.
+# Credentials, runtime document IDs, raw passages, and private paths do not belong here.
+# A live run will require explicit execution and a separately approved budget.
+
+# Human-readable experiment identifier used to label results.
+# Planned values: a unique lowercase slug containing letters, digits, and hyphens.
+name = "standard-with-neighbors"
+
+# Repository-owned question catalog containing reviewed questions and expected evidence.
+# Available catalog: "eval/portfolio-cases-v1.json" (19 reviewed cases).
+# Additional catalogs must be reviewed and validated before becoming selectable.
+catalog = "eval/portfolio-cases-v1.json"
+
+# Controls whether the evaluation tests retrieval only or also generates an LLM answer.
+# Planned values:
+# "offline_replay": evaluate saved retrieval inputs; no new answers, database, or provider calls.
+# "retrieval_live": run search/context selection ONLY; no answer or evidence-check LLM calls.
+# "rag_live": run search PLUS LLM answer generation and evidence checking of cited claims.
+# Choose "retrieval_live" to inspect which passages reach the answerer without paying for answers.
+# Choose "rag_live" to evaluate the generated answer, its citations, and abstention behavior too.
+# Live retrieval can still incur embedding and reranking costs.
+# Offline replay requires suitable saved inputs for every enabled stage; missing inputs
+# must fail explicitly rather than trigger a live call or silently skip a stage.
+mode = "offline_replay"
+
+[cases]
+# Questions to evaluate. Planned values: [] for every catalog case, or a unique list
+# of existing case IDs. Catalog v1 contains D01..D07 (discovery), A01..A09 (answers),
+# and U01..U03 (abstention). Unknown or duplicate IDs must fail validation.
+# Keep each original question and its expectations unchanged when selecting cases.
+include = ["A05", "A06", "A09", "U03"]
+
+[retrieval]
+# PostgreSQL keyword-matching strategy. Planned values:
+# "websearch": existing full-text search, including explicit phrases/OR/exclusions.
+# "weighted_or": experimental partial matches weighted by eligible-corpus term rarity.
+# weighted_or retains websearch fallback for explicit syntax and unsupported term counts.
+lexical_strategy = "websearch"
+
+# Bounded neighboring-text expansion. Planned values: true or false.
+# true: apply the existing informative-neighbor policy within the same eligible source.
+# false: disable this expansion only; page expansion is controlled separately below.
+text_neighbors = true
+
+# Direct PDF-page context expansion and its existing dated-metric follow-up.
+# Planned values: true or false. false disables this expansion, not ordinary PDF retrieval.
+# The current Luna reranking path requires this value to be true.
+page_expansion = true
+
+# Maximum final research-context chunks. Planned values: integers 1..8.
+# This is a ceiling; character and model-input limits may produce fewer chunks.
+# It does not set archive discovery's separate limit of twenty passage previews.
+chunk_limit = 8
+
+[reranking]
+# Additional reranking after initial retrieval/fusion. Planned values:
+# "none": use standard context selection without an external reranking call.
+# "luna": use the existing bounded Luna LLM reranker; requires page_expansion=true.
+# "pinecone": use the existing bge-reranker-v2-m3 cross-encoder path.
+# The Pinecone path currently differs from the page/neighbor-expanded standard path;
+# a runner must reject unsupported combinations rather than silently ignore switches.
+# Offline use of either reranker requires compatible saved reranking results.
+# A live call requires the corresponding configured provider and available budget.
+strategy = "none"
+
+[models]
+# Answer-generation model. Planned values: "gpt-5.6-terra" or "gpt-5.6-luna".
+# Used for new answer calls only in rag_live; offline replay makes no model calls.
+# This selects a model, not an embedding model or an arbitrary editable prompt.
+answer = "gpt-5.6-terra"
+
+# Independent evidence-check model. Planned values: "gpt-5.6-terra" or "gpt-5.6-luna".
+# Used for batched checks of cited claims in rag_live; an abstention may need no check.
+# Offline replay cannot rejudge an answer with a different model without a new live run.
+evidence_check = "gpt-5.6-terra"
+
+# Unspecified application settings must be resolved and recorded, not silently guessed:
+# small embedding model, fixed RRF k=60, remaining context/candidate limits, source scope,
+# prompt/configuration versions, and source/code identities. Their profile fields and
+# execution validation belong to the next implementation block.
