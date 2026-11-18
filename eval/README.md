@@ -1,12 +1,39 @@
 # Evaluation
 
-## Evaluation-profile draft
+## Evaluation profiles and free run preview
 
-[The commented profile template](profiles/standard.example.toml) proposes per-experiment
-settings with descriptions, planned values, and offline/live constraints beside every field.
-It is a design example: no current runner reads it, and editing it changes neither the website
-nor an existing evaluation command. Profile loading, strict validation, and a credential-free
-run preview are the next implementation block. Existing verified commands below remain valid.
+[The commented profile](profiles/standard.example.toml) defines per-experiment settings with
+descriptions, allowed values, dependencies, and offline/live constraints beside each field.
+From `backend/`, validate the profile and print a free preview:
+
+```shell
+uv run --locked python -m scripts.plan_portfolio_evaluation
+```
+
+Use `--profile ../eval/profiles/standard.example.toml` to select a TOML profile explicitly under
+`eval/profiles/`. Catalogs must be JSON under `eval/`; the version-1 source/case format supports
+new reviewed case sets without changing the frozen 19-case scorer's admission rules. Unknown
+settings/IDs, duplicates, empty selections, invalid types/ranges, and unsupported switch
+combinations fail explicitly. Omitted numeric overrides inherit `config/rag.toml` and appear
+in `effective_rag_settings`; the preview does not modify that file.
+
+The command reads only the profile, catalog, and shared RAG settings. It does not load environment
+files, connect to the database, initialize providers, write results, or change the website.
+`execution_mode` is always `preflight_only`, even for a profile requesting a live mode.
+It reports selected cases, repetition counts, fixed model/prompt identities, possible provider
+roles, and prerequisites. Roles are not an attempt count or price estimate. No quality is scored.
+
+Modes distinguish saved retrieval replay, fresh retrieval collection without answers, and full
+RAG. A future full-RAG executor can reuse a compatible saved generation context to avoid new
+retrieval calls. Offline planning/reranking requires recorded outputs; page/neighbor expansion
+needs eligible saved candidates beyond the final selection. Missing inputs never authorize a
+provider call. Provider-backed live plans require explicit positive spend/call limits; free
+keyword-only discovery does not. The reviewed per-run spend ceiling remains USD 0.80.
+
+**Execution remains unimplemented in this block.** The preview does not verify snapshots,
+running-code/source identity, provider availability, or enforce a run budget. Replaying,
+canonical requalification, enforced call/spend guards, and result comparison follow in separate
+blocks. The historical commands and results below remain unchanged.
 
 ## Recorded evaluations
 
