@@ -30,10 +30,51 @@ needs eligible saved candidates beyond the final selection. Missing inputs never
 provider call. Provider-backed live plans require explicit positive spend/call limits; free
 keyword-only discovery does not. The reviewed per-run spend ceiling remains USD 0.80.
 
-**Execution remains unimplemented in this block.** The preview does not verify snapshots,
-running-code/source identity, provider availability, or enforce a run budget. Replaying,
-canonical requalification, enforced call/spend guards, and result comparison follow in separate
-blocks. The historical commands and results below remain unchanged.
+The preview itself does not verify snapshots, running-code/source identity, provider availability,
+or enforce a run budget. Offline scoring of recorded selections is available below. Selector
+recomputation, live collection, canonical requalification, and enforced live call/spend guards
+remain separate work. Historical commands and results are unchanged.
+
+## Score and compare recorded selections offline
+
+Set `[inputs].snapshot` to a local [version-1 JSON snapshot](snapshot-format.md), or pass
+`--snapshot` as a repository-relative path under `outputs/`. From `backend/`:
+
+```shell
+uv run --locked python -m scripts.evaluate_portfolio \
+  --snapshot outputs/portfolio-offline/current-contexts-v1.json
+```
+
+The reviewed local recording contains the twelve research cases, so the example profile's four
+pilot cases are available. This ignored file is not shipped with the repository. Missing cases,
+discovery modes, or repetitions fail explicitly. The scorer preserves original questions,
+verifies catalog/settings identity, and reuses the marker matcher. It produces no answer,
+abstention, or claim-support verdict. Every observation still requires semantic review.
+
+To compare the two existing U03 recordings without reissuing the question:
+
+```shell
+uv run --locked python -m scripts.evaluate_portfolio --case U03 \
+  --snapshot outputs/portfolio-offline/u03-after-date-fix-v1.json \
+  --compare-profile ../eval/profiles/standard.example.toml \
+  --compare-snapshot outputs/portfolio-offline/current-contexts-v1.json
+```
+
+The primary profile/snapshot is the candidate; `--compare-profile` supplies the baseline.
+`--case` is an explicit optional selection override applied to both profiles. Omit it to use each
+profile's include/exclude settings. Reports show gained/lost evidence markers, rank changes, and
+added/removed passage fingerprints. Corpus, scope, selected observations, and saved stage must
+match. Different recorded model/prompt versions remain visible; comparisons do not rejudge answers.
+
+Pass `--output outputs/portfolio-offline/new-report.json` to write a new ignored report. An existing
+file causes failure instead of overwrite. Without `--output`, the content-free report prints to
+stdout. Every execution makes zero database/provider calls, and live profile modes are rejected.
+The command evaluates recorded selections only: a changed retrieval switch needs a recording
+produced with that switch. It cannot reconstruct missing neighbors or reranking outputs.
+
+The initial local check scored all required markers in the pilot's three answer contexts and
+confirmed that the two U03 recordings used identical selected passages. This is a check of the
+offline workflow, not a fresh quality measurement or a rerun of the earlier live evaluation.
 
 ## Recorded evaluations
 

@@ -1,5 +1,6 @@
 """Load non-secret evaluation settings without initializing an application or provider."""
 
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from tomllib import TOMLDecodeError, loads
@@ -7,7 +8,8 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from investment_research.rag_settings import RagSettings
+from investment_research.rag_settings import RagSettings, load_rag_settings
+from scripts.score_portfolio_retrieval import Case, Catalog, validate_catalog
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROFILE = REPOSITORY_ROOT / "eval/profiles/standard.example.toml"
@@ -90,7 +92,7 @@ class InputSettings(ProfileModel):
     @classmethod
     def require_local_output_path(cls, value: str) -> str:
         if value:
-            checked_repository_file(value, subtree="outputs", suffixes=(".json", ".jsonl"))
+            checked_repository_file(value, subtree="outputs", suffixes=(".json",))
         return value
 
 
@@ -203,3 +205,43 @@ def effective_rag_settings(profile: EvaluationProfile, base: RagSettings) -> Rag
     if result.context.chunk_limit > 8:
         raise EvaluationProfileError("source-ID evaluation requires at most eight context chunks")
     return result
+
+
+@dataclass(frozen=True)
+class ResolvedEvaluationProfile:
+    """One shared, read-only resolution used by preview and offline scoring."""
+
+    profile: EvaluationProfile
+    profile_bytes: bytes
+    catalog: Catalog
+    catalog_bytes: bytes
+    cases: tuple[Case, ...]
+    rag: RagSettings
+    rag_bytes: bytes
+
+
+def resolve_profile(path: Path, *, case_ids: tuple[str, ...] = ()) -> ResolvedEvaluationProfile:
+    profile, profile_bytes = load_profile(path)
+    if case_ids:
+        profile = EvaluationProfile.model_validate(
+            profile.model_dump() | {"cases": {"include": case_ids, "exclude": ()}}
+        )
+    catalog_path = checked_repository_file(profile.catalog, subtree="eval", suffixes=(".json",))
+    catalog_bytes = catalog_path.read_bytes()
+    catalog = Catalog.model_validate_json(catalog_bytes)
+    validate_catalog(catalog, require_portfolio_cases=False)
+    by_id = {case.id: case for case in catalog.cases}
+    mentioned = set(profile.cases.include) | set(profile.cases.exclude)
+    if not mentioned <= by_id.keys():
+        raise EvaluationProfileError("case selection contains IDs absent from the catalog")
+    wanted = set(profile.cases.include) if profile.cases.include else set(by_id)
+    selected = tuple(
+        case for case in catalog.cases if case.id in wanted - set(profile.cases.exclude)
+    )
+    if not selected:
+        raise EvaluationProfileError("case selection is empty")
+    rag_path = REPOSITORY_ROOT / "config/rag.toml"
+    rag = effective_rag_settings(profile, load_rag_settings(rag_path))
+    return ResolvedEvaluationProfile(
+        profile, profile_bytes, catalog, catalog_bytes, selected, rag, rag_path.read_bytes()
+    )
