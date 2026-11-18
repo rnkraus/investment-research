@@ -248,16 +248,24 @@ class ContextualSupportEvaluator:
 
 
 @pytest.mark.parametrize("supported", [False, True])
-def test_contextual_validation_keeps_exact_citations_and_support_decision(supported: bool) -> None:
+@pytest.mark.parametrize(
+    "observation_question", [None, "What operating ARR was reported for November 6, 2026?"]
+)
+def test_contextual_validation_keeps_exact_citations_and_support_decision(
+    supported: bool, observation_question: str | None
+) -> None:
     evaluator = ContextualSupportEvaluator(supported)
     service = ValidateGeneratedAnswerService(
         source_reader=RecordingSourceReader(make_source()),
         support_evaluator=evaluator,
         support_context_builder=build_contextual_support_input,
     )
-    decision = service.validate(make_context(), RUN_ID, make_answer())
+    decision = service.validate(
+        make_context(), RUN_ID, make_answer(), observation_question=observation_question
+    )
     assert decision.accepted is supported
     assert len(evaluator.inputs) == 1
+    assert evaluator.inputs[0].observation_question == observation_question
     paired = evaluator.inputs[0].evidence[0]
     assert paired.reference.exact_text == EVIDENCE_TEXT
     assert paired.reference.start_character == REFERENCE_START

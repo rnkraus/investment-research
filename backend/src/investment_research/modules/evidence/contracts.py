@@ -22,7 +22,7 @@ from investment_research.modules.evidence.domain import (
 from investment_research.modules.operations.domain import ProviderUsage
 from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import M1_STATEMENT_EVIDENCE_LIMIT
-from investment_research.modules.research.domain import CoverageStatus, StatementText
+from investment_research.modules.research.domain import CoverageStatus, QuestionText, StatementText
 from investment_research.modules.search.contracts import M1_CONTEXT_CHARACTER_LIMIT
 from investment_research.modules.search.domain import (
     RetrievalFilters,
@@ -332,6 +332,7 @@ class ContextualStatementSupportInput(ImmutableEvidenceContract):
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
     statement: StatementText
+    observation_question: QuestionText | None = Field(default=None, repr=False)
     evidence: tuple[ContextualStatementEvidence, ...] = Field(
         min_length=1, max_length=M1_STATEMENT_EVIDENCE_LIMIT
     )
@@ -342,6 +343,8 @@ class ContextualStatementSupportInput(ImmutableEvidenceContract):
 
         if not self.statement.strip():
             raise ValueError("support statement must contain a non-whitespace character")
+        if self.observation_question is not None and not self.observation_question.strip():
+            raise ValueError("observation question must contain a non-whitespace character")
         if any(not item.reference.exact_text.strip() for item in self.evidence):
             raise ValueError("contextual support evidence must contain visible quote text")
         if len({item.attribution_context.policy_version for item in self.evidence}) != 1:

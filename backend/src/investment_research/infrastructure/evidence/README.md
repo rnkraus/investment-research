@@ -102,6 +102,11 @@ bounded reason per submitted ordinal. Missing, repeated, or unexpected ordinals 
 the batch. The same-document context can identify the company, report, or date. Each other
 factual detail requires exact quoted support. Standalone M1.5 evaluation retains individual
 `attribution` and `document_attribution` options.
+For recognized observation-date questions, the API also supplies the original bounded question.
+Document-support prompt v2 rejects a merely related historical value as an answer to another
+observation date. The question is untrusted data and supplies no evidence. Other explicitly
+requested subparts can retain their own supported dates. The question is included in cost
+reservation and in the recorded-input identity used during the final canonical recheck.
 [M1.5 batch contract](../../../../../docs/13-m1-5-rag-quality-plan.md#batched-statement-support-in-the-local-api)
 
 `openai.py` never loads credentials itself. `ApiSettings` supplies the API-role generation

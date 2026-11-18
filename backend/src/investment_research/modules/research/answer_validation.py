@@ -81,6 +81,7 @@ from investment_research.modules.research.ports import (
     ResearchRepository,
 )
 from investment_research.modules.search.domain import RetrievalMode
+from investment_research.modules.search.observation_dates import requested_observation_date
 
 type Clock = Callable[[], datetime]
 type IdentifierFactory = Callable[[], UUID]
@@ -454,6 +455,12 @@ class GenerateValidatedAnswerService:
         support_evaluator = _RecordingStatementSupportEvaluator(
             self._accounted_support_evaluator(context, retrieval_result.request.id)
         )
+        observation_question = (
+            generation_input.question
+            if self._batch_contextual_support
+            and requested_observation_date(generation_input.question) is not None
+            else None
+        )
         initial_decision = ValidateGeneratedAnswerService(
             source_reader=source_snapshot,
             support_evaluator=support_evaluator,
@@ -461,7 +468,12 @@ class GenerateValidatedAnswerService:
             evaluate_support_batch=(
                 support_evaluator.evaluate_batch if self._batch_contextual_support else None
             ),
-        ).validate(context, retrieval_result.retrieval_run.id, generated_answer)
+        ).validate(
+            context,
+            retrieval_result.retrieval_run.id,
+            generated_answer,
+            observation_question=observation_question,
+        )
 
         if progress is not None:
             progress(retrieval_result.request.id, "SAVING_RESULT")
@@ -499,6 +511,7 @@ class GenerateValidatedAnswerService:
                     context,
                     retrieval_result.retrieval_run.id,
                     generated_answer,
+                    observation_question=observation_question,
                 )
             completed_at = self._aware_utc_now()
             result = self._build_terminal_result(

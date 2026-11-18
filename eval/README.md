@@ -1,5 +1,7 @@
 # Evaluation
 
+- [Observation-date follow-up](observation-date-followup.md) records the targeted U03
+  correction, unchanged eight-chunk context, successful abstention, and its verification limits.
 - [Current RAG and archive-search evaluation](rag-archive-current-run.md) records the repeat
   of all 19 cases with Terra/Terra and additional hybrid discovery requests: nine complete
   answer cases, two of three expected abstentions, and the remaining date/search gaps.

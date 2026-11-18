@@ -337,7 +337,7 @@ def test_citable_api_resolves_selected_occurrence_with_context_and_accounting(
     assert support.model == support_model.value
     assert (
         support.configuration_version
-        == f"{support_config_version(support_model)}-document-attribution-batch-reason-v1"
+        == f"{support_config_version(support_model)}-document-attribution-batch-reason-v2"
     )
     assert embedding.closed and dense.closed
     assert all(provider.closed for provider in generators.values())
