@@ -73,17 +73,24 @@ def matches_target(target: Target, page: int | None, normalized_text: str) -> bo
     )
 
 
-def validate_catalog(catalog: Catalog) -> None:
+def validate_catalog(catalog: Catalog, *, require_portfolio_cases: bool = True) -> None:
     expected_ids = {
         **{f"D{i:02}": "discovery" for i in range(1, 8)},
         **{f"A{i:02}": "answer" for i in range(1, 10)},
         **{f"U{i:02}": "abstention" for i in range(1, 4)},
     }
-    if (
+    if require_portfolio_cases and (
         len(catalog.cases) != len(expected_ids)
         or {case.id: case.kind for case in catalog.cases} != expected_ids
     ):
         raise SnapshotError("expected 19 unique reviewed case IDs and kinds")
+    kinds = {"D": "discovery", "A": "answer", "U": "abstention"}
+    if (
+        not catalog.cases
+        or len({case.id for case in catalog.cases}) != len(catalog.cases)
+        or any(kinds[case.id[0]] != case.kind for case in catalog.cases)
+    ):
+        raise SnapshotError("catalog requires unique case IDs matching their kinds")
     if len(set(catalog.sources.values())) != len(catalog.sources):
         raise SnapshotError("source titles must be unique")
     for case in catalog.cases:

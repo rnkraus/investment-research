@@ -1,81 +1,138 @@
-# Proposed evaluation-profile format; no existing runner consumes this file yet.
-# These are planned profile choices, not switches for the running website.
-# Credentials, runtime document IDs, raw passages, and private paths do not belong here.
-# A live run will require explicit execution and a separately approved budget.
+# Validated evaluation profile; the preview command reads this file without executing it.
+# The execution runner is a later block. Editing this file does not change the website.
+# No credentials, runtime record IDs, private endpoints, or source passages belong here.
 
-# Human-readable experiment identifier used to label results.
-# Planned values: a unique lowercase slug containing letters, digits, and hyphens.
+# Profile-format version. Allowed value: 1.
+schema_version = 1
+
+# Result label. Allowed: 1..64 lowercase letters/digits/hyphens, starting with a letter/digit.
 name = "standard-with-neighbors"
 
-# Repository-owned question catalog containing reviewed questions and expected evidence.
-# Available catalog: "eval/portfolio-cases-v1.json" (19 reviewed cases).
-# Additional catalogs must be reviewed and validated before becoming selectable.
+# Reviewed question catalog. Allowed: a repository-relative JSON file under eval/.
+# Current catalog: "eval/portfolio-cases-v1.json". No absolute paths or parent traversal.
+# A new catalog must use the validated source/case format; this does not approve a paid run.
 catalog = "eval/portfolio-cases-v1.json"
 
-# Controls whether the evaluation tests retrieval only or also generates an LLM answer.
-# Planned values:
-# "offline_replay": evaluate saved retrieval inputs; no new answers, database, or provider calls.
-# "retrieval_live": run search/context selection ONLY; no answer or evidence-check LLM calls.
-# "rag_live": run search PLUS LLM answer generation and evidence checking of cited claims.
-# Choose "retrieval_live" to inspect which passages reach the answerer without paying for answers.
-# Choose "rag_live" to evaluate the generated answer, its citations, and abstention behavior too.
-# Live retrieval can still incur embedding and reranking costs.
-# Offline replay requires suitable saved inputs for every enabled stage; missing inputs
-# must fail explicitly rather than trigger a live call or silently skip a stage.
+# Stage. Allowed: "offline_replay", "retrieval_live", "rag_live".
+# offline_replay: saved retrieval inputs only; no database/provider calls or new answers.
+# retrieval_live: collect search/context only; no answer-generation or evidence-check calls.
+# rag_live: search plus answer generation and batched checks of cited claims.
+# Embeddings, query planning, or reranking can still cost money in retrieval_live.
+# All modes are currently preview-only; no executor or automatic live fallback exists.
 mode = "offline_replay"
 
+# Research scope. Allowed: "whole_archive" or "catalog_documents".
+# whole_archive: all eligible sources in the frozen reviewed archive snapshot.
+# catalog_documents: only each research case's declared document aliases.
+# Discovery always retains its own catalog filters; this is not a workspace override.
+scope = "whole_archive"
+
+# Number of independent repetitions. Allowed: integers 1..10.
+# Every repeat must be labeled; it is not a retry-until-pass instruction.
+# New live repeats multiply requests/cost. Replaying identical inputs measures no LLM variability.
+repetitions = 1
+
 [cases]
-# Questions to evaluate. Planned values: [] for every catalog case, or a unique list
-# of existing case IDs. Catalog v1 contains D01..D07 (discovery), A01..A09 (answers),
-# and U01..U03 (abstention). Unknown or duplicate IDs must fail validation.
-# Keep each original question and its expectations unchanged when selecting cases.
+# Included IDs. Allowed: [] for all cases, or a unique list of IDs from the catalog.
+# Current IDs: D01..D07 (discovery), A01..A09 (answer), U01..U03 (abstention).
+# Questions/expectations stay unchanged. Selected cases retain catalog order.
 include = ["A05", "A06", "A09", "U03"]
 
+# Excluded IDs. Allowed: [] or unique catalog IDs; must not overlap include.
+# Unknown IDs, duplicates, and an empty final case selection are errors.
+exclude = []
+
 [retrieval]
-# PostgreSQL keyword-matching strategy. Planned values:
-# "websearch": existing full-text search, including explicit phrases/OR/exclusions.
-# "weighted_or": experimental partial matches weighted by eligible-corpus term rarity.
-# weighted_or retains websearch fallback for explicit syntax and unsupported term counts.
+# Lexical strategy. Allowed: "websearch" or "weighted_or".
+# websearch: existing full-text query semantics, including phrases/OR/exclusions.
+# weighted_or: experimental rarity-weighted partial matches; explicit syntax and unsupported
+# term counts keep the existing websearch fallback.
 lexical_strategy = "websearch"
 
-# Bounded neighboring-text expansion. Planned values: true or false.
-# true: apply the existing informative-neighbor policy within the same eligible source.
-# false: disable this expansion only; page expansion is controlled separately below.
+# Neighbor expansion. Allowed: true or false.
+# Uses the existing bounded same-source policy. false does not disable page expansion.
 text_neighbors = true
 
-# Direct PDF-page context expansion and its existing dated-metric follow-up.
-# Planned values: true or false. false disables this expansion, not ordinary PDF retrieval.
-# The current Luna reranking path requires this value to be true.
+# Page expansion and existing dated-metric follow-up. Allowed: true or false.
+# false does not disable ordinary PDF retrieval. Luna/company priority require true.
 page_expansion = true
 
-# Maximum final research-context chunks. Planned values: integers 1..8.
-# This is a ceiling; character and model-input limits may produce fewer chunks.
-# It does not set archive discovery's separate limit of twenty passage previews.
-chunk_limit = 8
+# Promote eligible hits from an unambiguously named company. Allowed: true or false.
+# Requires page_expansion=true; an explicit company filter still takes precedence.
+company_priority = true
+
+# Automatic lexical subqueries. Allowed: true or false.
+# Live use can add a planning LLM call. Offline use needs compatible recorded subqueries/results.
+decompose_query = false
+
+# Lexical candidates BEFORE fusion. Allowed: integers 1..20.
+# Omit/comment to inherit the current value from config/rag.toml.
+# lexical_candidate_limit = 20
+
+# Dense candidates BEFORE fusion. Allowed: integers 1..20.
+# Omit/comment to inherit the current value from config/rag.toml.
+# dense_candidate_limit = 20
+
+# Final research chunk ceiling. Allowed: integers 1..8; omit/comment to inherit.
+# Character/model-input limits can yield fewer chunks. Discovery has a separate 20-hit limit.
+# chunk_limit = 8
+
+# Final research-context Unicode character ceiling. Allowed: integers 1..24000.
+# Omit/comment to inherit config/rag.toml. This is not a token count.
+# character_limit = 24000
+
+[generation]
+# Prompt/schema/metadata UTF-8-byte allowance. Allowed: integers 16000..18000.
+# Omit/comment to inherit. Used for both preflight and reservation; not extra source capacity.
+# input_overhead_limit = 18000
 
 [reranking]
-# Additional reranking after initial retrieval/fusion. Planned values:
-# "none": use standard context selection without an external reranking call.
-# "luna": use the existing bounded Luna LLM reranker; requires page_expansion=true.
-# "pinecone": use the existing bge-reranker-v2-m3 cross-encoder path.
-# The Pinecone path currently differs from the page/neighbor-expanded standard path;
-# a runner must reject unsupported combinations rather than silently ignore switches.
-# Offline use of either reranker requires compatible saved reranking results.
-# A live call requires the corresponding configured provider and available budget.
+# Additional ranking. Allowed: "none", "luna", "pinecone".
+# none: standard selection. luna: current Luna LLM path; requires page_expansion=true.
+# pinecone: bge-reranker-v2-m3; requires page_expansion/text_neighbors/company_priority=false
+# because that existing path does not apply those expansions. No silently ignored switches.
+# Offline ranking requires compatible saved outputs. Live providers require credentials/budget.
 strategy = "none"
 
 [models]
-# Answer-generation model. Planned values: "gpt-5.6-terra" or "gpt-5.6-luna".
-# Used for new answer calls only in rag_live; offline replay makes no model calls.
-# This selects a model, not an embedding model or an arbitrary editable prompt.
+# Answer model. Allowed: "gpt-5.6-terra" or "gpt-5.6-luna".
+# Makes new answer calls only in rag_live. Does not change embeddings or replay old answers.
 answer = "gpt-5.6-terra"
 
-# Independent evidence-check model. Planned values: "gpt-5.6-terra" or "gpt-5.6-luna".
-# Used for batched checks of cited claims in rag_live; an abstention may need no check.
-# Offline replay cannot rejudge an answer with a different model without a new live run.
+# Independent evidence-check model. Allowed: "gpt-5.6-terra" or "gpt-5.6-luna".
+# Checks cited claims in rag_live; an abstention can require no check.
+# Offline replay cannot rejudge an old answer with another model.
 evidence_check = "gpt-5.6-terra"
 
-# Unspecified application settings must be resolved and recorded, not silently guessed:
-# small embedding model, fixed RRF k=60, remaining context/candidate limits, source scope,
-# prompt/configuration versions, and source/code identities. Their profile fields and
-# execution validation belong to the next implementation block.
+[archive]
+# Modes per selected discovery case. Allowed: any nonempty unique list of
+# "keyword", "semantic", "hybrid". No effect on research's hybrid retrieval.
+# All selected modes retain the case's company/date/author filters.
+# Additional live modes can add query embeddings and Pinecone calls; no answer LLM is used.
+modes = ["keyword", "semantic", "hybrid"]
+
+[inputs]
+# Saved replay input. Allowed: "" (not chosen) or a repository-relative .json/.jsonl path
+# under outputs/. No absolute paths, hidden paths, or parent traversal. Preview does not read it.
+# An empty value is allowed for planning but cannot execute replay. retrieval_live requires "".
+# rag_live can reuse verified saved generation contexts and call only answer/check models.
+# Later execution must verify corpus, question, configuration, and candidate compatibility.
+snapshot = ""
+
+[budget]
+# Per-run provider spend limit, separate from the workspace monthly budget.
+# Allowed: a QUOTED decimal USD string from "0" through "0.800000", up to six decimal places.
+# offline_replay requires zero. Provider-backed live work requires a positive value.
+# Keyword-only discovery can use zero. All execution remains a separate explicit step.
+# The preview neither spends nor enforces a run budget; the later executor must enforce it.
+# Raising the reviewed USD 0.80 policy ceiling needs a separate change and approval.
+max_spend_usd = "0.00"
+
+# Maximum total provider calls for the run. Allowed: integers 0..1000.
+# offline_replay requires 0. Provider-backed live work requires >0. This does not bypass
+# existing role quotas; future execution must count actual attempts, including retries.
+max_provider_calls = 0
+
+# Fixed rather than configurable in this profile: small embeddings, processing/chunking versions,
+# RRF k=60, neighbor radius/anchors, and prompt versions. The preview reports these identities.
+# Canonical workspace/version/deletion/evidence checks are never disableable experiment switches.
