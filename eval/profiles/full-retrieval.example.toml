@@ -1,0 +1,180 @@
+# All 19 catalog cases: 12 research contexts and 7 discovery cases in each selected mode.
+# With all three archive modes: 33 observations. No answer/check calls in retrieval_live.
+# Use run_portfolio_evaluation for new research/discovery runs; the website is unchanged.
+# Offline switches must match their recording. Editing them does not recompute old selections.
+# No credentials, runtime record IDs, private endpoints, or source passages belong here.
+
+# Profile-format version. Allowed value: 1.
+schema_version = 1
+
+# Result label. Allowed: 1..64 lowercase letters/digits/hyphens, starting with a letter/digit.
+name = "whole-catalog-retrieval"
+
+# Reviewed question catalog. Allowed: a repository-relative JSON file under eval/.
+# Current catalog: "eval/portfolio-cases-v1.json". No absolute paths or parent traversal.
+# A new catalog must use the validated source/case format; this does not approve a paid run.
+catalog = "eval/portfolio-cases-v1.json"
+
+# Stage. Allowed: "offline_replay", "retrieval_live", "rag_live".
+# offline_replay: score saved selections; no database/provider calls or new answers.
+# retrieval_live: new collection of search/context only, without answer/check model calls.
+# rag_live: new search plus answer generation and batched checks of cited claims.
+# Embeddings, query planning, or reranking can still cost money in retrieval_live.
+# Preview accepts all modes. The offline executor rejects both live modes; no live fallback exists.
+mode = "retrieval_live"
+
+# Research scope. Allowed: "whole_archive" or "catalog_documents".
+# whole_archive: all eligible sources in the frozen reviewed archive snapshot.
+# catalog_documents: only each research case's declared document aliases.
+# Discovery always retains its own catalog filters; this is not a workspace override.
+scope = "whole_archive"
+
+# Number of independent repetitions. Allowed: integers 1..10.
+# Every repeat must be labeled; it is not a retry-until-pass instruction.
+# New live repeats multiply requests/cost. Replaying identical inputs measures no LLM variability.
+repetitions = 1
+
+[cases]
+# Included IDs. Allowed: [] for all cases, or a unique list of IDs from the catalog.
+# Current IDs: D01..D07 (discovery), A01..A09 (answer), U01..U03 (abstention).
+# Questions/expectations stay unchanged. Selected cases retain catalog order.
+include = []
+
+# Excluded IDs. Allowed: [] or unique catalog IDs; must not overlap include.
+# Unknown IDs, duplicates, and an empty final case selection are errors.
+exclude = []
+
+[retrieval]
+# Lexical strategy. Allowed: "websearch" or "weighted_or".
+# websearch: existing full-text query semantics, including phrases/OR/exclusions.
+# weighted_or: experimental rarity-weighted partial matches; explicit syntax and unsupported
+# term counts keep the existing websearch fallback.
+lexical_strategy = "websearch"
+
+# Neighbor expansion. Allowed: true or false.
+# Uses the existing bounded same-source policy. false does not disable page expansion.
+text_neighbors = true
+
+# Page expansion and existing dated-metric follow-up. Allowed: true or false.
+# false does not disable ordinary PDF retrieval. Luna/company priority require true.
+page_expansion = true
+
+# Promote eligible hits from an unambiguously named company. Allowed: true or false.
+# Requires page_expansion=true; an explicit company filter still takes precedence.
+company_priority = true
+
+# Automatic lexical subqueries. Allowed: true or false.
+# Live use can add a planning LLM call. Offline use needs compatible recorded subqueries/results.
+decompose_query = false
+
+# Lexical candidates BEFORE fusion. Allowed: integers 1..20.
+# Omit/comment to inherit the current value from config/rag.toml.
+# lexical_candidate_limit = 20
+
+# Dense candidates BEFORE fusion. Allowed: integers 1..20.
+# Omit/comment to inherit the current value from config/rag.toml.
+# dense_candidate_limit = 20
+
+# Final research chunk ceiling. Allowed: integers 1..8; omit/comment to inherit.
+# Character/model-input limits can yield fewer chunks. Discovery has a separate 20-hit limit.
+# chunk_limit = 8
+
+# Final research-context Unicode character ceiling. Allowed: integers 1..24000.
+# Omit/comment to inherit config/rag.toml. This is not a token count.
+# character_limit = 24000
+
+[generation]
+# Prompt/schema/metadata UTF-8-byte allowance. Allowed: integers 16000..18000.
+# Omit/comment to inherit. Used for both preflight and reservation; not extra source capacity.
+# input_overhead_limit = 18000
+
+[reranking]
+# Additional ranking. Allowed: "none", "luna", "pinecone".
+# none: standard selection. luna: current Luna LLM path; requires page_expansion=true.
+# pinecone: bge-reranker-v2-m3; requires page_expansion/text_neighbors/company_priority=false
+# because that existing path does not apply those expansions. No silently ignored switches.
+# Offline scoring requires a recording made with this strategy; it does not rerank passages.
+# The live collector currently supports none/luna; pinecone is rejected before execution.
+strategy = "none"
+
+[models]
+# Answer model. Allowed: "gpt-5.6-terra" or "gpt-5.6-luna".
+# Makes new answer calls only in rag_live. Does not change embeddings or replay old answers.
+answer = "gpt-5.6-terra"
+
+# Independent evidence-check model. Allowed: "gpt-5.6-terra" or "gpt-5.6-luna".
+# Checks cited claims in rag_live; an abstention can require no check.
+# Offline replay cannot rejudge an old answer with another model.
+evidence_check = "gpt-5.6-terra"
+
+[archive]
+# Modes per selected discovery case. Allowed: any nonempty unique list of
+# "keyword", "semantic", "hybrid". No effect on research's hybrid retrieval.
+# All selected modes retain the case's company/date/author filters.
+# Additional live modes can add query embeddings and Pinecone calls; no answer LLM is used.
+modes = ["keyword", "semantic", "hybrid"]
+# Optional case_filters tables for D cases: see full-retrieval.example.toml for all fields.
+# Each selected D case needs an explicit table; empty means no metadata filter.
+# Discovery currently requires retrieval.lexical_strategy="websearch".
+
+[inputs]
+# Saved replay input. Allowed: "" (not chosen) or a repository-relative .json path
+# under outputs/. No absolute paths, hidden paths, or parent traversal. Preview does not read it.
+# An empty value is allowed for preview; offline scoring needs this value or --snapshot.
+# Both live modes currently require ""; saved-context generation is not supported.
+# Offline scoring verifies recorded corpus/question/settings identity, not live eligibility.
+# Offline scoring uses the documented versioned JSON snapshot, not legacy bare JSONL exports.
+snapshot = ""
+
+[budget]
+# Per-run provider spend limit, separate from the workspace monthly budget.
+# Allowed: a QUOTED decimal USD string from "0" through "0.800000", up to six decimal places.
+# offline_replay requires zero. Provider-backed live work requires a positive value.
+# Keyword-only discovery can use zero. All execution remains a separate explicit step.
+# Preview does not spend; offline scoring permits zero calls only. The live collector enforces
+# conservative model reservations and the existing workspace budget before every model attempt.
+# Pinecone database query charges are excluded from USD; its query attempts use the call ceiling.
+# Raising the reviewed USD 0.80 policy ceiling needs a separate change and approval.
+max_spend_usd = "0.08"
+
+# Maximum total provider calls for the run. Allowed: integers 0..1000.
+# offline_replay requires 0. Provider-backed live work requires >0. This does not bypass
+# existing role quotas. Live execution counts actual attempts, including retries and dense queries.
+max_provider_calls = 100
+
+# Fixed rather than configurable in this profile: small embeddings, processing/chunking versions,
+# RRF k=60, neighbor radius/anchors, and prompt versions. The preview reports these identities.
+# Canonical workspace/version/deletion/evidence checks are never disableable experiment switches.
+
+# Reviewed discovery filters. Each selected D case requires an explicit table, even when empty.
+# These preserve the scopes described in the catalog; research scope above does not override them.
+# Allowed fields in each table:
+# company_ticker: exact existing ticker (ASCII, 1..20 chars); omit for no company filter.
+# company_name: exact existing name (1..200 chars), alternative to company_ticker, never both.
+# published_from/published_to: inclusive UTC calendar dates as quoted "YYYY-MM-DD"; omit if unbounded.
+# source_attribution: author/handle filter (1..200 chars); omit for no author filter.
+# source_attribution_kind: "author" or "handle"; requires source_attribution; omit for general matching.
+# Unknown companies, ambiguous matches, fields or case IDs stop execution before paid calls.
+
+[archive.case_filters.D01]
+# Explicitly unfiltered; the query NBIS itself tests exact ticker discovery.
+
+[archive.case_filters.D02]
+company_ticker = "IREN"
+
+[archive.case_filters.D03]
+company_ticker = "IREN"
+
+[archive.case_filters.D04]
+company_ticker = "NBIS"
+
+[archive.case_filters.D05]
+company_ticker = "IREN"
+published_to = "2026-07-31"
+
+[archive.case_filters.D06]
+source_attribution = "@RealJimChanos"
+source_attribution_kind = "handle"
+
+[archive.case_filters.D07]
+company_ticker = "IREN"

@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 from investment_research.rag_settings import RagSettings
 from scripts.evaluation_profiles import (
     CaseId,
+    DiscoveryFilters,
     ModelSettings,
     ProfileModel,
     ResolvedEvaluationProfile,
@@ -36,6 +37,7 @@ class RecordedSettings(ProfileModel):
     reranking: Literal["none", "luna", "pinecone"]
     models: ModelSettings
     rag: RagSettings
+    discovery_filters: dict[CaseId, DiscoveryFilters] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -67,6 +69,11 @@ def settings_for(resolved: ResolvedEvaluationProfile) -> RecordedSettings:
         reranking=profile.reranking.strategy,
         models=profile.models,
         rag=resolved.rag,
+        discovery_filters={
+            case.id: profile.archive.case_filters[case.id]
+            for case in resolved.cases
+            if case.kind == "discovery" and case.id in profile.archive.case_filters
+        },
     )
 
 
@@ -83,6 +90,21 @@ class RecordedPassage(ProfileModel):
     source: Identifier
     page: int | None = Field(default=None, ge=1)
     text: str = Field(min_length=1, max_length=100_000, repr=False)
+    text_is_truncated: bool = False
+
+
+def compatible_passages(left: RecordedPassage, right: RecordedPassage) -> bool:
+    """Permit an explicitly clipped archive preview of the same immutable chunk."""
+
+    return (left.chunk_id, left.source, left.page) == (
+        right.chunk_id,
+        right.source,
+        right.page,
+    ) and (
+        left.text == right.text
+        or (left.text_is_truncated and right.text.startswith(left.text))
+        or (right.text_is_truncated and left.text.startswith(right.text))
+    )
 
 
 class RecordedSelection(ProfileModel):
@@ -104,6 +126,11 @@ class RecordedSelection(ProfileModel):
             raise ValueError("only archive results may specify a discovery mode")
         if self.archive_mode is None and len(self.selected) > 8:
             raise ValueError("research selection exceeds eight chunks")
+        if any(
+            item.text_is_truncated and (self.archive_mode is None or len(item.text) != 4_000)
+            for item in self.selected
+        ):
+            raise ValueError("only a 4000-character archive preview may be marked truncated")
         return self
 
 
@@ -139,9 +166,13 @@ class EvaluationSnapshot(ProfileModel):
             for passage in selection.selected:
                 if passage.source not in aliases or not passage.text.strip():
                     raise ValueError("passage has an unknown source or empty text")
-                if passage.chunk_id in chunks and chunks[passage.chunk_id] != passage:
+                if passage.chunk_id in chunks and not compatible_passages(
+                    chunks[passage.chunk_id], passage
+                ):
                     raise ValueError("one chunk ID has conflicting saved content")
-                chunks[passage.chunk_id] = passage
+                previous = chunks.get(passage.chunk_id)
+                if previous is None or len(passage.text) > len(previous.text):
+                    chunks[passage.chunk_id] = passage
         return self
 
 

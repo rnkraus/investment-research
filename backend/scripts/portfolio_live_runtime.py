@@ -95,11 +95,23 @@ def validate_live_profile(resolved: ResolvedEvaluationProfile) -> None:
     profile = resolved.profile
     if profile.mode == "offline_replay" or profile.inputs.snapshot:
         raise LiveEvaluationError("fresh execution requires a live mode and no input snapshot")
-    if any(case.kind == "discovery" for case in resolved.cases):
-        raise LiveEvaluationError("this collector accepts A/U research cases only")
+    discovery = tuple(case for case in resolved.cases if case.kind == "discovery")
+    if any(case.id not in profile.archive.case_filters for case in discovery):
+        raise LiveEvaluationError(
+            "each discovery case requires an explicit archive.case_filters table"
+        )
+    if discovery and profile.retrieval.lexical_strategy != "websearch":
+        raise LiveEvaluationError(
+            "archive discovery currently requires the websearch lexical strategy"
+        )
     if profile.reranking.strategy == "pinecone":
         raise LiveEvaluationError("Pinecone reranking is not supported by this collector")
-    if Decimal(profile.budget.max_spend_usd) <= 0 or profile.budget.max_provider_calls <= 0:
+    provider_backed = len(discovery) != len(resolved.cases) or any(
+        mode != "keyword" for mode in profile.archive.modes
+    )
+    if provider_backed and (
+        Decimal(profile.budget.max_spend_usd) <= 0 or profile.budget.max_provider_calls <= 0
+    ):
         raise LiveEvaluationError("live research requires positive spend and call limits")
 
 

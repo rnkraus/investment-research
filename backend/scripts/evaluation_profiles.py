@@ -8,6 +8,9 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from investment_research.modules.companies.domain import CompanyName, CompanyTicker
+from investment_research.modules.documents.domain import SourceAttributionScope
+from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.rag_settings import RagSettings, load_rag_settings
 from scripts.score_portfolio_retrieval import Case, Catalog, validate_catalog
 
@@ -70,8 +73,22 @@ class ModelSettings(ProfileModel):
     evidence_check: ModelName = "gpt-5.6-terra"
 
 
+class DiscoveryFilters(ProfileModel, PublicationDateBounds, SourceAttributionScope):
+    """Explicit reviewed filters; an empty table deliberately selects the whole archive."""
+
+    company_ticker: CompanyTicker | None = None
+    company_name: CompanyName | None = None
+
+    @model_validator(mode="after")
+    def require_one_company_selector(self) -> Self:
+        if self.company_ticker is not None and self.company_name is not None:
+            raise ValueError("choose either a company ticker or exact name")
+        return self
+
+
 class ArchiveSettings(ProfileModel):
     modes: tuple[Literal["keyword", "semantic", "hybrid"], ...] = ("keyword",)
+    case_filters: dict[CaseId, DiscoveryFilters] = Field(default_factory=dict)
 
     @field_validator("modes", mode="before")
     @classmethod
@@ -234,6 +251,10 @@ def resolve_profile(path: Path, *, case_ids: tuple[str, ...] = ()) -> ResolvedEv
     mentioned = set(profile.cases.include) | set(profile.cases.exclude)
     if not mentioned <= by_id.keys():
         raise EvaluationProfileError("case selection contains IDs absent from the catalog")
+    if any(
+        key not in by_id or by_id[key].kind != "discovery" for key in profile.archive.case_filters
+    ):
+        raise EvaluationProfileError("archive filters must reference catalog discovery cases")
     wanted = set(profile.cases.include) if profile.cases.include else set(by_id)
     selected = tuple(
         case for case in catalog.cases if case.id in wanted - set(profile.cases.exclude)

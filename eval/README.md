@@ -82,9 +82,41 @@ money. `rag_live` uses the ordinary selected-model answer service and server-sid
 it stores per-claim rejection diagnostics when available. Research requests and validated
 terminal answers are persisted in the local app. Nothing is imported, deleted or reindexed.
 
-The current collector supports A/U research cases and `none`/`luna` reranking. Discovery cases,
-Pinecone reranking, offline profiles and saved-context generation are rejected before loading
-runtime credentials. The separate archive search and historical runners remain available.
+The collector supports A/U research cases, D archive discovery, and `none`/`luna` research
+reranking. Pinecone reranking, offline profiles and saved-context generation remain unsupported.
+Archive discovery uses the existing keyword/semantic/hybrid service, independently of the answer
+mode; it never generates answers. Its lexical strategy remains `websearch`; a mixed discovery
+profile selecting research `weighted_or` is rejected rather than silently relabeled.
+
+For all 19 cases, use [the full profile](profiles/full-retrieval.example.toml). With all three
+archive modes it requests **33 observations**: 12 research contexts plus 7 discovery cases in
+three modes. Selecting only `archive.modes = ["keyword"]` requests 19 observations. Repetitions
+multiply these counts. Preview from `backend/`:
+
+```shell
+uv run --locked python -m scripts.run_portfolio_evaluation \
+  --profile ../eval/profiles/full-retrieval.example.toml
+```
+
+Use the same profile argument in the Docker command above, with a fresh output directory for
+execution. The example remains `retrieval_live`: no answer/check models are invoked. Semantic
+and hybrid discovery still use bounded query embeddings and Pinecone queries.
+
+Every selected D case requires its own `[archive.case_filters.D01]`-style table. An empty table
+explicitly means no metadata filter. The tables support an exact `company_ticker` **or**
+`company_name`, inclusive `published_from`/`published_to` dates, and `source_attribution` with
+optional `source_attribution_kind`. Values and combinations follow the normal application
+contracts. No workspace or runtime company UUID belongs in this public configuration. All company
+bindings must resolve uniquely in the current workspace before any queries run; missing or
+ambiguous matches abort instead of broadening the search. Bindings are checked again during the
+run. Unsupported case IDs/fields and missing explicit tables fail. Descriptive catalog prose is
+not parsed into filters. The reviewed question catalog itself is unchanged.
+
+Discovery saves the applied filters, companies, title hits, passage previews and `has_more` in
+the journal, including empty successful results. Snapshots retain the passages and reviewed filter
+settings for offline comparison. Company-card/title expectations such as D01 need the journal;
+the offline marker scorer does not grade them automatically. Keyword-only discovery can use a
+zero run budget. It creates no research request and invokes neither answerer nor checker.
 
 Each ignored run directory contains `profile.toml`, `catalog.json`, `resolved.json`, a flushed
 `results.jsonl` journal, `manifest.json`, and `snapshot.json` when at least one context was captured.

@@ -22,6 +22,7 @@ from scripts.evaluation_profiles import (
     checked_repository_file,
     resolve_profile,
 )
+from scripts.portfolio_discovery import collect_discovery, discovery_commands
 from scripts.portfolio_live_runtime import (
     LiveEvaluationError,
     RunBudget,
@@ -47,14 +48,19 @@ from scripts.score_portfolio_retrieval import Case
 
 def preview(resolved: ResolvedEvaluationProfile) -> dict[str, object]:
     validate_live_profile(resolved)
+    research = sum(case.kind != "discovery" for case in resolved.cases)
     return {
         "mode": resolved.profile.mode,
         "case_ids": [case.id for case in resolved.cases],
-        "new_research_requests": len(resolved.cases) * resolved.profile.repetitions,
-        "generates_answers": resolved.profile.mode == "rag_live",
+        "new_research_requests": research * resolved.profile.repetitions,
+        "new_archive_searches": (len(resolved.cases) - research)
+        * len(resolved.profile.archive.modes)
+        * resolved.profile.repetitions,
+        "generates_answers": resolved.profile.mode == "rag_live" and research > 0,
         "maximum_reserved_model_usd": resolved.profile.budget.max_spend_usd,
         "maximum_provider_calls": resolved.profile.budget.max_provider_calls,
         "settings": settings_for(resolved).model_dump(mode="json"),
+        "archive_modes": resolved.profile.archive.modes,
         "provider_calls_made": 0,
         "limitations": [
             "Pinecone database query charges are excluded from the model USD estimate; "
@@ -167,6 +173,7 @@ def collect(
     initial = inventory(container, context)
     initial_digest = inventory_digest(initial)
     sources = sources_for(resolved, initial)
+    commands = discovery_commands(container, context, resolved)
     rows: list[RecordedSelection] = []
     observations = 0
     failed_observations = 0
@@ -191,18 +198,32 @@ def collect(
                 for case in resolved.cases:
                     if inventory_digest(inventory(container, context)) != initial_digest:
                         raise LiveEvaluationError("canonical inventory changed during execution")
-                    row, record = collect_case(container, resolved, sources, case, repetition)
-                    journal.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    journal.flush()
-                    observations += 1
-                    if record["status"] == "failed":
-                        failed_observations += 1
-                    if row is not None:
-                        rows.append(row)
-                    if budget.exhausted:
-                        raise RunBudgetExceededError("evaluation run budget exhausted")
+                    if commands != discovery_commands(container, context, resolved):
+                        raise LiveEvaluationError(
+                            "discovery company bindings changed during execution"
+                        )
+                    modes = resolved.profile.archive.modes if case.kind == "discovery" else (None,)
+                    for mode in modes:
+                        row, record = (
+                            collect_discovery(
+                                container, sources, case, repetition, commands[(case.id, mode)]
+                            )
+                            if mode is not None
+                            else collect_case(container, resolved, sources, case, repetition)
+                        )
+                        journal.write(json.dumps(record, ensure_ascii=False) + "\n")
+                        journal.flush()
+                        observations += 1
+                        if record["status"] == "failed":
+                            failed_observations += 1
+                        if row is not None:
+                            rows.append(row)
+                        if budget.exhausted:
+                            raise RunBudgetExceededError("evaluation run budget exhausted")
             if inventory_digest(inventory(container, context)) != initial_digest:
                 raise LiveEvaluationError("canonical inventory changed during execution")
+            if commands != discovery_commands(container, context, resolved):
+                raise LiveEvaluationError("discovery company bindings changed during execution")
             manifest["status"] = "completed"
     except RunBudgetExceededError:
         manifest["status"] = "budget_exhausted"
@@ -250,10 +271,13 @@ def execute(resolved: ResolvedEvaluationProfile, output: str) -> dict[str, objec
         raise LiveEvaluationError("output directory already exists; choose a new run name")
     # Runtime loading is application-owned; never include settings/secrets in any output.
     settings = load_api_settings(env_file=None)
+    needs_providers = any(case.kind != "discovery" for case in resolved.cases) or any(
+        mode != "keyword" for mode in resolved.profile.archive.modes
+    )
     if (
         settings.environment != "development"
         or settings.research_profile != "m1-5-citable-units"
-        or settings.query_providers is None
+        or (needs_providers and settings.query_providers is None)
     ):
         raise LiveEvaluationError("use the local development M1.5 API runtime with live providers")
     settings = ApiSettings.model_validate(

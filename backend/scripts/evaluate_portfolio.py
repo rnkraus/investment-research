@@ -6,6 +6,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 from scripts.evaluation_profiles import (
     DEFAULT_PROFILE,
@@ -17,7 +18,9 @@ from scripts.evaluation_profiles import (
 from scripts.portfolio_snapshots import (
     EvaluationSnapshot,
     OfflineEvaluationError,
+    RecordedPassage,
     RecordedSelection,
+    compatible_passages,
     corpus_digest,
     describe_passage,
     evidence_ranks,
@@ -108,9 +111,14 @@ def compare_saved(candidate: OfflineResult, baseline: OfflineResult) -> dict[str
         raise OfflineEvaluationError(
             "comparisons require identical selected cases, modes, and scope"
         )
-    old_chunks = {item.chunk_id: item for row in baseline.rows for item in row.selected}
+    old_chunks: dict[UUID, RecordedPassage] = {}
+    for row in baseline.rows:
+        for item in row.selected:
+            previous = old_chunks.get(item.chunk_id)
+            if previous is None or len(item.text) > len(previous.text):
+                old_chunks[item.chunk_id] = item
     if any(
-        item != old_chunks[item.chunk_id]
+        not compatible_passages(item, old_chunks[item.chunk_id])
         for row in candidate.rows
         for item in row.selected
         if item.chunk_id in old_chunks
