@@ -2,6 +2,7 @@
 
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -64,12 +65,13 @@ from tests.unit.test_openai_citable_unit_answer_generator import make_generator
 MARKER = "synthetic-private-provider-error"
 
 
+@dataclass(frozen=True, slots=True)
 class ImmediateIndex(DeterministicSqliteDenseIndex):
     """Only the runner wiring is under test; live namespace cleanup has separate unit tests."""
 
-    def __init__(self, path: Path) -> None:
-        super().__init__(path)
-        self.context = WorkspaceContext(user_id=uuid4(), workspace_id=uuid4())
+    context: WorkspaceContext = field(
+        default_factory=lambda: WorkspaceContext(user_id=uuid4(), workspace_id=uuid4())
+    )
 
     def wait_until_visible(self) -> None:
         pass
