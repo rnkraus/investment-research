@@ -19,6 +19,8 @@ selector, expand neighbors, rerank candidates, or fit a new generation input.
 | `selections` | Ordered passages per case, discovery mode, and repetition. |
 
 Settings must match the requested profile after inheritance from `config/rag.toml`.
+`settings.discovery_filters` records the explicit TOML filters for selected discovery cases;
+it defaults to an empty map for legacy snapshots. Altered filters require a separate recording.
 Changing `text_neighbors` in a profile does not recompute a recorded context. Use a separate
 compatible recording for that variant. The scorer rejects mismatched settings rather than
 mislabeling the old selection. Complete saved candidate pools and selector replay are separate work.
@@ -40,6 +42,11 @@ identities; it is not a live canonical-eligibility or complete source-content ve
 | `stage` | `archive_results`, `selection_before_generation_preflight`, or `final_generation_context`. |
 | `candidate_pool_sha256` | Optional hash captured from the complete original candidate pool. |
 | `selected` | Ordered list of `chunk_id`, source alias in `source`, physical PDF `page` or null, and unchanged `text`. |
+
+Each passage may set `text_is_truncated` (default false). Only a 4000-character archive preview
+may set it to true. The same chunk may appear as that exact prefix in archive search and with
+longer unchanged text in the research context; other conflicting content remains invalid.
+This flag describes a display preview, never evidence authorization or a synthesized full chunk.
 
 Research selections contain at most eight chunks and respect their recorded chunk/character
 limits. Discovery permits twenty previews. Every passage must reference a known source. Duplicate

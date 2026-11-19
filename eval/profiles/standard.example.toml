@@ -1,5 +1,5 @@
 # Validated evaluation profile for free preview and scoring of recorded selections.
-# Use run_portfolio_evaluation for new A/U research runs; the website is unchanged.
+# Use run_portfolio_evaluation for new research/discovery runs; the website is unchanged.
 # Offline switches must match their recording. Editing them does not recompute old selections.
 # No credentials, runtime record IDs, private endpoints, or source passages belong here.
 
@@ -112,6 +112,9 @@ evidence_check = "gpt-5.6-terra"
 # All selected modes retain the case's company/date/author filters.
 # Additional live modes can add query embeddings and Pinecone calls; no answer LLM is used.
 modes = ["keyword", "semantic", "hybrid"]
+# Optional case_filters tables for D cases: see full-retrieval.example.toml for all fields.
+# Each selected D case needs an explicit table; empty means no metadata filter.
+# Discovery currently requires retrieval.lexical_strategy="websearch".
 
 [inputs]
 # Saved replay input. Allowed: "" (not chosen) or a repository-relative .json path

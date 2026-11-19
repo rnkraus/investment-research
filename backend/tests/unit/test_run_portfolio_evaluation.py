@@ -255,7 +255,7 @@ def test_cli_preview_does_not_load_environment_or_start_app(
 
 def test_discovery_is_rejected_before_runtime_loading(live: ResolvedEvaluationProfile) -> None:
     case = next(item for item in live.catalog.cases if item.kind == "discovery")
-    with pytest.raises(LiveEvaluationError, match="A/U"):
+    with pytest.raises(LiveEvaluationError, match=r"explicit archive\.case_filters"):
         runner.preview(replace(live, cases=(case,)))
 
 

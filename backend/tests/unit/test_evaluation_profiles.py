@@ -21,14 +21,19 @@ RAG = (ROOT / "config/rag.toml").read_bytes()
 
 
 def write_toml(path: Path, values: dict[str, Any]) -> None:
-    lines = []
-    for key, value in values.items():
-        if not isinstance(value, dict):
-            lines.append(f"{key} = {json.dumps(value)}")
-    for section, values_ in values.items():
-        if isinstance(values_, dict):
-            lines.append(f"[{section}]")
-            lines.extend(f"{key} = {json.dumps(value)}" for key, value in values_.items())
+    lines: list[str] = []
+
+    def table(items: dict[str, Any], prefix: str = "") -> None:
+        for key, value in items.items():
+            if not isinstance(value, dict):
+                lines.append(f"{key} = {json.dumps(value)}")
+        for key, value in items.items():
+            if isinstance(value, dict):
+                name = f"{prefix}.{key}" if prefix else key
+                lines.append(f"[{name}]")
+                table(value, name)
+
+    table(values)
     path.write_text("\n".join(lines))
 
 
