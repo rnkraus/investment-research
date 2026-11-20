@@ -1267,6 +1267,7 @@ def test_real_composition_shares_run_guard_and_forwards_search_strategy(
         page_expansion=False,
         company_priority=False,
         admit_provider_attempt=Mock(),
+        observe_provider_completion=Mock(),
         wrap_dense_retriever=Mock(return_value=Mock()),
     )
     factory = Mock(wraps=create_research_retrieval_unit_of_work_factory)
@@ -1284,6 +1285,7 @@ def test_real_composition_shares_run_guard_and_forwards_search_strategy(
         assert dependencies.dense_retriever is not fakes.dense_retriever
         executor = container.provider_operation_executor
         assert executor is not None and executor.admit_attempt == options.admit_provider_attempt
+        assert executor.observe_completion == options.observe_provider_completion
         assert dependencies.provider_operation_executor is executor
         services = container.answer_research_request_service.model_services
         assert services is not None and len(services) == 4

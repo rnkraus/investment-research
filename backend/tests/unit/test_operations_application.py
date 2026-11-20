@@ -737,6 +737,76 @@ def test_execute_provider_operation_rejects_budget_before_provider_call() -> Non
     assert tracer.span.error_types == ["budget_exceeded"]
 
 
+@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("observer_fails", [False, True])
+def test_completion_observer_runs_after_finalization_without_changing_outcome(
+    failed: bool, observer_fails: bool
+) -> None:
+    service, _reservation, finalization, _tracer = make_execute_service()
+    attempt = make_query_embedding_attempt()
+    usage = ProviderUsage(input_units=80, output_units=0)
+    provider_error = RuntimeError("provider failed")
+
+    def observe(
+        recorded_attempt: ProviderOperationAttempt, completion: ProviderOperationCompletion
+    ) -> None:
+        finalization.finalize.assert_called_once_with(make_context(), OPERATION_ID, completion)
+        assert recorded_attempt is attempt
+        assert completion.state is (
+            ProviderOperationState.FAILED if failed else ProviderOperationState.SUCCEEDED
+        )
+        assert completion.input_units == (None if failed else 80)
+        if observer_fails:
+            raise RuntimeError("optional observer failed")
+
+    observer = Mock(side_effect=observe)
+    service = replace(service, observe_completion=observer)
+    provider = Mock(side_effect=provider_error) if failed else Mock(return_value=usage)
+    if failed:
+        with pytest.raises(RuntimeError) as caught:
+            service.execute(
+                make_context(),
+                attempt,
+                provider,
+                lambda result: result,
+                lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+            )
+        assert caught.value is provider_error
+    else:
+        assert (
+            service.execute(
+                make_context(),
+                attempt,
+                provider,
+                lambda result: result,
+                lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+            )
+            is usage
+        )
+    observer.assert_called_once()
+
+
+@pytest.mark.parametrize("stage", ["reservation", "finalization"])
+def test_completion_observer_does_not_report_uncommitted_usage(stage: str) -> None:
+    service, reservation, finalization, _tracer = make_execute_service()
+    observer = Mock()
+    service = replace(service, observe_completion=observer)
+    target = reservation.reserve if stage == "reservation" else finalization.finalize
+    target.side_effect = RuntimeError("canonical write failed")
+    provider = Mock(return_value=ProviderUsage(input_units=80, output_units=0))
+    with pytest.raises(RuntimeError, match="canonical write failed"):
+        service.execute(
+            make_context(),
+            make_query_embedding_attempt(),
+            provider,
+            lambda result: result,
+            lambda _error: ProviderOperationErrorCode.UNAVAILABLE,
+        )
+    observer.assert_not_called()
+    if stage == "reservation":
+        provider.assert_not_called()
+
+
 def test_execute_provider_operation_books_full_reservation_on_unknown_failure_usage() -> None:
     """Keep a failed paid attempt inside budget when the provider reports no units."""
 
