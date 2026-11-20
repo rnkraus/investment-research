@@ -8,6 +8,7 @@ from statistics import median
 from scripts.evaluate_portfolio import compare_saved
 from scripts.evaluation_profiles import checked_repository_file
 from scripts.evaluation_run_artifacts import RunArtifactError, SavedRun
+from scripts.evaluation_usage import UsageSummary
 from scripts.portfolio_snapshots import evidence_ranks, selection_key
 
 _STYLE = """
@@ -50,6 +51,38 @@ def document(title: str, body: str) -> str:
     )
 
 
+def token_text(usage: UsageSummary | None) -> str:
+    if usage is None:
+        return "Not captured by this runner version"
+    if usage.total("unknown_attempts") and not usage.total("reported_attempts"):
+        return "Unknown"
+    if usage.total("unmetered_attempts") == usage.total("attempts") and usage.groups:
+        return "Not applicable (database)"
+    suffix = " (known part)" if usage.total("unknown_attempts") else ""
+    return f"{usage.total('input_tokens')} / {usage.total('output_tokens')}{suffix}"
+
+
+def cost_text(usage: UsageSummary | None) -> str:
+    if usage is None:
+        return "Not captured by this runner version"
+    if usage.total("unknown_attempts") and not usage.total("reported_attempts"):
+        return "Unknown"
+    if usage.total("unmetered_attempts") == usage.total("attempts") and usage.groups:
+        return "Excluded database charges"
+    suffix = " (known part)" if usage.total("unknown_attempts") else ""
+    return f"USD {usage.total('estimated_usage_cost_micro_usd') / 1_000_000:.6f}{suffix}"
+
+
+def completeness_text(usage: UsageSummary | None) -> str:
+    if usage is None:
+        return "Not captured"
+    return (
+        f"{usage.total('reported_attempts')} reported / "
+        f"{usage.total('unknown_attempts')} unknown / "
+        f"{usage.total('unmetered_attempts')} database requests excluded"
+    )
+
+
 def metadata(run: SavedRun, heading: str) -> str:
     rows = run.scored.rows if run.scored else ()
     cases = {case.id: case for case in run.definition.cases}
@@ -82,11 +115,13 @@ def metadata(run: SavedRun, heading: str) -> str:
             f"{settings.rag.context.chunk_limit} chunks / "
             f"{settings.rag.context.character_limit} characters"
         ),
-        "Provider invocations": run.manifest.provider_calls,
+        "Provider attempts": run.manifest.provider_calls,
         "Model cost reservation (not billed cost)": (
             f"USD {run.manifest.reserved_model_cost_micro_usd / 1_000_000:.6f}"
         ),
-        "Actual tokens and estimated usage cost": "Not captured by this runner version",
+        "Provider-reported input / output tokens": token_text(run.manifest.provider_usage),
+        "Estimated usage cost (not provider invoice)": cost_text(run.manifest.provider_usage),
+        "Usage capture": completeness_text(run.manifest.provider_usage),
         "Median / sum of recorded request durations": (
             f"{median(timings):g} ms / {sum(timings)} ms" if timings else "Not recorded"
         ),
@@ -121,6 +156,9 @@ def render_run(run: SavedRun) -> str:
     observations = {item.key: item for item in run.observations}
     selections = {selection_key(row): row for row in run.scored.rows} if run.scored else {}
     cases = {case.id: case for case in run.definition.cases}
+    usage_by_case: dict[tuple[str, str | None, int], UsageSummary] = {
+        item.key: item.usage for item in run.manifest.usage_by_case
+    }
     source_labels = {
         source.alias: source.alias
         if source.alias in run.definition.catalog.sources
@@ -131,14 +169,16 @@ def render_run(run: SavedRun) -> str:
     for key in run.expected_keys:
         case_id, mode, repetition = key
         observed, row = observations.get(key), selections.get(key)
-        execution = (
-            badge("Not run", "gray")
-            if observed is None
-            else badge(
+        usage = usage_by_case.get(key)
+        if observed is None:
+            execution = (
+                badge("Interrupted", "orange") if usage is not None else badge("Not run", "gray")
+            )
+        else:
+            execution = badge(
                 "Execution failed" if observed.status == "failed" else "Recorded",
                 "red" if observed.status == "failed" else "gray",
             )
-        )
         markers = (
             badge("No context recorded", "gray")
             if row is None
@@ -164,6 +204,9 @@ def render_run(run: SavedRun) -> str:
             text(observed.status if observed else "Not run"),
             text(f"{observed.elapsed_ms} ms" if observed else "—"),
             text(locations or "No selected passages"),
+            text(token_text(usage)),
+            text(cost_text(usage)),
+            text(completeness_text(usage)),
         )
         lines.append("<tr>" + "".join(f"<td>{value}</td>" for value in values) + "</tr>")
     body = metadata(run, "Recorded configuration and execution")
@@ -183,13 +226,61 @@ def render_run(run: SavedRun) -> str:
                 "Recorded outcome",
                 "Duration",
                 "Selected sources",
+                "Known input / output tokens",
+                "Estimated usage cost",
+                "Usage capture",
             )
         )
         + "</tr></thead><tbody>"
         + "".join(lines)
         + "</tbody></table></div></section>"
     )
+    body += usage_roles(run)
     return document("Evaluation report", body)
+
+
+def usage_roles(run: SavedRun) -> str:
+    lines = []
+    for case in run.manifest.usage_by_case:
+        for role in case.usage.groups:
+            usage = UsageSummary(groups=(role,))
+            values = (
+                f"{case.case} · {case.archive_mode or 'research'} · repeat {case.repetition}",
+                role.role,
+                f"{role.provider} / {role.model or '—'}",
+                str(role.attempts),
+                str(role.failed_attempts),
+                token_text(usage),
+                cost_text(usage),
+                f"USD {role.reserved_micro_usd / 1_000_000:.6f}",
+                completeness_text(usage),
+            )
+            lines.append("<tr>" + "".join(f"<td>{text(value)}</td>" for value in values) + "</tr>")
+    if not lines:
+        return ""
+    headers = (
+        "Case",
+        "Role",
+        "Provider / model",
+        "Attempts",
+        "Failed",
+        "Known input / output tokens",
+        "Estimated usage cost",
+        "Reservation",
+        "Usage capture",
+    )
+    return (
+        "<section><h2>Provider usage by role and model</h2><p class=small>"
+        "Estimates use provider-reported usage and the recorded application price policy. "
+        "Failed or unfinished model attempts without usage remain unknown. "
+        "Reservations are retained independently; Pinecone database charges are excluded. "
+        "No provider invoice is verified.</p>"
+        "<div class=scroll><table><thead><tr>"
+        + "".join(f"<th>{label}</th>" for label in headers)
+        + "</tr></thead><tbody>"
+        + "".join(lines)
+        + "</tbody></table></div></section>"
+    )
 
 
 def render_comparison(baseline: SavedRun, candidate: SavedRun) -> str:
@@ -212,6 +303,8 @@ def render_comparison(baseline: SavedRun, candidate: SavedRun) -> str:
     ct = {item.key: item.elapsed_ms for item in candidate.observations}
     bs = {item.key: item.status for item in baseline.observations}
     cs = {item.key: item.status for item in candidate.observations}
+    bu = {item.key: item.usage for item in baseline.manifest.usage_by_case}
+    cu = {item.key: item.usage for item in candidate.manifest.usage_by_case}
     lines = []
     for change in changes:
         key = change["case"], change["archive_mode"], change["repetition"]
@@ -241,6 +334,8 @@ def render_comparison(baseline: SavedRun, candidate: SavedRun) -> str:
             text(f"{bt.get(key, '—')} → {ct.get(key, '—')} ms"),
             text(f"{bs[key]} → {cs[key]}"),
             text(pool),
+            text(f"{token_text(bu.get(key))} → {token_text(cu.get(key))}"),
+            text(f"{cost_text(bu.get(key))} → {cost_text(cu.get(key))}"),
         )
         lines.append("<tr>" + "".join(f"<td>{value}</td>" for value in values) + "</tr>")
     body = metadata(baseline, "Baseline") + metadata(candidate, "Candidate")
@@ -262,6 +357,8 @@ def render_comparison(baseline: SavedRun, candidate: SavedRun) -> str:
                 "Duration",
                 "Recorded outcome",
                 "Same candidate pool",
+                "Known tokens before / after",
+                "Estimated usage cost before / after",
             )
         )
         + "</tr></thead><tbody>"

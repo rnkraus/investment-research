@@ -204,6 +204,7 @@ def collect(
                         )
                     modes = resolved.profile.archive.modes if case.kind == "discovery" else (None,)
                     for mode in modes:
+                        budget.begin_case(case.id, repetition, mode)
                         row, record = (
                             collect_discovery(
                                 container, sources, case, repetition, commands[(case.id, mode)]
@@ -211,6 +212,7 @@ def collect(
                             if mode is not None
                             else collect_case(container, resolved, sources, case, repetition)
                         )
+                        record["provider_usage"] = budget.current_usage().model_dump(mode="json")
                         journal.write(json.dumps(record, ensure_ascii=False) + "\n")
                         journal.flush()
                         observations += 1
@@ -236,6 +238,8 @@ def collect(
             provider_attempts=budget.attempts,
             provider_calls=budget.calls,
             reserved_model_cost_micro_usd=budget.reserved_micro_usd,
+            provider_usage=budget.usage().model_dump(mode="json"),
+            usage_by_case=[item.model_dump(mode="json") for item in budget.case_usage()],
             finished_at=datetime.now(UTC).isoformat(),
         )
         (directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

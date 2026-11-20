@@ -17,6 +17,7 @@ from scripts.evaluation_profiles import (
     effective_rag_settings,
     select_catalog_cases,
 )
+from scripts.evaluation_usage import CaseUsage, UsageSummary, merge_usage
 from scripts.portfolio_snapshots import (
     ArchiveMode,
     Digest,
@@ -53,6 +54,8 @@ class SavedManifest(ArtifactModel):
     failed_observations: int = Field(ge=0)
     provider_calls: int = Field(ge=0)
     reserved_model_cost_micro_usd: int = Field(ge=0)
+    provider_usage: UsageSummary | None = None
+    usage_by_case: tuple[CaseUsage, ...] = Field(default=(), max_length=3_000)
 
 
 class SavedObservation(ArtifactModel):
@@ -61,6 +64,7 @@ class SavedObservation(ArtifactModel):
     archive_mode: ArchiveMode | None = None
     status: Literal["retrieved", "searched", "STREAMED", "INSUFFICIENT", "REJECTED", "failed"]
     elapsed_ms: int = Field(ge=0)
+    provider_usage: UsageSummary | None = None
 
     @property
     def key(self) -> tuple[str, str | None, int]:
@@ -192,6 +196,29 @@ def load_run(reference: str) -> SavedRun:
         item.status != "failed" and item.key not in rows for item in observations
     ):
         raise RunArtifactError("successful observations require their recorded context")
+    if manifest.provider_usage is None:
+        if manifest.usage_by_case or any(item.provider_usage is not None for item in observations):
+            raise RunArtifactError("per-case usage requires a recorded run summary")
+    else:
+        case_usage: dict[tuple[str, str | None, int], UsageSummary] = {
+            item.key: item.usage for item in manifest.usage_by_case
+        }
+        merged = merge_usage([item.usage for item in manifest.usage_by_case])
+        if (
+            len(case_usage) != len(manifest.usage_by_case)
+            or not case_usage.keys() <= expected
+            or not recorded.keys() <= case_usage.keys()
+            or (manifest.status == "completed" and case_usage.keys() != recorded.keys())
+            or manifest.provider_usage.total("attempts") != manifest.provider_calls
+            or manifest.provider_usage.total("reserved_micro_usd")
+            != manifest.reserved_model_cost_micro_usd
+            or {item.key: item for item in merged.groups}
+            != {item.key: item for item in manifest.provider_usage.groups}
+            or any(item.provider_usage != case_usage[item.key] for item in observations)
+        ):
+            raise RunArtifactError(
+                "provider usage disagrees with run totals or journal observations"
+            )
     for item in observations:
         allowed = (
             {"searched", "failed"}
