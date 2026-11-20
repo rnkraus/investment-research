@@ -9,6 +9,10 @@
   "scripts": {
     "build": "pnpm --filter @investment-research/frontend build",
     "dev": "pnpm --filter @investment-research/frontend dev",
+    "eval:preview": "uv run --directory backend --locked python -m scripts.evaluation_workflow preview",
+    "eval:run": "uv run --directory backend --locked python -m scripts.evaluation_workflow run",
+    "eval:report": "uv run --directory backend --locked python -m scripts.evaluation_workflow report",
+    "eval:compare": "uv run --directory backend --locked python -m scripts.evaluation_workflow compare",
     "format": "pnpm --filter @investment-research/frontend format",
     "format:write": "pnpm --filter @investment-research/frontend format:write",
     "lint": "pnpm --filter @investment-research/frontend lint",
