@@ -14,7 +14,7 @@ from scripts.evaluation_profiles import (
     DiscoveryFilters,
     ModelSettings,
     ProfileModel,
-    ResolvedEvaluationProfile,
+    SelectionDefinition,
 )
 from scripts.score_portfolio_retrieval import Case, matches_target, normalized
 
@@ -57,7 +57,7 @@ class RecordedSettings(ProfileModel):
         return value
 
 
-def settings_for(resolved: ResolvedEvaluationProfile) -> RecordedSettings:
+def settings_for(resolved: SelectionDefinition) -> RecordedSettings:
     profile = resolved.profile
     return RecordedSettings(
         scope=profile.scope,
@@ -197,7 +197,7 @@ def read_snapshot(path: Path) -> tuple[EvaluationSnapshot, bytes]:
 
 
 def selected_rows(
-    resolved: ResolvedEvaluationProfile, snapshot: EvaluationSnapshot
+    resolved: SelectionDefinition, snapshot: EvaluationSnapshot, *, require_complete: bool = True
 ) -> tuple[RecordedSelection, ...]:
     if hashlib.sha256(resolved.catalog_bytes).hexdigest() != snapshot.catalog_sha256:
         raise OfflineEvaluationError("snapshot catalog differs from the selected catalog")
@@ -235,6 +235,8 @@ def selected_rows(
             for repetition in range(1, resolved.profile.repetitions + 1):
                 row = index.get((case.id, mode, repetition))
                 if row is None:
+                    if not require_complete:
+                        continue
                     raise OfflineEvaluationError(
                         "snapshot lacks a selected case, mode, or repetition"
                     )

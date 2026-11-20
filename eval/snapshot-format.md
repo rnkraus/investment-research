@@ -77,3 +77,21 @@ Legacy bare JSONL pools and HTTP stream captures need an explicit provenance-pre
 Do not infer absent switches, fabricate corpus fingerprints, silently drop incomplete results,
 or assign today's configuration to an older recording. The existing frozen JSONL scorer remains
 available for its original historical format.
+
+## Frozen run bundles for reports
+
+Saved-run reporting uses `profile.toml`, `catalog.json`, `manifest.json`, `results.jsonl`, and the
+snapshot, when captured, from one ignored run directory. Effective settings and CLI case overrides
+come from the saved plan; current profiles and `config/rag.toml` are not loaded. Profile/catalog
+digests, snapshot code identity, resolved settings, observation keys and journal counts must agree.
+This verifies local consistency, not original-source authenticity or current authorization.
+
+Default offline scoring still requires every requested selection. Reports may show a gracefully
+stopped partial recording with missing cases marked unrun; they never synthesize missing contexts
+or repetitions. Successful observations require their corresponding selections. Comparisons need
+completed bundles with all planned contexts and the existing compatibility checks.
+
+HTML summaries omit raw questions, source passages, provider output and runtime UUIDs. They escape
+dynamic labels, use no scripts/external resources, label model reservations separately from spend,
+and keep discovery/abstention quality explicitly unreviewed. Store generated reports under ignored
+`outputs/`; review any later publication independently.

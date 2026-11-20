@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from tomllib import TOMLDecodeError, loads
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
@@ -184,6 +184,11 @@ def checked_repository_file(value: str, *, subtree: str, suffixes: tuple[str, ..
     resolved = (REPOSITORY_ROOT / path).resolve()
     if not resolved.is_relative_to(REPOSITORY_ROOT.resolve() / subtree):
         raise EvaluationProfileError("evaluation file reference escapes its allowed directory")
+    if resolved.suffix != path.suffix or any(
+        part.startswith(".")
+        for part in resolved.relative_to(REPOSITORY_ROOT.resolve() / subtree).parts
+    ):
+        raise EvaluationProfileError("evaluation file reference targets an unsupported file")
     return resolved
 
 
@@ -237,16 +242,31 @@ class ResolvedEvaluationProfile:
     rag_bytes: bytes
 
 
-def resolve_profile(path: Path, *, case_ids: tuple[str, ...] = ()) -> ResolvedEvaluationProfile:
-    profile, profile_bytes = load_profile(path)
-    if case_ids:
-        profile = EvaluationProfile.model_validate(
-            profile.model_dump() | {"cases": {"include": case_ids, "exclude": ()}}
-        )
-    catalog_path = checked_repository_file(profile.catalog, subtree="eval", suffixes=(".json",))
-    catalog_bytes = catalog_path.read_bytes()
-    catalog = Catalog.model_validate_json(catalog_bytes)
-    validate_catalog(catalog, require_portfolio_cases=False)
+class SelectionDefinition(Protocol):
+    """Common read-only inputs for current profiles and frozen run artifacts."""
+
+    @property
+    def profile(self) -> EvaluationProfile: ...
+
+    @property
+    def profile_bytes(self) -> bytes: ...
+
+    @property
+    def catalog(self) -> Catalog: ...
+
+    @property
+    def catalog_bytes(self) -> bytes: ...
+
+    @property
+    def cases(self) -> tuple[Case, ...]: ...
+
+    @property
+    def rag(self) -> RagSettings: ...
+
+
+def select_catalog_cases(profile: EvaluationProfile, catalog: Catalog) -> tuple[Case, ...]:
+    """Use the same checked case selection for live plans and saved-run reports."""
+
     by_id = {case.id: case for case in catalog.cases}
     mentioned = set(profile.cases.include) | set(profile.cases.exclude)
     if not mentioned <= by_id.keys():
@@ -261,6 +281,20 @@ def resolve_profile(path: Path, *, case_ids: tuple[str, ...] = ()) -> ResolvedEv
     )
     if not selected:
         raise EvaluationProfileError("case selection is empty")
+    return selected
+
+
+def resolve_profile(path: Path, *, case_ids: tuple[str, ...] = ()) -> ResolvedEvaluationProfile:
+    profile, profile_bytes = load_profile(path)
+    if case_ids:
+        profile = EvaluationProfile.model_validate(
+            profile.model_dump() | {"cases": {"include": case_ids, "exclude": ()}}
+        )
+    catalog_path = checked_repository_file(profile.catalog, subtree="eval", suffixes=(".json",))
+    catalog_bytes = catalog_path.read_bytes()
+    catalog = Catalog.model_validate_json(catalog_bytes)
+    validate_catalog(catalog, require_portfolio_cases=False)
+    selected = select_catalog_cases(profile, catalog)
     rag_path = REPOSITORY_ROOT / "config/rag.toml"
     rag = effective_rag_settings(profile, load_rag_settings(rag_path))
     return ResolvedEvaluationProfile(
