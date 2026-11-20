@@ -825,7 +825,9 @@ def build_api_container(
     if m1_query_retrieval is not None:
         assert provider_operation_executor is not None
         provider_operation_executor = replace(
-            provider_operation_executor, admit_attempt=options.admit_provider_attempt
+            provider_operation_executor,
+            admit_attempt=options.admit_provider_attempt,
+            observe_completion=options.observe_provider_completion,
         )
         m1_query_retrieval = replace(
             m1_query_retrieval,

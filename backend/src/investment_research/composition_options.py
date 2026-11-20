@@ -4,7 +4,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from investment_research.modules.operations.application import ProviderOperationAttempt
+from investment_research.modules.operations.application import (
+    ProviderOperationAttempt,
+    ProviderOperationCompletion,
+)
 from investment_research.modules.search.ports import DenseRetriever
 
 
@@ -16,3 +19,6 @@ class ApiCompositionOptions:
     company_priority: bool = True
     admit_provider_attempt: Callable[[ProviderOperationAttempt], None] | None = None
     wrap_dense_retriever: Callable[[DenseRetriever], DenseRetriever] | None = None
+    observe_provider_completion: (
+        Callable[[ProviderOperationAttempt, ProviderOperationCompletion], None] | None
+    ) = None

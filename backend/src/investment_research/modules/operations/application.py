@@ -314,6 +314,9 @@ class ExecuteProviderOperationService:
     identifier_factory: OperationIdentifierFactory = uuid4
     trace_identifier_factory: TraceIdentifierFactory = lambda: uuid4().hex
     admit_attempt: Callable[[ProviderOperationAttempt], None] | None = None
+    observe_completion: (
+        Callable[[ProviderOperationAttempt, ProviderOperationCompletion], None] | None
+    ) = None
 
     def execute[ResultT](
         self,
@@ -409,6 +412,7 @@ class ExecuteProviderOperationService:
                     safe_error_code=error_code,
                 )
                 self.finalization_service.finalize(context, operation.id, completion)
+                self._observe_completion(attempt, completion)
                 span.set_attribute("lifecycle.state", ProviderOperationState.FAILED.value)
                 span.set_attribute("cost.micro_usd", reserved_cost)
                 span.set_attribute("outcome", "failed")
@@ -424,6 +428,7 @@ class ExecuteProviderOperationService:
                 duration_ms=self._duration_ms(started_tick),
             )
             self.finalization_service.finalize(context, operation.id, completion)
+            self._observe_completion(attempt, completion)
             span.set_attribute("lifecycle.state", ProviderOperationState.SUCCEEDED.value)
             span.set_attribute("input.units", usage.input_units)
             span.set_attribute("output.units", usage.output_units)
@@ -439,6 +444,15 @@ class ExecuteProviderOperationService:
                     for name, value in trace_attributes_from_result(result).items():
                         span.set_attribute(name, value)
             return result
+
+    def _observe_completion(
+        self, attempt: ProviderOperationAttempt, completion: ProviderOperationCompletion
+    ) -> None:
+        """Keep optional content-free measurements independent of the canonical operation."""
+
+        if self.observe_completion is not None:
+            with suppress(Exception):
+                self.observe_completion(attempt, completion)
 
     def _aware_utc_now(self) -> datetime:
         """Require one aware application clock and normalize it to UTC."""
