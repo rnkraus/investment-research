@@ -11,7 +11,7 @@ from uuid import UUID
 from scripts.evaluation_profiles import (
     DEFAULT_PROFILE,
     EvaluationProfileError,
-    ResolvedEvaluationProfile,
+    SelectionDefinition,
     checked_repository_file,
     resolve_profile,
 )
@@ -33,7 +33,7 @@ from scripts.portfolio_snapshots import (
 
 @dataclass(frozen=True)
 class OfflineResult:
-    resolved: ResolvedEvaluationProfile
+    resolved: SelectionDefinition
     snapshot: EvaluationSnapshot
     rows: tuple[RecordedSelection, ...]
     report: dict[str, object]
@@ -53,7 +53,19 @@ def evaluate_saved(
         raise OfflineEvaluationError("choose a saved snapshot in inputs.snapshot or --snapshot")
     path = checked_repository_file(reference, subtree="outputs", suffixes=(".json",))
     snapshot, raw = read_snapshot(path)
-    rows = selected_rows(resolved, snapshot)
+    return score_snapshot(resolved, snapshot, raw)
+
+
+def score_snapshot(
+    resolved: SelectionDefinition,
+    snapshot: EvaluationSnapshot,
+    raw: bytes,
+    *,
+    require_complete: bool = True,
+) -> OfflineResult:
+    """Score a validated frozen selection without loading current configuration or providers."""
+
+    rows = selected_rows(resolved, snapshot, require_complete=require_complete)
     cases = {case.id: case for case in resolved.cases}
     observations = [score_selection(cases[row.case], row) for row in rows]
     summary = {
