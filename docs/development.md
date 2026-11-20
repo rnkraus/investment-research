@@ -328,6 +328,8 @@ export destination settings or headers.
 
 For reproducible, opt-in retrieval-only or full-RAG research experiments, see
 [evaluation profiles and fresh research collection](../eval/README.md#run-a-new-research-evaluation).
+The repository-root `pnpm eval:preview`, `pnpm eval:run`, `pnpm eval:report` and
+`pnpm eval:compare` commands provide the [short workflow](../eval/README.md#short-workflow-commands).
 The default preview makes no provider calls; paid execution requires explicit confirmation and
 separate run limits. Generated contexts, answers and manifests stay under ignored `outputs/`.
 

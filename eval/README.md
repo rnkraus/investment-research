@@ -1,5 +1,67 @@
 # Evaluation
 
+## Short workflow commands
+
+From the repository root, use the existing `pnpm`/`uv` toolchain without copying Docker mounts:
+
+```shell
+pnpm eval:preview
+pnpm eval:preview --profile live-retrieval.example.toml --case A06
+```
+
+The default profile is `full-retrieval.example.toml`. A profile basename or a repository-relative
+`eval/profiles/*.toml` path is accepted. Preview validates configuration only; it never launches
+Docker, reads environment files or calls providers. `pnpm eval:run` also previews unless
+`--execute` is supplied. With the normal local stack running and its API image up to date:
+
+```shell
+pnpm eval:run --execute --confirm-public-synthetic
+```
+
+This uses the same Compose files, unprivileged user, read-only source/config mounts and ignored
+output mount as the longer command below. The application's normal credential loading remains
+inside Docker. All archive inputs must be reviewed public/synthetic material. Existing run and
+workspace budgets still apply. The wrapper does not start dependencies or rebuild images.
+Optional `--profile`, repeated `--case`, and `--output outputs/portfolio-live/new-run` select a
+profile, cases and a new run directory. Otherwise the directory name uses UTC plus a random suffix.
+After a successful execution, the wrapper generates an offline HTML report and prints its path.
+
+Generate a report later, or compare two completed recordings, without new provider calls:
+
+```shell
+pnpm eval:report outputs/portfolio-live/run-a
+pnpm eval:compare outputs/portfolio-live/run-a outputs/portfolio-live/run-b
+```
+
+The first comparison argument is the baseline and the second is the candidate. Add
+`--output outputs/evaluation-reports/new-report.html` to choose an explicit destination.
+Otherwise a new file is generated under ignored `outputs/evaluation-reports/`. Existing files
+are never overwritten. Open the printed HTML file locally; it needs no server, scripts or network.
+
+The report uses each run's frozen profile, catalog, effective settings, journal and snapshot;
+it does not reinterpret them using today's TOML. It verifies recorded hashes, settings, counts,
+case/mode/repetition identities and successful observations' contexts. CLI case overrides are
+recovered from the saved plan. Original-file checksums and current canonical eligibility are not
+rechecked. Historical raw run files remain unchanged.
+
+- Green: all expected retrieval markers found; orange: some found; red: none found.
+- Execution failures are shown separately. Missing observations in a gracefully stopped run stay
+  gray as `Not run`; they are not counted as successful.
+- Discovery and abstention require manual review. Recorded answer-model outcomes are not an
+  independent quality verdict. Company cards and document-title results remain in the journal.
+- Per-case marker ranks, selected source aliases/pages, recorded durations and configuration are
+  displayed. Raw questions, passages, model outputs and runtime identifiers are omitted. Unknown
+  source aliases are replaced with neutral labels; dynamic text is HTML-escaped.
+- Model reservations are labeled separately from actual cost. Tokens and estimated usage cost
+  are shown as not captured, rather than zero, for the current runner.
+
+Comparisons retain the existing catalog/corpus/scope/case/stage compatibility checks and require
+both runs to have completed with all planned contexts recorded. They show marker gains/losses,
+rank changes, added/removed passages and durations. Candidate-pool control remains explicit when
+not recorded; differences do not establish causal improvement. Legacy snapshot-only recordings
+still use the offline scorer below. Runs failing before their metadata is captured cannot produce
+a full report; inspect their local manifest instead.
+
 ## Evaluation profiles and free run preview
 
 [The commented profile](profiles/standard.example.toml) defines per-experiment settings with
