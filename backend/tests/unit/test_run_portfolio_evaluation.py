@@ -187,6 +187,34 @@ def test_fresh_retrieval_runs_app_search_but_never_generates_an_answer(
     assert json.loads((tmp_path / "results.jsonl").read_text())["manual_answer_review_required"]
 
 
+def test_collector_persists_matching_case_journal_and_run_usage(
+    live: ResolvedEvaluationProfile, tmp_path: Path
+) -> None:
+    from tests.unit.test_evaluation_usage import completion
+
+    container, _ = stub_container(live)
+    budget = RunBudget(80_000, 8)
+    retrieved = container.retrieve_research_service.retrieve.return_value  # type: ignore[attr-defined]
+
+    def retrieve(*args: object) -> object:
+        operation = attempt()
+        budget.admit(operation)
+        budget.completed(operation, completion())
+        return retrieved
+
+    container.retrieve_research_service.retrieve.side_effect = retrieve  # type: ignore[attr-defined]
+    result = runner.collect(container, live, budget, tmp_path)
+    record = json.loads((tmp_path / "results.jsonl").read_text())
+    assert result["provider_calls"] == 1
+    assert result["reserved_model_cost_micro_usd"] == 100
+    assert result["provider_usage"] == record["provider_usage"]
+    assert result["usage_by_case"] == [
+        {"case": "A06", "repetition": 1, "archive_mode": None, "usage": record["provider_usage"]}
+    ]
+    assert record["provider_usage"]["groups"][0]["input_tokens"] == 20
+    assert record["provider_usage"]["groups"][0]["estimated_usage_cost_micro_usd"] == 20
+
+
 def test_rag_execution_passes_selected_models_scope_and_optional_calls(
     live: ResolvedEvaluationProfile,
 ) -> None:

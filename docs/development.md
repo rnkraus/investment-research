@@ -332,6 +332,9 @@ The repository-root `pnpm eval:preview`, `pnpm eval:run`, `pnpm eval:report` and
 `pnpm eval:compare` commands provide the [short workflow](../eval/README.md#short-workflow-commands).
 The default preview makes no provider calls; paid execution requires explicit confirmation and
 separate run limits. Generated contexts, answers and manifests stay under ignored `outputs/`.
+New recordings also capture provider-reported tokens and estimated usage costs per case and
+role/model. Reports distinguish these estimates from conservative reservations, unknown usage
+after failures and excluded Pinecone database charges. Historical runs remain unchanged.
 
 Run the frontend checks from the repository root:
 

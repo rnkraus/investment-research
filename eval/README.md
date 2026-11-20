@@ -46,19 +46,28 @@ rechecked. Historical raw run files remain unchanged.
 
 - Green: all expected retrieval markers found; orange: some found; red: none found.
 - Execution failures are shown separately. Missing observations in a gracefully stopped run stay
-  gray as `Not run`; they are not counted as successful.
+  gray as `Not run`; started cases with captured usage are orange as `Interrupted`. Neither counts
+  as successful.
 - Discovery and abstention require manual review. Recorded answer-model outcomes are not an
   independent quality verdict. Company cards and document-title results remain in the journal.
 - Per-case marker ranks, selected source aliases/pages, recorded durations and configuration are
   displayed. Raw questions, passages, model outputs and runtime identifiers are omitted. Unknown
   source aliases are replaced with neutral labels; dynamic text is HTML-escaped.
-- Model reservations are labeled separately from actual cost. Tokens and estimated usage cost
-  are shown as not captured, rather than zero, for the current runner.
+- New recordings include provider-reported input/output tokens and estimated usage costs per
+  case, mode, repetition, role and model. Estimates use the application's price policy at execution
+  time, not provider invoices. The journal and manifest summaries must agree before rendering.
+- Model reservations remain separate and are retained for every admitted attempt, including
+  retries. Failed or unfinished model attempts without finalized usage are labeled unknown;
+  partial totals are explicitly marked as the known part. Pinecone database requests are counted
+  but their charges are excluded, and no token usage is invented for them.
+- Older recordings show tokens and estimated usage cost as not captured, rather than zero.
+  Reports never reprice old runs or backfill their usage from reservations.
 
 Comparisons retain the existing catalog/corpus/scope/case/stage compatibility checks and require
 both runs to have completed with all planned contexts recorded. They show marker gains/losses,
-rank changes, added/removed passages and durations. Candidate-pool control remains explicit when
-not recorded; differences do not establish causal improvement. Legacy snapshot-only recordings
+rank changes, added/removed passages, durations and captured token/cost totals. Candidate-pool
+control remains explicit when not recorded; differences do not establish causal improvement.
+Legacy snapshot-only recordings
 still use the offline scorer below. Runs failing before their metadata is captured cannot produce
 a full report; inspect their local manifest instead.
 
