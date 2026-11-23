@@ -1,6 +1,6 @@
 # Security Verification Summary
 
-**Scope:** Historical local verification, October 24–November 23, 2026. This summary is not a current
+**Scope:** Historical local verification, October 24–November 24, 2026. This summary is not a current
 scan, security certification, hosted-CI result, or acceptance of unresolved risks.
 
 Use the [development guide](./development.md#dependency-and-image-maintenance) for operational
@@ -35,6 +35,7 @@ versions and image pins belong in package manifests, lockfiles, and Dockerfiles.
 | October 29 | Eligible Python parser and development-tool refresh | Dependency audit reported no known findings in 88 packages. Formatting/lint/types, 2,628 unit tests, parser isolation, and isolated M0/M1 HTTP journeys passed. Existing release-age and parser-version checks retained; newer upstream corrections and OS findings still require follow-up. |
 | October 30 | Backend runtime installer removal | pip/ensurepip absence verified under application and global Python in all five runtime roles. Formatting/lint/types, 2,628 unit tests, migrations/API readiness, parser isolation, and M0/M1 HTTP journeys passed. Image scan confirms removal of installer-related findings; remaining OS findings are unresolved. Browser gate skipped. |
 | November 23 | Targeted frontend lint dependency refresh | Frozen installation with release-age and strict peer checks, formatting/lint/types/contracts, 100 frontend tests and production build passed. Project dependency audit reported no known findings; 418 registry signatures verified. Isolated M1 HTTP journey and all 18 browser tests passed. |
+| November 24 | Redis Alpine package revision refresh | Uncached Redis builds and exact package/version probes passed on AMD64 and ARM64. Backend image, object-storage, parser-isolation, queue-recovery and M0/M1 HTTP checks passed locally, including all 18 M1 browser tests. This is not a full AMD64 application journey or a vulnerability scan. |
 
 ## Safeguards and limitations
 
