@@ -63,6 +63,7 @@ from investment_research.modules.search.domain import RetrievalFilters
 from investment_research.modules.search.observation_dates import contains_observation_date
 from investment_research.modules.search.page_context import (
     PAGE_CONTEXT_SLOTS,
+    PdfNeighbor,
     term_weights,
     weighted_overlap,
 )
@@ -339,6 +340,59 @@ class PostgresLexicalSearch:
             for row in self._session.execute(eligible.where(ChunkRow.id.in_(scores))).tuples()
         }
         return tuple(hits[key] for key in scores if key in hits)
+
+    def pdf_neighbors(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        anchors: Sequence[UUID],
+    ) -> tuple[PdfNeighbor, ...]:
+        """Find the preceding and following chunks within each anchor's physical page."""
+        if not anchors:
+            return ()
+        anchor = aliased(ChunkRow)
+        anchor_block = aliased(StructureBlockRow)
+        statement = (
+            self._searchable_chunks(context, query, index)
+            .join_from(
+                ChunkRow,
+                anchor,
+                and_(
+                    anchor.workspace_id == ChunkRow.workspace_id,
+                    anchor.document_version_id == ChunkRow.document_version_id,
+                    anchor.chunk_set_id == ChunkRow.chunk_set_id,
+                    anchor.processing_run_id == ChunkRow.processing_run_id,
+                    anchor.id.in_(anchors),
+                    ChunkRow.ordinal.in_((anchor.ordinal - 1, anchor.ordinal + 1)),
+                ),
+            )
+            .join_from(
+                anchor,
+                anchor_block,
+                and_(
+                    anchor_block.workspace_id == anchor.workspace_id,
+                    anchor_block.id == anchor.structure_block_id,
+                    anchor_block.document_version_id == anchor.document_version_id,
+                    anchor_block.processing_run_id == anchor.processing_run_id,
+                    anchor_block.text == anchor.text,
+                ),
+            )
+            .where(
+                StructureBlockRow.source_locator_kind == SourceLocatorKind.PDF_PAGE,
+                anchor_block.source_locator_kind == SourceLocatorKind.PDF_PAGE,
+                StructureBlockRow.page_number == anchor_block.page_number,
+            )
+            .add_columns(anchor.id)
+        )
+        return tuple(
+            PdfNeighbor(
+                anchor_id, _page_hit(chunk_id, document_id, version, block, kind, page, body, 1.0)
+            )
+            for chunk_id, document_id, version, block, kind, page, body, anchor_id in (
+                self._session.execute(statement).tuples()
+            )
+        )
 
     def search_observation(
         self,

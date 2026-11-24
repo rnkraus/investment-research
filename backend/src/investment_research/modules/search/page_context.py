@@ -3,25 +3,137 @@
 import re
 from collections import Counter
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from itertools import pairwise
 from math import log
 from uuid import UUID
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.search.contracts import (
     LexicalSearchHit,
     SelectedRetrievalCandidate,
 )
 from investment_research.modules.search.domain import RetrievalOrigin
-from investment_research.modules.search.observation_dates import requested_observation_date
+from investment_research.modules.search.observation_dates import (
+    contains_observation_date,
+    requested_observation_date,
+)
 
-PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v2"
-PAGE_SELECTOR_VERSIONS = frozenset({"m1-5-rrf-k60-page-context-v1", PAGE_SELECTOR_VERSION})
+PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v3"
+PAGE_SELECTOR_VERSIONS = frozenset(
+    {"m1-5-rrf-k60-page-context-v1", "m1-5-rrf-k60-page-context-v2", PAGE_SELECTOR_VERSION}
+)
 PAGE_CONTEXT_SLOTS = 4
+PDF_NEIGHBOR_ANCHOR_LIMIT = 4
 STRUCTURED_CONTEXT_LIMIT = 7
 _OBSERVATION_METRIC = re.compile(
     r"^\s*(?:what(?:\s+exact)?|how much)\s+(?P<metric>.+?)\s+"
     r"(?:did|does|was|were|is|has|had)\b",
     re.IGNORECASE,
 )
+_WORD = re.compile(r"[a-z]+(?:[-\u2013][a-z]+)*|\d+")
+_QUESTION_WORD = re.compile(
+    r"a|about|actual|also|an|and|any|as|at|by|can|company|describe|did|do|does|exact|for|from|"
+    r"gave|give|had|has|have|how|in|into|is|it|its|many|move|much|of|on|or|reported|say|should|"
+    r"than|that|the|their|there|they|this|to|use|was|were|what|when|where|which|who|why|with|year"
+)
+_REPORTED_QUANTITY = re.compile(
+    r"[$€£]\s*\d|\b\d[\d.,]*\s*(?:%|million\b|billion\b|bps\b|MW\b|GW\b)", re.IGNORECASE
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PdfNeighbor:
+    """One immediate, eligible neighbor of a selected PDF passage."""
+
+    anchor_id: UUID
+    hit: LexicalSearchHit
+
+
+def _content_phrases(text: str) -> set[tuple[str, str]]:
+    words = _WORD.findall(text.casefold())
+    return {
+        (left, right)
+        for left, right in pairwise(words)
+        if left.isalpha()
+        and right.isalpha()
+        and not (_QUESTION_WORD.fullmatch(left) or _QUESTION_WORD.fullmatch(right))
+    }
+
+
+def add_pdf_neighbor(
+    question: str,
+    selected: tuple[SelectedRetrievalCandidate, ...],
+    neighbors: Sequence[PdfNeighbor],
+    *,
+    chunk_limit: int,
+    character_limit: int,
+) -> tuple[SelectedRetrievalCandidate, ...]:
+    """Keep high-ranking evidence and admit a neighbor with an uncovered metric phrase."""
+    if not neighbors:
+        return selected
+    query_phrases = _content_phrases(question)
+    if not query_phrases:
+        return selected
+    covered = [_content_phrases(item.text) & query_phrases for item in selected]
+    phrase_counts = Counter(phrase for phrases in covered for phrase in phrases)
+    selected_ids = {item.chunk_id for item in selected}
+    selected_texts = {" ".join(item.text.casefold().split()) for item in selected}
+    anchors = {
+        item.chunk_id: index for index, item in enumerate(selected[:PDF_NEIGHBOR_ANCHOR_LIMIT])
+    }
+    date = requested_observation_date(question)
+    choices: list[tuple[int, int, LexicalSearchHit]] = []
+    for neighbor in neighbors:
+        index = anchors.get(neighbor.anchor_id)
+        if index is None:
+            continue
+        anchor, hit = selected[index], neighbor.hit
+        if (
+            anchor.source_locator_kind is not SourceLocatorKind.PDF_PAGE
+            or hit.source_locator_kind is not SourceLocatorKind.PDF_PAGE
+            or (hit.document_version_id, hit.page_number)
+            != (anchor.document_version_id, anchor.page_number)
+            or hit.chunk_id in selected_ids
+            or " ".join(hit.text.casefold().split()) in selected_texts
+            or not _REPORTED_QUANTITY.search(hit.text)
+            or (date is not None and not contains_observation_date(hit.text, date))
+        ):
+            continue
+        document_phrases = {
+            phrase
+            for item, phrases in zip(selected, covered, strict=True)
+            if item.document_version_id == hit.document_version_id
+            for phrase in phrases
+        }
+        added = (_content_phrases(hit.text) & query_phrases) - document_phrases
+        if added:
+            choices.append((-len(added), index, hit))
+
+    structured_full = (
+        sum(item.origin is RetrievalOrigin.STRUCTURED for item in selected)
+        >= STRUCTURED_CONTEXT_LIMIT
+    )
+    for _, index, hit in sorted(choices, key=lambda item: (item[0], item[1], item[2].chunk_id)):
+        kept = list(selected)
+        if len(kept) >= chunk_limit or structured_full:
+            remove = next(
+                (
+                    rank
+                    for rank in range(len(selected) - 1, PDF_NEIGHBOR_ANCHOR_LIMIT - 1, -1)
+                    if selected[rank].document_version_id != hit.document_version_id
+                    and (not structured_full or selected[rank].origin is RetrievalOrigin.STRUCTURED)
+                    and all(phrase_counts[phrase] > 1 for phrase in covered[rank])
+                ),
+                None,
+            )
+            if remove is None:
+                continue
+            kept.pop(remove)
+        if sum(len(item.text) for item in kept) + len(hit.text) <= character_limit:
+            kept.insert(index + 1, _structured(hit))
+            return _fit(kept, chunk_limit, character_limit)
+    return selected
 
 
 def observation_metric(question: str) -> str | None:

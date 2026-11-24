@@ -22,6 +22,7 @@ from investment_research.modules.search.contracts import (
     RerankResponse,
 )
 from investment_research.modules.search.domain import RetrievalCandidate, RetrievalRun
+from investment_research.modules.search.page_context import PdfNeighbor
 from investment_research.modules.search.text_neighbors import TextNeighbor
 
 
@@ -70,6 +71,15 @@ class LexicalSearch(Protocol):
         self, context: WorkspaceContext, query: LexicalSearchQuery, index: DenseQualificationRequest
     ) -> Sequence[LexicalSearchHit]:
         """Rank full pages and text documents within the active archive scope."""
+
+    def pdf_neighbors(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        anchors: Sequence[UUID],
+    ) -> Sequence[PdfNeighbor]:
+        """Read immediate eligible neighbors on the same physical PDF page."""
 
     def search_observation(
         self,

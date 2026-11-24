@@ -70,8 +70,10 @@ from investment_research.modules.search.observation_dates import (
 )
 from investment_research.modules.search.page_context import (
     PAGE_SELECTOR_VERSION,
+    PDF_NEIGHBOR_ANCHOR_LIMIT,
     add_observation_context,
     add_page_context,
+    add_pdf_neighbor,
     observation_metric,
 )
 from investment_research.modules.search.ports import (
@@ -711,6 +713,20 @@ class RetrieveResearchService:
                         embedding_config_version=qualification_request.embedding_config_version,
                         dense_index_config_version=qualification_request.dense_index_config_version,
                     ),
+                    chunk_limit=profile.context_chunk_limit,
+                    character_limit=profile.context_character_limit,
+                )
+        if selector_version == PAGE_SELECTOR_VERSION:
+            pdf_anchors = tuple(
+                item.chunk_id
+                for item in selected_candidates[:PDF_NEIGHBOR_ANCHOR_LIMIT]
+                if item.source_locator_kind is SourceLocatorKind.PDF_PAGE
+            )
+            if pdf_anchors:
+                selected_candidates = add_pdf_neighbor(
+                    question,
+                    selected_candidates,
+                    reader.pdf_neighbors(context, query, qualification_request, pdf_anchors),
                     chunk_limit=profile.context_chunk_limit,
                     character_limit=profile.context_character_limit,
                 )

@@ -81,7 +81,7 @@ from investment_research.modules.search.fusion_contracts import (
     RRF_CONFIG_VERSION,
     RrfSelectionProfile,
 )
-from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSION
+from investment_research.modules.search.page_context import PAGE_SELECTOR_VERSION, PdfNeighbor
 from investment_research.modules.search.ports import (
     DenseCandidateQualifier,
     DenseRetriever,
@@ -142,6 +142,7 @@ class RecordingUnitOfWork:
         self.dense_qualifier = cast(DenseCandidateQualifier, self.dense_qualifier_mock)
         self.retrieval = cast(RetrievalRepository, self.retrieval_mock)
         self.lexical_search_mock.search.return_value = lexical_hits
+        self.lexical_search_mock.pdf_neighbors.return_value = ()
         self.dense_qualifier_mock.qualify.return_value = dense_hits
         self.events = events if events is not None else []
         self.enter_count = 0
@@ -1139,6 +1140,74 @@ def test_rrf_text_neighbors_keep_fusion_and_enforce_observation_scope(
             item.origin is RetrievalOrigin.STRUCTURED and item.fused_rank is None
             for item in result.candidates[1:]
         )
+
+
+@pytest.mark.parametrize(
+    ("neighbor_page", "observation_date", "expect_neighbor"),
+    [(2, "", True), (3, "", False), (2, " as of November 6, 2026", False)],
+)
+def test_rrf_pdf_neighbor_adds_missing_sales_within_the_context_budget(
+    neighbor_page: int, observation_date: str, expect_neighbor: bool
+) -> None:
+    anchor = make_lexical_hit().model_copy(
+        update={"text": "Gross margin was 12.7% versus 17.5% in the prior quarter."}
+    )
+    sales = anchor.model_copy(
+        update={
+            "chunk_id": UUID(int=500),
+            "structure_block_id": UUID(int=501),
+            "page_number": neighbor_page,
+            "text": "Net sales were $19.9 billion versus $11.1 billion in the prior quarter.",
+        }
+    )
+    other_hits = tuple(
+        anchor.model_copy(
+            update={
+                "chunk_id": UUID(int=510 + offset),
+                "structure_block_id": UUID(int=520 + offset),
+                "document_id": UUID(int=530 + offset),
+                "document_version_id": UUID(int=540 + offset),
+                "text": f"Unrelated selected passage {offset}.",
+            }
+        )
+        for offset in range(7)
+    )
+    initial = (anchor, *other_hits)
+    uow = RecordingUnitOfWork(lexical_hits=initial)
+    uow.lexical_search_mock.pdf_neighbors.return_value = (PdfNeighbor(anchor.chunk_id, sales),)
+    embedder, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedder,
+        dense_retriever=dense,
+        identifiers=(REQUEST_ID, RUN_ID, *(UUID(int=550 + index) for index in range(9))),
+        selection_profile=RrfSelectionProfile(context_chunk_limit=16),
+        expand_page_context=True,
+    )
+
+    result = service.retrieve(
+        make_context(),
+        ResearchRetrievalInput(
+            question=f"How did net sales and gross margin change{observation_date}?"
+        ),
+    )
+
+    assert result.retrieval_run.selector_config_version == PAGE_SELECTOR_VERSION
+    assert len(result.sources) == 8
+    assert uow.lexical_search_mock.pdf_neighbors.call_args.args[3] == tuple(
+        item.chunk_id for item in initial[:4]
+    )
+    if expect_neighbor:
+        expected = (anchor, sales, *initial[1:-1])
+        structured = [
+            item for item in result.candidates if item.origin is RetrievalOrigin.STRUCTURED
+        ]
+        assert len(structured) == 1
+        assert structured[0].chunk_id == sales.chunk_id
+        assert structured[0].fused_rank is None
+    else:
+        expected = initial
+    assert [item.chunk_id for item in result.sources] == [item.chunk_id for item in expected]
 
 
 @pytest.mark.parametrize("compound", [True, False])
