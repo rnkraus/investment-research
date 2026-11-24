@@ -14,8 +14,14 @@ from investment_research.infrastructure.search.postgresql import PostgresLexical
 from investment_research.modules.documents.domain import OriginalMediaType, SourceLocatorKind
 from investment_research.modules.documents.persistence import DocumentRow, DocumentVersionRow
 from investment_research.modules.identity.domain import WorkspaceContext
+from investment_research.modules.processing.application import M1_PROCESSING_PROFILE
+from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.search.application import build_lexical_search_query
-from investment_research.modules.search.contracts import LexicalSearchHit, LexicalSearchQuery
+from investment_research.modules.search.contracts import (
+    DenseQualificationRequest,
+    LexicalSearchHit,
+    LexicalSearchQuery,
+)
 from investment_research.modules.search.domain import RetrievalFilters
 from tests.integration.factories import (
     FIXTURE_TIME,
@@ -89,6 +95,57 @@ def search(
     session_factory = create_session_factory(engine)
     with session_factory() as session:
         return PostgresLexicalSearch(session).search(context, query)
+
+
+def test_pdf_neighbors_respect_physical_page_and_document_scope(
+    integration_database_engine: Engine,
+) -> None:
+    source = make_research_source(label="PDF neighbors")
+    sales, margin = source.blocks
+    next_page = margin.model_copy(update={"id": uuid4(), "ordinal": 2})
+    source = replace(
+        source,
+        processing_run=source.processing_run.model_copy(
+            update={
+                "state": ProcessingState.SEARCHABLE,
+                "embedding_config_version": M1_PROCESSING_PROFILE.embedding_config_version,
+                "dense_index_config_version": M1_PROCESSING_PROFILE.dense_index_config_version,
+            }
+        ),
+        blocks=(sales, margin.model_copy(update={"page_number": sales.page_number}), next_page),
+        chunks=(
+            *source.chunks,
+            source.chunks[1].model_copy(
+                update={"id": uuid4(), "ordinal": 2, "structure_block_id": next_page.id}
+            ),
+        ),
+    )
+    persist_research_source(integration_database_engine, source)
+    query = make_query(source, "How did net sales and gross margin change?")
+    index = DenseQualificationRequest(
+        provider_hits=(),
+        filters=query.filters,
+        lexical_config_version=query.lexical_config_version,
+        embedding_config_version=source.processing_run.embedding_config_version,
+        dense_index_config_version=source.processing_run.dense_index_config_version,
+    )
+    anchors = (source.chunks[1].id,)
+    outside_scope = RetrievalFilters(document_ids=(uuid4(),))
+    session_factory = create_session_factory(integration_database_engine)
+    with session_factory() as session:
+        reader = PostgresLexicalSearch(session)
+        neighbors = reader.pdf_neighbors(source.context, query, index, anchors)
+        excluded = reader.pdf_neighbors(
+            source.context,
+            query.model_copy(update={"filters": outside_scope}),
+            index.model_copy(update={"filters": outside_scope}),
+            anchors,
+        )
+
+    assert [(item.anchor_id, item.hit.chunk_id, item.hit.page_number) for item in neighbors] == [
+        (anchors[0], source.chunks[0].id, sales.page_number)
+    ]
+    assert excluded == ()
 
 
 def test_known_passage_is_retrieved_and_unanswerable_question_returns_no_hit(

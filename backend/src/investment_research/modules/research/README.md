@@ -103,13 +103,14 @@ comparison boundary.
 
 ### Live source-ID context expansion
 
-The normal source-ID runtime uses `m1-5-rrf-k60-page-context-v2` with a maximum of eight
+The normal source-ID runtime uses `m1-5-rrf-k60-page-context-v3` with a maximum of eight
 chunks and the configured character ceiling. It ranks complete PDF pages and text documents
 by lexical overlap and allocates up to four slots after the leading RRF selections. A dated
 question with a named metric can add one passage through a local follow-up search. The follow-up
 weights the metric above the date, requires the full requested date in the added passage, and
 skips PDF pages already selected. For a question that asks only for a dated observation, new
-passages must qualify through this follow-up. These stages make no additional provider calls.
+page-ranked passages must qualify through this follow-up. These stages make no additional
+provider calls.
 
 For every question the runtime checks up to two neighbors on either side of the first four
 selected text anchors. PostgreSQL reads the same active chunk set under the original workspace,
@@ -122,8 +123,16 @@ nominate context for generation; statement support is checked independently. The
 remain auditable; added pages and neighbors are stored as structured selections and pass canonical
 source-ID and statement-support validation.
 
-Selection versions end in `v2` for text, page, company-priority, and Luna context selection.
-Canonical validation and persistence continue to accept the historical `v1` versions.
+The page expansion policy also checks the immediate neighbors of PDF passages among the first
+four selections. A neighbor must be on the same physical page of the active document version.
+It can join the context when it contains a quantity and a two-word phrase from the question
+that is missing from the selected passages of that version. At most one PDF neighbor can be
+added. The first four selections and the context limits are protected. A trailing passage that
+contains the only occurrence of a question phrase is protected from replacement as well.
+
+Selection versions end in `v3` for page, company-priority, and Luna context selection. Text-only
+neighbor selection remains `v2`. Canonical validation and persistence continue to accept the
+historical selector versions.
 
 An explicit observation date in the question is preserved in lexical query refinements and
 required for added neighbor text. The v9 answer prompt applies date-precision guidance to
