@@ -18,15 +18,21 @@ from investment_research.modules.search.limits import MAX_CONTEXT_CHUNKS
 
 RRF_CONFIG_VERSION: Final = "m1-5-rrf-k60-v1"
 RRF_RANK_CONSTANT: Final = 60
-LUNA_RERANK_SELECTOR_VERSION: Final = "m1-5-rrf-page-luna-v3"
+LUNA_RERANK_SELECTOR_VERSION: Final = "m1-5-rrf-page-luna-v4"
 LUNA_RERANK_SELECTOR_VERSIONS = frozenset(
-    {"m1-5-rrf-page-luna-v1", "m1-5-rrf-page-luna-v2", LUNA_RERANK_SELECTOR_VERSION}
+    {
+        "m1-5-rrf-page-luna-v1",
+        "m1-5-rrf-page-luna-v2",
+        "m1-5-rrf-page-luna-v3",
+        LUNA_RERANK_SELECTOR_VERSION,
+    }
 )
-COMPANY_PAGE_RRF_SELECTOR_VERSION: Final = "m1-5-rrf-page-company-priority-v3"
+COMPANY_PAGE_RRF_SELECTOR_VERSION: Final = "m1-5-rrf-page-company-priority-v4"
 COMPANY_PAGE_RRF_SELECTOR_VERSIONS = frozenset(
     {
         "m1-5-rrf-page-company-priority-v1",
         "m1-5-rrf-page-company-priority-v2",
+        "m1-5-rrf-page-company-priority-v3",
         COMPANY_PAGE_RRF_SELECTOR_VERSION,
     }
 )

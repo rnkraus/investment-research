@@ -94,6 +94,7 @@ from investment_research.modules.search.ports import (
     SearchProviderError,
     SearchProviderTransientError,
 )
+from investment_research.modules.search.quarter_context import QuarterPassage
 from investment_research.modules.search.reranking_contracts import (
     BGE_RERANK_CONFIG_VERSION,
     BGE_RERANK_MODEL,
@@ -1208,6 +1209,53 @@ def test_rrf_pdf_neighbor_adds_missing_sales_within_the_context_budget(
     else:
         expected = initial
     assert [item.chunk_id for item in result.sources] == [item.chunk_id for item in expected]
+
+
+def test_quarter_followup_respects_manual_company_scope() -> None:
+    q2 = make_lexical_hit().model_copy(update={"text": "Operating margin reached 12%."})
+    q3 = q2.model_copy(
+        update={
+            "chunk_id": UUID(int=650),
+            "document_id": UUID(int=651),
+            "document_version_id": UUID(int=652),
+            "structure_block_id": UUID(int=653),
+            "text": "Operating margin reached 15%.",
+        }
+    )
+    company_id = UUID(int=654)
+    uow = RecordingUnitOfWork(lexical_hits=(q2,))
+    uow.lexical_search_mock.quarter_report_titles.return_value = {
+        q2.document_id: "Example Q2 2026 earnings release",
+        q3.document_id: "Example Q3 2026 earnings release",
+    }
+    terms = frozenset({"oper", "margin"})
+    uow.lexical_search_mock.quarter_passages.return_value = (
+        (QuarterPassage(q2, terms), QuarterPassage(q3, terms)),
+        terms,
+    )
+    embedder, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedder,
+        dense_retriever=dense,
+        identifiers=(REQUEST_ID, RUN_ID, UUID(int=655), UUID(int=656)),
+        selection_profile=RrfSelectionProfile(),
+        expand_page_context=True,
+    )
+
+    result = service.retrieve(
+        make_context(),
+        ResearchRetrievalInput(
+            question="How did operating margin change from Q2 to Q3 2026?",
+            company_id=company_id,
+        ),
+    )
+
+    _, query, qualified, documents = uow.lexical_search_mock.quarter_passages.call_args.args
+    assert query.filters.company_id == qualified.filters.company_id == company_id
+    assert documents == frozenset({q2.document_id, q3.document_id})
+    assert [item.chunk_id for item in result.sources] == [q2.chunk_id, q3.chunk_id]
+    assert result.candidates[-1].origin is RetrievalOrigin.STRUCTURED
 
 
 @pytest.mark.parametrize("compound", [True, False])

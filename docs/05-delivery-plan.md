@@ -491,6 +491,9 @@ Claim support continues to come from the original source text.
   most two additions and eight total chunks. Selection versions and historical compatibility
   are recorded in the research module guide. Observation dates
   stay fixed in search refinements and date-specific answer prompts.
+- For a comparison of two unambiguous reporting quarters, the local research path can add
+  scoped evidence per period. The report period is separate from the publication date.
+  [Source-ID context expansion](../backend/src/investment_research/modules/research/README.md#live-source-id-context-expansion)
 - Without an explicit company filter, an unambiguous company name or ticker in the question
   can promote already retrieved passages from reviewed company documents by up to two
   RRF positions. All eligible documents can still contribute evidence. An explicit company

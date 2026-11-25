@@ -1,5 +1,6 @@
 """Research retrieval orchestration and its M1 provider policy."""
 
+import re
 from collections.abc import Callable, Set
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -83,6 +84,13 @@ from investment_research.modules.search.ports import (
     SearchProviderContractError,
     SearchProviderError,
     SearchProviderTransientError,
+)
+from investment_research.modules.search.quarter_context import (
+    QUARTER_COMPARISON_DOCUMENT_LIMIT,
+    ReportingQuarter,
+    add_quarter_context,
+    comparison_quarters,
+    report_quarter,
 )
 from investment_research.modules.search.query_embedding import AccountedQueryEmbedding
 from investment_research.modules.search.query_embedding import (
@@ -730,9 +738,65 @@ class RetrieveResearchService:
                     chunk_limit=profile.context_chunk_limit,
                     character_limit=profile.context_character_limit,
                 )
+            selected_candidates = self._expand_quarters(
+                context,
+                query,
+                qualification_request,
+                question,
+                profile,
+                reader,
+                selected_candidates,
+            )
         if preferred_documents:
             selector_version = COMPANY_PAGE_RRF_SELECTOR_VERSION
         return selected_candidates, fused_ranks, selector_version, chunk_limit
+
+    def _expand_quarters(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        question: str,
+        profile: M1SelectionProfile | RrfSelectionProfile,
+        reader: LexicalSearch,
+        selected: tuple[SelectedRetrievalCandidate, ...],
+    ) -> tuple[SelectedRetrievalCandidate, ...]:
+        quarters = comparison_quarters(question)
+        if not quarters or (query.filters.company_id is None and self._company_priority is None):
+            return selected
+        titles = reader.quarter_report_titles(context, query, index)
+        allowed: Set[UUID]
+        if query.filters.company_id is None and self._company_priority is not None:
+            company_question = re.sub(r"(?<=\w)[\u2019']s\b", "", question, flags=re.IGNORECASE)
+            allowed = self._company_priority.preferred_documents(
+                context, company_question, titles.keys()
+            )
+        else:
+            allowed = titles.keys()
+        reports: dict[UUID, ReportingQuarter] = {}
+        for document_id in allowed:
+            reported = report_quarter(titles[document_id])
+            if reported is not None:
+                for quarter in quarters:
+                    if quarter.matches(reported):
+                        reports[document_id] = quarter
+                        break
+        if (
+            set(reports.values()) != set(quarters)
+            or len(reports) > QUARTER_COMPARISON_DOCUMENT_LIMIT
+        ):
+            return selected
+        passages, terms = reader.quarter_passages(context, query, index, frozenset(reports))
+        return add_quarter_context(
+            question,
+            quarters,
+            reports,
+            passages,
+            terms,
+            selected,
+            chunk_limit=profile.context_chunk_limit,
+            character_limit=profile.context_character_limit,
+        )
 
     @staticmethod
     def _expand_pages(

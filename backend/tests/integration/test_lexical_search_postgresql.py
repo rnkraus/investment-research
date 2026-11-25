@@ -148,6 +148,60 @@ def test_pdf_neighbors_respect_physical_page_and_document_scope(
     assert excluded == ()
 
 
+def test_quarter_followup_reads_only_eligible_report_titles_and_passages(
+    integration_database_engine: Engine,
+) -> None:
+    source = make_research_source(label="Quarter comparison")
+    foreign = make_research_source(label="Foreign quarter comparison")
+
+    def searchable(item: ResearchSource, title: str) -> ResearchSource:
+        return replace(
+            item,
+            version=item.version.model_copy(update={"title": title}),
+            processing_run=item.processing_run.model_copy(
+                update={
+                    "state": ProcessingState.SEARCHABLE,
+                    "embedding_config_version": M1_PROCESSING_PROFILE.embedding_config_version,
+                    "dense_index_config_version": M1_PROCESSING_PROFILE.dense_index_config_version,
+                }
+            ),
+        )
+
+    source = searchable(source, "Example FY2027-Q3 earnings release")
+    foreign = searchable(foreign, "Foreign 3Q27 earnings release")
+    persist_research_source(integration_database_engine, source)
+    persist_research_source(integration_database_engine, foreign)
+    query = make_query(source, "Compare Q2 and Q3 FY2027 operating margin")
+    index = DenseQualificationRequest(
+        provider_hits=(),
+        filters=query.filters,
+        lexical_config_version=query.lexical_config_version,
+        embedding_config_version=source.processing_run.embedding_config_version,
+        dense_index_config_version=source.processing_run.dense_index_config_version,
+    )
+    excluded = RetrievalFilters(document_ids=(foreign.document.id,))
+    session_factory = create_session_factory(integration_database_engine)
+    with session_factory() as session:
+        reader = PostgresLexicalSearch(session)
+        assert reader.quarter_report_titles(source.context, query, index) == {
+            source.document.id: source.version.title
+        }
+        hits, query_terms = reader.quarter_passages(
+            source.context, query, index, frozenset({source.document.id, foreign.document.id})
+        )
+        assert {item.hit.chunk_id for item in hits} == {chunk.id for chunk in source.chunks}
+        assert "margin" in query_terms and all(item.lexemes for item in hits)
+        assert (
+            reader.quarter_passages(
+                source.context,
+                query.model_copy(update={"filters": excluded}),
+                index.model_copy(update={"filters": excluded}),
+                frozenset({source.document.id}),
+            )[0]
+            == ()
+        )
+
+
 def test_known_passage_is_retrieved_and_unanswerable_question_returns_no_hit(
     integration_database_engine: Engine,
 ) -> None:
