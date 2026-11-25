@@ -253,6 +253,8 @@ offline workflow, not a fresh quality measurement or a rerun of the earlier live
 
 ## Recorded evaluations
 
+- [Quarter comparison follow-up](quarter-comparison-follow-up.md) records the improvement
+  from 17 to 20 complete retrieval cases and the three targeted live answer checks.
 - [Observation-date follow-up](observation-date-followup.md) records the targeted U03
   correction, unchanged eight-chunk context, successful abstention, and its verification limits.
 - [Current RAG and archive-search evaluation](rag-archive-current-run.md) records the repeat
