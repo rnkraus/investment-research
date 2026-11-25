@@ -3,10 +3,12 @@
 import os
 import time
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 
 import httpx2
 import pytest
+from pypdf import PdfWriter
 
 from investment_research.api.contracts import (
     DocumentAccepted,
@@ -168,3 +170,36 @@ def test_complete_m0_runtime_journey_uses_automatic_processing() -> None:
         assert insufficient_events[0]["data"]["message"] == M0_0_INSUFFICIENT_MESSAGE
         assert "answer.statement" not in insufficient_response.text
         assert "answer.citation" not in insufficient_response.text
+
+
+def test_pdf_near_upload_limit_is_processed_and_reopened() -> None:
+    """Exercise both services' temporary storage with a valid PDF over 16 MiB."""
+
+    writer = PdfWriter(clone_from=FIXTURE_PDF)
+    writer.add_attachment("synthetic-padding.bin", bytes(24 * 1024 * 1024))
+    with BytesIO() as padded_pdf:
+        writer.write(padded_pdf)
+        original_bytes = padded_pdf.getvalue()
+    assert 24 * 1024 * 1024 < len(original_bytes) < 25 * 1024 * 1024
+
+    with httpx2.Client(base_url=RUNTIME_WEB_ORIGIN, timeout=15.0) as client:
+        response = client.post(
+            "/api/v1/documents",
+            data={
+                "title": "Northstar Grid Analytics Ltd. - Large PDF Fixture",
+                "language": "en",
+                "published_at": EXPECTED_PUBLICATION_TIME,
+            },
+            files={"file": ("large-fixture.pdf", original_bytes, "application/pdf")},
+        )
+        assert response.status_code == 202
+        capture = DocumentAccepted.model_validate(response.json())
+        processing = wait_for_terminal_processing(client, capture.processing_status_url)
+        assert processing.state == "LEXICAL_READY", processing.error_summary
+
+        original = client.get(
+            f"/api/v1/documents/{capture.document_id}/versions/"
+            f"{capture.document_version_id}/original"
+        )
+        assert original.status_code == 200
+        assert original.content == original_bytes

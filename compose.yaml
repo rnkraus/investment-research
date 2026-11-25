@@ -212,6 +212,8 @@ services:
 
   api:
     <<: *backend-runtime
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${INVESTMENT_RESEARCH_API_TMPFS_SIZE:-80m},mode=1777
     image: investment-research-backend-api:local
     build:
       context: ./backend
@@ -274,6 +276,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES: ${INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES:-26214400}
     user: "65532:65532"
     init: true
     read_only: true
@@ -298,6 +302,8 @@ services:
 
   worker:
     <<: *backend-runtime
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${INVESTMENT_RESEARCH_WORKER_TMPFS_SIZE:-32m},mode=1777
     image: investment-research-backend-worker:local
     build:
       context: ./backend
