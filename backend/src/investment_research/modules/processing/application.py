@@ -80,11 +80,13 @@ M0_0_PROCESSING_PROFILE = ProcessingProfile(
     lease_duration=timedelta(seconds=360),
 )
 
+M1_SOURCE_BLOCK_CONFIG_V2 = "m1-source-block-config-v2"
+
 M1_PROCESSING_PROFILE = ProcessingProfile(
     parser_version="pypdf-7.0.1",
     parser_config_version=M1_PARSER_CONFIG_VERSION,
     chunker_version="m1-source-block-v1",
-    chunking_config_version="m1-source-block-config-v1",
+    chunking_config_version=M1_SOURCE_BLOCK_CONFIG_V2,
     lexical_config_version="m1-english-lexical-v1",
     embedding_config_version="openai-text-embedding-3-small-1536-v1",
     dense_index_config_version="pinecone-serverless-cosine-1536-aws-us-east-1-v1",
@@ -234,7 +236,6 @@ def build_lexical_output(
             SourceLocatorKind,
             int | None,
             StructureBlockType,
-            int,
             str,
             int,
             int,
@@ -248,12 +249,11 @@ def build_lexical_output(
                 SourceLocatorKind.PDF_PAGE,
                 page.page_number,
                 StructureBlockType.PARAGRAPH,
-                ordinal,
                 page.text,
                 0,
                 len(page.text),
             )
-            for ordinal, page in enumerate(visible_pages)
+            for page in visible_pages
         )
     else:
         source_blocks = tuple(
@@ -261,25 +261,31 @@ def build_lexical_output(
                 block.source_locator_kind,
                 block.page_number,
                 block.block_type,
-                block.ordinal,
                 block.text,
                 block.start_character,
                 block.end_character,
             )
             for block in parsed_document.blocks
         )
-    if not source_blocks:
-        raise NoExtractableTextError("parsed document contains no extractable text")
-
+    normalize_pdf_text = run.chunking_config_version == M1_SOURCE_BLOCK_CONFIG_V2
     for (
         source_locator_kind,
         page_number,
         block_type,
-        ordinal,
         text,
         start_character,
         end_character,
     ) in source_blocks:
+        if (
+            normalize_pdf_text
+            and source_locator_kind is SourceLocatorKind.PDF_PAGE
+            and "\x00" in text
+        ):
+            # PostgreSQL cannot store NUL, and a space preserves page-relative offsets.
+            text = text.replace("\x00", " ")
+            if not text.strip():
+                continue
+        ordinal = len(blocks)
         block = StructureBlock(
             id=id_factory(),
             workspace_id=run.workspace_id,
@@ -310,6 +316,8 @@ def build_lexical_output(
             )
         )
 
+    if not blocks:
+        raise NoExtractableTextError("parsed document contains no extractable text")
     return LexicalOutput(
         blocks=tuple(blocks),
         chunk_set=chunk_set,
