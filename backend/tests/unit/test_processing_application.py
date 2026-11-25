@@ -6,6 +6,7 @@ from uuid import UUID
 
 import pytest
 
+from investment_research.modules.documents.domain import SourceLocatorKind
 from investment_research.modules.identity.domain import WorkspaceContext
 from investment_research.modules.processing.application import (
     M1_PROCESSING_PROFILE,
@@ -14,8 +15,17 @@ from investment_research.modules.processing.application import (
     build_lexical_output,
     create_captured_processing_run,
 )
-from investment_research.modules.processing.contracts import ParsedDocument, ParsedPage
-from investment_research.modules.processing.domain import ProcessingRun, ProcessingState
+from investment_research.modules.processing.contracts import (
+    ParsedBlockV2,
+    ParsedDocument,
+    ParsedPage,
+    ParsedPdfDocument,
+)
+from investment_research.modules.processing.domain import (
+    ProcessingRun,
+    ProcessingState,
+    StructureBlockType,
+)
 
 WORKSPACE_ID = UUID("00000000-0000-4000-8000-000000000001")
 DOCUMENT_VERSION_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -155,6 +165,57 @@ def test_build_lexical_output_preserves_visible_pages_and_run_provenance() -> No
     assert all(chunk.chunk_set_id == CHUNK_SET_ID for chunk in output.chunks)
     assert output.chunks[0].text == output.blocks[0].text
     assert output.chunks[0].token_count == 4
+
+
+def test_build_lexical_output_normalizes_pdf_nul_and_keeps_source_ranges() -> None:
+    run = create_captured_processing_run(
+        context=WorkspaceContext(user_id=USER_ID, workspace_id=WORKSPACE_ID),
+        document_version_id=DOCUMENT_VERSION_ID,
+        processing_run_id=PROCESSING_RUN_ID,
+        created_at=CREATED_AT,
+        profile=M1_PROCESSING_PROFILE,
+    ).claim_for_processing(
+        lease_id=LEASE_ID,
+        claimed_at=CREATED_AT,
+        lease_expires_at=CREATED_AT + timedelta(seconds=45),
+        maximum_attempts=M1_PROCESSING_PROFILE.maximum_attempts,
+    )
+    extracted_pages = ("\x00\n\nRevenue\x00grew.", "Costs fell.")
+    blocks = tuple(
+        ParsedBlockV2(
+            ordinal=ordinal,
+            source_locator_kind=SourceLocatorKind.PDF_PAGE,
+            page_number=page_number,
+            block_type=StructureBlockType.PARAGRAPH,
+            text=extracted_pages[page_number - 1][start:end],
+            start_character=start,
+            end_character=end,
+        )
+        for ordinal, (page_number, start, end) in enumerate(((1, 0, 1), (1, 3, 16), (2, 0, 11)))
+    )
+    parsed_pdf = ParsedPdfDocument(physical_page_count=2, blocks=blocks)
+
+    output = build_lexical_output(run=run, parsed_document=parsed_pdf, created_at=OUTPUT_CREATED_AT)
+
+    assert tuple(block.text for block in output.blocks) == ("Revenue grew.", "Costs fell.")
+    assert tuple(block.page_number for block in output.blocks) == (1, 2)
+    assert tuple(block.ordinal for block in output.blocks) == (0, 1)
+    assert [(block.start_character, block.end_character) for block in output.blocks] == [
+        (3, 16),
+        (0, 11),
+    ]
+    assert [(chunk.ordinal, chunk.text, chunk.token_count) for chunk in output.chunks] == [
+        (0, "Revenue grew.", 2),
+        (1, "Costs fell.", 2),
+    ]
+    assert output.chunk_set.chunking_config_version == "m1-source-block-config-v2"
+
+    with pytest.raises(NoExtractableTextError, match="no extractable text"):
+        build_lexical_output(
+            run=run,
+            parsed_document=ParsedPdfDocument(physical_page_count=1, blocks=blocks[:1]),
+            created_at=OUTPUT_CREATED_AT,
+        )
 
 
 @pytest.mark.parametrize(

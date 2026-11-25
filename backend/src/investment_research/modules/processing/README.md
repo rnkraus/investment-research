@@ -127,6 +127,11 @@ captures now use the M1 media-aware profile; historical tests and records retain
 profile. The processing service requires its configured parser version to match the recorded
 profile rather than silently substituting different parsing semantics.
 
+M1 runs with `m1-source-block-config-v2` replace NUL characters in derived PDF blocks with
+spaces before PostgreSQL persistence. This preserves page-relative character offsets and
+avoids joining adjacent words. Blocks with no remaining visible text are dropped. Original PDF
+bytes, pasted-text handling, and recorded earlier chunking configurations remain intact.
+
 ## Parser boundary
 
 ```mermaid
