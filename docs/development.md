@@ -408,11 +408,21 @@ worker, parser, PostgreSQL, Redis, and SeaweedFS services, and runs a credential
 client attached only to the frontend network. That client loads the web page and sends every upload,
 status, research, evidence, and original request through the same-origin web proxy. It waits for
 Celery and the isolated parser to reach `LEXICAL_READY`, verifies the validated answer, exact
-citation, original bytes, and insufficient-evidence response, and removes every resource it created:
+citation, original bytes, and insufficient-evidence response. It also verifies that a synthetic
+PDF close to the 25 MiB upload limit can be captured, processed, and downloaded byte-for-byte.
+The command removes every resource it created:
 
 ```shell
 uv run --locked python -m scripts.verify_m0_runtime
 ```
+
+The local Compose stack gives the API an 80 MiB and the worker a 32 MiB private `/tmp` for the
+default 25 MiB upload limit. The API can hold the multipart upload, its verified copy, and the
+S3 adapter's checksum spool. The single-concurrency worker spools one verified original. If you
+raise `INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES`, size `INVESTMENT_RESEARCH_API_TMPFS_SIZE` for three copies
+and `INVESTMENT_RESEARCH_WORKER_TMPFS_SIZE` for one, with headroom within each container's memory
+budget. Recreate the API, worker, and parser to apply a changed upload limit. Rebuild the web image
+as well so the same-origin proxy can buffer the configured upload plus multipart framing.
 
 Verify the complete credential-free M1 PDF and pasted-text journeys from `backend/`. Before the
 first local run, install the Chromium build pinned to the repository's Playwright version from the

@@ -27,6 +27,7 @@ RUN --mount=type=cache,target=/pnpm/store \
 
 COPY frontend ./frontend
 
+ARG INVESTMENT_RESEARCH_MAX_UPLOAD_BYTES
 ENV INVESTMENT_RESEARCH_RUNTIME_LOCATION=container \
     INVESTMENT_RESEARCH_API_ORIGIN=http://api:8000
 
