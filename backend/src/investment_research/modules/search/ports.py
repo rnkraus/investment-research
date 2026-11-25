@@ -23,6 +23,7 @@ from investment_research.modules.search.contracts import (
 )
 from investment_research.modules.search.domain import RetrievalCandidate, RetrievalRun
 from investment_research.modules.search.page_context import PdfNeighbor
+from investment_research.modules.search.quarter_context import QuarterPassage
 from investment_research.modules.search.text_neighbors import TextNeighbor
 
 
@@ -80,6 +81,20 @@ class LexicalSearch(Protocol):
         anchors: Sequence[UUID],
     ) -> Sequence[PdfNeighbor]:
         """Read immediate eligible neighbors on the same physical PDF page."""
+
+    def quarter_report_titles(
+        self, context: WorkspaceContext, query: LexicalSearchQuery, index: DenseQualificationRequest
+    ) -> dict[UUID, str]:
+        """Read current titles that may identify a reporting quarter in the eligible scope."""
+
+    def quarter_passages(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        document_ids: frozenset[UUID],
+    ) -> tuple[tuple[QuarterPassage, ...], frozenset[str]]:
+        """Read bounded evidence from the scoped reports with their full-text lexemes."""
 
     def search_observation(
         self,

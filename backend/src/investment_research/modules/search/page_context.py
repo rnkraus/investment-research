@@ -19,9 +19,14 @@ from investment_research.modules.search.observation_dates import (
     requested_observation_date,
 )
 
-PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v3"
+PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v4"
 PAGE_SELECTOR_VERSIONS = frozenset(
-    {"m1-5-rrf-k60-page-context-v1", "m1-5-rrf-k60-page-context-v2", PAGE_SELECTOR_VERSION}
+    {
+        "m1-5-rrf-k60-page-context-v1",
+        "m1-5-rrf-k60-page-context-v2",
+        "m1-5-rrf-k60-page-context-v3",
+        PAGE_SELECTOR_VERSION,
+    }
 )
 PAGE_CONTEXT_SLOTS = 4
 PDF_NEIGHBOR_ANCHOR_LIMIT = 4
@@ -50,7 +55,8 @@ class PdfNeighbor:
     hit: LexicalSearchHit
 
 
-def _content_phrases(text: str) -> set[tuple[str, str]]:
+def content_phrases(text: str) -> set[tuple[str, str]]:
+    """Collect adjacent English content words for local passage ranking."""
     words = _WORD.findall(text.casefold())
     return {
         (left, right)
@@ -59,6 +65,11 @@ def _content_phrases(text: str) -> set[tuple[str, str]]:
         and right.isalpha()
         and not (_QUESTION_WORD.fullmatch(left) or _QUESTION_WORD.fullmatch(right))
     }
+
+
+def contains_reported_quantity(text: str) -> bool:
+    """Recognize a numeric evidence signal without assigning it to a metric."""
+    return _REPORTED_QUANTITY.search(text) is not None
 
 
 def add_pdf_neighbor(
@@ -72,10 +83,10 @@ def add_pdf_neighbor(
     """Keep high-ranking evidence and admit a neighbor with an uncovered metric phrase."""
     if not neighbors:
         return selected
-    query_phrases = _content_phrases(question)
+    query_phrases = content_phrases(question)
     if not query_phrases:
         return selected
-    covered = [_content_phrases(item.text) & query_phrases for item in selected]
+    covered = [content_phrases(item.text) & query_phrases for item in selected]
     phrase_counts = Counter(phrase for phrases in covered for phrase in phrases)
     selected_ids = {item.chunk_id for item in selected}
     selected_texts = {" ".join(item.text.casefold().split()) for item in selected}
@@ -96,7 +107,7 @@ def add_pdf_neighbor(
             != (anchor.document_version_id, anchor.page_number)
             or hit.chunk_id in selected_ids
             or " ".join(hit.text.casefold().split()) in selected_texts
-            or not _REPORTED_QUANTITY.search(hit.text)
+            or not contains_reported_quantity(hit.text)
             or (date is not None and not contains_observation_date(hit.text, date))
         ):
             continue
@@ -106,7 +117,7 @@ def add_pdf_neighbor(
             if item.document_version_id == hit.document_version_id
             for phrase in phrases
         }
-        added = (_content_phrases(hit.text) & query_phrases) - document_phrases
+        added = (content_phrases(hit.text) & query_phrases) - document_phrases
         if added:
             choices.append((-len(added), index, hit))
 

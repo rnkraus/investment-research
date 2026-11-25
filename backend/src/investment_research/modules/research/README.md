@@ -103,7 +103,7 @@ comparison boundary.
 
 ### Live source-ID context expansion
 
-The normal source-ID runtime uses `m1-5-rrf-k60-page-context-v3` with a maximum of eight
+The normal source-ID runtime uses `m1-5-rrf-k60-page-context-v4` with a maximum of eight
 chunks and the configured character ceiling. It ranks complete PDF pages and text documents
 by lexical overlap and allocates up to four slots after the leading RRF selections. A dated
 question with a named metric can add one passage through a local follow-up search. The follow-up
@@ -130,7 +130,17 @@ that is missing from the selected passages of that version. At most one PDF neig
 added. The first four selections and the context limits are protected. A trailing passage that
 contains the only occurrence of a question phrase is protected from replacement as well.
 
-Selection versions end in `v3` for page, company-priority, and Luna context selection. Text-only
+When the question identifies exactly two reporting quarters and the scoped archive has eligible
+reports for both, a local lexical follow-up looks for evidence of the requested metric in each
+period. Explicit company and document scope applies to the follow-up. Otherwise, the company must
+resolve unambiguously to reviewed company links. A period must be recognizable from the current
+document title, independently of the publication date. The follow-up can add one quantitative
+passage per quarter and one expressly requested sequential comparison when the passage links the
+change to the selected metric amount. It preserves the leading four selections and the eight-chunk
+and character limits. Single-quarter questions, ambiguous quarters, and exact observation dates
+retain their existing paths. This follow-up makes no additional provider calls.
+
+Selection versions end in `v4` for page, company-priority, and Luna context selection. Text-only
 neighbor selection remains `v2`. Canonical validation and persistence continue to accept the
 historical selector versions.
 

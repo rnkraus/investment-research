@@ -67,11 +67,18 @@ from investment_research.modules.search.page_context import (
     term_weights,
     weighted_overlap,
 )
+from investment_research.modules.search.quarter_context import (
+    QUARTER_COMPARISON_DOCUMENT_LIMIT,
+    QUARTER_PASSAGE_LIMIT,
+    QUARTER_REPORT_LIMIT,
+    QuarterPassage,
+)
 from investment_research.modules.search.text_neighbors import TEXT_NEIGHBOR_RADIUS, TextNeighbor
 
 TICKER_ADAPTER = TypeAdapter(CompanyTicker)
 WEIGHTED_OR_TERM_LIMIT = 16
 _EXPLICIT_WEBSEARCH_SYNTAX = re.compile(r'"|(?:^|\s)-|\bor\b')
+_QUARTER_TITLE_PATTERN = r"\m(q[1-4]|[1-4]q[0-9]*|(first|second|third|fourth)[ -]quarter)\M"
 
 
 class PostgresLexicalSearch:
@@ -392,6 +399,56 @@ class PostgresLexicalSearch:
             for chunk_id, document_id, version, block, kind, page, body, anchor_id in (
                 self._session.execute(statement).tuples()
             )
+        )
+
+    def quarter_report_titles(
+        self, context: WorkspaceContext, query: LexicalSearchQuery, index: DenseQualificationRequest
+    ) -> dict[UUID, str]:
+        # The database prefilter checks syntax only. Resolve the full period in the application.
+        statement = (
+            self._searchable_chunks(context, query, index)
+            .with_only_columns(DocumentVersionRow.document_id, DocumentVersionRow.title)
+            .where(DocumentVersionRow.title.bool_op("~*")(_QUARTER_TITLE_PATTERN))
+            .distinct()
+            .limit(QUARTER_REPORT_LIMIT + 1)
+        )
+        rows = self._session.execute(statement).tuples().all()
+        return (
+            {document_id: title for document_id, title in rows}
+            if len(rows) <= QUARTER_REPORT_LIMIT
+            else {}
+        )
+
+    def quarter_passages(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        document_ids: frozenset[UUID],
+    ) -> tuple[tuple[QuarterPassage, ...], frozenset[str]]:
+        if not 0 < len(document_ids) <= QUARTER_COMPARISON_DOCUMENT_LIMIT:
+            return (), frozenset()
+        statement = (
+            self._searchable_chunks(context, query, index)
+            .where(DocumentVersionRow.document_id.in_(document_ids))
+            .add_columns(func.tsvector_to_array(ChunkRow.search_vector))
+            .limit(QUARTER_PASSAGE_LIMIT + 1)
+        )
+        rows = self._session.execute(statement).tuples().all()
+        if len(rows) > QUARTER_PASSAGE_LIMIT:
+            return (), frozenset()
+        query_terms = self._session.scalar(
+            select(func.tsvector_to_array(func.to_tsvector("english", query.normalized_query)))
+        )
+        return (
+            tuple(
+                QuarterPassage(
+                    _page_hit(chunk, document, version, block, kind, page, body, 1.0),
+                    frozenset(terms),
+                )
+                for chunk, document, version, block, kind, page, body, terms in rows
+            ),
+            frozenset(query_terms or ()),
         )
 
     def search_observation(
