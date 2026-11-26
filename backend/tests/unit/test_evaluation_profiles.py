@@ -90,6 +90,8 @@ def test_preview_inherits_shared_settings_and_uses_no_environment_network_or_wri
         ("retrieval.character_limit", 24_001),
         ("retrieval.lexical_candidate_limit", 0),
         ("retrieval.dense_candidate_limit", 21),
+        ("retrieval.query_decomposition_mode", "automatic"),
+        ("retrieval.query_decomposition_mode", True),
         ("generation.input_overhead_limit", 15_999),
         ("retrieval.unknown_switch", True),
         ("models.answer", "unapproved-model"),
@@ -180,6 +182,32 @@ def test_live_preview_reports_possible_roles_without_execution(
     roles = set(result["possible_live_provider_roles"])  # type: ignore[call-overload]
     assert ("answer_generation" in roles) == (mode == "rag_live")
     assert ("query_embedding" in roles) == (not snapshot)
+
+
+@pytest.mark.parametrize("mode", ["off", "auto", "always"])
+def test_decomposition_mode_sets_live_preview_roles(
+    prepared: tuple[Path, dict[str, Any]], mode: str
+) -> None:
+    path, values = prepared
+    values["mode"] = "retrieval_live"
+    values["budget"] = {"max_spend_usd": "0.04", "max_provider_calls": 16}
+    values["retrieval"]["query_decomposition_mode"] = mode
+    write_toml(path, values)
+    preview = planner.build_preview(path)
+    assert preview["query_decomposition_mode"] == mode
+    roles = set(preview["possible_live_provider_roles"])  # type: ignore[call-overload]
+    assert ("query_planning" in roles) == (mode != "off")
+    assert preview["provider_calls_made"] == 0
+
+
+def test_conflicting_legacy_decomposition_opt_in_is_rejected(
+    prepared: tuple[Path, dict[str, Any]],
+) -> None:
+    path, values = prepared
+    values["retrieval"].update(query_decomposition_mode="auto", decompose_query=True)
+    write_toml(path, values)
+    with pytest.raises(profiles.EvaluationProfileError, match="invalid settings"):
+        profiles.load_profile(path)
 
 
 def test_keyword_only_discovery_needs_no_provider_budget_and_live_rag_does(

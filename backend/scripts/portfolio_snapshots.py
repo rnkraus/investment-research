@@ -8,6 +8,10 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from investment_research.modules.research.contracts import (
+    QueryDecompositionMode,
+    QueryDecompositionSelection,
+)
 from investment_research.rag_settings import RagSettings
 from scripts.evaluation_profiles import (
     CaseId,
@@ -27,13 +31,13 @@ class OfflineEvaluationError(ValueError):
     """A content-free failure; never expose saved passages through an exception."""
 
 
-class RecordedSettings(ProfileModel):
+class RecordedSettings(ProfileModel, QueryDecompositionSelection):
     scope: Literal["whole_archive", "catalog_documents"]
     lexical_strategy: Literal["websearch", "weighted_or"]
     text_neighbors: bool
     page_expansion: bool
     company_priority: bool
-    decompose_query: bool
+    decompose_query: bool = Field()
     reranking: Literal["none", "luna", "pinecone"]
     models: ModelSettings
     rag: RagSettings
@@ -59,13 +63,20 @@ class RecordedSettings(ProfileModel):
 
 def settings_for(resolved: SelectionDefinition) -> RecordedSettings:
     profile = resolved.profile
+    decomposition_mode = profile.retrieval.effective_query_decomposition_mode
     return RecordedSettings(
         scope=profile.scope,
         lexical_strategy=profile.retrieval.lexical_strategy,
         text_neighbors=profile.retrieval.text_neighbors,
         page_expansion=profile.retrieval.page_expansion,
         company_priority=profile.retrieval.company_priority,
-        decompose_query=profile.retrieval.decompose_query,
+        # Keep explicit off/always settings comparable with the old boolean recordings.
+        decompose_query=decomposition_mode is QueryDecompositionMode.ALWAYS,
+        query_decomposition_mode=(
+            QueryDecompositionMode.AUTO
+            if decomposition_mode is QueryDecompositionMode.AUTO
+            else None
+        ),
         reranking=profile.reranking.strategy,
         models=profile.models,
         rag=resolved.rag,

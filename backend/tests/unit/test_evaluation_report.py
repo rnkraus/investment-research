@@ -101,6 +101,24 @@ def test_report_uses_frozen_configuration_and_never_loads_env_or_calls_network(
     forbidden.assert_not_called()
 
 
+def test_report_reads_saved_runs_without_the_new_decomposition_field(
+    bundle: tuple[Path, Path],
+) -> None:
+    root, _ = bundle
+    directory = root / "outputs/run"
+    mutate(
+        directory / "manifest.json",
+        lambda item: item["plan"]["settings"].pop("query_decomposition_mode"),
+    )
+    mutate(
+        directory / "snapshot.json", lambda item: item["settings"].pop("query_decomposition_mode")
+    )
+
+    report = render_run(load_run("outputs/run"))
+    assert "<dt>Query decomposition</dt><dd>off</dd>" in report
+    assert "<dt>Query planning attempts</dt><dd>Not captured</dd>" in report
+
+
 def test_report_colors_only_retrieval_markers_and_preserves_unreviewed_outcomes(
     bundle: tuple[Path, Path],
 ) -> None:

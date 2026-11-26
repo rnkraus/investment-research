@@ -11,6 +11,7 @@ from time import monotonic
 from investment_research.bootstrap import ApiContainer, build_api_container
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
+    QueryDecompositionMode,
     ResearchModel,
     ResearchRetrievalInput,
 )
@@ -49,6 +50,8 @@ from scripts.score_portfolio_retrieval import Case
 def preview(resolved: ResolvedEvaluationProfile) -> dict[str, object]:
     validate_live_profile(resolved)
     research = sum(case.kind != "discovery" for case in resolved.cases)
+    profile = resolved.profile
+    decomposition_mode = profile.retrieval.effective_query_decomposition_mode
     return {
         "mode": resolved.profile.mode,
         "case_ids": [case.id for case in resolved.cases],
@@ -59,6 +62,12 @@ def preview(resolved: ResolvedEvaluationProfile) -> dict[str, object]:
         "generates_answers": resolved.profile.mode == "rag_live" and research > 0,
         "maximum_reserved_model_usd": resolved.profile.budget.max_spend_usd,
         "maximum_provider_calls": resolved.profile.budget.max_provider_calls,
+        "query_decomposition_mode": decomposition_mode.value,
+        "maximum_query_planning_attempts": (
+            0
+            if decomposition_mode is QueryDecompositionMode.OFF
+            else min(research * profile.repetitions, profile.budget.max_provider_calls)
+        ),
         "settings": settings_for(resolved).model_dump(mode="json"),
         "archive_modes": resolved.profile.archive.modes,
         "provider_calls_made": 0,
@@ -122,6 +131,7 @@ def collect_case(
         generation_model=ResearchModel(profile.models.answer),
         support_model=ResearchModel(profile.models.evidence_check),
         decompose_query=profile.retrieval.decompose_query,
+        query_decomposition_mode=profile.retrieval.query_decomposition_mode,
         rerank_with_luna=profile.reranking.strategy == "luna",
     )
     selected: RecordedSelection | None = None

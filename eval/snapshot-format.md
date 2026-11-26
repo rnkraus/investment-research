@@ -19,6 +19,9 @@ selector, expand neighbors, rerank candidates, or fit a new generation input.
 | `selections` | Ordered passages per case, discovery mode, and repetition. |
 
 Settings must match the requested profile after inheritance from `config/rag.toml`.
+Automatic query decomposition is recorded as `settings.query_decomposition_mode = "auto"`.
+Standard and explicit decomposition retain their existing `settings.decompose_query` boolean
+representation, so previous recordings remain comparable.
 `settings.discovery_filters` records the explicit TOML filters for selected discovery cases;
 it defaults to an empty map for legacy snapshots. Altered filters require a separate recording.
 Changing `text_neighbors` in a profile does not recompute a recorded context. Use a separate

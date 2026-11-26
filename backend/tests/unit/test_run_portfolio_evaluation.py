@@ -30,6 +30,7 @@ from investment_research.modules.processing.domain import ProcessingState
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
+    QueryDecompositionMode,
     ResearchModel,
 )
 from scripts import run_portfolio_evaluation as runner
@@ -41,6 +42,7 @@ from scripts.portfolio_live_runtime import (
     composition_for,
     sources_for,
 )
+from scripts.portfolio_snapshots import OfflineEvaluationError, read_snapshot, selected_rows
 from tests.unit.test_evaluation_profiles import prepared as prepared
 from tests.unit.test_evaluation_profiles import write_toml
 
@@ -224,7 +226,12 @@ def test_rag_execution_passes_selected_models_scope_and_optional_calls(
             "scope": "catalog_documents",
             "models": live.profile.models.model_copy(update={"answer": "gpt-5.6-luna"}),
             "reranking": live.profile.reranking.model_copy(update={"strategy": "luna"}),
-            "retrieval": live.profile.retrieval.model_copy(update={"decompose_query": True}),
+            "retrieval": live.profile.retrieval.model_copy(
+                update={
+                    "decompose_query": True,
+                    "query_decomposition_mode": None,
+                }
+            ),
         }
     )
     resolved = replace(live, profile=profile)
@@ -248,6 +255,34 @@ def test_rag_execution_passes_selected_models_scope_and_optional_calls(
     assert command.support_model is ResearchModel.TERRA
     assert command.rerank_with_luna and command.decompose_query
     assert command.document_ids
+
+
+def test_automatic_mode_reaches_retrieval_and_round_trips_in_saved_settings(
+    live: ResolvedEvaluationProfile,
+    tmp_path: Path,
+) -> None:
+    profile = live.profile.model_copy(
+        update={
+            "retrieval": live.profile.retrieval.model_copy(
+                update={"query_decomposition_mode": QueryDecompositionMode.AUTO},
+            )
+        }
+    )
+    resolved = replace(live, profile=profile)
+    container, _ = stub_container(resolved)
+    plan = runner.preview(resolved)
+    assert plan["query_decomposition_mode"] == "auto"
+    assert plan["maximum_query_planning_attempts"] == 1
+    assert plan["provider_calls_made"] == 0
+
+    result = runner.collect(container, resolved, RunBudget(80_000, 8), tmp_path)
+    assert result["status"] == "completed" and result["provider_calls"] == 0
+    command = container.retrieve_research_service.retrieve.call_args.args[1]  # type: ignore[attr-defined]
+    assert command.effective_query_decomposition_mode is QueryDecompositionMode.AUTO
+    saved, _ = read_snapshot(tmp_path / "snapshot.json")
+    assert saved.settings.effective_query_decomposition_mode is QueryDecompositionMode.AUTO
+    with pytest.raises(OfflineEvaluationError, match="settings differ"):
+        selected_rows(live, saved)
 
 
 def test_changed_inventory_aborts_and_retains_failure_manifest(

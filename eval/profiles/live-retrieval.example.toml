@@ -62,9 +62,10 @@ page_expansion = true
 # Requires page_expansion=true; an explicit company filter still takes precedence.
 company_priority = true
 
-# Automatic lexical subqueries. Allowed: true or false.
-# Live use can add a planning LLM call. Offline use needs compatible recorded subqueries/results.
-decompose_query = false
+# Query decomposition. Allowed: "off", "auto", "always".
+# off: standard search; auto: route the question in the app; always: invoke the lexical planner.
+# Live auto/always can add one planning LLM attempt per research request. Offline uses saved results.
+query_decomposition_mode = "off"
 
 # Lexical candidates BEFORE fusion. Allowed: integers 1..20.
 # Omit/comment to inherit the current value from config/rag.toml.

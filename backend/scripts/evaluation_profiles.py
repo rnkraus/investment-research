@@ -11,6 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from investment_research.modules.companies.domain import CompanyName, CompanyTicker
 from investment_research.modules.documents.domain import SourceAttributionScope
 from investment_research.modules.documents.publication import PublicationDateBounds
+from investment_research.modules.research.contracts import (
+    QueryDecompositionMode,
+    QueryDecompositionSelection,
+)
 from investment_research.rag_settings import RagSettings, load_rag_settings
 from scripts.score_portfolio_retrieval import Case, Catalog, validate_catalog
 
@@ -48,16 +52,20 @@ class CaseSelection(ProfileModel):
         return self
 
 
-class RetrievalSettings(ProfileModel):
+class RetrievalSettings(ProfileModel, QueryDecompositionSelection):
     lexical_strategy: Literal["websearch", "weighted_or"] = "websearch"
     text_neighbors: bool = True
     page_expansion: bool = True
     company_priority: bool = True
-    decompose_query: bool = False
     lexical_candidate_limit: int | None = Field(default=None, ge=1, le=20)
     dense_candidate_limit: int | None = Field(default=None, ge=1, le=20)
     chunk_limit: int | None = Field(default=None, ge=1, le=8)
     character_limit: int | None = Field(default=None, ge=1, le=24_000)
+
+    @field_validator("query_decomposition_mode", mode="before")
+    @classmethod
+    def read_decomposition_mode(cls, value: object) -> object:
+        return QueryDecompositionMode(value) if isinstance(value, str) else value
 
 
 class GenerationSettings(ProfileModel):
