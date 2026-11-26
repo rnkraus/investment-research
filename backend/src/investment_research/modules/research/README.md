@@ -8,6 +8,7 @@ This module owns immutable research requests, versioned answer lifecycles, and v
 | --------------------------- | ----------------------------------------------------------------------------------------- |
 | `application.py`            | Connects retrieval and answer validation and preserves existing application imports.      |
 | `retrieval.py`              | Runs lexical or dual-lane retrieval and persists qualified candidates.                    |
+| `query_planning.py`         | Detects explicit search goals and merges bounded, accounted lexical refinements.           |
 | `reranking.py`              | Reserves quota/cost, validates one reranking attempt, and finalizes usage outside retrieval transactions. |
 | `answer_validation.py`      | Accounts for generation and support, validates evidence, and saves terminal answers.      |
 | `errors.py`                 | Defines the safe provider failure shared by retrieval and answer generation.              |
@@ -91,6 +92,14 @@ canonical PostgreSQL state, applies the versioned selector, and persists every q
 candidate. A chunk found in both lanes retains one `LEXICAL` and one `DENSE` audit record, but only
 its first selected occurrence becomes a `CanonicalCandidateSource`. Empty lanes remain a valid,
 explicit retrieval result and never create invented candidates.
+
+The internal `auto` decomposition mode checks for independently phrased search goals before
+calling the existing accounted planner. A simple conjunction and question words inside quoted
+text do not trigger planning. Unclear questions and runtimes without a planner use the original
+query. When planning runs, the original query and up to two distinct lexical refinements share
+the same filters and candidate budget. Dense retrieval embeds the original question once. The
+existing boolean opt-in continues to call the planner directly. The HTTP contract still exposes
+that boolean during this backend work block.
 
 M1 remains the normal selector. For the isolated M1.5 experiment, the same dependency bundle can
 instead receive `RrfSelectionProfile`; this is internal injection, not a new API or environment
