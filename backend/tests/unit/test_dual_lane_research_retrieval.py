@@ -1385,6 +1385,11 @@ def test_quarter_followup_reserves_forecast_and_reported_revenue_at_the_context_
         terms,
     )
     embedder, dense = make_provider_mocks()
+    planner = create_autospec(AccountedQueryPlanner, instance=True)
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = OpenTelemetryOperationTracer(provider.get_tracer("test.retrieval"), provider=provider)
     service = make_service(
         uow,
         embedding_provider=embedder,
@@ -1392,23 +1397,38 @@ def test_quarter_followup_reserves_forecast_and_reported_revenue_at_the_context_
         identifiers=(REQUEST_ID, RUN_ID, *(UUID(int=730 + index) for index in range(9))),
         selection_profile=RrfSelectionProfile(context_chunk_limit=8),
         expand_page_context=True,
+        query_planner=planner,
+        tracer=tracer,
     )
 
-    result = service.retrieve(
-        make_context(),
-        ResearchRetrievalInput(
-            question="What full-year 2027 revenue range did Cedar guide to in Q2, "
-            "and what Q3 revenue did it subsequently report?",
-            company_id=UUID(int=739),
-        ),
-    )
+    try:
+        result = service.retrieve(
+            make_context(),
+            ResearchRetrievalInput(
+                question="What full-year 2027 revenue range did Cedar guide to in Q2, "
+                "and what Q3 revenue did it subsequently report?",
+                company_id=UUID(int=739),
+                query_decomposition_mode=QueryDecompositionMode.AUTO,
+            ),
+        )
+        span = next(
+            span for span in exporter.get_finished_spans() if span.name == "research.retrieve"
+        )
+    finally:
+        tracer.close()
 
     assert len(result.sources) == 8
     assert len({item.chunk_id for item in result.sources}) == 8
     assert [item.chunk_id for item in result.sources[:2]] == [outlook.chunk_id, actual.chunk_id]
     assert result.candidates[-1].origin is RetrievalOrigin.STRUCTURED
+    planner.plan.assert_not_called()
     embedder.embed.assert_called_once()
     dense.retrieve.assert_called_once()
+    assert span.attributes is not None
+    assert span.attributes["query.decomposition.mode"] == "auto"
+    assert span.attributes["query.decomposition.route"] == "quarter_followup"
+    assert span.attributes["query.decomposition.count"] == 0
+    assert outlook.text not in span.to_json()
 
 
 @pytest.mark.parametrize("mode", ["comparison", "filtered", "cross_attribution", "ambiguous"])

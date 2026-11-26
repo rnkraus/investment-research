@@ -1094,6 +1094,12 @@ export interface components {
          */
         readonly ProcessingState: "CAPTURED" | "PARSING" | "LEXICAL_READY" | "INDEXING" | "SEARCHABLE" | "FAILED";
         /**
+         * QueryDecompositionMode
+         * @description Control when retrieval asks the query planner for lexical refinements.
+         * @enum {string}
+         */
+        readonly QueryDecompositionMode: "off" | "auto" | "always";
+        /**
          * ReadinessResponse
          * @description Public readiness result without dependency or failure details.
          */
@@ -1239,6 +1245,11 @@ export interface components {
          * @description Models genuinely available in the active API runtime.
          */
         readonly ResearchModelOptions: {
+            /**
+             * Automatic Query Decomposition Enabled
+             * @default false
+             */
+            readonly automatic_query_decomposition_enabled: boolean;
             /** Generation Models */
             readonly generation_models: readonly components["schemas"]["ResearchModel"][];
             /**
@@ -1339,6 +1350,7 @@ export interface components {
             readonly decompose_query: boolean;
             /** @default gpt-5.6-terra */
             readonly generation_model: components["schemas"]["ResearchModel"];
+            readonly query_decomposition_mode?: components["schemas"]["QueryDecompositionMode"] | null;
             /** Question */
             readonly question: string;
             /**

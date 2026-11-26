@@ -36,6 +36,7 @@ from investment_research.modules.documents.publication import PublicationDateBou
 from investment_research.modules.evidence.domain import ValidationRule
 from investment_research.modules.research.contracts import (
     AnswerGenerationSource,
+    QueryDecompositionSelection,
     ResearchModel,
     ResearchProgressStage,
 )
@@ -214,14 +215,13 @@ class ResearchRequestContext(StrictContract, PublicationDateBounds, SourceAttrib
         return self
 
 
-class ResearchRequestInput(StrictContract):
+class ResearchRequestInput(StrictContract, QueryDecompositionSelection):
     """Question and explicit context accepted by the research endpoint."""
 
     question: Question
     context: ResearchRequestContext = Field(default_factory=ResearchRequestContext)
     generation_model: ResearchModel = ResearchModel.TERRA
     support_model: ResearchModel = ResearchModel.TERRA
-    decompose_query: bool = False
     rerank_with_luna: bool = False
 
 
@@ -232,6 +232,7 @@ class ResearchModelOptions(StrictContract):
     generation_models: tuple[ResearchModel, ...]
     support_models: tuple[ResearchModel, ...]
     query_decomposition_enabled: bool = False
+    automatic_query_decomposition_enabled: bool = False
     luna_reranking_enabled: bool = False
 
 

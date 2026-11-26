@@ -55,6 +55,7 @@ _INTEGER_ATTRIBUTE_NAMES = frozenset(
         "gen_ai.usage.total_tokens",
         "input.units",
         "output.units",
+        "query.decomposition.count",
     }
 )
 _TEXT_ATTRIBUTE_NAMES = APPROVED_TRACE_ATTRIBUTE_NAMES - (

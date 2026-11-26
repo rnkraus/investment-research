@@ -5,6 +5,7 @@ from collections.abc import Callable, Set
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import sleep
+from typing import Literal
 from uuid import UUID, uuid4
 
 from investment_research.modules.documents.domain import SourceLocatorKind
@@ -15,7 +16,7 @@ from investment_research.modules.operations.application import (
     ProviderUsageExceededReservationError,
     trace_operation,
 )
-from investment_research.modules.operations.ports import OperationTracer
+from investment_research.modules.operations.ports import OperationSpan, OperationTracer
 from investment_research.modules.research.company_priority import CompanyPriorityReader
 from investment_research.modules.research.contracts import (
     CanonicalCandidateSource,
@@ -99,6 +100,7 @@ from investment_research.modules.search.quarter_context import (
     comparison_quarters,
     report_quarter,
     revenue_forecast_actual_passages,
+    revenue_forecast_actual_request,
 )
 from investment_research.modules.search.query_embedding import AccountedQueryEmbedding
 from investment_research.modules.search.query_embedding import (
@@ -270,15 +272,9 @@ class RetrieveResearchService:
                     retrieval_run_id=retrieval_run_id,
                     started_at=started_at,
                     progress=progress,
-                    decompose_query=(
-                        mode is QueryDecompositionMode.ALWAYS
-                        or (
-                            mode is QueryDecompositionMode.AUTO
-                            and self.query_decomposition_enabled
-                            and has_explicit_multiple_search_goals(request.question)
-                        )
-                    ),
+                    decomposition_mode=mode,
                     rerank_with_luna=retrieval_input.rerank_with_luna,
+                    span=span,
                 )
             else:
                 result = self._retrieve_lexical(
@@ -382,6 +378,23 @@ class RetrieveResearchService:
             sources=sources,
         )
 
+    def _automatic_decomposition_route(
+        self,
+        question: str,
+        query: LexicalSearchQuery,
+        selection_profile: M1SelectionProfile | RrfSelectionProfile | RrfRerankingProfile,
+    ) -> Literal["standard", "quarter_followup", "planner"]:
+        if (
+            self._expand_page_context
+            and isinstance(selection_profile, RrfSelectionProfile)
+            and (query.filters.company_id is not None or self._company_priority is not None)
+            and revenue_forecast_actual_request(question, comparison_quarters(question)) is not None
+        ):
+            return "quarter_followup"
+        if self._query_planner is not None and has_explicit_multiple_search_goals(question):
+            return "planner"
+        return "standard"
+
     def _retrieve_dual_lane(
         self,
         *,
@@ -391,8 +404,9 @@ class RetrieveResearchService:
         retrieval_run_id: UUID,
         started_at: datetime,
         progress: Callable[[UUID, ResearchProgressStage], None] | None,
-        decompose_query: bool,
+        decomposition_mode: QueryDecompositionMode,
         rerank_with_luna: bool,
+        span: OperationSpan | None,
     ) -> ResearchRetrievalResult:
         """Run external query providers first, then commit canonical selection atomically."""
         dependencies = self._m1_query_retrieval
@@ -409,11 +423,22 @@ class RetrieveResearchService:
                 else None
             )
 
+        route = "standard"
+        if decomposition_mode is QueryDecompositionMode.AUTO:
+            route = self._automatic_decomposition_route(
+                request.question, query, dependencies.selection_profile
+            )
+        elif decomposition_mode is QueryDecompositionMode.ALWAYS:
+            route = "planner"
         additional_queries = (
             self._query_planner.plan(context, request.id, request.question)
-            if decompose_query and self._query_planner is not None
+            if route == "planner" and self._query_planner is not None
             else ()
         )
+        if span is not None and decomposition_mode is not QueryDecompositionMode.OFF:
+            span.set_attribute("query.decomposition.mode", decomposition_mode.value)
+            span.set_attribute("query.decomposition.route", route)
+            span.set_attribute("query.decomposition.count", len(additional_queries))
         if progress is not None:
             progress(request.id, "EMBEDDING_QUESTION")
         query_embedding = AccountedQueryEmbedding(

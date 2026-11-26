@@ -93,13 +93,15 @@ candidate. A chunk found in both lanes retains one `LEXICAL` and one `DENSE` aud
 its first selected occurrence becomes a `CanonicalCandidateSource`. Empty lanes remain a valid,
 explicit retrieval result and never create invented candidates.
 
-The internal `auto` decomposition mode checks for independently phrased search goals before
+The optional `auto` decomposition mode checks for independently phrased search goals before
 calling the existing accounted planner. A simple conjunction and question words inside quoted
-text do not trigger planning. Unclear questions and runtimes without a planner use the original
-query. When planning runs, the original query and up to two distinct lexical refinements share
-the same filters and candidate budget. Dense retrieval embeds the original question once. The
-existing boolean opt-in continues to call the planner directly. The HTTP contract still exposes
-that boolean during this backend work block.
+text do not trigger planning. The explicit forecast-and-actual pattern uses the local quarterly
+follow-up when that retrieval profile supports it. Unclear questions and runtimes without a
+planner use the original query. When planning runs, the original query and up to two distinct
+lexical refinements share the same filters and candidate budget. Dense retrieval embeds the
+original question once. The HTTP contract advertises Automatic when the planner is available.
+The existing boolean opt-in continues to call the planner directly. The retrieval span records
+only the decomposition mode, route, and added-query count for opt-in decomposition.
 
 M1 remains the normal selector. For the isolated M1.5 experiment, the same dependency bundle can
 instead receive `RrfSelectionProfile`; this is internal injection, not a new API or environment

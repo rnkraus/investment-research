@@ -190,17 +190,15 @@ def _actual_revenue_row(body: str, quarter: ReportingQuarter) -> re.Match[str] |
     return _REVENUE_TABLE_ROW.search(body, header_end, header_end + 160)
 
 
-def revenue_forecast_actual_passages(
+def revenue_forecast_actual_request(
     question: str,
     quarters: Sequence[ReportingQuarter],
-    reports: Mapping[UUID, ReportingQuarter],
-    passages: Sequence[QuarterPassage],
-) -> tuple[LexicalSearchHit, ...]:
-    """Find a revenue outlook range and a reported revenue table for distinct quarters."""
+) -> tuple[ReportingQuarter, ReportingQuarter, str | None] | None:
+    """Identify the two reporting periods and the optional outlook year."""
 
     parts = _REVENUE_CLAUSE_BOUNDARY.split(question)
     if len(parts) != 2 or len(quarters) != 2:
-        return ()
+        return None
     forecast, actual = parts
     annual = _ANNUAL_REVENUE_REQUEST.search(forecast)
     if (
@@ -210,13 +208,26 @@ def revenue_forecast_actual_passages(
         or not _REPORTED_REQUEST.search(actual)
         or _FORECAST_REQUEST.search(actual)
     ):
-        return ()
+        return None
     for part, quarter in zip(parts, quarters, strict=True):
         labels = {int(match["leading"] or match["trailing"]) for match in _QUARTER.finditer(part)}
         if labels != {quarter.number}:
-            return ()
+            return None
+    return quarters[0], quarters[1], annual["year"]
 
-    outlook_quarter, actual_quarter = quarters
+
+def revenue_forecast_actual_passages(
+    question: str,
+    quarters: Sequence[ReportingQuarter],
+    reports: Mapping[UUID, ReportingQuarter],
+    passages: Sequence[QuarterPassage],
+) -> tuple[LexicalSearchHit, ...]:
+    """Find a revenue outlook range and a reported revenue table for distinct quarters."""
+
+    request = revenue_forecast_actual_request(question, quarters)
+    if request is None:
+        return ()
+    outlook_quarter, actual_quarter, outlook_year = request
     outlooks: list[tuple[int, int, UUID, LexicalSearchHit]] = []
     actuals: list[tuple[int, int, UUID, LexicalSearchHit]] = []
     for item in passages:
@@ -225,7 +236,7 @@ def revenue_forecast_actual_passages(
         body = _normalized(hit.text)
         if period == outlook_quarter:
             for match in _REVENUE_GUIDANCE_RANGE.finditer(body):
-                if annual["year"] is None or annual["year"] == match["year"]:
+                if outlook_year is None or outlook_year == match["year"]:
                     outlooks.append((match.start(), len(body), hit.chunk_id, hit))
                     break
         elif period == actual_quarter and (row := _actual_revenue_row(body, actual_quarter)):

@@ -71,21 +71,11 @@ class ImmutableResearchContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class ResearchRetrievalInput(
-    ImmutableResearchContract, PublicationDateBounds, SourceAttributionScope
-):
-    """One bounded question and explicit archive context submitted for retrieval."""
+class QueryDecompositionSelection(BaseModel):
+    """Accept explicit modes and preserve the legacy boolean opt-in."""
 
-    question: QueryText
-    document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
-    company_id: UUID | None = None
-    temporal_mode: TemporalMode = TemporalMode.CURRENT
-    cutoff_at: AwareDatetime | None = None
-    generation_model: ResearchModel = ResearchModel.TERRA
-    support_model: ResearchModel = ResearchModel.TERRA
     decompose_query: bool = False
     query_decomposition_mode: QueryDecompositionMode | None = None
-    rerank_with_luna: bool = False
 
     @property
     def effective_query_decomposition_mode(self) -> QueryDecompositionMode:
@@ -105,6 +95,24 @@ class ResearchRetrievalInput(
         ):
             raise ValueError("decompose_query requires query_decomposition_mode='always'")
         return self
+
+
+class ResearchRetrievalInput(
+    ImmutableResearchContract,
+    PublicationDateBounds,
+    SourceAttributionScope,
+    QueryDecompositionSelection,
+):
+    """One bounded question and explicit archive context submitted for retrieval."""
+
+    question: QueryText
+    document_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
+    company_id: UUID | None = None
+    temporal_mode: TemporalMode = TemporalMode.CURRENT
+    cutoff_at: AwareDatetime | None = None
+    generation_model: ResearchModel = ResearchModel.TERRA
+    support_model: ResearchModel = ResearchModel.TERRA
+    rerank_with_luna: bool = False
 
     @field_validator("question")
     @classmethod

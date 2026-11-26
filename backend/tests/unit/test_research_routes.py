@@ -70,6 +70,7 @@ from investment_research.modules.research.citable_unit_contracts import (
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
+    QueryDecompositionMode,
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
@@ -496,6 +497,7 @@ def test_research_models_endpoint_reports_actual_runtime_availability(
         "generation_models": [],
         "support_models": [],
         "query_decomposition_enabled": False,
+        "automatic_query_decomposition_enabled": False,
         "luna_reranking_enabled": False,
     }
 
@@ -512,6 +514,7 @@ def test_research_models_endpoint_reports_actual_runtime_availability(
         "generation_models": [model.value for model in ResearchModel],
         "support_models": [model.value for model in ResearchModel],
         "query_decomposition_enabled": True,
+        "automatic_query_decomposition_enabled": True,
         "luna_reranking_enabled": True,
     }
 
@@ -528,6 +531,28 @@ def test_research_decomposition_requires_the_runtime_and_preserves_the_question(
     assert client.post("/api/v1/research-requests", json=body).status_code == 200
     assert service.calls == [
         (make_context(), ResearchRetrievalInput(question=QUESTION, decompose_query=True))
+    ]
+
+
+def test_research_automatic_decomposition_preserves_mode_and_rejects_conflict(
+    research_client: tuple[TestClient, FakeAnswerResearchRequestService],
+) -> None:
+    client, service = research_client
+    body = {"question": QUESTION, "query_decomposition_mode": "auto"}
+    conflict = client.post("/api/v1/research-requests", json={**body, "decompose_query": True})
+    assert conflict.status_code == 422
+    assert service.calls == []
+    service.retrieval_service.query_decomposition_enabled = True
+    response = client.post("/api/v1/research-requests", json=body)
+    assert response.status_code == 200
+    assert service.calls == [
+        (
+            make_context(),
+            ResearchRetrievalInput(
+                question=QUESTION,
+                query_decomposition_mode=QueryDecompositionMode.AUTO,
+            ),
+        )
     ]
 
 
