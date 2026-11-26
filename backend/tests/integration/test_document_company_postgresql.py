@@ -5,11 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlalchemy import Engine, select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from investment_research.infrastructure.database.document_deletion import (
     PostgresDocumentDeletionRepository,
 )
+from investment_research.infrastructure.search.company_priority import PostgresCompanyPriorityReader
 from investment_research.modules.companies.persistence import (
     CompanyRow,
     SqlAlchemyCompanyRepository,
@@ -61,6 +62,31 @@ def test_document_company_foreign_key_and_duplicate_link(
             "REVIEWED",
             owner.context.user_id,
         )
+
+
+def test_explicit_company_short_name_resolves_only_an_unambiguous_workspace_prefix(
+    integration_database_engine: Engine,
+) -> None:
+    engine = integration_database_engine
+    owner = persist_unclaimed_source(engine)
+    foreign = persist_unclaimed_source(engine)
+    own_company = CompanyRow.from_domain(make_company(owner.context, "Alder Technologies"))
+    foreign_company = CompanyRow.from_domain(make_company(foreign.context, "Alder Systems"))
+    with Session(engine, expire_on_commit=False) as session, session.begin():
+        session.add_all([own_company, foreign_company])
+        session.flush()
+        session.add_all([make_link(owner, own_company), make_link(foreign, foreign_company)])
+
+    reader = PostgresCompanyPriorityReader(sessionmaker(engine))
+    documents = {owner.document.id, foreign.document.id}
+    assert reader.preferred_documents(owner.context, "Alder", documents, explicit_mention=True) == {
+        owner.document.id
+    }
+    assert not reader.preferred_documents(owner.context, "Alder", documents)
+
+    with Session(engine) as session, session.begin():
+        session.add(CompanyRow.from_domain(make_company(owner.context, "Alder Services")))
+    assert not reader.preferred_documents(owner.context, "Alder", documents, explicit_mention=True)
 
 
 def test_document_company_writes_and_permanent_deletion_serialize(
