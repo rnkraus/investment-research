@@ -51,6 +51,30 @@ _AMOUNT_WITH_CHANGE = re.compile(
     r"(?:from|versus|vs\.?|over)\s+(?:the\s+)?(?:prior|previous|preceding) quarter)",
     re.IGNORECASE,
 )
+_REVENUE_CLAUSE_BOUNDARY = re.compile(r"(?:\?\s+|,?\s+and\s+)(?=what\b)", re.IGNORECASE)
+_ANNUAL_REVENUE_REQUEST = re.compile(
+    r"\b(?:full[- ]year|annual)\s+(?:(?P<year>20\d{2})\s+)?revenue\b",
+    re.IGNORECASE,
+)
+_FORECAST_REQUEST = re.compile(r"\b(?:guid\w*|outlook|forecast\w*|project\w*)\b", re.IGNORECASE)
+_REPORTED_REVENUE_REQUEST = re.compile(
+    r"^what\s+(?:was\s+)?(?:q[1-4](?:\s+(?:fy\s*)?20\d{2})?\s+)?"
+    r"(?:(?:total|net)\s+)?revenue\b",
+    re.IGNORECASE,
+)
+_REPORTED_REQUEST = re.compile(r"\b(?:report\w*|record\w*|post\w*|recogniz\w*)\b", re.IGNORECASE)
+_REVENUE_GUIDANCE_RANGE = re.compile(
+    r"\b(?:full[- ]year|annual)\s+(?:(?P<year>20\d{2})\s+)?"
+    r"revenue\s+(?:guidance|outlook|forecast)\b[^.!?]{0,40}?"
+    r"[$€£]\s*\d[\d.,]*\s*(?:million|billion)?\s*(?:[-\u2013\u2014]|to)\s*"
+    r"[$€£]?\s*\d[\d.,]*\s*(?:million|billion)\b",
+)
+_REVENUE_TABLE_UNITS = re.compile(r"(?:\b(?:dollars|usd)\s+|\$\s*)in\s+(?:millions|billions)\b")
+_TABLE_CURRENCY_PAIR = r"[$€£]\s*\d[\d,.]*\s*[$€£]\s*\d[\d,.]*"
+_REVENUE_TABLE_ROW = re.compile(
+    rf"{_TABLE_CURRENCY_PAIR}\s*(?:(?:total|net)\s+)?revenue\b"
+    rf"|(?<![a-z])(?:(?:total|net)\s+)?revenue\s+{_TABLE_CURRENCY_PAIR}"
+)
 _QUERY_NOISE = frozenset(
     {
         "chang",
@@ -148,6 +172,67 @@ def report_quarter(title: str) -> ReportingQuarter | None:
     """Derive a period only from a title that identifies one quarter and year."""
     periods = _periods(title)
     return periods[0] if len(periods) == 1 else None
+
+
+def _actual_revenue_row(body: str, quarter: ReportingQuarter) -> re.Match[str] | None:
+    # PDF extraction can join adjacent column headers, such as Q3'25Q3'26.
+    period = re.search(
+        rf"(?<![a-z])q{quarter.number}\s*['\u2019]?\s*"
+        rf"(?:{quarter.year}|{quarter.year % 100:02d})(?!\d)",
+        body,
+    )
+    if period is None:
+        return None
+    units = _REVENUE_TABLE_UNITS.search(body, max(0, period.start() - 60), period.end() + 90)
+    if units is None:
+        return None
+    header_end = max(period.end(), units.end())
+    return _REVENUE_TABLE_ROW.search(body, header_end, header_end + 160)
+
+
+def revenue_forecast_actual_passages(
+    question: str,
+    quarters: Sequence[ReportingQuarter],
+    reports: Mapping[UUID, ReportingQuarter],
+    passages: Sequence[QuarterPassage],
+) -> tuple[LexicalSearchHit, ...]:
+    """Find a revenue outlook range and a reported revenue table for distinct quarters."""
+
+    parts = _REVENUE_CLAUSE_BOUNDARY.split(question)
+    if len(parts) != 2 or len(quarters) != 2:
+        return ()
+    forecast, actual = parts
+    annual = _ANNUAL_REVENUE_REQUEST.search(forecast)
+    if (
+        annual is None
+        or not _FORECAST_REQUEST.search(forecast)
+        or not _REPORTED_REVENUE_REQUEST.match(actual)
+        or not _REPORTED_REQUEST.search(actual)
+        or _FORECAST_REQUEST.search(actual)
+    ):
+        return ()
+    for part, quarter in zip(parts, quarters, strict=True):
+        labels = {int(match["leading"] or match["trailing"]) for match in _QUARTER.finditer(part)}
+        if labels != {quarter.number}:
+            return ()
+
+    outlook_quarter, actual_quarter = quarters
+    outlooks: list[tuple[int, int, UUID, LexicalSearchHit]] = []
+    actuals: list[tuple[int, int, UUID, LexicalSearchHit]] = []
+    for item in passages:
+        hit = item.hit
+        period = reports.get(hit.document_id)
+        body = _normalized(hit.text)
+        if period == outlook_quarter:
+            for match in _REVENUE_GUIDANCE_RANGE.finditer(body):
+                if annual["year"] is None or annual["year"] == match["year"]:
+                    outlooks.append((match.start(), len(body), hit.chunk_id, hit))
+                    break
+        elif period == actual_quarter and (row := _actual_revenue_row(body, actual_quarter)):
+            actuals.append((row.start(), len(body), hit.chunk_id, hit))
+    if not outlooks or not actuals:
+        return ()
+    return min(outlooks, key=lambda item: item[:3])[3], min(actuals, key=lambda item: item[:3])[3]
 
 
 def _sequential_quarter(

@@ -16,6 +16,7 @@ from investment_research.modules.search.quarter_context import (
     add_quarter_context,
     comparison_quarters,
     report_quarter,
+    revenue_forecast_actual_passages,
 )
 
 
@@ -74,6 +75,40 @@ def passage(number: int, document: int, text: str, *terms: str) -> QuarterPassag
         ),
         lexemes=frozenset(terms),
     )
+
+
+@pytest.mark.parametrize(
+    ("actual_metric", "outlook_year", "header", "matching_pair"),
+    [
+        ("revenue", 2027, "YoYQ3\u201926Q3\u201927$ in millions", True),
+        ("revenue", 2027, "In millions Q3'26 Q3'27", False),
+        ("revenue", 2027, "YoYQ3'25Q3'26$ in millions", False),
+        ("revenue", 2028, "YoYQ3'26Q3'27$ in millions", False),
+        ("services revenue", 2027, "YoYQ3'26Q3'27$ in millions", False),
+    ],
+)
+def test_forecast_and_actual_selection_requires_matching_metric_period_and_units(
+    actual_metric: str, outlook_year: int, header: str, matching_pair: bool
+) -> None:
+    question = (
+        "What full-year 2027 revenue range did Cedar guide to in Q2, "
+        f"and what Q3 {actual_metric} did it subsequently report?"
+    )
+    outlook_quarter, actual_quarter = comparison_quarters(question)
+    reports = {UUID(int=1): outlook_quarter, UUID(int=2): actual_quarter}
+    outlook = passage(
+        21, 1, f"Full-year {outlook_year} revenue guidance is $6.1 billion to $6.3 billion."
+    )
+    actual = passage(22, 2, f"{header} 17%$700.0 $819.0Revenue")
+    later_outlook = passage(23, 2, "Full-year 2027 revenue guidance is $6.3-$6.5 billion.")
+    other_company = passage(24, 3, "Q3'26 Q3'27 $ in millions $100 $200 Revenue")
+
+    assert revenue_forecast_actual_passages(
+        question,
+        (outlook_quarter, actual_quarter),
+        reports,
+        (other_company, later_outlook, outlook, actual),
+    ) == ((outlook.hit, actual.hit) if matching_pair else ())
 
 
 def test_sequential_followup_links_the_comparison_to_the_retrieved_metric() -> None:
