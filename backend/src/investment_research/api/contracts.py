@@ -30,7 +30,7 @@ from investment_research.modules.documents.domain import (
     OriginalMediaType,
     SourceAttributionScope,
     SourceAuthorName,
-    SourceXHandle,
+    SourceUsername,
 )
 from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.evidence.domain import ValidationRule
@@ -95,7 +95,7 @@ class DocumentMetadataInput(StrictContract):
     title: TrimmedTitle
     language: LanguageCode = "en"
     author_name: SourceAuthorName | None = None
-    x_handle: SourceXHandle | None = None
+    username: SourceUsername | None = None
     published_at: AwareDatetime | None = None
     available_at: AwareDatetime | None = None
 
@@ -279,7 +279,7 @@ class EvidenceSpanResult(StrictContract):
     document_version_id: UUID
     document_title: TrimmedTitle
     author_name: SourceAuthorName | None = None
-    x_handle: SourceXHandle | None = None
+    username: SourceUsername | None = None
     published_at: AwareDatetime | None = None
     start_character: int = Field(ge=0)
     end_character: int = Field(gt=0)

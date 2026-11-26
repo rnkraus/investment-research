@@ -76,7 +76,7 @@ def test_reader_rechecks_current_attribution_before_using_a_candidate(
     integration_database_engine: Engine,
 ) -> None:
     source = make_research_source(label="Canonical attribution filter")
-    source = replace(source, version=source.version.model_copy(update={"x_handle": "@Grid_IR"}))
+    source = replace(source, version=source.version.model_copy(update={"username": "@Grid_IR"}))
     retrieval = make_retrieval_result(source)
     filters = retrieval.run.filters.model_copy(
         update={"source_attribution": "@grid_ir", "source_attribution_kind": "handle"}
@@ -94,7 +94,7 @@ def test_reader_rechecks_current_attribution_before_using_a_candidate(
         source.context,
         source.document.id,
         ReplaceDocumentSourceAttribution(
-            document_version_id=source.version.id, author_name="Grid IR", x_handle="@Grid_IRextra"
+            document_version_id=source.version.id, author_name="Grid IR", username="@Grid_IRextra"
         ),
     )
     with factory() as session:

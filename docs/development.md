@@ -326,6 +326,10 @@ export destination settings or headers.
 
 ## Verify changes
 
+The source field rename to `username` requires the API, worker and web to be rebuilt together
+using the normal Compose startup command. Migration `0023_source_username` only renames the
+captured and edited fields; values, validation and column types stay unchanged.
+
 For reproducible, opt-in retrieval-only or full-RAG research experiments, see
 [evaluation profiles and fresh research collection](../eval/README.md#run-a-new-research-evaluation).
 The repository-root `pnpm eval:preview`, `pnpm eval:run`, `pnpm eval:report` and

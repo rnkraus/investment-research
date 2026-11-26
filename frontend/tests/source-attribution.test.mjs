@@ -10,13 +10,13 @@ test("source attribution uses either field and adds exactly one @ prefix", () =>
     "Northstar Research",
   );
   assert.equal(
-    formatSourceAttribution({ x_handle: "NorthstarIR" }),
+    formatSourceAttribution({ username: "NorthstarIR" }),
     "@NorthstarIR",
   );
   assert.equal(
     formatSourceAttribution({
       author_name: "Northstar Research",
-      x_handle: "@NorthstarIR",
+      username: "@NorthstarIR",
     }),
     "Northstar Research (@NorthstarIR)",
   );

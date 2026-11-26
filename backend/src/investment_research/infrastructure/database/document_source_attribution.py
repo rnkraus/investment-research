@@ -48,7 +48,7 @@ class PostgresDocumentSourceAttributionWriter:
             if version_id != command.document_version_id:
                 raise SourceAttributionConflictError
 
-            fields = {"author_name": command.author_name, "x_handle": command.x_handle}
+            fields = {"author_name": command.author_name, "username": command.username}
             session.execute(
                 insert(DocumentSourceAttributionRow)
                 .values(workspace_id=context.workspace_id, document_version_id=version_id, **fields)

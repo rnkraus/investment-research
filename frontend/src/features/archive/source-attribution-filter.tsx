@@ -20,13 +20,13 @@ export function SourceAttributionFilter({
       itemKey={(item) => `${item.kind}:${item.value}`}
       itemLabel={(item) => item.value}
       selectionLabel={(item) =>
-        item.kind === "handle" ? "X handle" : "Author"
+        item.kind === "handle" ? "Username" : "Author"
       }
       title="Source attribution filter"
-      inputLabel="Author or X handle"
-      placeholder="Name or @handle"
+      inputLabel="Author or username"
+      placeholder="Name or @username"
       maxLength={200}
-      resultsName="authors or handles"
+      resultsName="authors or usernames"
       clearLabel="Clear attribution filter"
     />
   );

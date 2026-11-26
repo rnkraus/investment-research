@@ -74,7 +74,7 @@ def test_document_list_entry_excludes_private_artifact_metadata() -> None:
         "title",
         "language",
         "author_name",
-        "x_handle",
+        "username",
         "published_at",
         "available_at",
         "media_type",

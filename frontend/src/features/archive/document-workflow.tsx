@@ -196,8 +196,9 @@ export function DocumentWorkflow({
     setErrorMessage(undefined);
 
     try {
-      const { author_name: authorName, x_handle: xHandle } =
-        readSourceAttribution(event.currentTarget);
+      const { author_name: authorName, username } = readSourceAttribution(
+        event.currentTarget,
+      );
       const publishedAt = publicationDate
         ? `${publicationDate}T00:00:00Z`
         : undefined;
@@ -212,7 +213,7 @@ export function DocumentWorkflow({
             title,
             language: fixtureDefaults.language,
             authorName: authorName ?? undefined,
-            xHandle: xHandle ?? undefined,
+            username: username ?? undefined,
             publishedAt,
           },
           controller.signal,
@@ -224,7 +225,7 @@ export function DocumentWorkflow({
             text,
             language: fixtureDefaults.language,
             author_name: authorName ?? undefined,
-            x_handle: xHandle ?? undefined,
+            username: username ?? undefined,
             published_at: publishedAt,
           },
           controller.signal,

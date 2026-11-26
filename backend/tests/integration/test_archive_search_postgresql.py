@@ -149,7 +149,7 @@ def test_archive_search_finds_exact_tickers_and_literal_current_titles(
             engine,
             replace(
                 item,
-                version=item.version.model_copy(update={"title": title, "x_handle": "@Grid_IR"}),
+                version=item.version.model_copy(update={"title": title, "username": "@Grid_IR"}),
             ),
         )
 

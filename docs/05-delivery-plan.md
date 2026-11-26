@@ -462,13 +462,15 @@ the end-to-end search contract. Live retrieval quality and provider latency requ
 separate measurement with real provider responses.
 
 **Source attribution.** PDF and pasted-text imports accept an optional author or organization and
-X handle. The archive allows the owner to correct or clear both fields on the current version of
-an existing document. The catalog and resolved citations display the version's effective
-attribution. A handle alone supplies the visible byline. The optional scope filter matches
-literal substrings in the current author or X handle without regard to case. The website lists
-distinct active authors and handles in bounded pages. Search by a substring or start with `@`
-to find handles, then select an exact author or handle. The filter combines with the other applicable filters in the
-catalog, in keyword and semantic archive search, and in lexical and dense research retrieval.
+username. The API and database field is `username`; migration `0023_source_username` renames the
+columns and preserves stored values. The archive allows the owner to correct or clear both fields
+on the current version of an existing document. The catalog and resolved citations display the
+version's effective attribution. A username alone supplies the visible byline. The optional scope
+filter matches literal substrings in the current author or username without regard to case. The
+website lists distinct active authors and usernames in bounded pages. Search by a substring or
+start with `@` to find usernames, then select an exact author or username. The filter combines
+with the other applicable filters in the catalog, in keyword and semantic archive search, and in
+lexical and dense research retrieval.
 Ticker results with this filter require an assigned current document that matches the scope.
 Research stores the filter with the retrieval run and reapplies it when validating evidence.
 Claim support continues to come from the original source text.

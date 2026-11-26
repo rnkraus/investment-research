@@ -4,7 +4,7 @@ from typing import Protocol
 from uuid import UUID
 
 from investment_research.modules.documents.contracts import ImmutableContract
-from investment_research.modules.documents.domain import SourceAuthorName, SourceXHandle
+from investment_research.modules.documents.domain import SourceAuthorName, SourceUsername
 from investment_research.modules.identity.domain import WorkspaceContext
 
 
@@ -13,7 +13,7 @@ class ReplaceDocumentSourceAttribution(ImmutableContract):
 
     document_version_id: UUID
     author_name: SourceAuthorName | None
-    x_handle: SourceXHandle | None
+    username: SourceUsername | None
 
 
 class DocumentSourceAttribution(ReplaceDocumentSourceAttribution):

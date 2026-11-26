@@ -574,7 +574,7 @@ def test_archive_filters_scope_retrieval_and_respect_explicit_documents(
             update={
                 "published_at": datetime(2026, 10, 11, 23, 59, 59, tzinfo=UTC),
                 "author_name": "Northstar Investor Relations",
-                "x_handle": "NorthstarIR",
+                "username": "NorthstarIR",
             }
         ),
     )

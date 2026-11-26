@@ -81,7 +81,7 @@ display name and its comparison key while retaining the company ID and document 
 | Entity | Meaning | Important properties |
 |---|---|---|
 | `Document` | Logical archive item visible to the user | Type, lifecycle state, current version reference |
-| `DocumentVersion` | Immutable captured content edition | Version number, content hash, language, captured time, optional author or organization and X handle |
+| `DocumentVersion` | Immutable captured content edition | Version number, content hash, language, captured time, optional author or organization and username |
 | `OriginalArtifact` | Immutable PDF or submitted-text original | Storage key, media type, byte size, checksum |
 | `PublicationMetadata` | Source-time description of a version | Title, publication time, public-availability time, publisher text |
 | `DocumentCompany` | Association between a document and company | Method, confidence, review status, reviewer |
@@ -93,6 +93,12 @@ Source-attribution edits are separate from the captured version and scoped to it
 and version. A saved edit can explicitly clear either display field. The archive and citation
 viewer read the effective values. Edits do not change original bytes, processing runs, or
 evidence spans, and permanent version deletion removes its edits.
+
+The source field is `username` in the API and database. Migration `0023_source_username` only
+renames the former `x_handle` columns; values, column types and nullability stay unchanged.
+Validation remains 1–15 ASCII letters, digits or underscores with an optional leading `@`.
+Display and case-insensitive filtering retain their existing behavior, including the generic
+`handle` filter discriminator.
 
 Automatic company assignments remain reviewable suggestions. A duplicate relation never silently deletes either archive item.
 

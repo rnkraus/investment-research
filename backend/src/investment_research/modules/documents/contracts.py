@@ -20,7 +20,7 @@ from investment_research.modules.documents.domain import (
     SourceAttributionKind,
     SourceAttributionScope,
     SourceAuthorName,
-    SourceXHandle,
+    SourceUsername,
 )
 from investment_research.modules.documents.publication import PublicationDateBounds
 from investment_research.modules.processing.domain import ProcessingState, SafeErrorSummary
@@ -53,7 +53,7 @@ class CaptureMetadata(ImmutableContract):
     title: DocumentTitle
     language: LanguageCode = "en"
     author_name: SourceAuthorName | None = None
-    x_handle: SourceXHandle | None = None
+    username: SourceUsername | None = None
     published_at: AwareDatetime | None = None
     available_at: AwareDatetime | None = None
 

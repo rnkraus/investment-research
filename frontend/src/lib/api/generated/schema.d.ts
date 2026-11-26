@@ -646,8 +646,8 @@ export interface components {
             readonly published_at?: string | null;
             /** Title */
             readonly title: string;
-            /** X Handle */
-            readonly x_handle?: string | null;
+            /** Username */
+            readonly username?: string | null;
         };
         /**
          * CompanyCatalogPage
@@ -768,8 +768,8 @@ export interface components {
             readonly published_at?: string | null;
             /** Title */
             readonly title: string;
-            /** X Handle */
-            readonly x_handle?: string | null;
+            /** Username */
+            readonly username?: string | null;
         };
         /**
          * DocumentCatalogPage
@@ -898,10 +898,10 @@ export interface components {
             /** Title */
             readonly title: string;
             /**
-             * X Handle
+             * Username
              * @default null
              */
-            readonly x_handle: string | null;
+            readonly username: string | null;
         };
         /**
          * DocumentSourceAttribution
@@ -920,8 +920,8 @@ export interface components {
              * Format: uuid
              */
             readonly document_version_id: string;
-            /** X Handle */
-            readonly x_handle: string | null;
+            /** Username */
+            readonly username: string | null;
         };
         /**
          * ErrorCode
@@ -1002,10 +1002,10 @@ export interface components {
             readonly start_character: number;
             /** Text Sha256 */
             readonly text_sha256: string;
+            /** Username */
+            readonly username?: string | null;
             /** Viewer Url */
             readonly viewer_url: string;
-            /** X Handle */
-            readonly x_handle?: string | null;
         };
         /**
          * EvidenceTextPassageLocator
@@ -1065,8 +1065,8 @@ export interface components {
             readonly text: string;
             /** Title */
             readonly title: string;
-            /** X Handle */
-            readonly x_handle?: string | null;
+            /** Username */
+            readonly username?: string | null;
         };
         /**
          * ProcessingRunResult
@@ -1174,8 +1174,8 @@ export interface components {
              * Format: uuid
              */
             readonly document_version_id: string;
-            /** X Handle */
-            readonly x_handle: string | null;
+            /** Username */
+            readonly username: string | null;
         };
         /**
          * ResearchContextEvent
