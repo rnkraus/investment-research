@@ -23,7 +23,7 @@ from investment_research.modules.processing.contracts import M1_MAX_BLOCK_CHARAC
 from investment_research.modules.research.citable_unit_contracts import (
     M1_5_CITABLE_UNIT_POLICY_VERSION,
 )
-from investment_research.modules.research.contracts import ResearchModel
+from investment_research.modules.research.contracts import QueryDecompositionMode, ResearchModel
 from investment_research.modules.search.contracts import M1_EMBEDDING_DIMENSIONS
 from investment_research.modules.search.fusion_contracts import (
     COMPANY_RRF_RANK_BONUS,
@@ -54,6 +54,7 @@ def build_preview(path: Path = DEFAULT_PROFILE) -> dict[str, object]:
     research_requests = (counts["answer"] + counts["abstention"]) * profile.repetitions
     possible_roles: set[str] = set()
     requirements: list[str] = []
+    decomposition_mode = profile.retrieval.effective_query_decomposition_mode
     if profile.mode == "offline_replay":
         requirements.append(
             "Compatible saved inputs must prove case, scope, and configuration identity."
@@ -64,7 +65,10 @@ def build_preview(path: Path = DEFAULT_PROFILE) -> dict[str, object]:
             requirements.append(
                 "Expansion requires saved eligible neighbor/page candidates, not only final hits."
             )
-        if profile.retrieval.decompose_query or profile.reranking.strategy != "none":
+        if (
+            decomposition_mode is not QueryDecompositionMode.OFF
+            or profile.reranking.strategy != "none"
+        ):
             requirements.append(
                 "Reuse compatible recorded planning/reranking outputs; "
                 "never call a provider offline."
@@ -75,7 +79,7 @@ def build_preview(path: Path = DEFAULT_PROFILE) -> dict[str, object]:
         ):
             possible_roles.update(("query_embedding", "pinecone_query"))
         if research_requests:
-            if profile.retrieval.decompose_query:
+            if decomposition_mode is not QueryDecompositionMode.OFF:
                 possible_roles.add("query_planning")
             if profile.reranking.strategy != "none":
                 possible_roles.add("reranking")
@@ -141,6 +145,7 @@ def build_preview(path: Path = DEFAULT_PROFILE) -> dict[str, object]:
         "planned_discovery_evaluations": discovery_requests,
         "planned_research_evaluations": research_requests,
         "research_generates_answers": profile.mode == "rag_live" and research_requests > 0,
+        "query_decomposition_mode": decomposition_mode.value,
         "possible_live_provider_roles": sorted(possible_roles),
         "profile_settings": profile.model_dump(mode="json"),
         "effective_rag_settings": rag.model_dump(mode="json"),

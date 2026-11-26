@@ -114,6 +114,13 @@ Every setting has comments describing its values. Edit a copy under `eval/profil
 limits, neighbors, page expansion, company priority, decomposition or Luna reranking.
 These switches build separate process-local services and do not change the website configuration.
 
+Set `[retrieval].query_decomposition_mode` to `"off"` for Standard, `"auto"` for Automatic,
+or `"always"` for the explicit Query decomposition mode. The older `decompose_query` flag
+still maps `false` to Standard and `true` to explicit decomposition when no mode is provided.
+The live preview shows the chosen mode and an upper bound on planner attempts within the
+shared provider call budget. A completed run's HTML report shows actual planner attempts
+when usage was recorded. Offline scoring checks the mode against the saved configuration.
+
 Preview the live profile from `backend/`. This command loads no credentials and makes no calls:
 
 ```shell

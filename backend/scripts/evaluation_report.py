@@ -5,6 +5,7 @@ from html import escape
 from pathlib import Path
 from statistics import median
 
+from investment_research.modules.operations.domain import ProviderOperationKind
 from scripts.evaluate_portfolio import compare_saved
 from scripts.evaluation_profiles import checked_repository_file
 from scripts.evaluation_run_artifacts import RunArtifactError, SavedRun
@@ -91,6 +92,7 @@ def metadata(run: SavedRun, heading: str) -> str:
     timings = [item.elapsed_ms for item in run.observations]
     profile = run.definition.profile
     settings = run.manifest.plan.settings
+    usage = run.manifest.provider_usage
     values: dict[str, object] = {
         "Run status": run.manifest.status,
         "Recorded / planned observations": f"{len(run.observations)} / {len(run.expected_keys)}",
@@ -105,7 +107,16 @@ def metadata(run: SavedRun, heading: str) -> str:
         "Neighbors / pages / company priority": (
             f"{settings.text_neighbors} / {settings.page_expansion} / {settings.company_priority}"
         ),
-        "Query decomposition": settings.decompose_query,
+        "Query decomposition": settings.effective_query_decomposition_mode.value,
+        "Query planning attempts": (
+            sum(
+                group.attempts
+                for group in usage.groups
+                if group.role == ProviderOperationKind.QUERY_PLANNING
+            )
+            if usage is not None
+            else "Not captured"
+        ),
         "Lexical / dense candidate limits": (
             f"{settings.rag.retrieval.lexical_candidate_limit} / "
             f"{settings.rag.retrieval.dense_candidate_limit}"
