@@ -19,13 +19,13 @@ export function SourceAttributionFields({
           defaultValue: initial?.author_name,
         },
         {
-          name: "x_handle",
-          label: archiveCopy.upload.xHandleLabel,
+          name: "username",
+          label: archiveCopy.upload.usernameLabel,
           pattern: "@?[A-Za-z0-9_]{1,15}",
           title:
             "Use 1–15 letters, numbers, or underscores, with an optional @.",
-          placeholder: archiveCopy.upload.xHandlePlaceholder,
-          defaultValue: initial?.x_handle,
+          placeholder: archiveCopy.upload.usernamePlaceholder,
+          defaultValue: initial?.username,
         },
       ].map(
         ({

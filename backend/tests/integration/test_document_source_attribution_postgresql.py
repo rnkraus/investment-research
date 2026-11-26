@@ -63,7 +63,7 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
         payload = {
             "document_version_id": version_id,
             "author_name": "Corrected author",
-            "x_handle": "@NorthstarIR",
+            "username": "@NorthstarIR",
         }
 
         application.dependency_overrides[get_workspace_context] = lambda: other
@@ -75,7 +75,7 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
             == 409
         )
         assert (
-            client.put(path, json={**payload, "x_handle": "https://x.com/NorthstarIR"}).status_code
+            client.put(path, json={**payload, "username": "https://x.com/NorthstarIR"}).status_code
             == 422
         )
         saved = client.put(path, json=payload)
@@ -85,7 +85,7 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
         assert client.put(path, json=payload).json() == saved.json()
         edited = client.get("/api/v1/documents").json()["items"][0]
         assert edited["author_name"] == "Corrected author"
-        assert edited["x_handle"] == "@NorthstarIR"
+        assert edited["username"] == "@NorthstarIR"
         assert edited["processing"] == initial["processing"]
         assert edited["document_version_id"] == version_id
         assert client.get(initial["original_url"]).text == original
@@ -110,12 +110,12 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
         application.dependency_overrides[get_workspace_context] = lambda: owner
 
         assert (
-            client.put(path, json={**payload, "author_name": None, "x_handle": None}).status_code
+            client.put(path, json={**payload, "author_name": None, "username": None}).status_code
             == 200
         )
         cleared = client.get("/api/v1/documents").json()["items"][0]
         assert cleared["author_name"] is None
-        assert cleared["x_handle"] is None
+        assert cleared["username"] is None
         assert matches("corrected") == matches("@northstarir") == []
         assert choices() == ()
 
@@ -123,7 +123,7 @@ def test_edit_and_clear_source_attribution_without_rewriting_the_original(
         version = session.get(DocumentVersionRow, UUID(version_id))
         assert version is not None
         assert version.author_name == "Captured author"
-        assert version.x_handle is None
+        assert version.username is None
 
 
 def test_attribution_choices_are_distinct_and_paginated(

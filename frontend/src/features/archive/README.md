@@ -43,7 +43,7 @@ narrow the company scope. Changing the company clears the document selection.
 **Publication date** lets users apply a start day, an end day, or both to the list and new
 questions. The bounds are inclusive UTC days and combine with any selected company. Applying
 or clearing the dates clears the explicit document selection.
-The **Source attribution filter** selects an author or X handle from the active catalog. It
+The **Source attribution filter** selects an author or username from the active catalog. It
 combines with the company and publication filters across the document list, discovery, and
 research.
 **Source format** and **Processing status** filter only the document list. They combine with

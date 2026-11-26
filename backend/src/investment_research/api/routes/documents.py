@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
 from pydantic import AwareDatetime, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.background import BackgroundTask
@@ -45,7 +45,7 @@ from investment_research.modules.documents.contracts import (
     SourceAttributionLookup,
     SourceAttributionPage,
 )
-from investment_research.modules.documents.domain import SourceAuthorName, SourceXHandle
+from investment_research.modules.documents.domain import SourceAuthorName, SourceUsername
 from investment_research.modules.documents.ports import (
     CaptureCommitUncertainError,
     ObjectAlreadyExistsError,
@@ -61,21 +61,28 @@ from investment_research.modules.documents.source_attribution import (
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 
-def document_metadata_from_form(
+async def document_metadata_from_form(
+    request: Request,
     title: Annotated[TrimmedTitle, Form()],
     language: Annotated[LanguageCode, Form()] = "en",
     published_at: Annotated[AwareDatetime | None, Form()] = None,
     available_at: Annotated[AwareDatetime | None, Form()] = None,
     author_name: Annotated[SourceAuthorName | None, Form()] = None,
-    x_handle: Annotated[SourceXHandle | None, Form()] = None,
+    username: Annotated[SourceUsername | None, Form()] = None,
 ) -> DocumentMetadataInput:
     """Assemble validated application-neutral metadata from multipart fields."""
 
+    if "x_handle" in await request.form():
+        raise ApiError(
+            status_code=422,
+            code=ErrorCode.INVALID_REQUEST,
+            message="Reload the page and try importing again.",
+        )
     return DocumentMetadataInput(
         title=title,
         language=language,
         author_name=author_name,
-        x_handle=x_handle,
+        username=username,
         published_at=published_at,
         available_at=available_at,
     )
@@ -229,7 +236,7 @@ def capture_document(
             title=metadata.title,
             language=metadata.language,
             author_name=metadata.author_name,
-            x_handle=metadata.x_handle,
+            username=metadata.username,
             published_at=metadata.published_at,
             available_at=metadata.available_at,
         )
@@ -298,7 +305,7 @@ def capture_pasted_text(
                 title=payload.title,
                 language=payload.language,
                 author_name=payload.author_name,
-                x_handle=payload.x_handle,
+                username=payload.username,
                 published_at=payload.published_at,
                 available_at=payload.available_at,
                 text=payload.text,

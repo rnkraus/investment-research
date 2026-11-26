@@ -81,7 +81,7 @@ class ResolveEvidenceSpanService:
             document_id=source.document_id,
             document_title=source.document_title,
             author_name=source.author_name,
-            x_handle=source.x_handle,
+            username=source.username,
             published_at=source.published_at,
         )
 

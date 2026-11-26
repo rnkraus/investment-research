@@ -279,7 +279,7 @@ test("source attribution sends an explicit clear and rejects a mismatched versio
   const fields = {
     document_version_id: VERSION_ID,
     author_name: "Northstar",
-    x_handle: null,
+    username: null,
   };
   const client = createApiClient(async (path, init) => {
     assert.equal(path, `/api/v1/documents/${DOCUMENT_ID}/source-attribution`);
@@ -334,7 +334,7 @@ test("captureDocument sends the exact multipart API fields", async () => {
     title: "FY2025 earnings",
     language: "en",
     authorName: "Northstar Research",
-    xHandle: "@NorthstarIR",
+    username: "@NorthstarIR",
     publishedAt: "2026-02-20T12:00:00Z",
   });
 
@@ -345,7 +345,7 @@ test("captureDocument sends the exact multipart API fields", async () => {
   assert.equal(capturedInit.body.get("title"), "FY2025 earnings");
   assert.equal(capturedInit.body.get("language"), "en");
   assert.equal(capturedInit.body.get("author_name"), "Northstar Research");
-  assert.equal(capturedInit.body.get("x_handle"), "@NorthstarIR");
+  assert.equal(capturedInit.body.get("username"), "@NorthstarIR");
   assert.equal(capturedInit.body.get("published_at"), "2026-02-20T12:00:00Z");
   assert.equal(capturedInit.body.get("available_at"), null);
   assert.equal(result.processing_run_id, PROCESSING_RUN_ID);

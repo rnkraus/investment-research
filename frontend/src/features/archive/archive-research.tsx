@@ -384,7 +384,7 @@ export function ArchiveResearch({
                               document_id,
                               document_version_id,
                               author_name,
-                              x_handle,
+                              username,
                             }) => {
                               if (sourceAttribution !== null) {
                                 setRefreshCount((current) => current + 1);
@@ -395,7 +395,7 @@ export function ArchiveResearch({
                                   entry.document_id === document_id &&
                                   entry.document_version_id ===
                                     document_version_id
-                                    ? { ...entry, author_name, x_handle }
+                                    ? { ...entry, author_name, username }
                                     : entry,
                                 ),
                               );

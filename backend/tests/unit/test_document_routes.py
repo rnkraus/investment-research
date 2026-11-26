@@ -225,7 +225,7 @@ def test_capture_route_maps_multipart_input_and_returns_accepted(
     response = client.post(
         "/api/v1/documents",
         data=valid_form_data()
-        | {"author_name": " Northstar Research ", "x_handle": "@NorthstarIR"},
+        | {"author_name": " Northstar Research ", "username": "@NorthstarIR"},
         files={"file": ("earnings-brief.pdf", PDF_CONTENT, "application/pdf")},
     )
 
@@ -245,7 +245,7 @@ def test_capture_route_maps_multipart_input_and_returns_accepted(
     assert capture_input.media_type == "application/pdf"
     assert capture_input.title == "Northstar Grid Analytics FY2025 Earnings Brief"
     assert capture_input.author_name == "Northstar Research"
-    assert capture_input.x_handle == "@NorthstarIR"
+    assert capture_input.username == "@NorthstarIR"
     assert content == PDF_CONTENT
 
 
@@ -277,7 +277,7 @@ def test_text_capture_route_maps_strict_json_and_returns_accepted(
             "language": "en",
             "published_at": "2026-07-22T00:00:00Z",
             "available_at": "2026-07-22T00:00:00Z",
-            "x_handle": "NorthstarIR",
+            "username": "NorthstarIR",
             "text": "Capacity rose by 12%.\r\n",
         },
     )
@@ -290,14 +290,14 @@ def test_text_capture_route_maps_strict_json_and_returns_accepted(
     assert context == make_context()
     assert isinstance(capture_input, PastedTextCaptureInput)
     assert capture_input.author_name is None
-    assert capture_input.x_handle == "NorthstarIR"
+    assert capture_input.username == "NorthstarIR"
     assert capture_input.text == "Capacity rose by 12%.\r\n"
     assert content is None
 
 
 @pytest.mark.parametrize(
     "metadata",
-    [{"author_name": "Invalid\x00author"}, {"x_handle": "https://x.com/NorthstarIR"}],
+    [{"author_name": "Invalid\x00author"}, {"username": "https://x.com/NorthstarIR"}],
 )
 def test_capture_rejects_invalid_attribution_for_both_formats(
     capture_client: tuple[TestClient, FakeCaptureDocumentService],
@@ -336,6 +336,35 @@ def test_text_capture_rejects_unknown_fields_before_application_service(
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_REQUEST"
     assert str(OTHER_WORKSPACE_ID) not in response.text
+    assert service.calls == []
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"x_handle": "@NorthstarIR"},
+        {"x_handle": "@NorthstarIR", "username": "@NewUsername"},
+        {"x_handle": ""},
+    ],
+)
+def test_capture_rejects_legacy_username_fields_before_either_capture_service(
+    capture_client: tuple[TestClient, FakeCaptureDocumentService],
+    metadata: dict[str, str],
+) -> None:
+    client, service = capture_client
+    pdf_response = client.post(
+        "/api/v1/documents",
+        data=valid_form_data() | metadata,
+        files={"file": ("earnings-brief.pdf", PDF_CONTENT, "application/pdf")},
+    )
+    text_response = client.post(
+        "/api/v1/documents/text",
+        json={"title": "Capacity Update", "text": "Original text.", **metadata},
+    )
+
+    assert pdf_response.status_code == text_response.status_code == 422
+    assert pdf_response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert text_response.json()["error"]["code"] == "INVALID_REQUEST"
     assert service.calls == []
 
 

@@ -76,7 +76,7 @@ export interface CaptureDocumentInput {
   readonly title: string;
   readonly language?: string;
   readonly authorName?: string;
-  readonly xHandle?: string;
+  readonly username?: string;
   readonly publishedAt?: string;
   readonly availableAt?: string;
 }
@@ -393,7 +393,7 @@ function isDocumentListCursor(value: unknown): value is DocumentListCursor {
 }
 
 function hasValidSourceAttribution(value: JsonRecord): boolean {
-  const { author_name: author, x_handle: handle } = value;
+  const { author_name: author, username: handle } = value;
   return (
     (author == null ||
       (isNonEmptyString(author) &&
@@ -412,7 +412,7 @@ function isDocumentSourceAttribution(
     isUuid(value.document_id) &&
     isUuid(value.document_version_id) &&
     value.author_name !== undefined &&
-    value.x_handle !== undefined &&
+    value.username !== undefined &&
     hasValidSourceAttribution(value)
   );
 }
@@ -1215,8 +1215,8 @@ export function createApiClient(
       if (input.authorName) {
         body.set("author_name", input.authorName);
       }
-      if (input.xHandle) {
-        body.set("x_handle", input.xHandle);
+      if (input.username) {
+        body.set("username", input.username);
       }
       if (input.publishedAt) {
         body.set("published_at", input.publishedAt);

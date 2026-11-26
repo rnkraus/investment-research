@@ -58,7 +58,7 @@ class PostgresDocumentCatalogReader:
             .limit(1)
             .lateral("latest_processing")
         )
-        author_name, x_handle = document_source_attribution_columns()
+        author_name, username = document_source_attribution_columns()
         statement = (
             select(
                 DocumentRow.id.label("document_id"),
@@ -66,7 +66,7 @@ class PostgresDocumentCatalogReader:
                 DocumentVersionRow.title,
                 DocumentVersionRow.language,
                 author_name,
-                x_handle,
+                username,
                 DocumentVersionRow.published_at,
                 DocumentVersionRow.available_at,
                 DocumentVersionRow.captured_at,
@@ -182,8 +182,8 @@ class PostgresDocumentCatalogReader:
             select(literal("author").label("kind"), sources.c.author_name.label("value")),
             select(
                 literal("handle").label("kind"),
-                func.concat("@", func.ltrim(sources.c.x_handle, "@")).label("value"),
-            ).where(sources.c.x_handle.is_not(None)),
+                func.concat("@", func.ltrim(sources.c.username, "@")).label("value"),
+            ).where(sources.c.username.is_not(None)),
         ).subquery()
         key = func.concat(choices.c.kind, ":", func.lower(choices.c.value)).collate("C")
         statement = (

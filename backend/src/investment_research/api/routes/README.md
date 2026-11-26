@@ -11,7 +11,7 @@ This directory contains thin FastAPI route modules. A route owns HTTP parsing, d
 | `documents.py`  | `GET /api/v1/documents`                                              | Lists current documents with scoped filters and cursor pagination.                  |
 | `documents.py`  | `POST /api/v1/documents`                                             | Captures one validated PDF and returns canonical identifiers with HTTP 202.         |
 | `documents.py`  | `POST /api/v1/documents/text`                                        | Captures pasted text and returns canonical identifiers with HTTP 202.              |
-| `documents.py`  | `GET /api/v1/documents/source-attributions`                           | Lists current author and X-handle filter choices.                                   |
+| `documents.py`  | `GET /api/v1/documents/source-attributions`                           | Lists current author and username filter choices.                                   |
 | `documents.py`  | `PUT /api/v1/documents/{document_id}/source-attribution`              | Edits or clears current source attribution.                                        |
 | `document_companies.py` | `GET, PUT /api/v1/documents/{document_id}/companies` | Reads or replaces company links with revision checking on writes. |
 | `companies.py` | `GET, POST /api/v1/companies` | Lists or creates scoped company records. |
@@ -78,8 +78,11 @@ Liveness deliberately avoids the application container's dependencies. Readiness
 container-owned probe and serializes only the aggregate result. It never returns dependency names,
 connection targets, migration revisions, credentials, exception messages, or tracebacks.
 
-The capture route accepts `file`, `title`, `language`, `published_at`, and `available_at` as multipart
-fields. `workspace_id` is intentionally absent. It returns document, document-version, and
+The capture route accepts `file`, `title`, `language`, `author_name`, `username`, `published_at`,
+and `available_at` as multipart fields. The legacy `x_handle` field is rejected with
+`422 INVALID_REQUEST` before capture, matching the strict text-import contract. This also applies
+when both field names are present. Reload an older browser tab before importing again.
+`workspace_id` is intentionally absent. It returns document, document-version, and
 processing-run identifiers plus the implemented processing-status URL; it does not parse the PDF.
 Publication occurs only after the canonical transaction commits. An expected broker failure leaves
 the returned run visibly `CAPTURED` for the bounded recovery path.

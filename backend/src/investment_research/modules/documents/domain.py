@@ -52,7 +52,7 @@ class SourceAttributionScope(BaseModel):
         return self
 
 
-SourceXHandle = Annotated[
+SourceUsername = Annotated[
     str,
     StringConstraints(strip_whitespace=True, pattern=r"^@?[A-Za-z0-9_]{1,15}$"),
 ]
@@ -131,7 +131,7 @@ class DocumentVersion(ImmutableDocumentModel):
     language: LanguageCode
     content_sha256: Sha256Hex
     author_name: SourceAuthorName | None = None
-    x_handle: SourceXHandle | None = None
+    username: SourceUsername | None = None
     published_at: AwareDatetime | None = None
     available_at: AwareDatetime | None = None
     captured_at: AwareDatetime
