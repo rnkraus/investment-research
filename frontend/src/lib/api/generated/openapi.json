@@ -1578,6 +1578,16 @@
         "title": "ProcessingState",
         "type": "string"
       },
+      "QueryDecompositionMode": {
+        "description": "Control when retrieval asks the query planner for lexical refinements.",
+        "enum": [
+          "off",
+          "auto",
+          "always"
+        ],
+        "title": "QueryDecompositionMode",
+        "type": "string"
+      },
       "ReadinessResponse": {
         "description": "Public readiness result without dependency or failure details.",
         "properties": {
@@ -1881,6 +1891,11 @@
         "additionalProperties": false,
         "description": "Models genuinely available in the active API runtime.",
         "properties": {
+          "automatic_query_decomposition_enabled": {
+            "default": false,
+            "title": "Automatic Query Decomposition Enabled",
+            "type": "boolean"
+          },
           "generation_models": {
             "items": {
               "$ref": "#/components/schemas/ResearchModel"
@@ -2116,6 +2131,16 @@
           "generation_model": {
             "$ref": "#/components/schemas/ResearchModel",
             "default": "gpt-5.6-terra"
+          },
+          "query_decomposition_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueryDecompositionMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "question": {
             "maxLength": 2000,

@@ -47,6 +47,7 @@ from investment_research.modules.research.citable_unit_contracts import CitableU
 from investment_research.modules.research.contracts import (
     AnswerGenerationInput,
     AnswerGenerationSource,
+    QueryDecompositionMode,
     ResearchModel,
     ResearchProgressStage,
     ResearchRetrievalInput,
@@ -71,6 +72,7 @@ def get_research_models(
         generation_models=(tuple(ResearchModel) if model_services is not None else ()),
         support_models=(tuple(ResearchModel) if model_services is not None else ()),
         query_decomposition_enabled=service.retrieval_service.query_decomposition_enabled,
+        automatic_query_decomposition_enabled=service.retrieval_service.query_decomposition_enabled,
         luna_reranking_enabled=service.retrieval_service.luna_reranking_enabled,
     )
 
@@ -321,7 +323,10 @@ def answer_research_request(
 ) -> StreamingResponse:
     """Stream selected source context separately from fully validated answer content."""
 
-    if request.decompose_query and not service.retrieval_service.query_decomposition_enabled:
+    if (
+        request.effective_query_decomposition_mode is QueryDecompositionMode.ALWAYS
+        and not service.retrieval_service.query_decomposition_enabled
+    ):
         raise ApiError(
             status_code=422,
             code=ErrorCode.INVALID_REQUEST,
@@ -346,6 +351,7 @@ def answer_research_request(
         generation_model=request.generation_model,
         support_model=request.support_model,
         decompose_query=request.decompose_query,
+        query_decomposition_mode=request.query_decomposition_mode,
         rerank_with_luna=request.rerank_with_luna,
     )
     return StreamingResponse(
