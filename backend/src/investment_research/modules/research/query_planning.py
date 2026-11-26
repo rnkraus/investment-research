@@ -1,5 +1,6 @@
 """Bounded query planning and fusion of lexical search results."""
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
@@ -31,6 +32,24 @@ from investment_research.modules.search.ports import LexicalSearch
 
 QUERY_PLAN_VERSION = "openai-terra-lexical-decomposition-v1"
 QUERY_PLAN_MAX_OUTPUT_TOKENS = 512
+
+_QUOTED_TEXT = re.compile(r'"[^"\n]*"|“[^”\n]*”|`[^`\n]*`')
+_SEARCH_GOAL = (
+    r"(?:how|what|when|where|which|who|why|compare|describe|explain|identify|list|show)\b"
+)
+_FIRST_GOAL = re.compile(rf"^\s*{_SEARCH_GOAL}\s+\S", re.IGNORECASE)
+_FOLLOW_UP_GOAL = re.compile(
+    rf"(?:\?\s*|(?:,\s*|\s+)(?:and|also)\s+){_SEARCH_GOAL}(?:\s+\S|\?)",
+    re.IGNORECASE,
+)
+
+
+def has_explicit_multiple_search_goals(question: str) -> bool:
+    """Recognize separately phrased requests without interpreting quoted material."""
+
+    visible_question = _QUOTED_TEXT.sub(" ", question)
+    first = _FIRST_GOAL.match(visible_question)
+    return first is not None and _FOLLOW_UP_GOAL.search(visible_question, first.end()) is not None
 
 
 class QueryPlanningUnavailableError(RuntimeError):

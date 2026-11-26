@@ -35,7 +35,10 @@ from investment_research.modules.research.company_priority import (
     CompanyPriorityReader,
     company_lookup_terms,
 )
-from investment_research.modules.research.contracts import ResearchRetrievalInput
+from investment_research.modules.research.contracts import (
+    QueryDecompositionMode,
+    ResearchRetrievalInput,
+)
 from investment_research.modules.research.luna_reranking import (
     AccountedLunaReranker,
     ListwiseRanking,
@@ -48,6 +51,7 @@ from investment_research.modules.research.ports import (
 from investment_research.modules.research.query_planning import (
     AccountedQueryPlanner,
     QueryPlan,
+    has_explicit_multiple_search_goals,
     search_lexical_queries,
 )
 from investment_research.modules.research.reranking import (
@@ -239,6 +243,31 @@ def test_query_planner_preserves_the_requested_observation_date() -> None:
     ) == ("operating arr november 6 2026",)
 
 
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("What was revenue? Why did it grow?", True),
+        ("What was revenue, and why did it grow?", True),
+        ("Which sites are operating and which sites are planned?", True),
+        ("What was Q3 revenue?", False),
+        ("What did the company say about research and development?", False),
+        ("What were revenue and gross margin?", False),
+        ('What does the title "Who we are and what we build" mean?', False),
+    ],
+)
+def test_auto_decomposition_requires_distinct_search_goals(question: str, expected: bool) -> None:
+    assert has_explicit_multiple_search_goals(question) is expected
+
+
+def test_legacy_decomposition_opt_in_cannot_conflict_with_auto() -> None:
+    with pytest.raises(ValueError, match="decompose_query requires"):
+        ResearchRetrievalInput(
+            question="What was revenue?",
+            decompose_query=True,
+            query_decomposition_mode=QueryDecompositionMode.AUTO,
+        )
+
+
 def make_qualified_dense_hit(
     *,
     chunk_id: UUID,
@@ -324,6 +353,7 @@ def make_service(
     expand_page_context: bool = False,
     company_priority: CompanyPriorityReader | None = None,
     luna_reranker: AccountedLunaReranker | None = None,
+    query_planner: AccountedQueryPlanner | None = None,
     tracer: OperationTracer | None = None,
 ) -> RetrieveResearchService:
     """Build one deterministic dual-lane service."""
@@ -368,8 +398,70 @@ def make_service(
         expand_page_context=expand_page_context,
         company_priority=company_priority,
         luna_reranker=luna_reranker,
+        query_planner=query_planner,
         tracer=tracer,
     )
+
+
+@pytest.mark.parametrize(
+    ("mode", "legacy_opt_in", "multiple_goals", "planner_available", "planner_calls"),
+    [
+        (QueryDecompositionMode.AUTO, False, True, True, 1),
+        (QueryDecompositionMode.AUTO, False, False, True, 0),
+        (QueryDecompositionMode.AUTO, False, True, False, 0),
+        (QueryDecompositionMode.OFF, False, True, True, 0),
+        (QueryDecompositionMode.ALWAYS, False, False, True, 1),
+        (None, True, False, True, 1),
+        (None, False, True, True, 0),
+    ],
+)
+def test_dual_lane_retrieval_routes_the_existing_planner(
+    mode: QueryDecompositionMode | None,
+    legacy_opt_in: bool,
+    multiple_goals: bool,
+    planner_available: bool,
+    planner_calls: int,
+) -> None:
+    unit_of_work = RecordingUnitOfWork()
+    embedding, dense = make_provider_mocks()
+    planner = create_autospec(AccountedQueryPlanner, instance=True)
+    planner.plan.return_value = ("revenue growth",)
+    service = make_service(
+        unit_of_work,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        query_planner=planner if planner_available else None,
+    )
+    question = "What was revenue, and why did it grow?" if multiple_goals else "What was revenue?"
+    context = make_context()
+    service.retrieve(
+        context,
+        ResearchRetrievalInput(
+            question=question,
+            company_id=DOCUMENT_ID,
+            decompose_query=legacy_opt_in,
+            query_decomposition_mode=mode,
+        ),
+    )
+
+    assert planner.plan.call_count == planner_calls
+    if planner_calls:
+        planner.plan.assert_called_once_with(context, REQUEST_ID, question)
+    embedding.embed.assert_called_once()
+    assert embedding.embed.call_args.args[0].inputs[0].text == question
+    dense.retrieve.assert_called_once()
+    searches = [call.args[1] for call in unit_of_work.lexical_search_mock.search.call_args_list]
+    assert len(searches) == 1 + planner_calls
+    assert (
+        searches[0].normalized_query
+        == build_lexical_search_query(
+            query_text=question,
+            filters=searches[0].filters,
+            lexical_config_version=searches[0].lexical_config_version,
+            candidate_limit=searches[0].candidate_limit,
+        ).normalized_query
+    )
+    assert all(query.filters.company_id == DOCUMENT_ID for query in searches)
 
 
 def make_accounted_reranker(

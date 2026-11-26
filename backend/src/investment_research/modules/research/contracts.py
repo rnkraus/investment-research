@@ -47,6 +47,14 @@ class ResearchModel(StrEnum):
     LUNA = "gpt-5.6-luna"
 
 
+class QueryDecompositionMode(StrEnum):
+    """Control when retrieval asks the query planner for lexical refinements."""
+
+    OFF = "off"
+    AUTO = "auto"
+    ALWAYS = "always"
+
+
 ResearchProgressStage = Literal[
     "EMBEDDING_QUESTION",
     "SEARCHING_SOURCES",
@@ -76,7 +84,27 @@ class ResearchRetrievalInput(
     generation_model: ResearchModel = ResearchModel.TERRA
     support_model: ResearchModel = ResearchModel.TERRA
     decompose_query: bool = False
+    query_decomposition_mode: QueryDecompositionMode | None = None
     rerank_with_luna: bool = False
+
+    @property
+    def effective_query_decomposition_mode(self) -> QueryDecompositionMode:
+        """Keep the behavior of callers that still pass the original boolean."""
+
+        if self.query_decomposition_mode is not None:
+            return self.query_decomposition_mode
+        return QueryDecompositionMode.ALWAYS if self.decompose_query else QueryDecompositionMode.OFF
+
+    @model_validator(mode="after")
+    def require_consistent_query_decomposition_mode(self) -> Self:
+        """Reject conflicting explicit requests to run or skip the planner."""
+
+        if (
+            self.decompose_query
+            and self.effective_query_decomposition_mode is not QueryDecompositionMode.ALWAYS
+        ):
+            raise ValueError("decompose_query requires query_decomposition_mode='always'")
+        return self
 
     @field_validator("question")
     @classmethod

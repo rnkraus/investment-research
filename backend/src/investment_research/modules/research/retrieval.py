@@ -19,6 +19,7 @@ from investment_research.modules.operations.ports import OperationTracer
 from investment_research.modules.research.company_priority import CompanyPriorityReader
 from investment_research.modules.research.contracts import (
     CanonicalCandidateSource,
+    QueryDecompositionMode,
     ResearchProgressStage,
     ResearchRetrievalInput,
     ResearchRetrievalResult,
@@ -32,6 +33,7 @@ from investment_research.modules.research.luna_reranking import (
 from investment_research.modules.research.ports import ResearchRetrievalUnitOfWorkFactory
 from investment_research.modules.research.query_planning import (
     AccountedQueryPlanner,
+    has_explicit_multiple_search_goals,
     search_lexical_queries,
 )
 from investment_research.modules.research.reranking import AccountedRerankingService
@@ -232,7 +234,8 @@ class RetrieveResearchService:
     ) -> ResearchRetrievalResult:
         """Run the configured bounded retrieval mode and persist one coherent result."""
 
-        if retrieval_input.decompose_query and not self.query_decomposition_enabled:
+        mode = retrieval_input.effective_query_decomposition_mode
+        if mode is QueryDecompositionMode.ALWAYS and not self.query_decomposition_enabled:
             raise ValueError("query decomposition is unavailable")
         if retrieval_input.rerank_with_luna and not self.luna_reranking_enabled:
             raise ValueError("Luna reranking is unavailable")
@@ -266,7 +269,14 @@ class RetrieveResearchService:
                     retrieval_run_id=retrieval_run_id,
                     started_at=started_at,
                     progress=progress,
-                    decompose_query=retrieval_input.decompose_query,
+                    decompose_query=(
+                        mode is QueryDecompositionMode.ALWAYS
+                        or (
+                            mode is QueryDecompositionMode.AUTO
+                            and self.query_decomposition_enabled
+                            and has_explicit_multiple_search_goals(request.question)
+                        )
+                    ),
                     rerank_with_luna=retrieval_input.rerank_with_luna,
                 )
             else:
