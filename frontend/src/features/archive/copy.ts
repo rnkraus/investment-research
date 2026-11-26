@@ -181,12 +181,15 @@ export const archiveCopy = {
     questionPlaceholder: "What would you like to know about your sources?",
     searchModeLabel: "Search mode",
     standardSearch: "Standard",
+    automaticSearch: "Automatic",
     decomposedSearch: "Query decomposition (experimental)",
     lunaRerankedSearch: "Luna reranking (experimental)",
     lunaRerankedSearchHint:
       "Sends retrieved passages to GPT-5.6 Luna for selection before answering. Uses the standard selection if reranking is unavailable.",
     decomposedSearchHint:
       "An extra model call can add up to two keyword searches for multi-part questions.",
+    automaticSearchHint:
+      "Adds targeted searches when the question asks for separate pieces of evidence.",
     modelSettingsLabel: "Model settings",
     detailsLabel: "Research details",
     generationModelLabel: "Answer model",

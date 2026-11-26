@@ -452,6 +452,7 @@ test("research model options accept only the active runtime's allowlisted models
   const options = {
     provider_enabled: true,
     query_decomposition_enabled: true,
+    automatic_query_decomposition_enabled: true,
     generation_models: ["gpt-5.6-terra", "gpt-5.6-luna"],
     support_models: ["gpt-5.6-terra", "gpt-5.6-luna"],
   };
@@ -479,6 +480,18 @@ test("research model options accept only the active runtime's allowlisted models
 
 test("research model options reject unapproved or inconsistent values", async () => {
   for (const options of [
+    {
+      provider_enabled: false,
+      automatic_query_decomposition_enabled: true,
+      generation_models: [],
+      support_models: [],
+    },
+    {
+      provider_enabled: true,
+      automatic_query_decomposition_enabled: "yes",
+      generation_models: ["gpt-5.6-terra"],
+      support_models: ["gpt-5.6-terra"],
+    },
     {
       provider_enabled: false,
       query_decomposition_enabled: true,

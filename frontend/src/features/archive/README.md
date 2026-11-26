@@ -64,8 +64,9 @@ and selection help are expandable. It cannot be hidden while deletion confirmati
 locks selection. Permanent deletion controls remain at the top of the sidebar.
 
 Answer and evidence-check model choices are independent under collapsed **Model settings**;
-their current pair is visible in the summary. **Search mode** shows the experimental query
-decomposition or Luna reranking options when the API advertises them. Progress, validated
+their current pair is visible in the summary. **Search mode** starts at **Standard** and can
+offer **Automatic**, query decomposition, or Luna reranking when the API advertises them.
+Automatic lets the backend decide whether to add targeted searches. Progress, validated
 results, and safe failures remain in the main area. The local M1.5 profile shows available
 rejection details expanded in the
 failure card and labels them as unvalidated. The collapsed **Research details** section below

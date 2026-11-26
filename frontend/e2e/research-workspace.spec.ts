@@ -15,6 +15,58 @@ test.beforeEach(async ({ context }) => {
   );
 });
 
+test("Automatic is opt-in and reaches the API as the auto decomposition mode", async ({
+  page,
+  context,
+}) => {
+  await context.route("**/api/v1/research-requests/models", (route) =>
+    route.fulfill({
+      json: {
+        provider_enabled: true,
+        generation_models: ["gpt-5.6-terra"],
+        support_models: ["gpt-5.6-terra"],
+        query_decomposition_enabled: true,
+        automatic_query_decomposition_enabled: true,
+      },
+    }),
+  );
+  const insufficient = {
+    event: "answer.insufficient",
+    schema_version: "1.0",
+    research_request_id: "10000000-0000-4000-8000-000000000001",
+    coverage: "INSUFFICIENT",
+    message: "No supporting evidence found.",
+  };
+  await context.route("**/api/v1/research-requests", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body: `event: ${insufficient.event}\ndata: ${JSON.stringify(insufficient)}\n\n`,
+    }),
+  );
+
+  await page.goto("/");
+  const mode = page
+    .getByRole("region", { name: "Ask the archive" })
+    .getByLabel("Search mode", { exact: true });
+  await expect(mode).toHaveValue("standard");
+  await mode.selectOption({ label: "Automatic" });
+  const question = "What was revenue, and why did it grow?";
+  await page.getByLabel("Research question").fill(question);
+  const request = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname === "/api/v1/research-requests",
+  );
+  await page
+    .getByRole("button", { name: "Ask the archive", exact: true })
+    .click();
+  expect((await request).postDataJSON()).toMatchObject({
+    question,
+    query_decomposition_mode: "auto",
+    decompose_query: false,
+  });
+  await expect(page.getByText("No supporting evidence found.")).toBeVisible();
+});
+
 test("evidence rejection diagnostics are visible without expanding research details", async ({
   page,
   context,

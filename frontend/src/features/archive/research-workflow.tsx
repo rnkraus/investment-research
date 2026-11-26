@@ -68,7 +68,7 @@ export function ResearchWorkflow({
   const requestController = useRef<AbortController | null>(null);
   const [question, setQuestion] = useState<string>("");
   const [searchMode, setSearchMode] = useState<
-    "standard" | "decomposition" | "luna"
+    "standard" | "automatic" | "decomposition" | "luna"
   >("standard");
   const [session, setSession] = useState<ResearchSession>(
     EMPTY_RESEARCH_SESSION,
@@ -150,6 +150,11 @@ export function ResearchWorkflow({
           decompose_query:
             modelOptions.query_decomposition_enabled === true &&
             searchMode === "decomposition",
+          query_decomposition_mode:
+            modelOptions.automatic_query_decomposition_enabled === true &&
+            searchMode === "automatic"
+              ? "auto"
+              : undefined,
           rerank_with_luna:
             modelOptions.luna_reranking_enabled === true &&
             searchMode === "luna",
@@ -256,6 +261,7 @@ export function ResearchWorkflow({
           value={question}
         />
         {modelOptions?.query_decomposition_enabled ||
+        modelOptions?.automatic_query_decomposition_enabled ||
         modelOptions?.luna_reranking_enabled ? (
           <div className="mt-4">
             <label
@@ -275,6 +281,7 @@ export function ResearchWorkflow({
                 const mode = event.target.value;
                 if (
                   mode === "standard" ||
+                  mode === "automatic" ||
                   mode === "decomposition" ||
                   mode === "luna"
                 ) {
@@ -286,6 +293,11 @@ export function ResearchWorkflow({
               <option value="standard">
                 {archiveCopy.research.standardSearch}
               </option>
+              {modelOptions.automatic_query_decomposition_enabled ? (
+                <option value="automatic">
+                  {archiveCopy.research.automaticSearch}
+                </option>
+              ) : null}
               {modelOptions.query_decomposition_enabled ? (
                 <option value="decomposition">
                   {archiveCopy.research.decomposedSearch}
@@ -304,7 +316,9 @@ export function ResearchWorkflow({
               >
                 {searchMode === "luna"
                   ? archiveCopy.research.lunaRerankedSearchHint
-                  : archiveCopy.research.decomposedSearchHint}
+                  : searchMode === "automatic"
+                    ? archiveCopy.research.automaticSearchHint
+                    : archiveCopy.research.decomposedSearchHint}
               </p>
             ) : null}
           </div>
