@@ -1350,6 +1350,67 @@ def test_quarter_followup_respects_manual_company_scope() -> None:
     assert result.candidates[-1].origin is RetrievalOrigin.STRUCTURED
 
 
+def test_quarter_followup_reserves_forecast_and_reported_revenue_at_the_context_limit() -> None:
+    outlook = make_lexical_hit().model_copy(
+        update={"text": "Full-year 2027 revenue guidance is $6.1 billion to $6.3 billion."}
+    )
+    actual = outlook.model_copy(
+        update={
+            "chunk_id": UUID(int=635),
+            "document_id": UUID(int=636),
+            "document_version_id": UUID(int=637),
+            "structure_block_id": UUID(int=638),
+            "text": "YoYQ3'26Q3'27$ in millions 17%$700.0 $819.0Revenue",
+        }
+    )
+    others = tuple(
+        outlook.model_copy(
+            update={
+                "chunk_id": UUID(int=700 + index),
+                "structure_block_id": UUID(int=710 + index),
+                "text": f"An industry update about market conditions, part {index}.",
+            }
+        )
+        for index in range(7)
+    )
+    uow = RecordingUnitOfWork(lexical_hits=(outlook, *others))
+    uow.lexical_search_mock.search_pages.return_value = ()
+    uow.lexical_search_mock.quarter_report_titles.return_value = {
+        outlook.document_id: "Cedar Q2 2027 earnings release",
+        actual.document_id: "Cedar Q3 2027 supplemental figures",
+    }
+    terms = frozenset({"revenu", "guidanc"})
+    uow.lexical_search_mock.quarter_passages.return_value = (
+        (QuarterPassage(outlook, terms), QuarterPassage(actual, terms)),
+        terms,
+    )
+    embedder, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedder,
+        dense_retriever=dense,
+        identifiers=(REQUEST_ID, RUN_ID, *(UUID(int=730 + index) for index in range(9))),
+        selection_profile=RrfSelectionProfile(context_chunk_limit=8),
+        expand_page_context=True,
+    )
+
+    result = service.retrieve(
+        make_context(),
+        ResearchRetrievalInput(
+            question="What full-year 2027 revenue range did Cedar guide to in Q2, "
+            "and what Q3 revenue did it subsequently report?",
+            company_id=UUID(int=739),
+        ),
+    )
+
+    assert len(result.sources) == 8
+    assert len({item.chunk_id for item in result.sources}) == 8
+    assert [item.chunk_id for item in result.sources[:2]] == [outlook.chunk_id, actual.chunk_id]
+    assert result.candidates[-1].origin is RetrievalOrigin.STRUCTURED
+    embedder.embed.assert_called_once()
+    dense.retrieve.assert_called_once()
+
+
 @pytest.mark.parametrize("mode", ["comparison", "filtered", "cross_attribution", "ambiguous"])
 def test_company_metric_followup_reserves_actual_evidence(mode: str) -> None:
     anchor = make_lexical_hit()

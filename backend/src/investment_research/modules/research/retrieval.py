@@ -98,6 +98,7 @@ from investment_research.modules.search.quarter_context import (
     add_quarter_context,
     comparison_quarters,
     report_quarter,
+    revenue_forecast_actual_passages,
 )
 from investment_research.modules.search.query_embedding import AccountedQueryEmbedding
 from investment_research.modules.search.query_embedding import (
@@ -862,16 +863,21 @@ class RetrieveResearchService:
         ):
             return selected
         passages, terms = reader.quarter_passages(context, query, index, frozenset(reports))
-        return add_quarter_context(
+        bounds = {
+            "chunk_limit": profile.context_chunk_limit,
+            "character_limit": profile.context_character_limit,
+        }
+        expanded = add_quarter_context(
             question,
             quarters,
             reports,
             passages,
             terms,
             selected,
-            chunk_limit=profile.context_chunk_limit,
-            character_limit=profile.context_character_limit,
+            **bounds,
         )
+        nominees = revenue_forecast_actual_passages(question, quarters, reports, passages)
+        return reserve_company_metric_passages(nominees, expanded, **bounds)
 
     @staticmethod
     def _expand_pages(
