@@ -1258,6 +1258,83 @@ def test_quarter_followup_respects_manual_company_scope() -> None:
     assert result.candidates[-1].origin is RetrievalOrigin.STRUCTURED
 
 
+@pytest.mark.parametrize("mode", ["comparison", "filtered", "cross_attribution", "ambiguous"])
+def test_company_metric_followup_reserves_actual_evidence(mode: str) -> None:
+    anchor = make_lexical_hit()
+    actual = anchor.model_copy(
+        update={
+            "text": "Our AI server business recognized $16.4 billion in revenue.",
+            "chunk_id": UUID(int=660),
+            "structure_block_id": UUID(int=661),
+        }
+    )
+    forecast = anchor.model_copy(
+        update={"text": "We expect AI server revenue of $74 billion.", "chunk_id": UUID(int=662)}
+    )
+    other = anchor.model_copy(
+        update={
+            "text": "Net sales of $19.9 billion.",
+            "chunk_id": UUID(int=663),
+            "document_id": UUID(int=664),
+            "document_version_id": UUID(int=665),
+            "structure_block_id": UUID(int=666),
+        }
+    )
+    uow = RecordingUnitOfWork(lexical_hits=(anchor,))
+    uow.lexical_search_mock.search_pages.return_value = ()
+    uow.lexical_search_mock.quarter_report_titles.return_value = {
+        actual.document_id: "Alder Q2 FY2027 earnings release",
+        other.document_id: "Beacon Q2 FY2027 earnings release",
+    }
+    uow.lexical_search_mock.quarter_passages.side_effect = [
+        ((QuarterPassage(forecast, frozenset()), QuarterPassage(actual, frozenset())), frozenset()),
+        ((QuarterPassage(other, frozenset()),), frozenset()),
+    ]
+    companies = create_autospec(CompanyPriorityReader, instance=True)
+    companies.preferred_documents.side_effect = lambda _context, question, _ids, **_options: {
+        "Alder": frozenset({actual.document_id}),
+        "Beacon": frozenset({actual.document_id if mode == "ambiguous" else other.document_id}),
+    }.get(question, frozenset())
+    embedding, dense = make_provider_mocks()
+    service = make_service(
+        uow,
+        embedding_provider=embedding,
+        dense_retriever=dense,
+        selection_profile=RrfSelectionProfile(context_chunk_limit=2),
+        expand_page_context=True,
+        company_priority=companies,
+        identifiers=(REQUEST_ID, RUN_ID, UUID(int=667), UUID(int=668), UUID(int=669)),
+    )
+    question = (
+        "What did Alder say about Beacon?"
+        if mode == "cross_attribution"
+        else "What did Alder report as AI server revenue in Q2 FY2027, "
+        "and what did Beacon report as total net sales in Q2 FY2027?"
+    )
+    result = service.retrieve(
+        make_context(),
+        ResearchRetrievalInput(
+            question=question, company_id=UUID(int=670) if mode == "filtered" else None
+        ),
+    )
+
+    if mode == "comparison":
+        assert [item.chunk_id for item in result.sources] == [actual.chunk_id, other.chunk_id]
+        assert [
+            call.args[-1] for call in uow.lexical_search_mock.quarter_passages.call_args_list
+        ] == [frozenset({actual.document_id}), frozenset({other.document_id})]
+        assert all(
+            item.origin is RetrievalOrigin.STRUCTURED
+            for item in result.candidates
+            if item.selection_rank
+        )
+    else:
+        assert [item.chunk_id for item in result.sources] == [anchor.chunk_id]
+        assert uow.lexical_search_mock.quarter_passages.call_count == (
+            1 if mode == "ambiguous" else 0
+        )
+
+
 @pytest.mark.parametrize("compound", [True, False])
 def test_rrf_page_context_preserves_observation_date_and_fusion(compound: bool) -> None:
     question = (

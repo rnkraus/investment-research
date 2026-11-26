@@ -36,6 +36,11 @@ from investment_research.modules.research.query_planning import (
 )
 from investment_research.modules.research.reranking import AccountedRerankingService
 from investment_research.modules.search.application import build_lexical_search_query
+from investment_research.modules.search.company_metric_context import (
+    best_company_metric_passage,
+    company_metric_comparison,
+    reserve_company_metric_passages,
+)
 from investment_research.modules.search.contracts import (
     M1_LANE_CANDIDATE_LIMIT,
     M1_PROVIDER_MAX_ATTEMPTS,
@@ -738,7 +743,7 @@ class RetrieveResearchService:
                     chunk_limit=profile.context_chunk_limit,
                     character_limit=profile.context_character_limit,
                 )
-            selected_candidates = self._expand_quarters(
+            expanded = self._expand_company_metrics(
                 context,
                 query,
                 qualification_request,
@@ -747,9 +752,69 @@ class RetrieveResearchService:
                 reader,
                 selected_candidates,
             )
+            selected_candidates = (
+                expanded
+                if expanded is not None
+                else self._expand_quarters(
+                    context,
+                    query,
+                    qualification_request,
+                    question,
+                    profile,
+                    reader,
+                    selected_candidates,
+                )
+            )
         if preferred_documents:
             selector_version = COMPANY_PAGE_RRF_SELECTOR_VERSION
         return selected_candidates, fused_ranks, selector_version, chunk_limit
+
+    def _expand_company_metrics(
+        self,
+        context: WorkspaceContext,
+        query: LexicalSearchQuery,
+        index: DenseQualificationRequest,
+        question: str,
+        profile: M1SelectionProfile | RrfSelectionProfile,
+        reader: LexicalSearch,
+        selected: tuple[SelectedRetrievalCandidate, ...],
+    ) -> tuple[SelectedRetrievalCandidate, ...] | None:
+        if (
+            query.filters.company_id is not None
+            or self._company_priority is None
+            or profile.context_chunk_limit < 2
+            or not (requests := company_metric_comparison(question))
+        ):
+            return None
+        titles = reader.quarter_report_titles(context, query, index)
+        seen_documents: set[UUID] = set()
+        nominees: list[LexicalSearchHit] = []
+        for request in requests:
+            company_documents = self._company_priority.preferred_documents(
+                context, request.company, titles.keys(), explicit_mention=True
+            )
+            if not company_documents or seen_documents & company_documents:
+                return None
+            seen_documents.update(company_documents)
+            reports = frozenset(
+                doc_id
+                for doc_id in company_documents
+                if (period := report_quarter(titles[doc_id])) is not None
+                and request.quarter.matches(period)
+            )
+            if not 0 < len(reports) <= QUARTER_COMPARISON_DOCUMENT_LIMIT:
+                return None
+            passages, _ = reader.quarter_passages(context, query, index, reports)
+            nominee = best_company_metric_passage(request.metric, passages)
+            if nominee is None:
+                return None
+            nominees.append(nominee)
+        return reserve_company_metric_passages(
+            nominees,
+            selected,
+            chunk_limit=profile.context_chunk_limit,
+            character_limit=profile.context_character_limit,
+        )
 
     def _expand_quarters(
         self,

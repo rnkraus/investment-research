@@ -18,10 +18,20 @@ _TICKER = re.compile(r"(?<![\w.-])\$?([A-Z0-9]+(?:[.-][A-Z0-9]+)*)(?!\w)")
 _MAX_NAME_WORDS = 8
 
 
-def company_lookup_terms(question: str) -> tuple[set[str], set[str]]:
+def company_lookup_terms(
+    question: str, *, explicit_mention: bool = False
+) -> tuple[set[str], set[str]]:
     """Build exact name keys and uppercase ticker candidates without loading companies."""
 
     question = unicodedata.normalize("NFC", question)
+    if explicit_mention:
+        name = question.strip()
+        ticker_match = _TICKER.fullmatch(name.upper())
+        return {company_name_key(name)}, (
+            {ticker_match[1]}
+            if ticker_match and len(ticker_match[1]) <= COMPANY_TICKER_MAX_LENGTH
+            else set()
+        )
     names: set[str] = set()
     words = tuple(_NAME_WORD.finditer(question))
     for start, word in enumerate(words):
@@ -45,6 +55,11 @@ def company_lookup_terms(question: str) -> tuple[set[str], set[str]]:
 
 class CompanyPriorityReader(Protocol):
     def preferred_documents(
-        self, context: WorkspaceContext, question: str, document_ids: Set[UUID]
+        self,
+        context: WorkspaceContext,
+        question: str,
+        document_ids: Set[UUID],
+        *,
+        explicit_mention: bool = False,
     ) -> frozenset[UUID]:
         """Return reviewed documents for an unambiguous company mention."""

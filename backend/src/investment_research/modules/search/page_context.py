@@ -19,12 +19,13 @@ from investment_research.modules.search.observation_dates import (
     requested_observation_date,
 )
 
-PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v4"
+PAGE_SELECTOR_VERSION = "m1-5-rrf-k60-page-context-v5"
 PAGE_SELECTOR_VERSIONS = frozenset(
     {
         "m1-5-rrf-k60-page-context-v1",
         "m1-5-rrf-k60-page-context-v2",
         "m1-5-rrf-k60-page-context-v3",
+        "m1-5-rrf-k60-page-context-v4",
         PAGE_SELECTOR_VERSION,
     }
 )
